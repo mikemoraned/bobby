@@ -6,6 +6,7 @@ mod images;
 mod jetstream;
 mod landmarks;
 mod scoring;
+mod skin_filter;
 mod text_filter;
 
 use futures_util::StreamExt;
@@ -149,6 +150,11 @@ fn face_detection_thread(
 
         if text_filter::is_mostly_text(&job.image) {
             debug!(candidate_id = %id, "image is mostly text, skipping");
+            continue;
+        }
+
+        if skin_filter::is_excessive_skin(&job.image) {
+            debug!(candidate_id = %id, "image has excessive skin, skipping");
             continue;
         }
 
