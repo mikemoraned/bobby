@@ -6,6 +6,7 @@ mod images;
 mod jetstream;
 mod landmarks;
 mod scoring;
+mod text_filter;
 
 use futures_util::StreamExt;
 use tokio::sync::mpsc;
@@ -129,6 +130,11 @@ fn face_detection_thread(rx: std::sync::mpsc::Receiver<DetectionJob>) {
 
         if !scene.is_landmark {
             debug!(candidate_id = %id, "no landmark detected, skipping");
+            continue;
+        }
+
+        if text_filter::is_mostly_text(&job.image) {
+            debug!(candidate_id = %id, "image is mostly text, skipping");
             continue;
         }
 

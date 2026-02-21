@@ -53,8 +53,8 @@ We'll implement this in steps which we will tick-off as we go and/or change base
         * overall score
         * score of components
 * [ ] add some filters for extreme content, or things where we know we definitely don't want it. These should not be saved.
+    * [x] add filter on images that contain only text, or have a large fraction of the image which is text (e.g. >= 50% text)
     * [ ] add porn filter
-    * [ ] add filter on images that contain only text, or have a large fraction of the image which is text (e.g. >- 50%)
 * [ ] ... more todo's added here as we need them
 
 # Constraints, trade-offs and technology choices
