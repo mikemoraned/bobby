@@ -28,7 +28,7 @@ We'll implement this in steps which we will tick-off as we go and/or change base
 * [x] listen to the bluesky firehose
     * [x] it's enough to just be writing-out a log message of what is received
     * [x] apply an inline test that captures what we've done (also do this for subsequent steps)
-* [ ] find any messages that contain images
+* [x] find any messages that contain images
 * [ ] find any images that contain faces
     * [ ] first, just log out something i.e. don't write anything out
     * [ ] then, write out the image file and annotated file to `candidates` dir as a png. So, for example, if image or message had `id`, then we'd create files:
