@@ -9,6 +9,7 @@ const CANDIDATES_DIR: &str = "candidates";
 const FACE_COLOR: Rgb<u8> = Rgb([255, 0, 0]);
 const LANDMARK_COLOR: Rgb<u8> = Rgb([0, 255, 0]);
 const BOX_THICKNESS: u32 = 3;
+const CROSSHAIR_THICKNESS: u32 = 1;
 const BORDER_THICKNESS: u32 = 4;
 
 #[derive(Debug, Clone)]
@@ -88,6 +89,39 @@ fn draw_rect(canvas: &mut RgbImage, x1: u32, y1: u32, x2: u32, y2: u32, thicknes
     }
 }
 
+fn draw_crosshairs(
+    canvas: &mut RgbImage,
+    [box_x1, box_y1, box_x2, box_y2]: [u32; 4],
+    color: Rgb<u8>,
+) {
+    let w = canvas.width();
+    let h = canvas.height();
+    let cx = (box_x1 + box_x2) / 2;
+    let cy = (box_y1 + box_y2) / 2;
+
+    // Horizontal line: left edge → face left, face right → right edge
+    for t in 0..CROSSHAIR_THICKNESS {
+        let y = cy.saturating_add(t).min(h.saturating_sub(1));
+        for x in 0..box_x1.saturating_sub(BOX_THICKNESS) {
+            canvas.put_pixel(x, y, color);
+        }
+        for x in (box_x2 + BOX_THICKNESS + 1)..w {
+            canvas.put_pixel(x, y, color);
+        }
+    }
+
+    // Vertical line: top edge → face top, face bottom → bottom edge
+    for t in 0..CROSSHAIR_THICKNESS {
+        let x = cx.saturating_add(t).min(w.saturating_sub(1));
+        for y in 0..box_y1.saturating_sub(BOX_THICKNESS) {
+            canvas.put_pixel(x, y, color);
+        }
+        for y in (box_y2 + BOX_THICKNESS + 1)..h {
+            canvas.put_pixel(x, y, color);
+        }
+    }
+}
+
 fn draw_annotations(img: &DynamicImage, faces: &[BoundingBox], landmark_detected: bool) -> DynamicImage {
     let mut canvas: RgbImage = img.to_rgb8();
     let w = canvas.width();
@@ -98,12 +132,17 @@ fn draw_annotations(img: &DynamicImage, faces: &[BoundingBox], landmark_detected
         draw_rect(&mut canvas, 0, 0, w - 1, h - 1, BORDER_THICKNESS, LANDMARK_COLOR);
     }
 
-    // Draw red bounding boxes for faces
+    // Draw crosshairs and bounding boxes for faces
     for face in faces {
         let x1 = (face.x1 as u32).min(w.saturating_sub(1));
         let y1 = (face.y1 as u32).min(h.saturating_sub(1));
         let x2 = (face.x2 as u32).min(w.saturating_sub(1));
         let y2 = (face.y2 as u32).min(h.saturating_sub(1));
+
+        // Crosshair lines from image edges to face bbox
+        draw_crosshairs(&mut canvas, [x1, y1, x2, y2], FACE_COLOR);
+
+        // Bounding box around the face
         draw_rect(&mut canvas, x1, y1, x2, y2, BOX_THICKNESS, FACE_COLOR);
     }
 
@@ -127,24 +166,33 @@ mod tests {
     }
 
     #[test]
-    fn draw_annotations_produces_red_face_boxes() {
+    fn draw_annotations_produces_red_face_boxes_and_crosshairs() {
         let img = DynamicImage::new_rgb8(100, 100);
         let faces = vec![BoundingBox {
-            x1: 10.0,
-            y1: 10.0,
-            x2: 50.0,
-            y2: 50.0,
+            x1: 30.0,
+            y1: 30.0,
+            x2: 60.0,
+            y2: 60.0,
             confidence: 0.9,
         }];
         let annotated = draw_annotations(&img, &faces, false);
         let rgb = annotated.to_rgb8();
 
-        // Top edge should have red pixels
-        assert_eq!(*rgb.get_pixel(30, 10), FACE_COLOR);
+        // Bounding box edge should have red pixels
+        assert_eq!(*rgb.get_pixel(45, 30), FACE_COLOR);
         // Left edge should have red pixels
-        assert_eq!(*rgb.get_pixel(10, 30), FACE_COLOR);
-        // Interior should remain black (original was blank)
-        assert_eq!(*rgb.get_pixel(30, 30), Rgb([0, 0, 0]));
+        assert_eq!(*rgb.get_pixel(30, 45), FACE_COLOR);
+        // Interior should remain black
+        assert_eq!(*rgb.get_pixel(45, 45), Rgb([0, 0, 0]));
+
+        // Crosshair: horizontal line at cy=45, to the left of the box
+        assert_eq!(*rgb.get_pixel(5, 45), FACE_COLOR);
+        // Crosshair: horizontal line at cy=45, to the right of the box
+        assert_eq!(*rgb.get_pixel(90, 45), FACE_COLOR);
+        // Crosshair: vertical line at cx=45, above the box
+        assert_eq!(*rgb.get_pixel(45, 5), FACE_COLOR);
+        // Crosshair: vertical line at cx=45, below the box
+        assert_eq!(*rgb.get_pixel(45, 90), FACE_COLOR);
     }
 
     #[test]
