@@ -31,3 +31,7 @@ download-places-model:
 # Convert Places365 model from PyTorch to ONNX (requires: uv add torch torchvision onnx)
 convert-places-model:
     cd scripts && uv run python convert_places365.py
+
+# Open the top 10 highest-scored annotated candidate images in Preview
+top:
+    open $(sqlite3 candidates/candidates.db "SELECT annotated_path FROM candidates ORDER BY score_overall DESC LIMIT 10;")
