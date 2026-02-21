@@ -28,12 +28,6 @@ pub struct FaceDetectionResult {
     pub image_height: u32,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum FaceDetectionError {
-    #[error("failed to decode image: {0}")]
-    ImageDecode(String),
-}
-
 pub struct FaceDetector {
     model: yunet::Model<B>,
     device: <B as Backend>::Device,
@@ -46,25 +40,22 @@ impl FaceDetector {
         Self { model, device }
     }
 
-    pub fn detect(&self, image_bytes: &[u8]) -> Result<FaceDetectionResult, FaceDetectionError> {
-        let img = image::load_from_memory(image_bytes)
-            .map_err(|e| FaceDetectionError::ImageDecode(e.to_string()))?;
-
+    pub fn detect(&self, img: &image::DynamicImage) -> FaceDetectionResult {
         let original_width = img.width();
         let original_height = img.height();
 
-        let input = preprocess(&img, &self.device);
+        let input = preprocess(img, &self.device);
         let pad_h = input.dims()[2];
         let pad_w = input.dims()[3];
 
         let output = self.model.forward(input);
         let faces = postprocess(output, pad_w, pad_h, original_width, original_height);
 
-        Ok(FaceDetectionResult {
+        FaceDetectionResult {
             faces,
             image_width: original_width,
             image_height: original_height,
-        })
+        }
     }
 }
 
@@ -295,10 +286,8 @@ mod tests {
     #[test]
     fn no_faces_in_blank_image() {
         let img = image::DynamicImage::new_rgb8(320, 240);
-        let mut buf = std::io::Cursor::new(Vec::new());
-        img.write_to(&mut buf, image::ImageFormat::Png).unwrap();
         let detector = FaceDetector::new();
-        let result = detector.detect(buf.get_ref()).unwrap();
+        let result = detector.detect(&img);
         assert!(result.faces.is_empty());
     }
 }

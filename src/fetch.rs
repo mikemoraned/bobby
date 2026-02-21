@@ -13,7 +13,7 @@ impl fmt::Display for ImageUrl {
 }
 
 pub struct FetchedImage {
-    pub bytes: Vec<u8>,
+    pub image: image::DynamicImage,
     pub url: ImageUrl,
 }
 
@@ -24,6 +24,12 @@ pub enum FetchError {
 
     #[error("non-success status {status} for {url}")]
     BadStatus { status: u16, url: ImageUrl },
+
+    #[error("failed to decode image from {url}: {source}")]
+    ImageDecode {
+        url: ImageUrl,
+        source: image::ImageError,
+    },
 }
 
 pub fn cdn_url(did: &Did, cid: &Cid) -> ImageUrl {
@@ -47,8 +53,12 @@ pub async fn fetch_image(
             url,
         });
     }
-    let bytes = response.bytes().await?.to_vec();
-    Ok(FetchedImage { bytes, url })
+    let bytes = response.bytes().await?;
+    let image = image::load_from_memory(&bytes).map_err(|source| FetchError::ImageDecode {
+        url: url.clone(),
+        source,
+    })?;
+    Ok(FetchedImage { image, url })
 }
 
 #[cfg(test)]

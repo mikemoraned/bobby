@@ -23,7 +23,6 @@ pub struct BlobRef {
 #[derive(Debug)]
 pub struct ImagePost {
     pub did: Did,
-    #[allow(dead_code)]
     pub rkey: Rkey,
     pub images: Vec<BlobRef>,
 }

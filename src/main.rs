@@ -1,3 +1,4 @@
+mod candidates;
 mod faces;
 mod fetch;
 mod images;
@@ -9,6 +10,7 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{debug, error, info, warn};
 use url::Url;
 
+use crate::candidates::{save_candidate, CandidateId};
 use crate::faces::FaceDetector;
 use crate::fetch::fetch_image;
 use crate::images::{extract_image_refs, ImagePost};
@@ -37,15 +39,22 @@ fn jetstream_url(base: &str, collection: &str) -> Result<Url, BobbyError> {
     Ok(url)
 }
 
-// Fetches images for a post, returning (blob_index, url, bytes) for each successful fetch.
+struct DetectionJob {
+    did: String,
+    rkey: String,
+    image_index: usize,
+    url: String,
+    image: image::DynamicImage,
+}
+
 async fn fetch_images_for_post(
     client: &reqwest::Client,
     post: &ImagePost,
-) -> Vec<(fetch::ImageUrl, Vec<u8>)> {
+) -> Vec<fetch::FetchedImage> {
     let mut results = Vec::new();
     for blob_ref in &post.images {
         match fetch_image(client, &post.did, &blob_ref.cid).await {
-            Ok(f) => results.push((f.url, f.bytes)),
+            Ok(f) => results.push(f),
             Err(e) => {
                 warn!(error = %e, did = %post.did, cid = %blob_ref.cid, "failed to fetch image");
             }
@@ -54,38 +63,47 @@ async fn fetch_images_for_post(
     results
 }
 
-// Runs face detection on a dedicated thread that owns the detector.
-// Receives (did, url, image_bytes) over a channel and logs results.
-fn face_detection_thread(rx: std::sync::mpsc::Receiver<(String, String, Vec<u8>)>) {
+fn face_detection_thread(rx: std::sync::mpsc::Receiver<DetectionJob>) {
     info!("loading face detection model");
     let detector = FaceDetector::new();
     info!("face detection model loaded");
 
-    while let Ok((did, url, image_bytes)) = rx.recv() {
-        match detector.detect(&image_bytes) {
-            Ok(detection) if !detection.faces.is_empty() => {
+    while let Ok(job) = rx.recv() {
+        let detection = detector.detect(&job.image);
+        if !detection.faces.is_empty() {
+            let id = CandidateId::new(&job.did, &job.rkey, job.image_index);
+            info!(
+                did = job.did,
+                url = job.url,
+                face_count = detection.faces.len(),
+                image_size = format!("{}x{}", detection.image_width, detection.image_height),
+                candidate_id = %id,
+                "face(s) detected"
+            );
+            for (i, face) in detection.faces.iter().enumerate() {
                 info!(
-                    did = did,
-                    url = url,
-                    face_count = detection.faces.len(),
-                    image_size = format!("{}x{}", detection.image_width, detection.image_height),
-                    "face(s) detected"
+                    face = i,
+                    confidence = format!("{:.2}", face.confidence),
+                    bbox = format!("[{:.0},{:.0},{:.0},{:.0}]", face.x1, face.y1, face.x2, face.y2),
+                    "  face details"
                 );
-                for (i, face) in detection.faces.iter().enumerate() {
+            }
+
+            match save_candidate(&job.image, &detection.faces, &id) {
+                Ok(saved) => {
                     info!(
-                        face = i,
-                        confidence = format!("{:.2}", face.confidence),
-                        bbox = format!("[{:.0},{:.0},{:.0},{:.0}]", face.x1, face.y1, face.x2, face.y2),
-                        "  face details"
+                        candidate_id = %saved.id,
+                        original = %saved.original_path.display(),
+                        annotated = %saved.annotated_path.display(),
+                        "saved candidate"
                     );
                 }
+                Err(e) => {
+                    warn!(error = %e, candidate_id = %id, "failed to save candidate");
+                }
             }
-            Ok(_) => {
-                debug!(did = did, url = url, "no faces detected");
-            }
-            Err(e) => {
-                warn!(error = %e, url = url, "face detection failed");
-            }
+        } else {
+            debug!(did = job.did, url = job.url, "no faces detected");
         }
     }
 }
@@ -93,17 +111,22 @@ fn face_detection_thread(rx: std::sync::mpsc::Receiver<(String, String, Vec<u8>)
 async fn face_detection_worker(mut rx: mpsc::Receiver<ImagePost>) {
     let client = reqwest::Client::new();
 
-    // Use a std channel to send work to the blocking detection thread.
-    let (detect_tx, detect_rx) = std::sync::mpsc::sync_channel::<(String, String, Vec<u8>)>(4);
+    let (detect_tx, detect_rx) = std::sync::mpsc::sync_channel::<DetectionJob>(4);
     std::thread::spawn(move || face_detection_thread(detect_rx));
 
     while let Some(post) = rx.recv().await {
+        let did = post.did.to_string();
+        let rkey = post.rkey.0.clone();
         let fetched = fetch_images_for_post(&client, &post).await;
-        for (url, bytes) in fetched {
-            if detect_tx
-                .try_send((post.did.to_string(), url.to_string(), bytes))
-                .is_err()
-            {
+        for (image_index, fetched_image) in fetched.into_iter().enumerate() {
+            let job = DetectionJob {
+                did: did.clone(),
+                rkey: rkey.clone(),
+                image_index,
+                url: fetched_image.url.to_string(),
+                image: fetched_image.image,
+            };
+            if detect_tx.try_send(job).is_err() {
                 debug!("detection thread busy, dropping image");
             }
         }

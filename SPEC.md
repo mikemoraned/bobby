@@ -29,9 +29,9 @@ We'll implement this in steps which we will tick-off as we go and/or change base
     * [x] it's enough to just be writing-out a log message of what is received
     * [x] apply an inline test that captures what we've done (also do this for subsequent steps)
 * [x] find any messages that contain images
-* [ ] find any images that contain faces
+* [x] find any images that contain faces
     * [x] first, just log out something if we find a face i.e. don't write anything out to disk
-    * [ ] then, write out the image file and annotated file to `candidates` dir as a png. So, for example, if image or message had `id`, then we'd create files:
+    * [x] then, write out the image file and annotated file to `candidates` dir as a jpeg. So, for example, if image or message had `id`, then we'd create files:
         * `candidates/id.png`
         * `candidates/id_annotated.png`
 * [ ] ... more todo's added here as we need them
@@ -64,6 +64,8 @@ We'll implement this in steps which we will tick-off as we go and/or change base
     * always apply `cargo clippy` after completion of each todo we complete
     * where possible we should:
         * follow the [NewType](https://doc.rust-lang.org/rust-by-example/generics/new_types.html) idiom e.g. we should avoid having any bare Strings.
+        * use types rather than untyped arrays. 
+            * For example, when passing images, use things like `DynamicImage` or similar, instead of using an array of byes.
         * where there is a possibility of something being missing, we should capture that as an Option::None, or a Result::Err
             * use Option::None when the item missing leaves the overall sub-system valid i.e. if it is expected or allowed for this to happen
             * use Result::Err when it represents an invalid state. In this situation the caller should call the method with `?` and consider if the error is significant enough that the program should stop.
