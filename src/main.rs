@@ -72,28 +72,42 @@ async fn fetch_images_for_post(
     results
 }
 
-fn face_detection_thread(rx: std::sync::mpsc::Receiver<DetectionJob>) {
-    info!("loading face detection model");
-    let face_detector = FaceDetector::new();
-    info!("face detection model loaded");
+fn detection_thread_count() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+}
 
-    info!("loading landmark classification model");
+fn face_detection_thread(
+    thread_id: usize,
+    rx: std::sync::Arc<std::sync::Mutex<std::sync::mpsc::Receiver<DetectionJob>>>,
+) {
+    info!(thread_id, "loading face detection model");
+    let face_detector = FaceDetector::new();
+    info!(thread_id, "face detection model loaded");
+
+    info!(thread_id, "loading landmark classification model");
     let landmark_detector = LandmarkDetector::new();
-    info!("landmark classification model loaded");
+    info!(thread_id, "landmark classification model loaded");
 
     let db_path = std::path::Path::new(CANDIDATES_DIR).join("candidates.db");
     let db = match CandidateDb::new(&db_path) {
         Ok(db) => {
-            info!(path = %db_path.display(), "opened candidates database");
+            info!(thread_id, path = %db_path.display(), "opened candidates database");
             db
         }
         Err(e) => {
-            error!(error = %e, "failed to open candidates database");
+            error!(thread_id, error = %e, "failed to open candidates database");
             return;
         }
     };
 
-    while let Ok(job) = rx.recv() {
+    loop {
+        let job = {
+            let rx = rx.lock().expect("detection channel mutex poisoned");
+            rx.recv()
+        };
+        let Ok(job) = job else { break };
         let detection = face_detector.detect(&job.image);
         if detection.faces.is_empty() {
             debug!(did = job.did, url = job.url, "no faces detected");
@@ -189,8 +203,15 @@ fn now_iso8601() -> String {
 async fn face_detection_worker(mut rx: mpsc::Receiver<ImagePost>) {
     let client = reqwest::Client::new();
 
-    let (detect_tx, detect_rx) = std::sync::mpsc::sync_channel::<DetectionJob>(4);
-    std::thread::spawn(move || face_detection_thread(detect_rx));
+    let num_threads = detection_thread_count();
+    let (detect_tx, detect_rx) = std::sync::mpsc::sync_channel::<DetectionJob>(num_threads * 2);
+    let detect_rx = std::sync::Arc::new(std::sync::Mutex::new(detect_rx));
+
+    for i in 0..num_threads {
+        let rx = detect_rx.clone();
+        std::thread::spawn(move || face_detection_thread(i, rx));
+    }
+    info!(num_threads, "spawned detection threads");
 
     while let Some(post) = rx.recv().await {
         let did = post.did.to_string();
