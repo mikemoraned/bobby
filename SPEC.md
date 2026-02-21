@@ -25,9 +25,9 @@ The process should be similar to the original i.e.
     * we should write out the scores and the identifiers as a table to a directory in parquet format. This table should contain an identifier that allows us to get back to the original bluesky message.
 
 We'll implement this in steps which we will tick-off as we go and/or change based on what we discover:
-* [ ] listen to the bluesky firehose
+* [x] listen to the bluesky firehose
     * [x] it's enough to just be writing-out a log message of what is received
-    * [ ] apply an inline test that captures what we've done (also do this for subsequent steps)
+    * [x] apply an inline test that captures what we've done (also do this for subsequent steps)
 * [ ] find any messages that contain images
 * [ ] find any images that contain faces
     * [ ] first, just log out something i.e. don't write anything out
@@ -51,6 +51,13 @@ We'll implement this in steps which we will tick-off as we go and/or change base
 
 * rust-specifics:
     * always apply `cargo clippy` after completion of each todo we complete
+    * where possible we should:
+        * follow the [NewType](https://doc.rust-lang.org/rust-by-example/generics/new_types.html) idiom e.g. we should avoid having any bare Strings.
+        * where there is a possibility of something being missing, we should capture that as an Option::None, or a Result::Err
+            * use Option::None when the item missing leaves the overall sub-system valid i.e. if it is expected or allowed for this to happen
+            * use Result::Err when it represents an invalid state. In this situation the caller should call the method with `?` and consider if the error is significant enough that the program should stop.
+    * error representations:
+        * errors should use structured Enums to represent the different causes of the error. Use [thiserror](https://docs.rs/thiserror/latest/thiserror/) for this.
     * testing:
         * for each core piece of functionality, it should have an associated inline unit test
         * for anything that requires multiple parts to prove it works, we should have an integ test
