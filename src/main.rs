@@ -1,16 +1,22 @@
+mod faces;
+mod fetch;
 mod images;
 mod jetstream;
 
 use futures_util::StreamExt;
+use tokio::sync::mpsc;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{debug, error, info, warn};
 use url::Url;
 
-use crate::images::{has_images, image_count};
+use crate::faces::FaceDetector;
+use crate::fetch::fetch_image;
+use crate::images::{extract_image_refs, ImagePost};
 use crate::jetstream::JetstreamEvent;
 
 const JETSTREAM_URL: &str = "wss://jetstream2.us-east.bsky.network/subscribe";
 const WANTED_COLLECTION: &str = "app.bsky.feed.post";
+const IMAGE_CHANNEL_CAPACITY: usize = 8;
 
 #[derive(Debug, thiserror::Error)]
 enum BobbyError {
@@ -29,6 +35,79 @@ fn jetstream_url(base: &str, collection: &str) -> Result<Url, BobbyError> {
     url.query_pairs_mut()
         .append_pair("wantedCollections", collection);
     Ok(url)
+}
+
+// Fetches images for a post, returning (blob_index, url, bytes) for each successful fetch.
+async fn fetch_images_for_post(
+    client: &reqwest::Client,
+    post: &ImagePost,
+) -> Vec<(fetch::ImageUrl, Vec<u8>)> {
+    let mut results = Vec::new();
+    for blob_ref in &post.images {
+        match fetch_image(client, &post.did, &blob_ref.cid).await {
+            Ok(f) => results.push((f.url, f.bytes)),
+            Err(e) => {
+                warn!(error = %e, did = %post.did, cid = %blob_ref.cid, "failed to fetch image");
+            }
+        }
+    }
+    results
+}
+
+// Runs face detection on a dedicated thread that owns the detector.
+// Receives (did, url, image_bytes) over a channel and logs results.
+fn face_detection_thread(rx: std::sync::mpsc::Receiver<(String, String, Vec<u8>)>) {
+    info!("loading face detection model");
+    let detector = FaceDetector::new();
+    info!("face detection model loaded");
+
+    while let Ok((did, url, image_bytes)) = rx.recv() {
+        match detector.detect(&image_bytes) {
+            Ok(detection) if !detection.faces.is_empty() => {
+                info!(
+                    did = did,
+                    url = url,
+                    face_count = detection.faces.len(),
+                    image_size = format!("{}x{}", detection.image_width, detection.image_height),
+                    "face(s) detected"
+                );
+                for (i, face) in detection.faces.iter().enumerate() {
+                    info!(
+                        face = i,
+                        confidence = format!("{:.2}", face.confidence),
+                        bbox = format!("[{:.0},{:.0},{:.0},{:.0}]", face.x1, face.y1, face.x2, face.y2),
+                        "  face details"
+                    );
+                }
+            }
+            Ok(_) => {
+                debug!(did = did, url = url, "no faces detected");
+            }
+            Err(e) => {
+                warn!(error = %e, url = url, "face detection failed");
+            }
+        }
+    }
+}
+
+async fn face_detection_worker(mut rx: mpsc::Receiver<ImagePost>) {
+    let client = reqwest::Client::new();
+
+    // Use a std channel to send work to the blocking detection thread.
+    let (detect_tx, detect_rx) = std::sync::mpsc::sync_channel::<(String, String, Vec<u8>)>(4);
+    std::thread::spawn(move || face_detection_thread(detect_rx));
+
+    while let Some(post) = rx.recv().await {
+        let fetched = fetch_images_for_post(&client, &post).await;
+        for (url, bytes) in fetched {
+            if detect_tx
+                .try_send((post.did.to_string(), url.to_string(), bytes))
+                .is_err()
+            {
+                debug!("detection thread busy, dropping image");
+            }
+        }
+    }
 }
 
 #[tokio::main]
@@ -52,6 +131,9 @@ async fn main() -> Result<(), BobbyError> {
 
     let (_write, mut read) = ws_stream.split();
 
+    let (tx, rx) = mpsc::channel::<ImagePost>(IMAGE_CHANNEL_CAPACITY);
+    tokio::spawn(face_detection_worker(rx));
+
     loop {
         tokio::select! {
             msg = read.next() => {
@@ -59,14 +141,17 @@ async fn main() -> Result<(), BobbyError> {
                     Some(Ok(Message::Text(text))) => {
                         match serde_json::from_str::<JetstreamEvent>(&text) {
                             Ok(event) => {
-                                if has_images(&event) {
-                                    let count = image_count(&event);
+                                if let Some(image_post) = extract_image_refs(&event) {
+                                    let count = image_post.images.len();
                                     info!(
                                         kind = %event.kind,
                                         did = %event.did,
                                         images = count,
-                                        "image post"
+                                        "image post → sending for face detection"
                                     );
+                                    if tx.try_send(image_post).is_err() {
+                                        debug!("face detection channel full, dropping image post");
+                                    }
                                 } else {
                                     debug!(
                                         kind = %event.kind,

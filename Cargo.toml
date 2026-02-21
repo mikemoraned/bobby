@@ -13,3 +13,10 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "2"
 url = "2"
+reqwest = { version = "0.12", features = ["rustls-tls"], default-features = false }
+burn = { version = "~0.20", features = ["ndarray"] }
+burn-store = { version = "~0.20", features = ["burnpack"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+
+[build-dependencies]
+burn-import = "~0.20"

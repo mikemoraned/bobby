@@ -1,6 +1,32 @@
+use std::fmt;
+
 use serde::Deserialize;
 
-use crate::jetstream::{EventKind, JetstreamEvent, Operation};
+use crate::jetstream::{Did, EventKind, JetstreamEvent, Operation, Rkey};
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Cid(pub String);
+
+impl fmt::Display for Cid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct BlobRef {
+    pub cid: Cid,
+    #[allow(dead_code)]
+    pub mime_type: String,
+}
+
+#[derive(Debug)]
+pub struct ImagePost {
+    pub did: Did,
+    #[allow(dead_code)]
+    pub rkey: Rkey,
+    pub images: Vec<BlobRef>,
+}
 
 #[derive(Debug, Deserialize)]
 struct FeedPost {
@@ -29,64 +55,71 @@ struct RecordWithMediaEmbed {
 }
 
 #[derive(Debug, Deserialize)]
+struct BlobObject {
+    #[serde(rename = "ref")]
+    ref_link: LinkRef,
+    #[serde(rename = "mimeType")]
+    mime_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinkRef {
+    #[serde(rename = "$link")]
+    link: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct ImageRef {
     #[allow(dead_code)]
     alt: Option<String>,
+    image: Option<BlobObject>,
 }
 
-pub fn has_images(event: &JetstreamEvent) -> bool {
-    if event.kind != EventKind::Commit {
-        return false;
+fn extract_blob_refs(embed: &Embed) -> Vec<BlobRef> {
+    match embed {
+        Embed::Images(img) => img
+            .images
+            .iter()
+            .filter_map(|r| {
+                r.image.as_ref().map(|blob| BlobRef {
+                    cid: Cid(blob.ref_link.link.clone()),
+                    mime_type: blob.mime_type.clone(),
+                })
+            })
+            .collect(),
+        Embed::RecordWithMedia(rwm) => match &rwm.media {
+            Some(m) => extract_blob_refs(m),
+            None => vec![],
+        },
+        Embed::Other => vec![],
     }
-    let commit = match &event.commit {
-        Some(c) => c,
-        None => return false,
-    };
+}
+
+pub fn extract_image_refs(event: &JetstreamEvent) -> Option<ImagePost> {
+    if event.kind != EventKind::Commit {
+        return None;
+    }
+    let commit = event.commit.as_ref()?;
     if commit.operation != Operation::Create {
-        return false;
+        return None;
     }
     if commit.collection.0 != "app.bsky.feed.post" {
-        return false;
+        return None;
     }
-    let record = match &commit.record {
-        Some(r) => r,
-        None => return false,
-    };
-    let post: FeedPost = match serde_json::from_value(record.clone()) {
-        Ok(p) => p,
-        Err(_) => return false,
-    };
-    match &post.embed {
-        Some(Embed::Images(_)) => true,
-        Some(Embed::RecordWithMedia(rwm)) => {
-            matches!(&rwm.media, Some(m) if matches!(**m, Embed::Images(_)))
-        }
-        _ => false,
+    let record = commit.record.as_ref()?;
+    let post: FeedPost = serde_json::from_value(record.clone()).ok()?;
+    let embed = post.embed.as_ref()?;
+    let images = extract_blob_refs(embed);
+    if images.is_empty() {
+        return None;
     }
+    Some(ImagePost {
+        did: event.did.clone(),
+        rkey: commit.rkey.clone(),
+        images,
+    })
 }
 
-pub fn image_count(event: &JetstreamEvent) -> usize {
-    let record = event.commit.as_ref().and_then(|c| c.record.as_ref());
-    let record = match record {
-        Some(r) => r,
-        None => return 0,
-    };
-    let post: FeedPost = match serde_json::from_value(record.clone()) {
-        Ok(p) => p,
-        Err(_) => return 0,
-    };
-    match &post.embed {
-        Some(Embed::Images(img)) => img.images.len(),
-        Some(Embed::RecordWithMedia(rwm)) => match &rwm.media {
-            Some(m) => match m.as_ref() {
-                Embed::Images(img) => img.images.len(),
-                _ => 0,
-            },
-            None => 0,
-        },
-        _ => 0,
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -117,7 +150,7 @@ mod tests {
     }
 
     #[test]
-    fn has_images_true_for_image_embed() {
+    fn extract_image_refs_returns_cids_for_image_embed() {
         let record = serde_json::json!({
             "$type": "app.bsky.feed.post",
             "text": "check out this photo",
@@ -137,12 +170,25 @@ mod tests {
             }
         });
         let event = make_event("create", "app.bsky.feed.post", Some(record));
-        assert!(has_images(&event));
-        assert_eq!(image_count(&event), 1);
+        let post = extract_image_refs(&event).unwrap();
+        assert_eq!(post.images.len(), 1);
+        assert_eq!(post.images[0].cid, Cid("bafkrei1234".to_string()));
+        assert_eq!(post.images[0].mime_type, "image/jpeg");
+        assert_eq!(post.did, Did("did:plc:test123".to_string()));
     }
 
     #[test]
-    fn has_images_true_for_record_with_media() {
+    fn extract_image_refs_returns_none_for_text_only() {
+        let record = serde_json::json!({
+            "$type": "app.bsky.feed.post",
+            "text": "just text"
+        });
+        let event = make_event("create", "app.bsky.feed.post", Some(record));
+        assert!(extract_image_refs(&event).is_none());
+    }
+
+    #[test]
+    fn extract_image_refs_returns_cids_for_record_with_media() {
         let record = serde_json::json!({
             "$type": "app.bsky.feed.post",
             "text": "quote post with image",
@@ -151,8 +197,24 @@ mod tests {
                 "media": {
                     "$type": "app.bsky.embed.images",
                     "images": [
-                        {"alt": "pic1"},
-                        {"alt": "pic2"}
+                        {
+                            "alt": "pic1",
+                            "image": {
+                                "$type": "blob",
+                                "ref": {"$link": "bafkrei_a"},
+                                "mimeType": "image/png",
+                                "size": 1000
+                            }
+                        },
+                        {
+                            "alt": "pic2",
+                            "image": {
+                                "$type": "blob",
+                                "ref": {"$link": "bafkrei_b"},
+                                "mimeType": "image/jpeg",
+                                "size": 2000
+                            }
+                        }
                     ]
                 },
                 "record": {
@@ -164,22 +226,14 @@ mod tests {
             }
         });
         let event = make_event("create", "app.bsky.feed.post", Some(record));
-        assert!(has_images(&event));
-        assert_eq!(image_count(&event), 2);
+        let post = extract_image_refs(&event).unwrap();
+        assert_eq!(post.images.len(), 2);
+        assert_eq!(post.images[0].cid, Cid("bafkrei_a".to_string()));
+        assert_eq!(post.images[1].cid, Cid("bafkrei_b".to_string()));
     }
 
     #[test]
-    fn has_images_false_for_text_only_post() {
-        let record = serde_json::json!({
-            "$type": "app.bsky.feed.post",
-            "text": "just a text post"
-        });
-        let event = make_event("create", "app.bsky.feed.post", Some(record));
-        assert!(!has_images(&event));
-    }
-
-    #[test]
-    fn has_images_false_for_external_embed() {
+    fn extract_image_refs_returns_none_for_external_embed() {
         let record = serde_json::json!({
             "$type": "app.bsky.feed.post",
             "text": "check this link",
@@ -193,28 +247,28 @@ mod tests {
             }
         });
         let event = make_event("create", "app.bsky.feed.post", Some(record));
-        assert!(!has_images(&event));
+        assert!(extract_image_refs(&event).is_none());
     }
 
     #[test]
-    fn has_images_false_for_delete_operation() {
+    fn extract_image_refs_returns_none_for_delete_operation() {
         let event = make_event("delete", "app.bsky.feed.post", None);
-        assert!(!has_images(&event));
+        assert!(extract_image_refs(&event).is_none());
     }
 
     #[test]
-    fn has_images_false_for_non_commit_event() {
+    fn extract_image_refs_returns_none_for_non_commit_event() {
         let event = JetstreamEvent {
             did: Did("did:plc:test123".to_string()),
             time_us: 1700000000000000,
             kind: EventKind::Identity,
             commit: None,
         };
-        assert!(!has_images(&event));
+        assert!(extract_image_refs(&event).is_none());
     }
 
     #[test]
-    fn deserializes_commit_with_image_embed() {
+    fn extract_image_refs_from_full_json() {
         let json = r#"{
             "did": "did:plc:abc123",
             "time_us": 1700000000000000,
@@ -248,7 +302,8 @@ mod tests {
         }"#;
 
         let event: JetstreamEvent = serde_json::from_str(json).unwrap();
-        assert!(has_images(&event));
-        assert_eq!(image_count(&event), 1);
+        let post = extract_image_refs(&event).unwrap();
+        assert_eq!(post.images.len(), 1);
+        assert_eq!(post.images[0].cid, Cid("bafkrei1234".to_string()));
     }
 }

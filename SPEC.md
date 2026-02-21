@@ -30,7 +30,7 @@ We'll implement this in steps which we will tick-off as we go and/or change base
     * [x] apply an inline test that captures what we've done (also do this for subsequent steps)
 * [x] find any messages that contain images
 * [ ] find any images that contain faces
-    * [ ] first, just log out something i.e. don't write anything out
+    * [x] first, just log out something if we find a face i.e. don't write anything out to disk
     * [ ] then, write out the image file and annotated file to `candidates` dir as a png. So, for example, if image or message had `id`, then we'd create files:
         * `candidates/id.png`
         * `candidates/id_annotated.png`
@@ -49,11 +49,18 @@ We'll implement this in steps which we will tick-off as we go and/or change base
 
 ## Invariants / Style
 
+* models:
+    * any models should be downloaded to `models` dir
 * commenting / docs:
     * focus should be on making the code itself self-documenting as opposed to requiring extra commenting
     * comments can still be added, but should be focussed on not something covered by the code. However, even then, it's probably better to create a new section in SPEC.md or create a separate markdown doc if needed.
+* stability / quality. Where possible we should follows these protections:
+    * don't use `-pre` versions of dependencies
+    * don't use direct git versions of dependencies
 * rust-specifics:
     * see above general guidance about comments. However, if comments are needed, please use inline Rust conventions for function comments.
+    * always use latest rust version and edition where possible, but do not use rust nightly
+        * specify the rust version in `rust-toolchain.toml` and the edition in `edition` in `Cargo.toml`
     * always apply `cargo clippy` after completion of each todo we complete
     * where possible we should:
         * follow the [NewType](https://doc.rust-lang.org/rust-by-example/generics/new_types.html) idiom e.g. we should avoid having any bare Strings.
