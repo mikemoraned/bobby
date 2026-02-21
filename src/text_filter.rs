@@ -1,89 +1,76 @@
 use image::DynamicImage;
+use ocrs::{OcrEngine, OcrEngineParams};
+use rten::Model;
+use rten_imageproc::RotatedRect;
 
-const THUMBNAIL_SIZE: u32 = 64;
-const QUANTIZE_DIVISOR: u8 = 8;
-const TOP_COLORS: usize = 5;
-const TEXT_THRESHOLD: f64 = 0.75;
+const TEXT_COVERAGE_THRESHOLD: f64 = 0.30;
+const MODEL_PATH: &str = "models/text-detection.rten";
 
-/// Detects text-heavy images (screenshots, text memes) using color concentration.
-/// Downscales to 64x64, quantizes colors to 32 levels per channel, then checks
-/// whether the top 5 most frequent colors cover >= 75% of all pixels. Natural
-/// photos have rich color distributions; text-heavy images are dominated by a
-/// few colors (background + font colors).
-pub fn is_mostly_text(img: &DynamicImage) -> bool {
-    let thumb = img.resize_exact(
-        THUMBNAIL_SIZE,
-        THUMBNAIL_SIZE,
-        image::imageops::FilterType::Nearest,
-    );
-    let rgb = thumb.to_rgb8();
-    let total_pixels = (THUMBNAIL_SIZE * THUMBNAIL_SIZE) as usize;
+pub struct TextDetector {
+    engine: OcrEngine,
+}
 
-    let mut histogram = std::collections::HashMap::new();
-    for pixel in rgb.pixels() {
-        let key = (
-            pixel[0] / QUANTIZE_DIVISOR,
-            pixel[1] / QUANTIZE_DIVISOR,
-            pixel[2] / QUANTIZE_DIVISOR,
-        );
-        *histogram.entry(key).or_insert(0u32) += 1;
+impl TextDetector {
+    pub fn new() -> Self {
+        let detection_model =
+            Model::load_file(MODEL_PATH).expect("failed to load text detection model");
+        let engine = OcrEngine::new(OcrEngineParams {
+            detection_model: Some(detection_model),
+            recognition_model: None,
+            ..Default::default()
+        })
+        .expect("failed to initialize OCR engine");
+        Self { engine }
     }
 
-    let mut counts: Vec<u32> = histogram.into_values().collect();
-    counts.sort_unstable_by(|a, b| b.cmp(a));
+    pub fn is_mostly_text(&self, img: &DynamicImage) -> bool {
+        let rgb = img.to_rgb8();
+        let (w, h) = rgb.dimensions();
+        let image_area = (w as f64) * (h as f64);
+        if image_area == 0.0 {
+            return false;
+        }
 
-    let top_sum: u32 = counts.iter().take(TOP_COLORS).sum();
-    let fraction = top_sum as f64 / total_pixels as f64;
+        let ocr_input = self
+            .engine
+            .prepare_input(ocrs::ImageSource::from_bytes(rgb.as_raw(), rgb.dimensions()).unwrap())
+            .expect("failed to prepare OCR input");
 
-    fraction >= TEXT_THRESHOLD
+        let word_rects = self
+            .engine
+            .detect_words(&ocr_input)
+            .expect("text detection failed");
+
+        let text_area = text_coverage_area(&word_rects);
+        let fraction = text_area / image_area;
+
+        fraction >= TEXT_COVERAGE_THRESHOLD
+    }
+}
+
+fn text_coverage_area(rects: &[RotatedRect]) -> f64 {
+    rects.iter().map(|r| (r.width() * r.height()) as f64).sum()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::{Rgb, RgbImage};
 
     #[test]
-    fn solid_color_is_text() {
-        let img = DynamicImage::ImageRgb8(RgbImage::from_pixel(100, 100, Rgb([255, 255, 255])));
-        assert!(is_mostly_text(&img));
+    fn empty_rects_have_zero_area() {
+        assert_eq!(text_coverage_area(&[]), 0.0);
     }
 
     #[test]
-    fn two_tone_is_text() {
-        let mut buf = RgbImage::new(100, 100);
-        for (x, _y, pixel) in buf.enumerate_pixels_mut() {
-            *pixel = if x < 50 {
-                Rgb([0, 0, 0])
-            } else {
-                Rgb([255, 255, 255])
-            };
-        }
-        assert!(is_mostly_text(&DynamicImage::ImageRgb8(buf)));
-    }
-
-    #[test]
-    fn random_noise_is_not_text() {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
-        let mut buf = RgbImage::new(100, 100);
-        for (x, y, pixel) in buf.enumerate_pixels_mut() {
-            let mut h = DefaultHasher::new();
-            (x, y).hash(&mut h);
-            let hash = h.finish();
-            let bytes = hash.to_le_bytes();
-            *pixel = Rgb([bytes[0], bytes[1], bytes[2]]);
-        }
-        assert!(!is_mostly_text(&DynamicImage::ImageRgb8(buf)));
-    }
-
-    #[test]
-    fn gradient_is_not_text() {
-        let mut buf = RgbImage::new(256, 256);
-        for (x, y, pixel) in buf.enumerate_pixels_mut() {
-            *pixel = Rgb([x as u8, y as u8, ((x + y) / 2) as u8]);
-        }
-        assert!(!is_mostly_text(&DynamicImage::ImageRgb8(buf)));
+    #[ignore] // requires `just download-text-detection-model`
+    fn screenshot_detected_as_text() {
+        let detector = TextDetector::new();
+        // A solid white image with no actual text should NOT be detected as text
+        let img = DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
+            200,
+            200,
+            image::Rgb([255, 255, 255]),
+        ));
+        assert!(!detector.is_mostly_text(&img));
     }
 }

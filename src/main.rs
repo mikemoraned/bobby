@@ -23,6 +23,7 @@ use crate::images::{extract_image_refs, ImagePost};
 use crate::jetstream::JetstreamEvent;
 use crate::landmarks::LandmarkDetector;
 use crate::scoring::score_candidate;
+use crate::text_filter::TextDetector;
 
 const JETSTREAM_URL: &str = "wss://jetstream2.us-east.bsky.network/subscribe";
 const WANTED_COLLECTION: &str = "app.bsky.feed.post";
@@ -91,6 +92,10 @@ fn face_detection_thread(
     let landmark_detector = LandmarkDetector::new();
     info!(thread_id, "landmark classification model loaded");
 
+    info!(thread_id, "loading text detection model");
+    let text_detector = TextDetector::new();
+    info!(thread_id, "text detection model loaded");
+
     let db_path = std::path::Path::new(CANDIDATES_DIR).join("candidates.db");
     let db = match CandidateDb::new(&db_path) {
         Ok(db) => {
@@ -148,7 +153,7 @@ fn face_detection_thread(
             continue;
         }
 
-        if text_filter::is_mostly_text(&job.image) {
+        if text_detector.is_mostly_text(&job.image) {
             debug!(candidate_id = %id, "image is mostly text, skipping");
             continue;
         }

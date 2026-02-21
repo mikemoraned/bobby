@@ -19,6 +19,10 @@ burn-store = { version = "~0.20", features = ["burnpack"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 chrono = "0.4"
 rusqlite = { version = "0.37", features = ["bundled"] }
+ocrs = "0.12"
+rten = { version = "0.24", features = ["rten_format"] }
+rten-imageproc = "0.24"
+rten-tensor = "0.24"
 
 [build-dependencies]
 burn-import = "~0.20"

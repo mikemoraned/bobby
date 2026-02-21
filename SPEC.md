@@ -52,7 +52,7 @@ We'll implement this in steps which we will tick-off as we go and/or change base
         * local paths of saved image and annotated image
         * overall score
         * score of components
-* [ ] add some filters for extreme content, or things where we know we definitely don't want it. These should not be saved.
+* [x] add some filters for extreme content, or things where we know we definitely don't want it. These should not be saved.
     * [x] add filter on images that contain only text, or have a large fraction of the image which is text (e.g. >= 50% text)
     * [x] add porn filter
         * there are a few obviously a few ways this could be done, but the simpler the better. for example, do flesh/skin detection and filter out any images that where a large proportion of the image is flesh/skin.
@@ -102,5 +102,5 @@ We'll implement this in steps which we will tick-off as we go and/or change base
             * for this, we likely want to capture a real (but small) dump of firehose data to use
         * if possible our tests should be high-level and assert invariants rather than bespoke individual examples. in other words, we should use tests that have a high leverage between number of lines of test and breadth of behaviour tested
             * something like https://docs.rs/quickcheck/latest/quickcheck/ may be useful here
-* python specifics (if has to be used):
+* python specifics (if it has to be used):
     * always manage dependencies and install packages using `uv`

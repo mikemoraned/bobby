@@ -32,6 +32,12 @@ download-places-model:
 convert-places-model:
     cd scripts && uv run python convert_places365.py
 
+# Download the ocrs text detection model
+download-text-detection-model:
+    mkdir -p models
+    curl -L -o models/text-detection.rten \
+      "https://ocrs-models.s3-accelerate.amazonaws.com/text-detection.rten"
+
 # Open the top 10 highest-scored annotated candidate images in Preview
 top:
     open $(sqlite3 candidates/candidates.db "SELECT annotated_path FROM candidates ORDER BY score_overall DESC LIMIT 10;")
