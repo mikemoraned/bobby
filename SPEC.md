@@ -49,7 +49,11 @@ We'll implement this in steps which we will tick-off as we go and/or change base
 
 ## Invariants / Style
 
+* commenting / docs:
+    * focus should be on making the code itself self-documenting as opposed to requiring extra commenting
+    * comments can still be added, but should be focussed on not something covered by the code. However, even then, it's probably better to create a new section in SPEC.md or create a separate markdown doc if needed.
 * rust-specifics:
+    * see above general guidance about comments. However, if comments are needed, please use inline Rust conventions for function comments.
     * always apply `cargo clippy` after completion of each todo we complete
     * where possible we should:
         * follow the [NewType](https://doc.rust-lang.org/rust-by-example/generics/new_types.html) idiom e.g. we should avoid having any bare Strings.
@@ -58,6 +62,8 @@ We'll implement this in steps which we will tick-off as we go and/or change base
             * use Result::Err when it represents an invalid state. In this situation the caller should call the method with `?` and consider if the error is significant enough that the program should stop.
     * error representations:
         * errors should use structured Enums to represent the different causes of the error. Use [thiserror](https://docs.rs/thiserror/latest/thiserror/) for this.
+    * logical structuring:
+        * roughly-speaking, anything that is a different kind of thing (e.g. a schema for a message) or a different layer (e.g. core message routing or image labelling) should live in it's own module, and have it's own tests.
     * testing:
         * for each core piece of functionality, it should have an associated inline unit test
         * for anything that requires multiple parts to prove it works, we should have an integ test
