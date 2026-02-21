@@ -26,8 +26,14 @@ The process should be similar to the original i.e.
 
 We'll implement this in steps which we will tick-off as we go and/or change based on what we discover:
 * [ ] listen to the bluesky firehose
-    * it's enough to just be writing-out a log message of what is received
+    * [x] it's enough to just be writing-out a log message of what is received
+    * [ ] apply an inline test that captures what we've done (also do this for subsequent steps)
 * [ ] find any messages that contain images
+* [ ] find any images that contain faces
+    * [ ] first, just log out something i.e. don't write anything out
+    * [ ] then, write out the image file and annotated file to `candidates` dir as a png. So, for example, if image or message had `id`, then we'd create files:
+        * `candidates/id.png`
+        * `candidates/id_annotated.png`
 * [ ] ... more todo's added here as we need them
 
 # Constraints, trade-offs and technology choices
@@ -39,3 +45,15 @@ We'll implement this in steps which we will tick-off as we go and/or change base
 * Please use Burn (https://burn.dev / https://github.com/tracel-ai/burn / https://burn.dev/get-started/) for running ML Models
 * It may not be possible to process images at the same rate as they are received (line-speed). This is totally fine. In this case we can adopt a sampling approach where we sample from the stream at the rate at which we can process images.
     * However, we should aim to do the really simple parts inline with receiving a message. For example, identifying if a message contains an image is likely something we can do at line-speed.
+* any command-line invocations should be captured in the Justfile
+
+## Invariants / Style
+
+* rust-specifics:
+    * always apply `cargo clippy` after completion of each todo we complete
+    * testing:
+        * for each core piece of functionality, it should have an associated inline unit test
+        * for anything that requires multiple parts to prove it works, we should have an integ test
+            * for this, we likely want to capture a real (but small) dump of firehose data to use
+        * if possible our tests should be high-level and assert invariants rather than bespoke individual examples. in other words, we should use tests that have a high leverage between number of lines of test and breadth of behaviour tested
+            * something like https://docs.rs/quickcheck/latest/quickcheck/ may be useful here
