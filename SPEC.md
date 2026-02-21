@@ -80,6 +80,7 @@ We'll implement this in steps which we will tick-off as we go and/or change base
     * don't use direct git versions of dependencies
 * rust-specifics:
     * see above general guidance about comments. However, if comments are needed, please use inline Rust conventions for function comments.
+    * use external crates for core things like datetimes etc
     * always use latest rust version and edition where possible, but do not use rust nightly
         * specify the rust version in `rust-toolchain.toml` and the edition in `edition` in `Cargo.toml`
     * always apply `cargo clippy` after completion of each todo we complete
