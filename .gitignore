@@ -22,3 +22,7 @@ target
 
 models/*
 candidates/
+candidates*/
+scripts/.venv/
+scripts/uv.lock
+.DS_Store

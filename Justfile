@@ -21,3 +21,13 @@ check: test clippy
 download-model:
     mkdir -p models
     curl -L -o models/yunet.onnx "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
+
+# Download Places365 ResNet18 PyTorch weights
+download-places-model:
+    mkdir -p models
+    curl -L -o models/resnet18_places365.pth.tar "http://places2.csail.mit.edu/models_places365/resnet18_places365.pth.tar"
+    curl -L -o models/categories_places365.txt "https://raw.githubusercontent.com/CSAILVision/places365/master/categories_places365.txt"
+
+# Convert Places365 model from PyTorch to ONNX (requires: uv add torch torchvision onnx)
+convert-places-model:
+    cd scripts && uv run python convert_places365.py

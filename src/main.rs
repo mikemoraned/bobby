@@ -3,6 +3,7 @@ mod faces;
 mod fetch;
 mod images;
 mod jetstream;
+mod landmarks;
 
 use futures_util::StreamExt;
 use tokio::sync::mpsc;
@@ -15,6 +16,7 @@ use crate::faces::FaceDetector;
 use crate::fetch::fetch_image;
 use crate::images::{extract_image_refs, ImagePost};
 use crate::jetstream::JetstreamEvent;
+use crate::landmarks::LandmarkDetector;
 
 const JETSTREAM_URL: &str = "wss://jetstream2.us-east.bsky.network/subscribe";
 const WANTED_COLLECTION: &str = "app.bsky.feed.post";
@@ -65,45 +67,65 @@ async fn fetch_images_for_post(
 
 fn face_detection_thread(rx: std::sync::mpsc::Receiver<DetectionJob>) {
     info!("loading face detection model");
-    let detector = FaceDetector::new();
+    let face_detector = FaceDetector::new();
     info!("face detection model loaded");
 
+    info!("loading landmark classification model");
+    let landmark_detector = LandmarkDetector::new();
+    info!("landmark classification model loaded");
+
     while let Ok(job) = rx.recv() {
-        let detection = detector.detect(&job.image);
-        if !detection.faces.is_empty() {
-            let id = CandidateId::new(&job.did, &job.rkey, job.image_index);
+        let detection = face_detector.detect(&job.image);
+        if detection.faces.is_empty() {
+            debug!(did = job.did, url = job.url, "no faces detected");
+            continue;
+        }
+
+        let id = CandidateId::new(&job.did, &job.rkey, job.image_index);
+        info!(
+            did = job.did,
+            url = job.url,
+            face_count = detection.faces.len(),
+            image_size = format!("{}x{}", detection.image_width, detection.image_height),
+            candidate_id = %id,
+            "face(s) detected"
+        );
+        for (i, face) in detection.faces.iter().enumerate() {
             info!(
-                did = job.did,
-                url = job.url,
-                face_count = detection.faces.len(),
-                image_size = format!("{}x{}", detection.image_width, detection.image_height),
-                candidate_id = %id,
-                "face(s) detected"
+                face = i,
+                confidence = format!("{:.2}", face.confidence),
+                bbox = format!("[{:.0},{:.0},{:.0},{:.0}]", face.x1, face.y1, face.x2, face.y2),
+                "  face details"
             );
-            for (i, face) in detection.faces.iter().enumerate() {
+        }
+
+        // Run landmark classification — only save if both face AND landmark detected
+        let scene = landmark_detector.classify(&job.image);
+        info!(
+            candidate_id = %id,
+            scene_category = scene.category,
+            scene_confidence = format!("{:.3}", scene.confidence),
+            is_landmark = scene.is_landmark,
+            "scene classification"
+        );
+
+        if !scene.is_landmark {
+            debug!(candidate_id = %id, "no landmark detected, skipping");
+            continue;
+        }
+
+        match save_candidate(&job.image, &detection.faces, scene.is_landmark, &id) {
+            Ok(saved) => {
                 info!(
-                    face = i,
-                    confidence = format!("{:.2}", face.confidence),
-                    bbox = format!("[{:.0},{:.0},{:.0},{:.0}]", face.x1, face.y1, face.x2, face.y2),
-                    "  face details"
+                    candidate_id = %saved.id,
+                    original = %saved.original_path.display(),
+                    annotated = %saved.annotated_path.display(),
+                    "saved candidate (face + landmark)"
                 );
             }
-
-            match save_candidate(&job.image, &detection.faces, &id) {
-                Ok(saved) => {
-                    info!(
-                        candidate_id = %saved.id,
-                        original = %saved.original_path.display(),
-                        annotated = %saved.annotated_path.display(),
-                        "saved candidate"
-                    );
-                }
-                Err(e) => {
-                    warn!(error = %e, candidate_id = %id, "failed to save candidate");
-                }
+            Err(e) => {
+                warn!(error = %e, candidate_id = %id, "failed to save candidate");
             }
-        } else {
-            debug!(did = job.did, url = job.url, "no faces detected");
         }
     }
 }

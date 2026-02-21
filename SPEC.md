@@ -34,10 +34,10 @@ We'll implement this in steps which we will tick-off as we go and/or change base
     * [x] then, write out the image file and annotated file to `candidates` dir as a jpeg. So, for example, if image or message had `id`, then we'd create files:
         * `candidates/id.png`
         * `candidates/id_annotated.png`
-* [ ] filter by landmark
-    * [ ] find any images that also contain a landmark
-    * [ ] filter to only save images that contain a landmark and a face
-    * [ ] add the landmark bounding box to annotated images, but in a different color to faces
+* [x] filter by landmark
+    * [x] find any images that also contain a landmark
+    * [x] filter to only save images that contain a landmark and a face
+    * [x] add the landmark bounding box to annotated images, but in a different color to faces
 * [ ] score based on structure of image
     * [ ] assign a score based on aspects of the detected bounding boxes (bb) positions, and certainty of match
         * an initial version of this can be scored based on different aspects of placement e.g.
@@ -97,3 +97,5 @@ We'll implement this in steps which we will tick-off as we go and/or change base
             * for this, we likely want to capture a real (but small) dump of firehose data to use
         * if possible our tests should be high-level and assert invariants rather than bespoke individual examples. in other words, we should use tests that have a high leverage between number of lines of test and breadth of behaviour tested
             * something like https://docs.rs/quickcheck/latest/quickcheck/ may be useful here
+* python specifics (if has to be used):
+    * always manage dependencies and install packages using `uv`
