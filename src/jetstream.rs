@@ -26,7 +26,6 @@ pub struct Rkey(pub String);
 #[derive(Debug, Deserialize)]
 pub struct JetstreamEvent {
     pub did: Did,
-    #[allow(dead_code)]
     pub time_us: u64,
     pub kind: EventKind,
     pub commit: Option<Commit>,

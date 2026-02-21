@@ -24,6 +24,7 @@ pub struct BlobRef {
 pub struct ImagePost {
     pub did: Did,
     pub rkey: Rkey,
+    pub time_us: u64,
     pub images: Vec<BlobRef>,
 }
 
@@ -115,6 +116,7 @@ pub fn extract_image_refs(event: &JetstreamEvent) -> Option<ImagePost> {
     Some(ImagePost {
         did: event.did.clone(),
         rkey: commit.rkey.clone(),
+        time_us: event.time_us,
         images,
     })
 }

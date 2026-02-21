@@ -1,9 +1,11 @@
 mod candidates;
+mod db;
 mod faces;
 mod fetch;
 mod images;
 mod jetstream;
 mod landmarks;
+mod scoring;
 
 use futures_util::StreamExt;
 use tokio::sync::mpsc;
@@ -12,14 +14,17 @@ use tracing::{debug, error, info, warn};
 use url::Url;
 
 use crate::candidates::{save_candidate, CandidateId};
+use crate::db::CandidateDb;
 use crate::faces::FaceDetector;
 use crate::fetch::fetch_image;
 use crate::images::{extract_image_refs, ImagePost};
 use crate::jetstream::JetstreamEvent;
 use crate::landmarks::LandmarkDetector;
+use crate::scoring::score_candidate;
 
 const JETSTREAM_URL: &str = "wss://jetstream2.us-east.bsky.network/subscribe";
 const WANTED_COLLECTION: &str = "app.bsky.feed.post";
+const CANDIDATES_DIR: &str = "candidates";
 const IMAGE_CHANNEL_CAPACITY: usize = 8;
 
 #[derive(Debug, thiserror::Error)]
@@ -44,6 +49,7 @@ fn jetstream_url(base: &str, collection: &str) -> Result<Url, BobbyError> {
 struct DetectionJob {
     did: String,
     rkey: String,
+    time_us: u64,
     image_index: usize,
     url: String,
     image: image::DynamicImage,
@@ -73,6 +79,18 @@ fn face_detection_thread(rx: std::sync::mpsc::Receiver<DetectionJob>) {
     info!("loading landmark classification model");
     let landmark_detector = LandmarkDetector::new();
     info!("landmark classification model loaded");
+
+    let db_path = std::path::Path::new(CANDIDATES_DIR).join("candidates.db");
+    let db = match CandidateDb::new(&db_path) {
+        Ok(db) => {
+            info!(path = %db_path.display(), "opened candidates database");
+            db
+        }
+        Err(e) => {
+            error!(error = %e, "failed to open candidates database");
+            return;
+        }
+    };
 
     while let Ok(job) = rx.recv() {
         let detection = face_detector.detect(&job.image);
@@ -114,6 +132,22 @@ fn face_detection_thread(rx: std::sync::mpsc::Receiver<DetectionJob>) {
             continue;
         }
 
+        let score = score_candidate(
+            &detection.faces,
+            detection.image_width,
+            detection.image_height,
+            scene.confidence,
+        );
+
+        info!(
+            candidate_id = %id,
+            score_overall = format!("{:.3}", score.overall),
+            score_face_position = score.face_position,
+            score_overlap = format!("{:.3}", score.overlap),
+            score_avg_certainty = format!("{:.3}", score.avg_certainty),
+            "scored candidate"
+        );
+
         match save_candidate(&job.image, &detection.faces, scene.is_landmark, &id) {
             Ok(saved) => {
                 info!(
@@ -122,12 +156,53 @@ fn face_detection_thread(rx: std::sync::mpsc::Receiver<DetectionJob>) {
                     annotated = %saved.annotated_path.display(),
                     "saved candidate (face + landmark)"
                 );
+
+                let discovered_at = now_iso8601();
+                if let Err(e) = db.insert(
+                    &saved.id.to_string(),
+                    &discovered_at,
+                    job.time_us,
+                    &saved.original_path.to_string_lossy(),
+                    &saved.annotated_path.to_string_lossy(),
+                    &score,
+                ) {
+                    warn!(error = %e, candidate_id = %id, "failed to insert into database");
+                }
             }
             Err(e) => {
                 warn!(error = %e, candidate_id = %id, "failed to save candidate");
             }
         }
     }
+}
+
+fn now_iso8601() -> String {
+    use std::time::SystemTime;
+    let secs = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    // Manual UTC breakdown — avoids pulling in a datetime crate.
+    let days = secs / 86400;
+    let time_of_day = secs % 86400;
+    let h = time_of_day / 3600;
+    let m = (time_of_day % 3600) / 60;
+    let s = time_of_day % 60;
+
+    // Days since 1970-01-01 → (year, month, day) using the civil-from-days algorithm.
+    let z = days as i64 + 719468;
+    let era = z / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let mo = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if mo <= 2 { y + 1 } else { y };
+
+    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}Z")
 }
 
 async fn face_detection_worker(mut rx: mpsc::Receiver<ImagePost>) {
@@ -139,11 +214,13 @@ async fn face_detection_worker(mut rx: mpsc::Receiver<ImagePost>) {
     while let Some(post) = rx.recv().await {
         let did = post.did.to_string();
         let rkey = post.rkey.0.clone();
+        let time_us = post.time_us;
         let fetched = fetch_images_for_post(&client, &post).await;
         for (image_index, fetched_image) in fetched.into_iter().enumerate() {
             let job = DetectionJob {
                 did: did.clone(),
                 rkey: rkey.clone(),
+                time_us,
                 image_index,
                 url: fetched_image.url.to_string(),
                 image: fetched_image.image,

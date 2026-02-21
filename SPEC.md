@@ -17,7 +17,7 @@ The process should be similar to the original i.e.
 2. Apply hard-constraint filtering steps i.e. every image should have this:
     * message should contain an attached image
 3. Apply scoring. These are all attributes that should increase the likelihood of being regarded as a selfie:
-    * the face should sit in the border of the image i.e. if you were to split an image into a 9x9 grid, the face should not be in the central grid entry.
+    * the face should sit in the border of the image i.e. if you were to split an image into a 3x3 grid, the face should not be in the central grid entry.
     * the image should contain a landmark of some kind
 4. Dump candidates into a folder:
     * each image candidate should be stored in a folder called "candidates" and have a unique id as part of the name
@@ -38,20 +38,23 @@ We'll implement this in steps which we will tick-off as we go and/or change base
     * [x] find any images that also contain a landmark
     * [x] filter to only save images that contain a landmark and a face
     * [x] add the landmark bounding box to annotated images, but in a different color to faces
-* [ ] score based on structure of image
-    * [ ] assign a score based on aspects of the detected bounding boxes (bb) positions, and certainty of match
+* [x] score based on structure of image
+    * [x] assign a score based on aspects of the detected bounding boxes (bb) positions, and certainty of match
         * an initial version of this can be scored based on different aspects of placement e.g.
-            * where is the face bb positioned? if in middle (center of 9x9 grid) then score is 0.0, but if outside that, then score is 1.0
+            * where is the face bb positioned? if in middle (center of 3x3 grid) then score is 0.0, but if outside that, then score is 1.0
             * what is extent of overlap between landmark bb and face bb? the score should be lower if overlap is higher i.e. we'd like to favour examples where the face and landmark don't overlap
             * multiply these through by certainty from each detector e.g. we end up a score with like:
                 * score(image) = avg(landmark_certainty, face_certainty) * face_position_score * overlap_score
-    * [ ] output the score into a table containing:
+    * [x] output the score into a table containing:
         * identifier of image
         * timestamp of when discovered (this is the local processing time when we first saw it)
         * timestamp of original (this is when the message was posted)
         * local paths of saved image and annotated image
         * overall score
         * score of components
+* [ ] add some filters for extreme content, or things where we know we definitely don't want it. These should not be saved.
+    * [ ] add porn filter
+    * [ ] add filter on images that contain only text, or have a large fraction of the image which is text (e.g. >- 50%)
 * [ ] ... more todo's added here as we need them
 
 # Constraints, trade-offs and technology choices
