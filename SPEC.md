@@ -22,7 +22,7 @@ The process should be similar to the original i.e.
 4. Dump candidates into a folder:
     * each image candidate should be stored in a folder called "candidates" and have a unique id as part of the name
         * each image should have a companion image which is the original but with bounding-boxes around the face and landmark (if present)
-    * we should write out the scores and the identifiers as a table to a directory in parquet format. This table should contain an identifier that allows us to get back to the original bluesky message.
+    * we should write out the scores and the identifiers as a table in a sqlite db. This table should contain an identifier that allows us to get back to the original bluesky message.
 
 We'll implement this in steps which we will tick-off as we go and/or change based on what we discover:
 * [x] listen to the bluesky firehose
@@ -34,6 +34,24 @@ We'll implement this in steps which we will tick-off as we go and/or change base
     * [x] then, write out the image file and annotated file to `candidates` dir as a jpeg. So, for example, if image or message had `id`, then we'd create files:
         * `candidates/id.png`
         * `candidates/id_annotated.png`
+* [ ] filter by landmark
+    * [ ] find any images that also contain a landmark
+    * [ ] filter to only save images that contain a landmark and a face
+    * [ ] add the landmark bounding box to annotated images, but in a different color to faces
+* [ ] score based on structure of image
+    * [ ] assign a score based on aspects of the detected bounding boxes (bb) positions, and certainty of match
+        * an initial version of this can be scored based on different aspects of placement e.g.
+            * where is the face bb positioned? if in middle (center of 9x9 grid) then score is 0.0, but if outside that, then score is 1.0
+            * what is extent of overlap between landmark bb and face bb? the score should be lower if overlap is higher i.e. we'd like to favour examples where the face and landmark don't overlap
+            * multiply these through by certainty from each detector e.g. we end up a score with like:
+                * score(image) = avg(landmark_certainty, face_certainty) * face_position_score * overlap_score
+    * [ ] output the score into a table containing:
+        * identifier of image
+        * timestamp of when discovered (this is the local processing time when we first saw it)
+        * timestamp of original (this is when the message was posted)
+        * local paths of saved image and annotated image
+        * overall score
+        * score of components
 * [ ] ... more todo's added here as we need them
 
 # Constraints, trade-offs and technology choices
