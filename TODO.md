@@ -48,7 +48,9 @@ We're going to follow a [Walking Skeleton](https://wiki.c2.com/?WalkingSkeleton)
 * use external crates for core things like datetimes etc
 * always use latest rust version and edition where possible, but do not use rust nightly
     * specify the rust version in `rust-toolchain.toml` and the edition in `edition` in `Cargo.toml`
-* always apply `cargo clippy` after completion of each todo we complete
+* usage of `unwrap`:
+    * this is denied by default. if absolutely needed, please annotate with `#[allow(clippy::unwrap_used)]` and give a justification
+* always apply `just clippy` after completion of each todo we complete
 * where possible we should:
     * follow the [NewType](https://doc.rust-lang.org/rust-by-example/generics/new_types.html) idiom e.g. we should avoid having any bare Strings.
     * use types rather than untyped arrays. 
