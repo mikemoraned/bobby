@@ -88,11 +88,12 @@ We're going to follow a [Walking Skeleton](https://wiki.c2.com/?WalkingSkeleton)
         * `discovered_at` — UTC timestamp (microsecond precision) of when we first saw it
         * `original_at` — UTC timestamp (microsecond precision) of when the skeet was posted
 
-* [ ] create a skeet-finder which:
+* [x] create a skeet-finder which:
     * [x] listens to the live bluesky feed (via `jetstream-oxide`, filtered to `app.bsky.feed.post`)
     * [x] finds any which have images (checks `app.bsky.embed.images` and `recordWithMedia` embeds)
-    * [ ] randomly selects one image with 1% probability
-    * [ ] saves to the `images_v1` table
+    * [x] randomly selects one image with 1% probability
+    * [x] downloads images from Bluesky CDN and saves to the `images_v1` table
+    * run via `just find` (store path defaults to `store`)
 
 * [ ] create a skeet-feed which:
     * [ ] find all unique skeets from the `images_v1` table
@@ -104,6 +105,8 @@ We're now going to start using some real models to find and detect faces.
 
 * [ ] update skeet-finder so that, instead of randomly selecting one image, it:
     * [ ] only allows through images which contain at least one face. This face must be detected as being face-on i.e. side-profile faces are not allowed.
+        * the "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx" ONNX model is one we've previously used which may be suitable here
+        * document any model choices in `doc` dir
     * [ ] matches to an archetype where the face is of a single person, and that persons face sits in one quadrant of the image.
         * this matching should be captured in a Archetype enum, which should be saved as an extra column of the images table
             * this is a backwards incompatible change, so table should now be name `images_v2`

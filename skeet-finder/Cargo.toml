@@ -8,7 +8,12 @@ workspace = true
 
 [dependencies]
 atrium-api = { version = "0.25", default-features = false, features = ["namespace-appbsky"] }
+chrono = "0.4"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 jetstream-oxide = "0.1"
+rand = "0.9"
+reqwest = { version = "0.12", features = ["rustls-tls"], default-features = false }
+skeet-store = { path = "../skeet-store" }
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
