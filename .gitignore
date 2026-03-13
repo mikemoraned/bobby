@@ -22,3 +22,6 @@ target
 
 # LanceDB store (runtime data)
 store/
+
+# ONNX and other models that we convert into burn models
+models/

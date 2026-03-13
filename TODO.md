@@ -109,11 +109,11 @@ We're going to follow a [Walking Skeleton](https://wiki.c2.com/?WalkingSkeleton)
 
 We're now going to start using some real models to find and detect faces.
 
-* [ ] update skeet-finder so that, instead of randomly selecting one image, it:
-    * [ ] only allows through images which contain at least one face. This face must be detected as being face-on i.e. side-profile faces are not allowed.
+* [x] update skeet-finder so that, instead of randomly selecting one image, it:
+    * [x] only allows through images which contain at least one face. This face must be detected as being face-on i.e. side-profile faces are not allowed.
         * the "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx" ONNX model is one we've previously used which may be suitable here
         * document any model choices in `doc` dir
-    * [ ] matches to an archetype where the face is of a single person, and that persons face sits in one quadrant of the image.
+    * [x] matches to an archetype where the face is of a single person, and that persons face sits in one quadrant of the image.
         * this matching should be captured in a Archetype enum, which should be saved as an extra column of the images table
             * this is a backwards incompatible change, so table should now be name `images_v2`
         * see examples dir for example images which you should capture in a test:
@@ -126,7 +126,7 @@ We're now going to start using some real models to find and detect faces.
 
 Overall we want to get to a:
 * skeet-finder
-    * this continuously listens to the Bluesky firehose and detects skeets which contain skeets with images showing the content we want, then stores them in the skeet-store
+    * this continuously listens to the Bluesky firehose and detects skeets which contain images showing the content we want, then stores them in the skeet-store
 * skeet-store
     * this stores the found skeets in an S3-compatible store, in tables, managed as [Lancedb](https://lancedb.com) tables
 * skeet-feed

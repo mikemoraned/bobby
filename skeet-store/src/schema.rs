@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
 
-pub const TABLE_NAME: &str = "images_v1";
+pub const TABLE_NAME: &str = "images_v2";
 
-pub fn images_v1_schema() -> Arc<Schema> {
+pub fn images_v2_schema() -> Arc<Schema> {
     Arc::new(Schema::new(vec![
         Field::new("image_id", DataType::Utf8, false),
         Field::new("skeet_id", DataType::Utf8, false),
@@ -19,5 +19,6 @@ pub fn images_v1_schema() -> Arc<Schema> {
             DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
             false,
         ),
+        Field::new("archetype", DataType::Utf8, false),
     ]))
 }

@@ -1,6 +1,7 @@
 [workspace]
-members = ["skeet-store", "skeet-finder", "skeet-feed"]
+members = ["skeet-store", "skeet-finder", "skeet-feed", "face-detection"]
 resolver = "2"
 
 [workspace.lints.clippy]
 unwrap_used = "deny"
+

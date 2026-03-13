@@ -12,16 +12,16 @@ use atrium_api::{
 };
 use chrono::{DateTime, Utc};
 use clap::Parser;
+use face_detection::{FaceDetector, face_quadrant};
 use jetstream_oxide::{
     DefaultJetstreamEndpoints, JetstreamCompression, JetstreamConfig, JetstreamConnector,
     events::{JetstreamEvent, commit::CommitEvent},
     exports::Nsid,
 };
-use rand::Rng;
-use skeet_store::{DiscoveredAt, ImageId, ImageRecord, OriginalAt, SkeetId, SkeetStore};
+use skeet_store::{
+    Archetype, DiscoveredAt, ImageId, ImageRecord, OriginalAt, SkeetId, SkeetStore,
+};
 use tracing::{info, warn};
-
-const SELECTION_PROBABILITY: f64 = 0.01;
 
 #[derive(Parser)]
 struct Args {
@@ -39,11 +39,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let args = Args::parse();
-    let store_path = args.store_path;
 
-    let store = SkeetStore::open(&store_path).await?;
+    let store = SkeetStore::open(&args.store_path).await?;
     let http = reqwest::Client::new();
-    let mut rng = rand::rng();
+    let detector = FaceDetector::from_bundled_weights();
+
+    info!("face detection model loaded");
 
     let config = JetstreamConfig {
         endpoint: DefaultJetstreamEndpoints::USEastOne.into(),
@@ -80,10 +81,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             image_post_count += 1;
-
-            if !rng.random_bool(SELECTION_PROBABILITY) {
-                continue;
-            }
 
             let did = info.did.as_str();
             let skeet_id = SkeetId::new(format!(
@@ -129,12 +126,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 };
 
+                let faces = detector.detect(&dynamic_image);
+
+                // Only keep images with exactly one frontal face
+                let frontal_faces: Vec<_> = faces.iter().filter(|f| f.is_frontal()).collect();
+                if frontal_faces.len() != 1 {
+                    continue;
+                }
+
+                let face = frontal_faces[0];
+                let quadrant =
+                    face_quadrant(face, dynamic_image.width(), dynamic_image.height());
+
+                let archetype = match quadrant {
+                    face_detection::Quadrant::TopLeft => Archetype::TopLeft,
+                    face_detection::Quadrant::TopRight => Archetype::TopRight,
+                    face_detection::Quadrant::BottomLeft => Archetype::BottomLeft,
+                    face_detection::Quadrant::BottomRight => Archetype::BottomRight,
+                };
+
                 let record = ImageRecord {
                     image_id: ImageId::new(),
                     skeet_id: skeet_id.clone(),
                     image: dynamic_image,
                     discovered_at: DiscoveredAt::now(),
                     original_at: OriginalAt::new(original_at),
+                    archetype,
                 };
 
                 match store.add(&record).await {
@@ -145,6 +162,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             image_posts = image_post_count,
                             posts = post_count,
                             skeet_id = %skeet_id,
+                            archetype = %record.archetype,
                             "saved image"
                         );
                     }
@@ -165,9 +183,7 @@ fn extract_images(embed: &Option<Union<RecordEmbedRefs>>) -> Vec<&Image> {
         return Vec::new();
     };
     match refs {
-        RecordEmbedRefs::AppBskyEmbedImagesMain(images) => {
-            images.images.iter().collect()
-        }
+        RecordEmbedRefs::AppBskyEmbedImagesMain(images) => images.images.iter().collect(),
         RecordEmbedRefs::AppBskyEmbedRecordWithMediaMain(record_with_media) => {
             if let Union::Refs(MainMediaRefs::AppBskyEmbedImagesMain(images)) =
                 &record_with_media.media

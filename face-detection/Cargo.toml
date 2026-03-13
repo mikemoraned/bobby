@@ -1,0 +1,19 @@
+[package]
+name = "face-detection"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+burn = { version = "~0.20", default-features = false, features = ["ndarray"] }
+burn-store = { version = "~0.20", features = ["burnpack"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+
+# Pin transitive deps to avoid burn-import build failures
+lzma-rust2 = "~0.15.7"
+candle-core = "=0.9.1"
+
+[build-dependencies]
+burn-import = "~0.20"

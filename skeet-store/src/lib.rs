@@ -4,7 +4,7 @@ mod schema;
 mod types;
 
 pub use error::StoreError;
-pub use types::{DiscoveredAt, ImageId, ImageRecord, OriginalAt, SkeetId};
+pub use types::{Archetype, DiscoveredAt, ImageId, ImageRecord, OriginalAt, SkeetId};
 
 use std::io::Cursor;
 use std::path::Path;
@@ -19,7 +19,7 @@ use futures::TryStreamExt;
 use image::DynamicImage;
 use lancedb::query::{ExecutableQuery, QueryBase};
 
-use schema::{TABLE_NAME, images_v1_schema};
+use schema::{TABLE_NAME, images_v2_schema};
 
 pub struct SkeetStore {
     db: lancedb::Connection,
@@ -34,7 +34,7 @@ impl SkeetStore {
 
         let table_names = db.table_names().execute().await?;
         if !table_names.contains(&TABLE_NAME.to_string()) {
-            db.create_empty_table(TABLE_NAME, images_v1_schema())
+            db.create_empty_table(TABLE_NAME, images_v2_schema())
                 .execute()
                 .await?;
         }
@@ -43,7 +43,7 @@ impl SkeetStore {
     }
 
     pub async fn add(&self, record: &ImageRecord) -> Result<(), StoreError> {
-        let schema = images_v1_schema();
+        let schema = images_v2_schema();
 
         let image_bytes = encode_image_as_png(&record.image)?;
 
@@ -61,6 +61,7 @@ impl SkeetStore {
                     TimestampMicrosecondArray::from(vec![record.original_at.timestamp_micros()])
                         .with_timezone("UTC"),
                 ),
+                Arc::new(StringArray::from(vec![record.archetype.as_str()])),
             ],
         )?;
 
@@ -82,15 +83,19 @@ impl SkeetStore {
             let image_data = typed_column::<LargeBinaryArray>(batch, "image_data")?;
             let discovered_ats = typed_column::<TimestampMicrosecondArray>(batch, "discovered_at")?;
             let original_ats = typed_column::<TimestampMicrosecondArray>(batch, "original_at")?;
+            let archetypes = typed_column::<StringArray>(batch, "archetype")?;
 
             for i in 0..batch.num_rows() {
                 let image = image::load_from_memory(image_data.value(i))?;
+                let archetype: Archetype = archetypes.value(i).parse()
+                    .map_err(|_| StoreError::InvalidArchetype(archetypes.value(i).to_string()))?;
                 results.push(StoredImage {
                     image_id: image_ids.value(i).parse()?,
                     skeet_id: SkeetId::new(skeet_ids.value(i)),
                     image,
                     discovered_at: micros_to_datetime(discovered_ats.value(i)),
                     original_at: micros_to_datetime(original_ats.value(i)),
+                    archetype,
                 });
             }
         }
@@ -135,6 +140,7 @@ pub struct StoredImage {
     pub image: DynamicImage,
     pub discovered_at: DateTime<Utc>,
     pub original_at: DateTime<Utc>,
+    pub archetype: Archetype,
 }
 
 fn typed_column<'a, T: Array + 'static>(
@@ -183,6 +189,7 @@ mod tests {
             image: test_image(),
             discovered_at: DiscoveredAt::now(),
             original_at: OriginalAt::new(Utc::now()),
+            archetype: Archetype::TopRight,
         };
 
         store.add(&record).await.unwrap();
@@ -194,6 +201,7 @@ mod tests {
         assert_eq!(images[0].skeet_id, record.skeet_id);
         assert_eq!(images[0].image.width(), 2);
         assert_eq!(images[0].image.height(), 2);
+        assert_eq!(images[0].archetype, Archetype::TopRight);
     }
 
     #[tokio::test]
@@ -210,6 +218,7 @@ mod tests {
                 image: test_image(),
                 discovered_at: DiscoveredAt::now(),
                 original_at: OriginalAt::new(Utc::now()),
+                archetype: Archetype::BottomLeft,
             };
             store.add(&record).await.unwrap();
         }
@@ -231,6 +240,7 @@ mod tests {
             image: test_image(),
             discovered_at: DiscoveredAt::now(),
             original_at: OriginalAt::new(Utc::now()),
+            archetype: Archetype::TopLeft,
         };
 
         {
