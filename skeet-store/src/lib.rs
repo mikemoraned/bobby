@@ -10,15 +10,14 @@ use std::path::Path;
 use std::sync::Arc;
 
 use arrow_array::{
-    LargeBinaryArray, RecordBatch, RecordBatchIterator, StringArray,
-    TimestampMicrosecondArray,
+    LargeBinaryArray, RecordBatch, RecordBatchIterator, StringArray, TimestampMicrosecondArray,
 };
 use chrono::{DateTime, TimeZone, Utc};
 use futures::TryStreamExt;
 use image::DynamicImage;
 use lancedb::query::{ExecutableQuery, QueryBase};
 
-use schema::{images_v1_schema, TABLE_NAME};
+use schema::{TABLE_NAME, images_v1_schema};
 
 pub struct SkeetStore {
     db: lancedb::Connection,
@@ -26,9 +25,10 @@ pub struct SkeetStore {
 
 impl SkeetStore {
     pub async fn open(path: &Path) -> Result<Self, StoreError> {
-        let db = lancedb::connect(path.to_str().unwrap_or("store"))
-            .execute()
-            .await?;
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| StoreError::InvalidPath(path.to_path_buf()))?;
+        let db = lancedb::connect(path_str).execute().await?;
 
         let table_names = db.table_names().execute().await?;
         if !table_names.contains(&TABLE_NAME.to_string()) {
@@ -48,7 +48,7 @@ impl SkeetStore {
         let batch = RecordBatch::try_new(
             schema.clone(),
             vec![
-                Arc::new(StringArray::from(vec![record.image_id.as_str().as_str()])),
+                Arc::new(StringArray::from(vec![record.image_id.as_str()])),
                 Arc::new(StringArray::from(vec![record.skeet_id.as_str()])),
                 Arc::new(LargeBinaryArray::from_vec(vec![&image_bytes])),
                 Arc::new(
@@ -107,8 +107,8 @@ impl SkeetStore {
                 .unwrap();
 
             for i in 0..batch.num_rows() {
-                let image =
-                    image::load_from_memory(image_data.value(i)).map_err(StoreError::ImageEncoding)?;
+                let image = image::load_from_memory(image_data.value(i))
+                    .map_err(StoreError::ImageEncoding)?;
                 results.push(StoredImage {
                     image_id: image_ids.value(i).parse().expect("valid UUID in store"),
                     skeet_id: SkeetId::new(skeet_ids.value(i)),
