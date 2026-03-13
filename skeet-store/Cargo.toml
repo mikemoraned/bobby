@@ -1,0 +1,18 @@
+[package]
+name = "skeet-store"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+arrow-array = "57.2"
+arrow-schema = "57.2"
+chrono = "0.4"
+futures = "0.3"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+lancedb = "0.26"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3"

@@ -6,6 +6,14 @@ I've already done this once before, but with Twitter: https://www.houseofmoran.c
 
 The original project scanned Twitter's firehose, applied face detection (via OpenIMAJ), and looked for selfie-like compositions (face in foreground border, landmark in background). It had a ~0.1% hit rate and encountered challenges like porn, screenshots, and false positives from inanimate objects resembling faces.
 
+# Prerequisites
+
+Install required system dependencies via:
+
+```
+just prerequisites
+```
+
 # Methodology
 
 We're going to follow a [Walking Skeleton](https://wiki.c2.com/?WalkingSkeleton) approach where we will incrementally deliver slices end-to-end
@@ -67,16 +75,15 @@ We're going to follow a [Walking Skeleton](https://wiki.c2.com/?WalkingSkeleton)
 
 ## Slice 1: A random local feed
 
-* [ ] create a local skeet-store 
-    * sits in `store` and consists of a single table called `images_v1` 
+* [x] create a local skeet-store
+    * sits in `skeet-store` crate and uses a LanceDB table called `images_v1`
     * this is stored as [Lancedb](https://lancedb.com) tables
-    * the schema of `images_v1` table should allow:
-        * unique identifier of the image; this should be globally unique
-        * an identifier of which bluesky skeet this image came from
-            * this is allowed to be duplicated in this table as a single skeet may have multiple images
-        * an embedded image
-        * iso timestamp of when discovered (this is the local processing time when we first saw it)
-        * iso timestamp of original (this is when the skeet was posted)
+    * the schema of `images_v1` table has:
+        * `image_id` — globally unique UUID (v4)
+        * `skeet_id` — bluesky AT URI of the skeet (can be duplicated across table, as one skeet may have multiple images)
+        * `image_data` — the actual image stored as PNG bytes (LargeBinary)
+        * `discovered_at` — UTC timestamp (microsecond precision) of when we first saw it
+        * `original_at` — UTC timestamp (microsecond precision) of when the skeet was posted
 
 * [ ] create a skeet-finder which:
     * [ ] listens to the live feed
