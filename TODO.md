@@ -90,7 +90,7 @@ We're going to follow a [Walking Skeleton](https://wiki.c2.com/?WalkingSkeleton)
 
 * [ ] create a skeet-finder which:
     * [x] listens to the live bluesky feed (via `jetstream-oxide`, filtered to `app.bsky.feed.post`)
-    * [ ] finds any which have images
+    * [x] finds any which have images (checks `app.bsky.embed.images` and `recordWithMedia` embeds)
     * [ ] randomly selects one image with 1% probability
     * [ ] saves to the `images_v1` table
 
