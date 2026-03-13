@@ -16,4 +16,7 @@ clippy:
 check: build clippy test
 
 find:
-    cargo run --release --bin skeet-finder -- store
+    cargo run --release --bin skeet-finder -- --store-path store
+
+feed:
+    cargo run --release --bin skeet-feed -- --store-path store

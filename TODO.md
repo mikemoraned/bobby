@@ -69,6 +69,9 @@ We're going to follow a [Walking Skeleton](https://wiki.c2.com/?WalkingSkeleton)
         * for this, we likely want to capture a real (but small) dump of firehose data to use
     * if possible our tests should be high-level and assert invariants rather than bespoke individual examples. in other words, we should use tests that have a high leverage between number of lines of test and breadth of behaviour tested
         * something like https://docs.rs/quickcheck/latest/quickcheck/ may be useful here
+* command-line apps:
+    * all config parameters should be passed explicitly as named command-line parameters e.g. `--long-form FOOP`
+    * parameters *must not* be passed via environment variables other than things like `RUST_LOG`
 
 ## Python specifics
 
@@ -95,9 +98,12 @@ We're going to follow a [Walking Skeleton](https://wiki.c2.com/?WalkingSkeleton)
     * [x] downloads images from Bluesky CDN and saves to the `images_v1` table
     * run via `just find` (store path defaults to `store`)
 
-* [ ] create a skeet-feed which:
-    * [ ] find all unique skeets from the `images_v1` table
-    * [ ] surfaces these just as a web-page which shows embedded skeets i.e. no actual Bluesky feed needed yet
+* [x] create a skeet-feed which:
+    * [x] find all unique skeets from the `images_v1` table
+    * [x] surfaces these just as a web-page which shows embedded skeets i.e. no actual Bluesky feed needed yet
+        * uses [cot.rs](https://cot.rs) with Bluesky's embed.js for rendering skeet cards
+        * reloads skeets from store on each page load
+    * run via `just feed` (serves on http://127.0.0.1:8000/)
 
 ## Slice 2: finding faces
 

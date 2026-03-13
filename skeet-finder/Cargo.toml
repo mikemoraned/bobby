@@ -9,6 +9,7 @@ workspace = true
 [dependencies]
 atrium-api = { version = "0.25", default-features = false, features = ["namespace-appbsky"] }
 chrono = "0.4"
+clap = { version = "4", features = ["derive"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 jetstream-oxide = "0.1"
 rand = "0.9"

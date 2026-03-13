@@ -1,5 +1,5 @@
 [workspace]
-members = ["skeet-store", "skeet-finder"]
+members = ["skeet-store", "skeet-finder", "skeet-feed"]
 resolver = "2"
 
 [workspace.lints.clippy]

@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Skeet Feed</title>
+        <style>
+            body {
+                font-family: system-ui, sans-serif;
+                max-width: 600px;
+                margin: 2rem auto;
+                padding: 0 1rem;
+            }
+            h1 { text-align: center; }
+            .skeet { margin-bottom: 1rem; }
+            .empty { color: #666; text-align: center; margin-top: 2rem; }
+        </style>
+    </head>
+    <body>
+        <h1>Skeet Feed</h1>
+        {% if skeets.is_empty() %}
+            <p class="empty">No skeets found yet. Run <code>just find</code> to start collecting.</p>
+        {% else %}
+            {% for skeet in &skeets %}
+                <div class="skeet">
+                    <blockquote class="bluesky-embed" data-bluesky-uri="{{ skeet.at_uri }}">
+                        <a href="{{ skeet.web_url }}">Loading skeet...</a>
+                    </blockquote>
+                </div>
+            {% endfor %}
+            <script async src="https://embed.bsky.app/static/embed.js" charset="utf-8"></script>
+        {% endif %}
+    </body>
+</html>

@@ -11,6 +11,7 @@ use atrium_api::{
     types::{BlobRef, TypedBlobRef, Union},
 };
 use chrono::{DateTime, Utc};
+use clap::Parser;
 use jetstream_oxide::{
     DefaultJetstreamEndpoints, JetstreamCompression, JetstreamConfig, JetstreamConnector,
     events::{JetstreamEvent, commit::CommitEvent},
@@ -22,6 +23,12 @@ use tracing::{info, warn};
 
 const SELECTION_PROBABILITY: f64 = 0.01;
 
+#[derive(Parser)]
+struct Args {
+    #[arg(long)]
+    store_path: PathBuf,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
@@ -31,10 +38,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
-    let store_path = std::env::args()
-        .nth(1)
-        .map(PathBuf::from)
-        .ok_or("usage: skeet-finder <store-path>")?;
+    let args = Args::parse();
+    let store_path = args.store_path;
 
     let store = SkeetStore::open(&store_path).await?;
     let http = reqwest::Client::new();

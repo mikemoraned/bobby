@@ -1,0 +1,13 @@
+[package]
+name = "skeet-feed"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+cot = "0.5"
+skeet-store = { path = "../skeet-store" }
+tokio = { version = "1", features = ["full"] }
