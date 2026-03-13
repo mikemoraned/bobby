@@ -13,4 +13,10 @@ pub enum StoreError {
 
     #[error("Image encoding error: {0}")]
     ImageEncoding(#[from] image::ImageError),
+
+    #[error("column '{column}' missing or has unexpected type")]
+    ColumnTypeMismatch { column: String },
+
+    #[error("invalid image_id in store: {0}")]
+    InvalidImageId(#[from] uuid::Error),
 }

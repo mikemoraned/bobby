@@ -11,7 +11,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use arrow_array::{
-    LargeBinaryArray, RecordBatch, RecordBatchIterator, StringArray, TimestampMicrosecondArray,
+    Array, LargeBinaryArray, RecordBatch, RecordBatchIterator, StringArray,
+    TimestampMicrosecondArray,
 };
 use chrono::{DateTime, TimeZone, Utc};
 use futures::TryStreamExt;
@@ -76,42 +77,16 @@ impl SkeetStore {
 
         let mut results = Vec::new();
         for batch in &batches {
-            let image_ids = batch
-                .column_by_name("image_id")
-                .unwrap()
-                .as_any()
-                .downcast_ref::<StringArray>()
-                .unwrap();
-            let skeet_ids = batch
-                .column_by_name("skeet_id")
-                .unwrap()
-                .as_any()
-                .downcast_ref::<StringArray>()
-                .unwrap();
-            let image_data = batch
-                .column_by_name("image_data")
-                .unwrap()
-                .as_any()
-                .downcast_ref::<LargeBinaryArray>()
-                .unwrap();
-            let discovered_ats = batch
-                .column_by_name("discovered_at")
-                .unwrap()
-                .as_any()
-                .downcast_ref::<TimestampMicrosecondArray>()
-                .unwrap();
-            let original_ats = batch
-                .column_by_name("original_at")
-                .unwrap()
-                .as_any()
-                .downcast_ref::<TimestampMicrosecondArray>()
-                .unwrap();
+            let image_ids = typed_column::<StringArray>(batch, "image_id")?;
+            let skeet_ids = typed_column::<StringArray>(batch, "skeet_id")?;
+            let image_data = typed_column::<LargeBinaryArray>(batch, "image_data")?;
+            let discovered_ats = typed_column::<TimestampMicrosecondArray>(batch, "discovered_at")?;
+            let original_ats = typed_column::<TimestampMicrosecondArray>(batch, "original_at")?;
 
             for i in 0..batch.num_rows() {
-                let image = image::load_from_memory(image_data.value(i))
-                    .map_err(StoreError::ImageEncoding)?;
+                let image = image::load_from_memory(image_data.value(i))?;
                 results.push(StoredImage {
-                    image_id: image_ids.value(i).parse().expect("valid UUID in store"),
+                    image_id: image_ids.value(i).parse()?,
                     skeet_id: SkeetId::new(skeet_ids.value(i)),
                     image,
                     discovered_at: micros_to_datetime(discovered_ats.value(i)),
@@ -141,12 +116,7 @@ impl SkeetStore {
         let mut seen = std::collections::HashSet::new();
         let mut ids = Vec::new();
         for batch in &batches {
-            let skeet_ids = batch
-                .column_by_name("skeet_id")
-                .unwrap()
-                .as_any()
-                .downcast_ref::<StringArray>()
-                .unwrap();
+            let skeet_ids = typed_column::<StringArray>(batch, "skeet_id")?;
             for i in 0..batch.num_rows() {
                 let id = skeet_ids.value(i).to_string();
                 if seen.insert(id.clone()) {
@@ -165,6 +135,18 @@ pub struct StoredImage {
     pub image: DynamicImage,
     pub discovered_at: DateTime<Utc>,
     pub original_at: DateTime<Utc>,
+}
+
+fn typed_column<'a, T: Array + 'static>(
+    batch: &'a RecordBatch,
+    name: &str,
+) -> Result<&'a T, StoreError> {
+    batch
+        .column_by_name(name)
+        .and_then(|col| col.as_any().downcast_ref::<T>())
+        .ok_or_else(|| StoreError::ColumnTypeMismatch {
+            column: name.to_string(),
+        })
 }
 
 fn encode_image_as_png(img: &DynamicImage) -> Result<Vec<u8>, image::ImageError> {
