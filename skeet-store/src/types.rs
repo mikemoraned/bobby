@@ -62,11 +62,11 @@ impl DiscoveredAt {
         Self(Utc::now())
     }
 
-    pub fn as_datetime(&self) -> &DateTime<Utc> {
+    pub const fn as_datetime(&self) -> &DateTime<Utc> {
         &self.0
     }
 
-    pub fn timestamp_micros(&self) -> i64 {
+    pub const fn timestamp_micros(&self) -> i64 {
         self.0.timestamp_micros()
     }
 }
@@ -75,15 +75,15 @@ impl DiscoveredAt {
 pub struct OriginalAt(DateTime<Utc>);
 
 impl OriginalAt {
-    pub fn new(dt: DateTime<Utc>) -> Self {
+    pub const fn new(dt: DateTime<Utc>) -> Self {
         Self(dt)
     }
 
-    pub fn as_datetime(&self) -> &DateTime<Utc> {
+    pub const fn as_datetime(&self) -> &DateTime<Utc> {
         &self.0
     }
 
-    pub fn timestamp_micros(&self) -> i64 {
+    pub const fn timestamp_micros(&self) -> i64 {
         self.0.timestamp_micros()
     }
 }

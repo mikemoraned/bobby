@@ -1,3 +1,4 @@
+#![warn(clippy::all, clippy::nursery)]
 mod error;
 mod schema;
 mod types;

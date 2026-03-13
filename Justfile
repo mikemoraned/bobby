@@ -11,6 +11,6 @@ test:
     cargo test
 
 clippy:
-    cargo clippy -- -D warnings
+    cargo clippy --workspace -- -D warnings
 
 check: build clippy test
