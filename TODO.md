@@ -41,6 +41,7 @@ We're going to follow a [Walking Skeleton](https://wiki.c2.com/?WalkingSkeleton)
 * stability / quality: where possible we should follows these protections:
     * don't use `-pre` versions of dependencies
     * don't use direct git versions of dependencies
+* exception: `jetstream-oxide` (pre-1.0) is allowed as it is the best available Rust client for Bluesky's Jetstream
 
 ## Rust specifics
 
@@ -88,7 +89,7 @@ We're going to follow a [Walking Skeleton](https://wiki.c2.com/?WalkingSkeleton)
         * `original_at` — UTC timestamp (microsecond precision) of when the skeet was posted
 
 * [ ] create a skeet-finder which:
-    * [ ] listens to the live feed
+    * [x] listens to the live bluesky feed (via `jetstream-oxide`, filtered to `app.bsky.feed.post`)
     * [ ] finds any which have images
     * [ ] randomly selects one image with 1% probability
     * [ ] saves to the `images_v1` table
@@ -99,7 +100,16 @@ We're going to follow a [Walking Skeleton](https://wiki.c2.com/?WalkingSkeleton)
 
 ## Slice 2: finding faces
 
-...
+We're now going to start using some real models to find and detect faces.
+
+* [ ] update skeet-finder so that, instead of randomly selecting one image, it:
+    * [ ] only allows through images which contain at least one face. This face must be detected as being face-on i.e. side-profile faces are not allowed.
+    * [ ] matches to an archetype where the face is of a single person, and that persons face sits in one quadrant of the image.
+        * this matching should be captured in a Archetype enum, which should be saved as an extra column of the images table
+            * this is a backwards incompatible change, so table should now be name `images_v2`
+        * see examples dir for example images which you should capture in a test:
+            * examples/eno7kayhhljgvgwc7ttdoojx_3mfev3xjylk2w_0.png : Archetype::TOP_RIGHT
+            * examples/jbbneqrt2fxcij3kjwxdu54m_3mfev4a57a22u_0.png : Archetype::BOTTOM_LEFT
 
 ## Slice N ...
 

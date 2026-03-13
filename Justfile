@@ -14,3 +14,6 @@ clippy:
     cargo clippy --workspace -- -D warnings
 
 check: build clippy test
+
+find:
+    cargo run --bin skeet-finder
