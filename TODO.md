@@ -167,6 +167,7 @@ We're now going to start using some real models to find and detect faces.
             * [x] the version field should be automatically generated e.g. take all config values, sort them, and hash the result to a small string
                 * obviously the version field should not be part of the hash
             * [x] add a failing test which checks a hard-coded version against actual
+    * [x] extend feed website to show the matched Archetype as a column in the feed summary
     * [ ] make Archetype matching more strict i.e. faces that sit in the middle of the image shouldn't match to any Archetype and should have a None value.
         * an example is `examples/a5d59a02-b46e-478b-ac46-801f67b9ac40.png` which is too much in the centre
         * a suggested way to model/determine this is to:
@@ -175,7 +176,6 @@ We're now going to start using some real models to find and detect faces.
                 * a central Zone which is same size as each of the quarter zones but is centred on the middle of the image
             * map a detected face to a Zone by measuring %-age overlap with each of them, and choosing max overlap
             * if an face maps to the Central Zone, then it doesn't match the Archetype (maps to None) and if it's one of the quarter Zones, then it maps to the associated Archetype
-    * [ ] extend feed website to show the matched Archetype (or None) as a column in the feed summary
 
 
 ## Slice 3: False positive: Removing pron

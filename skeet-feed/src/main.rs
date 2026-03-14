@@ -12,7 +12,7 @@ use cot::request::extractors::Path;
 use cot::response::Response;
 use cot::router::{Route, Router};
 use cot::{App, AppBuilder, Body, Project, StatusCode, Template};
-use skeet_store::{ImageId, SkeetId, SkeetStore};
+use skeet_store::{Archetype, ImageId, SkeetId, SkeetStore};
 
 static STORE_PATH: OnceLock<PathBuf> = OnceLock::new();
 
@@ -25,17 +25,19 @@ struct Args {
 #[derive(Debug)]
 struct FeedEntry {
     image_id: String,
+    archetype: String,
     at_uri: String,
     web_url: String,
 }
 
-fn to_feed_entry(image_id: &ImageId, skeet_id: &SkeetId) -> Option<FeedEntry> {
+fn to_feed_entry(image_id: &ImageId, skeet_id: &SkeetId, archetype: &Archetype) -> Option<FeedEntry> {
     let at_uri = skeet_id.as_str();
     let stripped = at_uri.strip_prefix("at://")?;
     let (did, rest) = stripped.split_once('/')?;
     let rkey = rest.strip_prefix("app.bsky.feed.post/")?;
     Some(FeedEntry {
         image_id: image_id.to_string(),
+        archetype: archetype.to_string(),
         at_uri: at_uri.to_string(),
         web_url: format!("https://bsky.app/profile/{did}/post/{rkey}"),
     })
@@ -62,7 +64,7 @@ async fn feed() -> cot::Result<Html> {
     let entries: Vec<FeedEntry> = summaries
         .iter()
         .take(MAX_FEED_ENTRIES)
-        .filter_map(|img| to_feed_entry(&img.image_id, &img.skeet_id))
+        .filter_map(|img| to_feed_entry(&img.image_id, &img.skeet_id, &img.archetype))
         .collect();
 
     let template = FeedTemplate { entries };
@@ -163,7 +165,8 @@ mod tests {
     fn converts_at_uri_to_entry() {
         let image_id = ImageId::new();
         let skeet_id = SkeetId::new("at://did:plc:abc123/app.bsky.feed.post/xyz789");
-        let entry = to_feed_entry(&image_id, &skeet_id).expect("should produce entry");
+        let archetype = Archetype::TopRight;
+        let entry = to_feed_entry(&image_id, &skeet_id, &archetype).expect("should produce entry");
         assert_eq!(entry.at_uri, "at://did:plc:abc123/app.bsky.feed.post/xyz789");
         assert_eq!(
             entry.web_url,
@@ -175,13 +178,15 @@ mod tests {
     fn returns_none_for_invalid_uri() {
         let image_id = ImageId::new();
         let skeet_id = SkeetId::new("not-an-at-uri");
-        assert!(to_feed_entry(&image_id, &skeet_id).is_none());
+        let archetype = Archetype::TopRight;
+        assert!(to_feed_entry(&image_id, &skeet_id, &archetype).is_none());
     }
 
     #[test]
     fn returns_none_for_non_post_uri() {
         let image_id = ImageId::new();
         let skeet_id = SkeetId::new("at://did:plc:abc123/app.bsky.feed.like/xyz789");
-        assert!(to_feed_entry(&image_id, &skeet_id).is_none());
+        let archetype = Archetype::TopRight;
+        assert!(to_feed_entry(&image_id, &skeet_id, &archetype).is_none());
     }
 }

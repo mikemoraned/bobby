@@ -29,6 +29,7 @@
                 <thead>
                     <tr>
                         <th>ID</th>
+                        <th>Archetype</th>
                         <th>Annotated Image</th>
                         <th>Skeet</th>
                     </tr>
@@ -37,6 +38,7 @@
                     {% for entry in &entries %}
                         <tr>
                             <td class="id">{{ entry.image_id }}</td>
+                            <td>{{ entry.archetype }}</td>
                             <td class="annotated">
                                 <img src="/skeet/{{ entry.image_id }}/annotated.png" loading="lazy" alt="annotated face detection">
                             </td>
