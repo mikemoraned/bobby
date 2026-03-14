@@ -1,4 +1,4 @@
 # Face area thresholds as percentage of total image area.
 # Faces smaller than min or larger than max are rejected.
-min_face_area_pct = 10.0
-max_face_area_pct = 60.0
+min_face_area_pct = 5.0
+max_face_area_pct = 35.0

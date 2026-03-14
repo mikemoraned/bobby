@@ -162,6 +162,7 @@ We're now going to start using some real models to find and detect faces.
             * [ ] when we are classifying and/or ignoring an image we need to have a list of Enum of failure reasons that say why it was ignored (there may be multiple reasons)
                 * for example: Reason::FaceTooSmall, Reason::FaceTooLarge
                 * this should be added as a config item to the `expected.toml` file saying why an image is filtered
+                * [ ] as part of enabling tuning of these thresholds, we should have a diagnostics CLI, `classify_examples`, which, for each image in examples dir, outputs the current classifications and the underlying parameters used e.g. whether it is frontal or not, what %-age of image is the face etc
         * [ ] add a version field to the config, and update the `images` table schema to record which version of the config was used to capture the image
                 * [ ] the version field should be automatically generated e.g. take all config values, sort them, and hash the result to a small string
                     * obviously the version field should not be part of the hash

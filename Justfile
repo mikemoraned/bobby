@@ -22,6 +22,9 @@ clippy:
 
 check: build clippy test
 
+classify-examples:
+    cargo run --release --bin classify-examples
+
 find:
     cargo run --release --bin skeet-finder -- --store-path store
 
