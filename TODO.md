@@ -132,7 +132,44 @@ We're now going to start using some real models to find and detect faces.
             * the annotated image
                 * there should be a new endpoint created which is `/skeet/{image_id}/annotated.png` which is the annotated image that be shown as `<img>`
             * the embedded skeet
-    * [ ] add a cli bin to the store crate which allows an image to be exported to a file, indexed by unique id
+    * [x] add a cli bin to the store crate which allows an image to be exported to a file, indexed by unique id
+
+* [ ] ignore faces of wrong size, position or number:
+    * [ ] regularize examples and tests, so that they are driven by config:
+        * [ ] alongside examples, create an `expected.toml` (TOML format) file, which captures, for each image in that dir:
+            * it's path
+            * the expected Archetype enum wrapped in an Option. 
+                * so, for example, if an image shouldn't be matched to any Archetype, it should be Option::None, but if it should, for example `examples/eno7kayhhljgvgwc7ttdoojx_3mfev3xjylk2w_0.png` it should be Option::Some(Archetype::TOP_RIGHT)
+                * make this easy to update manually
+        * [ ] update existing tests to be driven by this config instead
+    * [ ] ignore faces that don't take up enough or too much of the image:
+        * we want to ignore tiny faces that make up a small %-age of the area of the image and faces which dominate
+        * we likely want to make this tunable/change-able as opposed to hard-coded. So:
+            * [ ] add an archetype.toml file in `skeet-finder` and an associated config type which captures the %-age upper and lower threshold as a float    
+            * [ ] set the %-age min threshold to 10% and max to 60%, and update tests. Examples:
+                * `examples/064b26e2-550a-4925-9bd1-aa26d68b1742.png` should be filtered out because the face is too small
+                * `examples/1de8f881-78be-4a89-8155-f85e5543b342.png` should be filtered out because the face is too large
+            * [ ] when we are classifying and/or ignoring an image we need to have a list of Enum of failure reasons that say why it was ignored (there may be multiple reasons)
+                * for example: Reason::FaceTooSmall, Reason::FaceTooLarge
+                * this should be added as a config item to the `expected.toml` file saying why an image is filtered
+        * [ ] add a version field to the config, and update the `images` table schema to record which version of the config was used to capture the image
+                * [ ] the version field should be automatically generated e.g. take all config values, sort them, and hash the result to a small string
+                    * obviously the version field should not be part of the hash
+                * [ ] add a failing test which checks a hard-coded ve
+    * [ ] make Archetype matching more strict i.e. faces that sit in the middle of the image shouldn't match to any Archetype and should have a None value.
+        * an example is `examples/a5d59a02-b46e-478b-ac46-801f67b9ac40.png` which is too much in the centre
+        * a suggested way to model/determine this is to:
+            * define 5 zones in an image (this replaces the Quarter enum):
+                * 4 quarter Zones which cover 50% of the image and cover top-left, top-right, bottom-right, bottom-left
+                * a central Zone which is same size as each of the quarter zones but is centred on the middle of the image
+            * map a detected face to a Zone by measuring %-age overlap with each of them, and choosing max overlap
+            * if an face maps to the Central Zone, then it doesn't match the Archetype (maps to None) and if it's one of the quarter Zones, then it maps to the associated Archetype
+    * [ ] extend feed website to show the matched Archetype (or None) as a column in the feed summary
+
+
+## Slice 3: False positive: Removing pron
+
+## Slice 4: False positive: Removing text
 
 ## Slice N ...
 
