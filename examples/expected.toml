@@ -1,0 +1,25 @@
+# Expected archetype for each example image.
+# archetype is optional: omit it (or comment it out) if the image
+# should not match any archetype.
+#
+# Valid archetype values: TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT
+
+[[example]]
+path = "eno7kayhhljgvgwc7ttdoojx_3mfev3xjylk2w_0.png"
+archetype = "TOP_RIGHT"
+
+[[example]]
+path = "jbbneqrt2fxcij3kjwxdu54m_3mfev4a57a22u_0.png"
+archetype = "BOTTOM_LEFT"
+
+[[example]]
+path = "064b26e2-550a-4925-9bd1-aa26d68b1742.png"
+archetype = "TOP_LEFT"
+
+[[example]]
+path = "1de8f881-78be-4a89-8155-f85e5543b342.png"
+archetype = "TOP_LEFT"
+
+[[example]]
+path = "a5d59a02-b46e-478b-ac46-801f67b9ac40.png"
+archetype = "TOP_RIGHT"

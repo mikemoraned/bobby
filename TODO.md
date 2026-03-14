@@ -135,8 +135,9 @@ We're now going to start using some real models to find and detect faces.
     * [x] add a cli bin to the store crate which allows an image to be exported to a file, indexed by unique id
 
 * [ ] ignore faces of wrong size, position or number:
-    * [ ] regularize examples and tests, so that they are driven by config:
-        * [ ] alongside examples, create an `expected.toml` (TOML format) file, which captures, for each image in that dir:
+    * [x] regularize examples and tests, so that they are driven by config:
+        * currently, we have tests like `example_top_right_face` which are very specific and embed the paths to the example files directly. The intent is to make tests be driven by config and appear as separate tests in the runner. So, for example, if I have a TOML config file which lists a bunch of examples, I'd like to have a separate tests each of which tests a particular *aspect* of these examples, but which each example appears as a separate executed test in the runner output. The intent is that I can drive tests by examples whilst making it appear like they were written as individual tests. So, I'd probably like to move to something like https://crates.io/crates/libtest-mimic which is more config-driven. 
+        * [x] alongside examples, create an `expected.toml` (TOML format) file, which captures, for each image in that dir:
             * it's path
             * the expected Archetype enum wrapped in an Option. 
                 * so, for example, if an image shouldn't be matched to any Archetype, it should be Option::None, but if it should, for example `examples/eno7kayhhljgvgwc7ttdoojx_3mfev3xjylk2w_0.png` it should be Option::Some(Archetype::TOP_RIGHT)

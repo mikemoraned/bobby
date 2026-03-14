@@ -198,41 +198,4 @@ mod tests {
         assert_eq!(face_quadrant(&face, 640, 480), Quadrant::BottomLeft);
     }
 
-    // Example image: person with face in top-right quadrant
-    #[test]
-    fn example_top_right_face() {
-        let detector = FaceDetector::from_bundled_weights();
-        let img = image::open("../examples/eno7kayhhljgvgwc7ttdoojx_3mfev3xjylk2w_0.png")
-            .expect("failed to load example image");
-
-        let faces = detector.detect(&img);
-        assert!(!faces.is_empty(), "should detect at least one face");
-
-        let face = &faces[0];
-        assert!(face.is_frontal(), "face should be detected as frontal");
-        assert_eq!(
-            face_quadrant(face, img.width(), img.height()),
-            Quadrant::TopRight,
-            "face should be in top-right quadrant"
-        );
-    }
-
-    // Example image: person with face in bottom-left quadrant
-    #[test]
-    fn example_bottom_left_face() {
-        let detector = FaceDetector::from_bundled_weights();
-        let img = image::open("../examples/jbbneqrt2fxcij3kjwxdu54m_3mfev4a57a22u_0.png")
-            .expect("failed to load example image");
-
-        let faces = detector.detect(&img);
-        assert!(!faces.is_empty(), "should detect at least one face");
-
-        let face = &faces[0];
-        assert!(face.is_frontal(), "face should be detected as frontal");
-        assert_eq!(
-            face_quadrant(face, img.width(), img.height()),
-            Quadrant::BottomLeft,
-            "face should be in bottom-left quadrant"
-        );
-    }
 }

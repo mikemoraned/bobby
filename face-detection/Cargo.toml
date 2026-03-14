@@ -16,5 +16,14 @@ imageproc = "0.25"
 lzma-rust2 = "~0.15.7"
 candle-core = "=0.9.1"
 
+[dev-dependencies]
+libtest-mimic = "0.8"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+[[test]]
+name = "examples"
+harness = false
+
 [build-dependencies]
 burn-import = "~0.20"
