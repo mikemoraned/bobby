@@ -19,7 +19,7 @@ use futures::TryStreamExt;
 use image::DynamicImage;
 use lancedb::query::{ExecutableQuery, QueryBase};
 
-use schema::{TABLE_NAME, images_v2_schema};
+use schema::{TABLE_NAME, images_v3_schema};
 
 pub struct SkeetStore {
     db: lancedb::Connection,
@@ -34,7 +34,7 @@ impl SkeetStore {
 
         let table_names = db.table_names().execute().await?;
         if !table_names.contains(&TABLE_NAME.to_string()) {
-            db.create_empty_table(TABLE_NAME, images_v2_schema())
+            db.create_empty_table(TABLE_NAME, images_v3_schema())
                 .execute()
                 .await?;
         }
@@ -43,9 +43,10 @@ impl SkeetStore {
     }
 
     pub async fn add(&self, record: &ImageRecord) -> Result<(), StoreError> {
-        let schema = images_v2_schema();
+        let schema = images_v3_schema();
 
         let image_bytes = encode_image_as_png(&record.image)?;
+        let annotated_bytes = encode_image_as_png(&record.annotated_image)?;
 
         let batch = RecordBatch::try_new(
             schema.clone(),
@@ -62,6 +63,7 @@ impl SkeetStore {
                         .with_timezone("UTC"),
                 ),
                 Arc::new(StringArray::from(vec![record.archetype.as_str()])),
+                Arc::new(LargeBinaryArray::from_vec(vec![&annotated_bytes])),
             ],
         )?;
 
@@ -75,32 +77,19 @@ impl SkeetStore {
     pub async fn list_all(&self) -> Result<Vec<StoredImage>, StoreError> {
         let table = self.db.open_table(TABLE_NAME).execute().await?;
         let batches: Vec<RecordBatch> = table.query().execute().await?.try_collect().await?;
+        batches_to_stored_images(&batches)
+    }
 
-        let mut results = Vec::new();
-        for batch in &batches {
-            let image_ids = typed_column::<StringArray>(batch, "image_id")?;
-            let skeet_ids = typed_column::<StringArray>(batch, "skeet_id")?;
-            let image_data = typed_column::<LargeBinaryArray>(batch, "image_data")?;
-            let discovered_ats = typed_column::<TimestampMicrosecondArray>(batch, "discovered_at")?;
-            let original_ats = typed_column::<TimestampMicrosecondArray>(batch, "original_at")?;
-            let archetypes = typed_column::<StringArray>(batch, "archetype")?;
-
-            for i in 0..batch.num_rows() {
-                let image = image::load_from_memory(image_data.value(i))?;
-                let archetype: Archetype = archetypes.value(i).parse()
-                    .map_err(|_| StoreError::InvalidArchetype(archetypes.value(i).to_string()))?;
-                results.push(StoredImage {
-                    image_id: image_ids.value(i).parse()?,
-                    skeet_id: SkeetId::new(skeet_ids.value(i)),
-                    image,
-                    discovered_at: micros_to_datetime(discovered_ats.value(i)),
-                    original_at: micros_to_datetime(original_ats.value(i)),
-                    archetype,
-                });
-            }
-        }
-
-        Ok(results)
+    pub async fn get_by_id(&self, image_id: &ImageId) -> Result<Option<StoredImage>, StoreError> {
+        let table = self.db.open_table(TABLE_NAME).execute().await?;
+        let batches: Vec<RecordBatch> = table
+            .query()
+            .only_if(format!("image_id = '{}'", image_id.as_str()))
+            .execute()
+            .await?
+            .try_collect()
+            .await?;
+        Ok(batches_to_stored_images(&batches)?.into_iter().next())
     }
 
     pub async fn count(&self) -> Result<usize, StoreError> {
@@ -141,6 +130,40 @@ pub struct StoredImage {
     pub discovered_at: DateTime<Utc>,
     pub original_at: DateTime<Utc>,
     pub archetype: Archetype,
+    pub annotated_image: DynamicImage,
+}
+
+fn batches_to_stored_images(batches: &[RecordBatch]) -> Result<Vec<StoredImage>, StoreError> {
+    let mut results = Vec::new();
+    for batch in batches {
+        let image_ids = typed_column::<StringArray>(batch, "image_id")?;
+        let skeet_ids = typed_column::<StringArray>(batch, "skeet_id")?;
+        let images = typed_column::<LargeBinaryArray>(batch, "image")?;
+        let discovered_ats =
+            typed_column::<TimestampMicrosecondArray>(batch, "discovered_at")?;
+        let original_ats = typed_column::<TimestampMicrosecondArray>(batch, "original_at")?;
+        let archetypes = typed_column::<StringArray>(batch, "archetype")?;
+        let annotated_images = typed_column::<LargeBinaryArray>(batch, "annotated_image")?;
+
+        for i in 0..batch.num_rows() {
+            let image = image::load_from_memory(images.value(i))?;
+            let annotated_image = image::load_from_memory(annotated_images.value(i))?;
+            let archetype: Archetype = archetypes
+                .value(i)
+                .parse()
+                .map_err(|_| StoreError::InvalidArchetype(archetypes.value(i).to_string()))?;
+            results.push(StoredImage {
+                image_id: image_ids.value(i).parse()?,
+                skeet_id: SkeetId::new(skeet_ids.value(i)),
+                image,
+                discovered_at: micros_to_datetime(discovered_ats.value(i)),
+                original_at: micros_to_datetime(original_ats.value(i)),
+                archetype,
+                annotated_image,
+            });
+        }
+    }
+    Ok(results)
 }
 
 fn typed_column<'a, T: Array + 'static>(
@@ -190,6 +213,7 @@ mod tests {
             discovered_at: DiscoveredAt::now(),
             original_at: OriginalAt::new(Utc::now()),
             archetype: Archetype::TopRight,
+            annotated_image: test_image(),
         };
 
         store.add(&record).await.unwrap();
@@ -219,6 +243,7 @@ mod tests {
                 discovered_at: DiscoveredAt::now(),
                 original_at: OriginalAt::new(Utc::now()),
                 archetype: Archetype::BottomLeft,
+                annotated_image: test_image(),
             };
             store.add(&record).await.unwrap();
         }
@@ -241,6 +266,7 @@ mod tests {
             discovered_at: DiscoveredAt::now(),
             original_at: OriginalAt::new(Utc::now()),
             archetype: Archetype::TopLeft,
+            annotated_image: test_image(),
         };
 
         {

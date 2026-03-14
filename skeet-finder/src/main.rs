@@ -12,7 +12,7 @@ use atrium_api::{
 };
 use chrono::{DateTime, Utc};
 use clap::Parser;
-use face_detection::{FaceDetector, face_quadrant};
+use face_detection::{FaceDetector, annotate_image, face_quadrant};
 use jetstream_oxide::{
     DefaultJetstreamEndpoints, JetstreamCompression, JetstreamConfig, JetstreamConnector,
     events::{JetstreamEvent, commit::CommitEvent},
@@ -145,6 +145,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     face_detection::Quadrant::BottomRight => Archetype::BottomRight,
                 };
 
+                let annotated = annotate_image(&dynamic_image, face);
+
                 let record = ImageRecord {
                     image_id: ImageId::new(),
                     skeet_id: skeet_id.clone(),
@@ -152,6 +154,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     discovered_at: DiscoveredAt::now(),
                     original_at: OriginalAt::new(original_at),
                     archetype,
+                    annotated_image: annotated,
                 };
 
                 match store.add(&record).await {

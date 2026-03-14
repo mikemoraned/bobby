@@ -7,7 +7,8 @@ edition = "2024"
 workspace = true
 
 [dependencies]
-clap = { version = "4", features = ["derive"] }
+clap = { workspace = true }
 cot = "0.5"
+image = { workspace = true }
 skeet-store = { path = "../skeet-store" }
-tokio = { version = "1", features = ["full"] }
+tokio = { workspace = true }

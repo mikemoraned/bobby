@@ -7,27 +7,48 @@
         <style>
             body {
                 font-family: system-ui, sans-serif;
-                max-width: 600px;
+                max-width: 1200px;
                 margin: 2rem auto;
                 padding: 0 1rem;
             }
             h1 { text-align: center; }
-            .skeet { margin-bottom: 1rem; }
             .empty { color: #666; text-align: center; margin-top: 2rem; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { border: 1px solid #ddd; padding: 0.5rem; vertical-align: top; }
+            th { background: #f5f5f5; text-align: left; }
+            td.id { font-family: monospace; font-size: 0.85rem; white-space: nowrap; }
+            td.annotated img { max-width: 300px; max-height: 300px; }
         </style>
     </head>
     <body>
         <h1>Skeet Feed</h1>
-        {% if skeets.is_empty() %}
+        {% if entries.is_empty() %}
             <p class="empty">No skeets found yet. Run <code>just find</code> to start collecting.</p>
         {% else %}
-            {% for skeet in &skeets %}
-                <div class="skeet">
-                    <blockquote class="bluesky-embed" data-bluesky-uri="{{ skeet.at_uri }}">
-                        <a href="{{ skeet.web_url }}">Loading skeet...</a>
-                    </blockquote>
-                </div>
-            {% endfor %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Annotated Image</th>
+                        <th>Skeet</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in &entries %}
+                        <tr>
+                            <td class="id">{{ entry.image_id }}</td>
+                            <td class="annotated">
+                                <img src="/skeet/{{ entry.image_id }}/annotated.png" alt="annotated face detection">
+                            </td>
+                            <td>
+                                <blockquote class="bluesky-embed" data-bluesky-uri="{{ entry.at_uri }}">
+                                    <a href="{{ entry.web_url }}">Loading skeet...</a>
+                                </blockquote>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
             <script async src="https://embed.bsky.app/static/embed.js" charset="utf-8"></script>
         {% endif %}
     </body>

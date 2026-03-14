@@ -46,7 +46,8 @@ We're going to follow a [Walking Skeleton](https://wiki.c2.com/?WalkingSkeleton)
 ## Rust specifics
 
 * see above general guidance about comments. However, if comments are needed, please follow [rust doc guidelines](https://doc.rust-lang.org/stable/rustdoc/write-documentation/what-to-include.html)
-* use external crates for core things like datetimes etc
+* use external crates for core things like datetimes etc; don't write our own versions of these
+* when multiple crates share a dependency on the same crate, pull this dependency out to a shared definition at workspace level
 * always use latest rust version and edition where possible, but do not use rust nightly
     * specify the rust version in `rust-toolchain.toml` and the edition in `edition` in `Cargo.toml`
 * usage of `unwrap`:
@@ -119,6 +120,19 @@ We're now going to start using some real models to find and detect faces.
         * see examples dir for example images which you should capture in a test:
             * examples/eno7kayhhljgvgwc7ttdoojx_3mfev3xjylk2w_0.png : Archetype::TOP_RIGHT
             * examples/jbbneqrt2fxcij3kjwxdu54m_3mfev4a57a22u_0.png : Archetype::BOTTOM_LEFT
+
+* [ ] to aid in debugging:
+    * [x] annotated images:
+        * [x] create an ability to create an annotated image out of each image found which shows:
+            * the bounding box of the face (in red)
+            * cross-hairs from side of image to borders of bounding box (in red) centred on centre of bounding box
+        * [x] do a new version of store which extends the schema to v3 and adds a new column which is the annotated image
+        * [x] extend the feed website so that it shows a table with three columns:
+            * the unique id
+            * the annotated image
+                * there should be a new endpoint created which is `/skeet/{image_id}/annotated.png` which is the annotated image that be shown as `<img>`
+            * the embedded skeet
+    * [ ] add a cli bin to the store crate which allows an image to be exported to a file, indexed by unique id
 
 ## Slice N ...
 

@@ -1,5 +1,6 @@
 #![warn(clippy::all, clippy::nursery)]
 
+use std::io::Cursor;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -7,9 +8,11 @@ use clap::Parser;
 use cot::config::ProjectConfig;
 use cot::html::Html;
 use cot::project::{Bootstrapper, RegisterAppsContext};
+use cot::request::extractors::Path;
+use cot::response::Response;
 use cot::router::{Route, Router};
-use cot::{App, AppBuilder, Project, Template};
-use skeet_store::{SkeetId, SkeetStore};
+use cot::{App, AppBuilder, Body, Project, StatusCode, Template};
+use skeet_store::{ImageId, SkeetId, SkeetStore};
 
 static STORE_PATH: OnceLock<PathBuf> = OnceLock::new();
 
@@ -20,17 +23,19 @@ struct Args {
 }
 
 #[derive(Debug)]
-struct SkeetEmbed {
+struct FeedEntry {
+    image_id: String,
     at_uri: String,
     web_url: String,
 }
 
-fn skeet_embed(skeet_id: &SkeetId) -> Option<SkeetEmbed> {
+fn to_feed_entry(image_id: &ImageId, skeet_id: &SkeetId) -> Option<FeedEntry> {
     let at_uri = skeet_id.as_str();
     let stripped = at_uri.strip_prefix("at://")?;
     let (did, rest) = stripped.split_once('/')?;
     let rkey = rest.strip_prefix("app.bsky.feed.post/")?;
-    Some(SkeetEmbed {
+    Some(FeedEntry {
+        image_id: image_id.to_string(),
         at_uri: at_uri.to_string(),
         web_url: format!("https://bsky.app/profile/{did}/post/{rkey}"),
     })
@@ -39,27 +44,64 @@ fn skeet_embed(skeet_id: &SkeetId) -> Option<SkeetEmbed> {
 #[derive(Debug, Template)]
 #[template(path = "feed.html")]
 struct FeedTemplate {
-    skeets: Vec<SkeetEmbed>,
+    entries: Vec<FeedEntry>,
 }
 
 async fn feed() -> cot::Result<Html> {
-    let store_path = STORE_PATH
-        .get()
-        .ok_or_else(|| cot::Error::internal("store path not initialized"))?;
-    let store = SkeetStore::open(store_path)
-        .await
-        .map_err(|e| cot::Error::internal(format!("failed to open store: {e}")))?;
+    let store = open_store().await?;
 
-    let skeet_ids = store
-        .unique_skeet_ids()
+    let images = store
+        .list_all()
         .await
         .map_err(|e| cot::Error::internal(format!("failed to read store: {e}")))?;
 
-    let skeets: Vec<SkeetEmbed> = skeet_ids.iter().filter_map(skeet_embed).collect();
+    let entries: Vec<FeedEntry> = images
+        .iter()
+        .filter_map(|img| to_feed_entry(&img.image_id, &img.skeet_id))
+        .collect();
 
-    let template = FeedTemplate { skeets };
+    let template = FeedTemplate { entries };
     let rendered = template.render()?;
     Ok(Html::new(rendered))
+}
+
+async fn annotated_image(Path(image_id_str): Path<String>) -> cot::Result<Response> {
+    let image_id: ImageId = image_id_str
+        .parse()
+        .map_err(|_| cot::Error::internal(format!("invalid image id: {image_id_str}")))?;
+
+    let store = open_store().await?;
+    let stored = store
+        .get_by_id(&image_id)
+        .await
+        .map_err(|e| cot::Error::internal(format!("store error: {e}")))?;
+
+    let Some(stored) = stored else {
+        let mut response = Response::new(Body::fixed("not found"));
+        *response.status_mut() = StatusCode::NOT_FOUND;
+        return Ok(response);
+    };
+
+    let mut buf = Cursor::new(Vec::new());
+    stored
+        .annotated_image
+        .write_to(&mut buf, image::ImageFormat::Png)
+        .map_err(|e| cot::Error::internal(format!("failed to encode image: {e}")))?;
+
+    let mut response = Response::new(Body::fixed(buf.into_inner()));
+    response
+        .headers_mut()
+        .insert("content-type", "image/png".parse().expect("valid header"));
+    Ok(response)
+}
+
+async fn open_store() -> cot::Result<SkeetStore> {
+    let store_path = STORE_PATH
+        .get()
+        .ok_or_else(|| cot::Error::internal("store path not initialized"))?;
+    SkeetStore::open(store_path)
+        .await
+        .map_err(|e| cot::Error::internal(format!("failed to open store: {e}")))
 }
 
 struct FeedApp;
@@ -70,7 +112,14 @@ impl App for FeedApp {
     }
 
     fn router(&self) -> Router {
-        Router::with_urls([Route::with_handler_and_name("/", feed, "feed")])
+        Router::with_urls([
+            Route::with_handler_and_name("/", feed, "feed"),
+            Route::with_handler_and_name(
+                "/skeet/{image_id}/annotated.png",
+                annotated_image,
+                "annotated_image",
+            ),
+        ])
     }
 }
 
@@ -106,22 +155,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn converts_at_uri_to_embed() {
-        let id = SkeetId::new("at://did:plc:abc123/app.bsky.feed.post/xyz789");
-        let embed = skeet_embed(&id).expect("should produce embed");
-        assert_eq!(embed.at_uri, "at://did:plc:abc123/app.bsky.feed.post/xyz789");
-        assert_eq!(embed.web_url, "https://bsky.app/profile/did:plc:abc123/post/xyz789");
+    fn converts_at_uri_to_entry() {
+        let image_id = ImageId::new();
+        let skeet_id = SkeetId::new("at://did:plc:abc123/app.bsky.feed.post/xyz789");
+        let entry = to_feed_entry(&image_id, &skeet_id).expect("should produce entry");
+        assert_eq!(entry.at_uri, "at://did:plc:abc123/app.bsky.feed.post/xyz789");
+        assert_eq!(
+            entry.web_url,
+            "https://bsky.app/profile/did:plc:abc123/post/xyz789"
+        );
     }
 
     #[test]
     fn returns_none_for_invalid_uri() {
-        let id = SkeetId::new("not-an-at-uri");
-        assert!(skeet_embed(&id).is_none());
+        let image_id = ImageId::new();
+        let skeet_id = SkeetId::new("not-an-at-uri");
+        assert!(to_feed_entry(&image_id, &skeet_id).is_none());
     }
 
     #[test]
     fn returns_none_for_non_post_uri() {
-        let id = SkeetId::new("at://did:plc:abc123/app.bsky.feed.like/xyz789");
-        assert!(skeet_embed(&id).is_none());
+        let image_id = ImageId::new();
+        let skeet_id = SkeetId::new("at://did:plc:abc123/app.bsky.feed.like/xyz789");
+        assert!(to_feed_entry(&image_id, &skeet_id).is_none());
     }
 }

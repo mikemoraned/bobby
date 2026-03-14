@@ -135,6 +135,7 @@ pub struct ImageRecord {
     pub discovered_at: DiscoveredAt,
     pub original_at: OriginalAt,
     pub archetype: Archetype,
+    pub annotated_image: DynamicImage,
 }
 
 #[cfg(test)]

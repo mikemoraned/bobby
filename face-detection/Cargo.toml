@@ -9,7 +9,8 @@ workspace = true
 [dependencies]
 burn = { version = "~0.20", default-features = false, features = ["ndarray"] }
 burn-store = { version = "~0.20", features = ["burnpack"] }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+image = { workspace = true }
+imageproc = "0.25"
 
 # Pin transitive deps to avoid burn-import build failures
 lzma-rust2 = "~0.15.7"
