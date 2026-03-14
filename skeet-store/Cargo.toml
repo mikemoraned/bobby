@@ -11,6 +11,7 @@ clap = { workspace = true }
 futures = "0.3"
 image = { workspace = true }
 lancedb = "0.26"
+shared = { workspace = true }
 thiserror = "2"
 tokio = { workspace = true }
 uuid = { version = "1", features = ["v4"] }

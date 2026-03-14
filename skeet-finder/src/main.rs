@@ -12,7 +12,7 @@ use atrium_api::{
 };
 use chrono::{DateTime, Utc};
 use clap::Parser;
-use face_detection::{FaceDetector, annotate_image, face_quadrant};
+use face_detection::{ArchetypeConfig, FaceDetector, annotate_image, face_quadrant};
 use jetstream_oxide::{
     DefaultJetstreamEndpoints, JetstreamCompression, JetstreamConfig, JetstreamConnector,
     events::{JetstreamEvent, commit::CommitEvent},
@@ -44,7 +44,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let http = reqwest::Client::new();
     let detector = FaceDetector::from_bundled_weights();
 
-    info!("face detection model loaded");
+    let archetype_config = ArchetypeConfig::from_file(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/archetype.toml"),
+    )?;
+    let config_version = archetype_config.version();
+
+    info!(config_version = %config_version, "face detection model loaded");
 
     let config = JetstreamConfig {
         endpoint: DefaultJetstreamEndpoints::USEastOne.into(),
@@ -155,6 +160,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     original_at: OriginalAt::new(original_at),
                     archetype,
                     annotated_image: annotated,
+                    config_version: config_version.clone(),
                 };
 
                 match store.add(&record).await {

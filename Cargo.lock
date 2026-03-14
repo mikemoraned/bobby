@@ -8612,6 +8612,7 @@ name = "shared"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "toml 0.8.23",
 ]
 
 [[package]]
@@ -8728,6 +8729,7 @@ dependencies = [
  "futures",
  "image",
  "lancedb",
+ "shared",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",

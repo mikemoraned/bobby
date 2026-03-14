@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use image::DynamicImage;
+use shared::ConfigVersion;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -136,6 +137,7 @@ pub struct ImageRecord {
     pub original_at: OriginalAt,
     pub archetype: Archetype,
     pub annotated_image: DynamicImage,
+    pub config_version: ConfigVersion,
 }
 
 #[cfg(test)]

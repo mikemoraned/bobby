@@ -1,5 +1,8 @@
 #![warn(clippy::all, clippy::nursery)]
 
+use std::fmt::Write as _;
+use std::hash::{DefaultHasher, Hash, Hasher};
+
 use serde::Deserialize;
 
 /// A percentage value in the range 0.0–100.0.
@@ -66,11 +69,76 @@ impl std::str::FromStr for Rejection {
     }
 }
 
+/// A short hash string identifying a particular set of config values.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ConfigVersion(String);
+
+impl ConfigVersion {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for ConfigVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::str::FromStr for ConfigVersion {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(s.to_string()))
+    }
+}
+
+impl From<&str> for ConfigVersion {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
 /// Configuration for archetype classification thresholds.
 #[derive(Debug, Clone, Copy, Deserialize)]
 pub struct ArchetypeConfig {
     pub min_face_area_pct: Percentage,
     pub max_face_area_pct: Percentage,
+}
+
+impl ArchetypeConfig {
+    /// Load configuration from a TOML file at the given path.
+    pub fn from_file(path: &std::path::Path) -> Result<Self, Box<dyn std::error::Error>> {
+        let text = std::fs::read_to_string(path)?;
+        let config: Self = toml::from_str(&text)?;
+        Ok(config)
+    }
+
+    /// Compute a version string by hashing all config values.
+    ///
+    /// The version is a short hex string derived from sorting all config
+    /// key-value pairs and hashing them. Changing any threshold value
+    /// produces a different version.
+    pub fn version(&self) -> ConfigVersion {
+        let mut entries = vec![
+            ("max_face_area_pct", self.max_face_area_pct.value().to_bits()),
+            ("min_face_area_pct", self.min_face_area_pct.value().to_bits()),
+        ];
+        entries.sort_by_key(|(k, _)| *k);
+
+        let mut hasher = DefaultHasher::new();
+        for (k, v) in &entries {
+            k.hash(&mut hasher);
+            v.hash(&mut hasher);
+        }
+        let hash = hasher.finish();
+
+        let mut version = String::with_capacity(8);
+        // Take first 8 hex chars for a short but unique-enough string
+        write!(version, "{hash:016x}").expect("write to String");
+        version.truncate(8);
+        ConfigVersion(version)
+    }
 }
 
 /// Result of classifying an image: either an archetype (quadrant) or rejection reasons.

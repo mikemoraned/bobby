@@ -54,10 +54,8 @@ fn main() {
 
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
 
-    let archetype_text = std::fs::read_to_string(root.join("skeet-finder/archetype.toml"))
-        .unwrap_or_else(|e| panic!("failed to read archetype.toml: {e}"));
-    let config: ArchetypeConfig = toml::from_str(&archetype_text)
-        .unwrap_or_else(|e| panic!("failed to parse archetype.toml: {e}"));
+    let config = ArchetypeConfig::from_file(&root.join("shared/archetype.toml"))
+        .unwrap_or_else(|e| panic!("failed to load archetype.toml: {e}"));
 
     let expected_text = std::fs::read_to_string(root.join("examples/expected.toml"))
         .unwrap_or_else(|e| panic!("failed to read expected.toml: {e}"));

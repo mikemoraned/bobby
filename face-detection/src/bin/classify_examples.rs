@@ -8,10 +8,8 @@ fn main() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let examples_dir = root.join("examples");
 
-    let archetype_text = std::fs::read_to_string(root.join("skeet-finder/archetype.toml"))
-        .expect("read archetype.toml");
-    let config: ArchetypeConfig =
-        toml::from_str(&archetype_text).expect("parse archetype.toml");
+    let config = ArchetypeConfig::from_file(&root.join("shared/archetype.toml"))
+        .expect("load archetype.toml");
 
     let detector = FaceDetector::from_bundled_weights();
 

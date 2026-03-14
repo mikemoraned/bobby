@@ -4,6 +4,7 @@ mod schema;
 mod types;
 
 pub use error::StoreError;
+pub use shared::ConfigVersion;
 pub use types::{Archetype, DiscoveredAt, ImageId, ImageRecord, OriginalAt, SkeetId};
 
 use std::io::Cursor;
@@ -19,7 +20,7 @@ use futures::TryStreamExt;
 use image::DynamicImage;
 use lancedb::query::{ExecutableQuery, QueryBase};
 
-use schema::{TABLE_NAME, images_v3_schema};
+use schema::{TABLE_NAME, images_v4_schema};
 
 pub struct SkeetStore {
     db: lancedb::Connection,
@@ -34,7 +35,7 @@ impl SkeetStore {
 
         let table_names = db.table_names().execute().await?;
         if !table_names.contains(&TABLE_NAME.to_string()) {
-            db.create_empty_table(TABLE_NAME, images_v3_schema())
+            db.create_empty_table(TABLE_NAME, images_v4_schema())
                 .execute()
                 .await?;
         }
@@ -43,7 +44,7 @@ impl SkeetStore {
     }
 
     pub async fn add(&self, record: &ImageRecord) -> Result<(), StoreError> {
-        let schema = images_v3_schema();
+        let schema = images_v4_schema();
 
         let image_bytes = encode_image_as_png(&record.image)?;
         let annotated_bytes = encode_image_as_png(&record.annotated_image)?;
@@ -64,6 +65,7 @@ impl SkeetStore {
                 ),
                 Arc::new(StringArray::from(vec![record.archetype.as_str()])),
                 Arc::new(LargeBinaryArray::from_vec(vec![&annotated_bytes])),
+                Arc::new(StringArray::from(vec![record.config_version.as_str()])),
             ],
         )?;
 
@@ -90,6 +92,7 @@ impl SkeetStore {
                 "discovered_at",
                 "original_at",
                 "archetype",
+                "config_version",
             ]))
             .execute()
             .await?
@@ -149,6 +152,7 @@ pub struct StoredImage {
     pub original_at: DateTime<Utc>,
     pub archetype: Archetype,
     pub annotated_image: DynamicImage,
+    pub config_version: ConfigVersion,
 }
 
 pub struct StoredImageSummary {
@@ -157,6 +161,7 @@ pub struct StoredImageSummary {
     pub discovered_at: DateTime<Utc>,
     pub original_at: DateTime<Utc>,
     pub archetype: Archetype,
+    pub config_version: ConfigVersion,
 }
 
 struct SummaryColumns<'a> {
@@ -165,6 +170,7 @@ struct SummaryColumns<'a> {
     discovered_ats: &'a TimestampMicrosecondArray,
     original_ats: &'a TimestampMicrosecondArray,
     archetypes: &'a StringArray,
+    config_versions: &'a StringArray,
 }
 
 impl<'a> SummaryColumns<'a> {
@@ -175,6 +181,7 @@ impl<'a> SummaryColumns<'a> {
             discovered_ats: typed_column::<TimestampMicrosecondArray>(batch, "discovered_at")?,
             original_ats: typed_column::<TimestampMicrosecondArray>(batch, "original_at")?,
             archetypes: typed_column::<StringArray>(batch, "archetype")?,
+            config_versions: typed_column::<StringArray>(batch, "config_version")?,
         })
     }
 
@@ -183,12 +190,18 @@ impl<'a> SummaryColumns<'a> {
             .value(i)
             .parse()
             .map_err(|_| StoreError::InvalidArchetype(self.archetypes.value(i).to_string()))?;
+        let config_version: ConfigVersion = self
+            .config_versions
+            .value(i)
+            .parse()
+            .expect("ConfigVersion parse is infallible");
         Ok(StoredImageSummary {
             image_id: self.image_ids.value(i).parse()?,
             skeet_id: SkeetId::new(self.skeet_ids.value(i)),
             discovered_at: micros_to_datetime(self.discovered_ats.value(i)),
             original_at: micros_to_datetime(self.original_ats.value(i)),
             archetype,
+            config_version,
         })
     }
 }
@@ -223,6 +236,7 @@ fn batches_to_stored_images(batches: &[RecordBatch]) -> Result<Vec<StoredImage>,
                 original_at: summary.original_at,
                 archetype: summary.archetype,
                 annotated_image,
+                config_version: summary.config_version,
             });
         }
     }
@@ -257,6 +271,7 @@ fn micros_to_datetime(micros: i64) -> DateTime<Utc> {
 mod tests {
     use super::*;
     use image::{ImageBuffer, Rgba};
+    use shared::ConfigVersion;
 
     fn test_image() -> DynamicImage {
         DynamicImage::ImageRgba8(ImageBuffer::from_pixel(2, 2, Rgba([255, 0, 0, 255])))
@@ -277,6 +292,7 @@ mod tests {
             original_at: OriginalAt::new(Utc::now()),
             archetype: Archetype::TopRight,
             annotated_image: test_image(),
+            config_version: ConfigVersion::from("test"),
         };
 
         store.add(&record).await.unwrap();
@@ -307,6 +323,7 @@ mod tests {
                 original_at: OriginalAt::new(Utc::now()),
                 archetype: Archetype::BottomLeft,
                 annotated_image: test_image(),
+                config_version: ConfigVersion::from("test"),
             };
             store.add(&record).await.unwrap();
         }
@@ -331,6 +348,7 @@ mod tests {
             original_at: OriginalAt::new(Utc::now()),
             archetype: Archetype::BottomRight,
             annotated_image: test_image(),
+            config_version: ConfigVersion::from("test"),
         };
 
         store.add(&record).await.unwrap();
@@ -354,6 +372,7 @@ mod tests {
             original_at: OriginalAt::new(Utc::now()),
             archetype: Archetype::TopLeft,
             annotated_image: test_image(),
+            config_version: ConfigVersion::from("test"),
         };
 
         {
