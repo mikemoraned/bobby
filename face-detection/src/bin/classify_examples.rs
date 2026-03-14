@@ -2,11 +2,16 @@
 
 use std::path::Path;
 
-use face_detection::FaceDetector;
+use face_detection::{ArchetypeConfig, Classification, FaceDetector, classify};
 
 fn main() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let examples_dir = root.join("examples");
+
+    let archetype_text = std::fs::read_to_string(root.join("skeet-finder/archetype.toml"))
+        .expect("read archetype.toml");
+    let config: ArchetypeConfig =
+        toml::from_str(&archetype_text).expect("parse archetype.toml");
 
     let detector = FaceDetector::from_bundled_weights();
 
@@ -45,6 +50,18 @@ fn main() {
                 "  face {i}: score={:.3}, frontal={frontal}, area={pct}, bbox=({:.0}, {:.0}, {:.0}x{:.0})",
                 face.score, face.x, face.y, face.width, face.height
             );
+        }
+
+        let classification = classify(&detector, &img, &config);
+        match &classification {
+            Classification::Accepted(quadrant) => println!("  classification: Accepted({quadrant})"),
+            Classification::Rejected(reasons) if reasons.is_empty() => {
+                println!("  classification: Rejected (no frontal face)");
+            }
+            Classification::Rejected(reasons) => {
+                let reasons_str: Vec<_> = reasons.iter().map(ToString::to_string).collect();
+                println!("  classification: Rejected({})", reasons_str.join(", "));
+            }
         }
         println!();
     }

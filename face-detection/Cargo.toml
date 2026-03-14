@@ -11,7 +11,9 @@ burn = { version = "~0.20", default-features = false, features = ["ndarray"] }
 burn-store = { version = "~0.20", features = ["burnpack"] }
 image = { workspace = true }
 imageproc = "0.25"
+serde = { workspace = true }
 shared = { workspace = true }
+toml = { workspace = true }
 
 # Pin transitive deps to avoid burn-import build failures
 lzma-rust2 = "~0.15.7"
