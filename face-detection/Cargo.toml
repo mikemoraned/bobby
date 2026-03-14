@@ -11,6 +11,7 @@ burn = { version = "~0.20", default-features = false, features = ["ndarray"] }
 burn-store = { version = "~0.20", features = ["burnpack"] }
 image = { workspace = true }
 imageproc = "0.25"
+shared = { workspace = true }
 
 # Pin transitive deps to avoid burn-import build failures
 lzma-rust2 = "~0.15.7"
@@ -18,8 +19,8 @@ candle-core = "=0.9.1"
 
 [dev-dependencies]
 libtest-mimic = "0.8"
-serde = { version = "1", features = ["derive"] }
-toml = "0.8"
+serde = { workspace = true }
+toml = { workspace = true }
 
 [[test]]
 name = "examples"

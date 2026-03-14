@@ -3,12 +3,13 @@
 use std::cell::RefCell;
 use std::path::Path;
 
-use face_detection::{FaceDetector, Quadrant, face_quadrant};
+use face_detection::{FaceDetector, classify};
 use libtest_mimic::{Arguments, Trial};
 use serde::Deserialize;
+use shared::{ArchetypeConfig, Classification, Quadrant, Rejection};
 
 #[derive(Deserialize)]
-struct Config {
+struct ExpectedConfig {
     example: Vec<Example>,
 }
 
@@ -16,6 +17,8 @@ struct Config {
 struct Example {
     path: String,
     archetype: Option<String>,
+    #[serde(default)]
+    rejected: Vec<String>,
 }
 
 thread_local! {
@@ -32,56 +35,54 @@ fn with_detector<R>(f: impl FnOnce(&FaceDetector) -> R) -> R {
     })
 }
 
-fn parse_archetype(s: &str) -> Quadrant {
-    match s {
-        "TOP_LEFT" => Quadrant::TopLeft,
-        "TOP_RIGHT" => Quadrant::TopRight,
-        "BOTTOM_LEFT" => Quadrant::BottomLeft,
-        "BOTTOM_RIGHT" => Quadrant::BottomRight,
-        other => panic!("unknown archetype in config: {other}"),
+fn expected_classification(example: &Example) -> Classification {
+    if let Some(archetype) = &example.archetype {
+        let quadrant: Quadrant = archetype.parse().unwrap_or_else(|e| panic!("{e}"));
+        Classification::Accepted(quadrant)
+    } else {
+        let reasons = example
+            .rejected
+            .iter()
+            .map(|s| s.parse::<Rejection>().unwrap_or_else(|e| panic!("{e}")))
+            .collect();
+        Classification::Rejected(reasons)
     }
-}
-
-/// Classify an image: detect faces, pick the best frontal face, return its quadrant.
-/// Returns None if no frontal face is found.
-fn classify(detector: &FaceDetector, img: &image::DynamicImage) -> Option<Quadrant> {
-    let faces = detector.detect(img);
-    let face = faces.iter().find(|f| f.is_frontal())?;
-    Some(face_quadrant(face, img.width(), img.height()))
 }
 
 fn main() {
     let args = Arguments::from_args();
 
-    let config_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/expected.toml");
-    let config_text = std::fs::read_to_string(&config_path)
-        .unwrap_or_else(|e| panic!("failed to read {}: {e}", config_path.display()));
-    let config: Config =
-        toml::from_str(&config_text).unwrap_or_else(|e| panic!("failed to parse config: {e}"));
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
 
-    let examples_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples");
+    let archetype_text = std::fs::read_to_string(root.join("skeet-finder/archetype.toml"))
+        .unwrap_or_else(|e| panic!("failed to read archetype.toml: {e}"));
+    let config: ArchetypeConfig = toml::from_str(&archetype_text)
+        .unwrap_or_else(|e| panic!("failed to parse archetype.toml: {e}"));
+
+    let expected_text = std::fs::read_to_string(root.join("examples/expected.toml"))
+        .unwrap_or_else(|e| panic!("failed to read expected.toml: {e}"));
+    let expected: ExpectedConfig = toml::from_str(&expected_text)
+        .unwrap_or_else(|e| panic!("failed to parse expected.toml: {e}"));
+
+    let examples_dir = root.join("examples");
 
     let mut trials = Vec::new();
 
-    for example in &config.example {
+    for example in &expected.example {
         let stem = Path::new(&example.path)
             .file_stem()
             .expect("example path should have a file stem")
             .to_string_lossy()
             .to_string();
         let img_path = examples_dir.join(&example.path);
-        let expected = example.archetype.as_deref().map(parse_archetype);
+        let expected = expected_classification(example);
 
-        trials.push(Trial::test(format!("{stem}::archetype"), move || {
+        trials.push(Trial::test(format!("{stem}::classification"), move || {
             let img = image::open(&img_path)
                 .map_err(|e| format!("failed to load {}: {e}", img_path.display()))?;
-            let actual = with_detector(|d| classify(d, &img));
+            let actual = with_detector(|d| classify(d, &img, &config));
             if actual != expected {
-                let fmt = |q: Option<Quadrant>| match q {
-                    Some(q) => format!("Some({q})"),
-                    None => "None".to_string(),
-                };
-                return Err(format!("expected {}, got {}", fmt(expected), fmt(actual)).into());
+                return Err(format!("expected {expected:?}, got {actual:?}").into());
             }
             Ok(())
         }));

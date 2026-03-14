@@ -1,5 +1,5 @@
 [workspace]
-members = ["skeet-store", "skeet-finder", "skeet-feed", "face-detection"]
+members = ["skeet-store", "skeet-finder", "skeet-feed", "face-detection", "shared"]
 resolver = "2"
 
 [workspace.lints.clippy]
@@ -9,5 +9,8 @@ unwrap_used = "deny"
 chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+serde = { version = "1", features = ["derive"] }
+shared = { path = "shared" }
 tokio = { version = "1", features = ["full"] }
+toml = "0.8"
 

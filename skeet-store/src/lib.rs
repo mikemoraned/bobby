@@ -80,6 +80,24 @@ impl SkeetStore {
         batches_to_stored_images(&batches)
     }
 
+    pub async fn list_all_summaries(&self) -> Result<Vec<StoredImageSummary>, StoreError> {
+        let table = self.db.open_table(TABLE_NAME).execute().await?;
+        let batches: Vec<RecordBatch> = table
+            .query()
+            .select(lancedb::query::Select::columns(&[
+                "image_id",
+                "skeet_id",
+                "discovered_at",
+                "original_at",
+                "archetype",
+            ]))
+            .execute()
+            .await?
+            .try_collect()
+            .await?;
+        batches_to_summaries(&batches)
+    }
+
     pub async fn get_by_id(&self, image_id: &ImageId) -> Result<Option<StoredImage>, StoreError> {
         let table = self.db.open_table(TABLE_NAME).execute().await?;
         let batches: Vec<RecordBatch> = table
@@ -133,32 +151,77 @@ pub struct StoredImage {
     pub annotated_image: DynamicImage,
 }
 
+pub struct StoredImageSummary {
+    pub image_id: ImageId,
+    pub skeet_id: SkeetId,
+    pub discovered_at: DateTime<Utc>,
+    pub original_at: DateTime<Utc>,
+    pub archetype: Archetype,
+}
+
+struct SummaryColumns<'a> {
+    image_ids: &'a StringArray,
+    skeet_ids: &'a StringArray,
+    discovered_ats: &'a TimestampMicrosecondArray,
+    original_ats: &'a TimestampMicrosecondArray,
+    archetypes: &'a StringArray,
+}
+
+impl<'a> SummaryColumns<'a> {
+    fn extract(batch: &'a RecordBatch) -> Result<Self, StoreError> {
+        Ok(Self {
+            image_ids: typed_column::<StringArray>(batch, "image_id")?,
+            skeet_ids: typed_column::<StringArray>(batch, "skeet_id")?,
+            discovered_ats: typed_column::<TimestampMicrosecondArray>(batch, "discovered_at")?,
+            original_ats: typed_column::<TimestampMicrosecondArray>(batch, "original_at")?,
+            archetypes: typed_column::<StringArray>(batch, "archetype")?,
+        })
+    }
+
+    fn to_summary(&self, i: usize) -> Result<StoredImageSummary, StoreError> {
+        let archetype: Archetype = self.archetypes
+            .value(i)
+            .parse()
+            .map_err(|_| StoreError::InvalidArchetype(self.archetypes.value(i).to_string()))?;
+        Ok(StoredImageSummary {
+            image_id: self.image_ids.value(i).parse()?,
+            skeet_id: SkeetId::new(self.skeet_ids.value(i)),
+            discovered_at: micros_to_datetime(self.discovered_ats.value(i)),
+            original_at: micros_to_datetime(self.original_ats.value(i)),
+            archetype,
+        })
+    }
+}
+
+fn batches_to_summaries(batches: &[RecordBatch]) -> Result<Vec<StoredImageSummary>, StoreError> {
+    let mut results = Vec::new();
+    for batch in batches {
+        let cols = SummaryColumns::extract(batch)?;
+        for i in 0..batch.num_rows() {
+            results.push(cols.to_summary(i)?);
+        }
+    }
+    Ok(results)
+}
+
 fn batches_to_stored_images(batches: &[RecordBatch]) -> Result<Vec<StoredImage>, StoreError> {
     let mut results = Vec::new();
     for batch in batches {
-        let image_ids = typed_column::<StringArray>(batch, "image_id")?;
-        let skeet_ids = typed_column::<StringArray>(batch, "skeet_id")?;
+        let cols = SummaryColumns::extract(batch)?;
         let images = typed_column::<LargeBinaryArray>(batch, "image")?;
-        let discovered_ats =
-            typed_column::<TimestampMicrosecondArray>(batch, "discovered_at")?;
-        let original_ats = typed_column::<TimestampMicrosecondArray>(batch, "original_at")?;
-        let archetypes = typed_column::<StringArray>(batch, "archetype")?;
         let annotated_images = typed_column::<LargeBinaryArray>(batch, "annotated_image")?;
 
         for i in 0..batch.num_rows() {
+            let summary = cols.to_summary(i)?;
             let image = image::load_from_memory(images.value(i))?;
             let annotated_image = image::load_from_memory(annotated_images.value(i))?;
-            let archetype: Archetype = archetypes
-                .value(i)
-                .parse()
-                .map_err(|_| StoreError::InvalidArchetype(archetypes.value(i).to_string()))?;
             results.push(StoredImage {
-                image_id: image_ids.value(i).parse()?,
-                skeet_id: SkeetId::new(skeet_ids.value(i)),
+                image_id: summary.image_id,
+                skeet_id: summary.skeet_id,
                 image,
-                discovered_at: micros_to_datetime(discovered_ats.value(i)),
-                original_at: micros_to_datetime(original_ats.value(i)),
-                archetype,
+                discovered_at: summary.discovered_at,
+                original_at: summary.original_at,
+                archetype: summary.archetype,
                 annotated_image,
             });
         }
@@ -253,6 +316,30 @@ mod tests {
         let unique_skeets = store.unique_skeet_ids().await.unwrap();
         assert_eq!(unique_skeets.len(), 1);
         assert_eq!(unique_skeets[0], skeet_id);
+    }
+
+    #[tokio::test]
+    async fn list_all_summaries() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SkeetStore::open(dir.path()).await.unwrap();
+
+        let record = ImageRecord {
+            image_id: ImageId::new(),
+            skeet_id: SkeetId::new("at://did:plc:abc/app.bsky.feed.post/summ"),
+            image: test_image(),
+            discovered_at: DiscoveredAt::now(),
+            original_at: OriginalAt::new(Utc::now()),
+            archetype: Archetype::BottomRight,
+            annotated_image: test_image(),
+        };
+
+        store.add(&record).await.unwrap();
+
+        let summaries = store.list_all_summaries().await.unwrap();
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].image_id, record.image_id);
+        assert_eq!(summaries[0].skeet_id, record.skeet_id);
+        assert_eq!(summaries[0].archetype, Archetype::BottomRight);
     }
 
     #[tokio::test]

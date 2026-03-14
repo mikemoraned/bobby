@@ -18,6 +18,9 @@ use burn::backend::NdArray;
 use image::DynamicImage;
 use postprocess::{Detection, decode_and_filter};
 use preprocess::image_to_tensor;
+pub use shared::{
+    ArchetypeConfig, Classification, Percentage, Quadrant, Rejection,
+};
 
 type Backend = NdArray;
 
@@ -120,22 +123,41 @@ fn to_face(d: Detection, scale_x: f32, scale_y: f32) -> Face {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Quadrant {
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
+impl Face {
+    /// Face area as a percentage of the total image area.
+    pub fn area_pct(&self, image_width: u32, image_height: u32) -> Percentage {
+        let face_area = self.width * self.height;
+        let image_area = image_width as f32 * image_height as f32;
+        Percentage::new((face_area / image_area) * 100.0)
+    }
 }
 
-impl std::fmt::Display for Quadrant {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::TopLeft => write!(f, "TOP_LEFT"),
-            Self::TopRight => write!(f, "TOP_RIGHT"),
-            Self::BottomLeft => write!(f, "BOTTOM_LEFT"),
-            Self::BottomRight => write!(f, "BOTTOM_RIGHT"),
-        }
+/// Classify an image: detect frontal faces, check area thresholds, return quadrant or rejection.
+pub fn classify(
+    detector: &FaceDetector,
+    image: &DynamicImage,
+    config: &ArchetypeConfig,
+) -> Classification {
+    let faces = detector.detect(image);
+
+    let Some(face) = faces.iter().find(|f| f.is_frontal()) else {
+        return Classification::Rejected(vec![]);
+    };
+
+    let pct = face.area_pct(image.width(), image.height());
+    let mut reasons = Vec::new();
+
+    if pct < config.min_face_area_pct {
+        reasons.push(Rejection::FaceTooSmall);
+    }
+    if pct > config.max_face_area_pct {
+        reasons.push(Rejection::FaceTooLarge);
+    }
+
+    if reasons.is_empty() {
+        Classification::Accepted(face_quadrant(face, image.width(), image.height()))
+    } else {
+        Classification::Rejected(reasons)
     }
 }
 

@@ -54,7 +54,7 @@ We're going to follow a [Walking Skeleton](https://wiki.c2.com/?WalkingSkeleton)
     * this is denied by default. if absolutely needed, please annotate with `#[allow(clippy::unwrap_used)]` and give a justification
 * always apply `just clippy` after completion of each todo we complete
 * where possible we should:
-    * follow the [NewType](https://doc.rust-lang.org/rust-by-example/generics/new_types.html) idiom e.g. we should avoid having any bare Strings.
+    * follow the [NewType](https://doc.rust-lang.org/rust-by-example/generics/new_types.html) idiom e.g. we should avoid having any bare Strings or f32's.
     * use types rather than untyped arrays. 
         * For example, when passing images, use things like `DynamicImage` or similar, instead of using an array of bytes.
     * where there is a possibility of something being missing, we should capture that as an Option::None, or a Result::Err
@@ -64,6 +64,7 @@ We're going to follow a [Walking Skeleton](https://wiki.c2.com/?WalkingSkeleton)
     * errors should use structured Enums to represent the different causes of the error. Use [thiserror](https://docs.rs/thiserror/latest/thiserror/) for this.
 * logical structuring:
     * roughly-speaking, anything that is a different kind of thing (e.g. a schema for a message) or a different layer (e.g. core message routing or image labelling) should live in it's own module, and have it's own tests.
+    * any models that are used across the workspace in multiple crates should live in a separate `shared` crate which they depend on. The model structs etc can live in the `lib.rs` of that crate.
 * testing:
     * for each core piece of functionality, it should have an associated inline unit test
     * for anything that requires multiple parts to prove it works, we should have an integ test
@@ -133,6 +134,14 @@ We're now going to start using some real models to find and detect faces.
                 * there should be a new endpoint created which is `/skeet/{image_id}/annotated.png` which is the annotated image that be shown as `<img>`
             * the embedded skeet
     * [x] add a cli bin to the store crate which allows an image to be exported to a file, indexed by unique id
+    * [x] problem: `list_all` in `SkeetStore` is very expensive to use, memory-wise, as it loads all images eagerly, and using this from `skeet-feed` means all images are loaded into memory on each request. We don't need to do this.
+        * [x] introduce a new `StoredImageSummary` struct which contains all the same things as `StoredImage`, except for the actual image + annotated images.
+        * [x] populate this `StoredImageSummary` in a new `list_all_summaries` method by running a query on the LanceDB table which only fetches the needed fields
+            * watch out for continuing to try to share Arrow code where possible
+        * [x] update `skeet-feed` to `list_all_summaries` as `StoredImageSummary` should contain everything it needs
+        * [x] to avoid causing the same problem when the page is subsequently loaded in the browser, as all images will then be fetched:
+            * [x] update the feed to always show a limited selection of most recent images
+                * it should show the most recently-found 50 skeets
 
 * [ ] ignore faces of wrong size, position or number:
     * [x] regularize examples and tests, so that they are driven by config:
@@ -142,7 +151,7 @@ We're now going to start using some real models to find and detect faces.
             * the expected Archetype enum wrapped in an Option. 
                 * so, for example, if an image shouldn't be matched to any Archetype, it should be Option::None, but if it should, for example `examples/eno7kayhhljgvgwc7ttdoojx_3mfev3xjylk2w_0.png` it should be Option::Some(Archetype::TOP_RIGHT)
                 * make this easy to update manually
-        * [ ] update existing tests to be driven by this config instead
+        * [x] update existing tests to be driven by this config instead
     * [ ] ignore faces that don't take up enough or too much of the image:
         * we want to ignore tiny faces that make up a small %-age of the area of the image and faces which dominate
         * we likely want to make this tunable/change-able as opposed to hard-coded. So:
@@ -156,7 +165,7 @@ We're now going to start using some real models to find and detect faces.
         * [ ] add a version field to the config, and update the `images` table schema to record which version of the config was used to capture the image
                 * [ ] the version field should be automatically generated e.g. take all config values, sort them, and hash the result to a small string
                     * obviously the version field should not be part of the hash
-                * [ ] add a failing test which checks a hard-coded ve
+                * [ ] add a failing test which checks a hard-coded version against actual
     * [ ] make Archetype matching more strict i.e. faces that sit in the middle of the image shouldn't match to any Archetype and should have a None value.
         * an example is `examples/a5d59a02-b46e-478b-ac46-801f67b9ac40.png` which is too much in the centre
         * a suggested way to model/determine this is to:

@@ -47,16 +47,21 @@ struct FeedTemplate {
     entries: Vec<FeedEntry>,
 }
 
+const MAX_FEED_ENTRIES: usize = 50;
+
 async fn feed() -> cot::Result<Html> {
     let store = open_store().await?;
 
-    let images = store
-        .list_all()
+    let mut summaries = store
+        .list_all_summaries()
         .await
         .map_err(|e| cot::Error::internal(format!("failed to read store: {e}")))?;
 
-    let entries: Vec<FeedEntry> = images
+    summaries.sort_by(|a, b| b.discovered_at.cmp(&a.discovered_at));
+
+    let entries: Vec<FeedEntry> = summaries
         .iter()
+        .take(MAX_FEED_ENTRIES)
         .filter_map(|img| to_feed_entry(&img.image_id, &img.skeet_id))
         .collect();
 
