@@ -14,7 +14,8 @@ face-detection = { path = "../face-detection" }
 image = { workspace = true }
 indicatif = "0.17"
 jetstream-oxide = "0.1"
-reqwest = { version = "0.12", features = ["rustls-tls"], default-features = false }
+reqwest = { version = "0.12", features = ["rustls-tls", "json"], default-features = false }
+serde_json = "1"
 shared = { workspace = true }
 skin-detection = { path = "../skin-detection" }
 skeet-store = { path = "../skeet-store" }
@@ -29,9 +30,25 @@ serde = { workspace = true }
 toml = { workspace = true }
 
 [[bin]]
+name = "finder"
+path = "src/bin/finder.rs"
+
+[[bin]]
 name = "classify-examples"
 path = "src/bin/classify_examples.rs"
 
+[[bin]]
+name = "metadata-dump"
+path = "src/bin/metadata_dump.rs"
+
+[[bin]]
+name = "add-to-blocklist"
+path = "src/bin/add_to_blocklist.rs"
+
 [[test]]
 name = "examples"
+harness = false
+
+[[test]]
+name = "blocklist"
 harness = false

@@ -33,7 +33,7 @@ validate-storage:
     cargo run --release --bin validate-storage -- --store-path {{ STORE }}
 
 find:
-    cargo run --release --bin skeet-finder -- --store-path {{ STORE }}
+    cargo run --release --bin finder -- --store-path {{ STORE }}
 
 feed:
     cargo run --release --bin skeet-feed -- --store-path {{ STORE }}

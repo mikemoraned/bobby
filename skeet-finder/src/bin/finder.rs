@@ -1,7 +1,5 @@
 #![warn(clippy::all, clippy::nursery)]
 
-mod firehose;
-
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -46,7 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!(config_version = %config_version, "face detection model loaded");
 
-    let receiver = firehose::connect().await?;
+    let receiver = skeet_finder::firehose::connect().await?;
 
     let spinner = ProgressBar::new_spinner();
     #[allow(clippy::literal_string_with_formatting_args)]
@@ -65,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     while let Ok(event) = receiver.recv_async().await {
         post_count += 1;
 
-        let skeet_images = firehose::extract_skeet_images(&event, &http).await;
+        let skeet_images = skeet_finder::firehose::extract_skeet_images(&event, &http).await;
         if skeet_images.is_empty() {
             if post_count.is_multiple_of(500) {
                 update_spinner(

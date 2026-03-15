@@ -288,6 +288,34 @@ We're now going to start using some real models to find and detect faces.
         * examples/bafkreiaj24jwns3psvpdkv2437ldxhnrwa64ypyxnsz2awq6lwrf3eidna.png (recognised at top right)
         * examples/jbbneqrt2fxcij3kjwxdu54m_3mfev4a57a22u_0.png (note that it is ok that this one is currently not recognised)
 
+* [ ] sanity-check that adult-based filtering is still working
+    * [x] add a debug-focussed cli called `metadata-dump` in `skeet-finder` that:
+        1. can take an image id, find it in the store
+        2. find the related skeet id
+        3. make a call to bluesky API's to dump all metadata about the skeet, including all the attributes we are currently using for filtering but anything else available is good
+    * [x] it looks like we are missing some coverage of tags that indicate adult content. We'll fix this in two ways:
+        * [x] add an integ test which is driven by a blocklist of `at` URLs (libtest-mimic could be good for this) which should:
+            1. read from a config of blocked URLs
+            2. load the saved JSON for skeet
+            3. verify it is blocked by the appropriate sub-part of the skeet-finder focussed on adult or similar content
+        * [x] add a small Rust cli which can take an at URL, download the JSON, and add it and the URL to the blocklist
+        * [x] do this for `at://did:plc:iyqgkr3bmlxwma7i63imodfs/app.bsky.feed.post/3mh4g7iacos23`
+            1. add a covering test via tools above
+            2. make changes to ensure we block anything that contains a `porn` label in it like this:
+            ```
+            "labels": [
+                {
+                "cid": "bafyreiaz5ut66dri5ijlk2acml7enpu5p3ezgdd3z3pr6vqgvdgfkzbppi",
+                "cts": "2026-03-15T17:00:52.038Z",
+                "src": "did:plc:ar7c4by46qjdydhdevvrndac",
+                "uri": "at://did:plc:iyqgkr3bmlxwma7i63imodfs/app.bsky.feed.post/3mh4g7iacos23",
+                "val": "porn",
+                "ver": 1
+                }
+            ],
+            ```
+
+
 ## Slice 5: Make minimal version available online
 
 What we want to get to is:
@@ -307,6 +335,7 @@ What we want to get to is:
         * the URL for the S3 bucket should be passed into the CLI for `skeet-finder`
             * it should continue to also work for local dirs as well i.e. it's not forced to always use remote S3
     * [ ] also need to update `validate-storage` to work with this
+
 * [ ] update `skeet-feed` to run on fly.io and read from the bunny S3 location
     * secrets will be managed using fly secrets which I will separately set up i.e. I will create `HOM_BOBBY_READ_ONLY` secret
     * desired usage:
@@ -314,6 +343,7 @@ What we want to get to is:
         * the skeet-feed should be updated like the finder to read from the S3 bucket or a local dir
         * this will be deployed and published manually from my machine and there will be a set of integ tests which validate deployment was successful. there should also be a `bobby-prod` and `bobby-staging` version
             * see https://github.com/mikemoraned/fosdem/blob/main/Justfile and related setup for an example of how to do this
+
 * [ ] add observability:
     * [ ] we should switch to tokio-tracing and associated observability setup support; keep it as simple as possible
         * the intent is to make this our pluggable layer which allows following to be done without lots of bespoke support or awareness of where info ends up

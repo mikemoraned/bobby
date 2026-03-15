@@ -8894,6 +8894,7 @@ dependencies = [
  "libtest-mimic",
  "reqwest",
  "serde",
+ "serde_json",
  "shared",
  "skeet-store",
  "skin-detection",
