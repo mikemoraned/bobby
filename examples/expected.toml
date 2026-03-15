@@ -4,7 +4,7 @@ archetype = "TOP_RIGHT"
 
 [[example]]
 path = "jbbneqrt2fxcij3kjwxdu54m_3mfev4a57a22u_0.png"
-archetype = "BOTTOM_LEFT"
+rejected = ["FaceInCentralZone"]
 
 [[example]]
 path = "064b26e2-550a-4925-9bd1-aa26d68b1742.png"
@@ -16,4 +16,4 @@ rejected = ["FaceTooLarge"]
 
 [[example]]
 path = "a5d59a02-b46e-478b-ac46-801f67b9ac40.png"
-archetype = "TOP_RIGHT"
+rejected = ["FaceInCentralZone"]

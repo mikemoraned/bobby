@@ -76,9 +76,6 @@ impl Face {
         nose_offset < 0.35
     }
 
-    fn center(&self) -> (f32, f32) {
-        (self.x + self.width / 2.0, self.y + self.height / 2.0)
-    }
 }
 
 impl FaceDetector {
@@ -154,24 +151,74 @@ pub fn classify(
         reasons.push(Rejection::FaceTooLarge);
     }
 
-    if reasons.is_empty() {
-        Classification::Accepted(face_quadrant(face, image.width(), image.height()))
-    } else {
-        Classification::Rejected(reasons)
+    if !reasons.is_empty() {
+        return Classification::Rejected(reasons);
+    }
+
+    match face_zone(face, image.width(), image.height()) {
+        Zone::Quarter(quadrant) => Classification::Accepted(quadrant),
+        Zone::Central => Classification::Rejected(vec![Rejection::FaceInCentralZone]),
     }
 }
 
-pub fn face_quadrant(face: &Face, image_width: u32, image_height: u32) -> Quadrant {
-    let (cx, cy) = face.center();
-    let mid_x = image_width as f32 / 2.0;
-    let mid_y = image_height as f32 / 2.0;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Zone {
+    Quarter(Quadrant),
+    Central,
+}
 
-    match (cx < mid_x, cy < mid_y) {
-        (true, true) => Quadrant::TopLeft,
-        (false, true) => Quadrant::TopRight,
-        (true, false) => Quadrant::BottomLeft,
-        (false, false) => Quadrant::BottomRight,
+struct Rect {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+}
+
+impl Rect {
+    fn translate(&self, dx: f32, dy: f32) -> Self {
+        Self { x: self.x + dx, y: self.y + dy, w: self.w, h: self.h }
     }
+
+    fn overlap_area(&self, other: &Self) -> f32 {
+        let x_overlap = (self.x + self.w).min(other.x + other.w) - self.x.max(other.x);
+        let y_overlap = (self.y + self.h).min(other.y + other.h) - self.y.max(other.y);
+        if x_overlap > 0.0 && y_overlap > 0.0 {
+            x_overlap * y_overlap
+        } else {
+            0.0
+        }
+    }
+}
+
+/// Map a face to a zone by measuring overlap with each of the 5 zones
+/// (4 corner quarters + 1 central) and choosing the zone with maximum overlap.
+fn face_zone(face: &Face, image_width: u32, image_height: u32) -> Zone {
+    let iw = image_width as f32;
+    let ih = image_height as f32;
+    let half_w = iw / 2.0;
+    let half_h = ih / 2.0;
+
+    let face_rect = Rect { x: face.x, y: face.y, w: face.width, h: face.height };
+
+    let top_left_quarter = Rect { x: 0.0, y: 0.0, w: half_w, h: half_h };
+    let zones: [(Zone, Rect); 5] = [
+        (Zone::Quarter(Quadrant::TopLeft), top_left_quarter.translate(0.0, 0.0)),
+        (Zone::Quarter(Quadrant::TopRight), top_left_quarter.translate(half_w, 0.0)),
+        (Zone::Quarter(Quadrant::BottomLeft), top_left_quarter.translate(0.0, half_h)),
+        (Zone::Quarter(Quadrant::BottomRight), top_left_quarter.translate(half_w, half_h)),
+        (Zone::Central, top_left_quarter.translate(iw / 4.0, ih / 4.0)),
+    ];
+
+    zones
+        .into_iter()
+        .max_by(|(_, a), (_, b)| {
+            face_rect
+                .overlap_area(a)
+                .partial_cmp(&face_rect.overlap_area(b))
+                .expect("non-NaN overlap values")
+        })
+        .expect("zones is non-empty")
+        .0
 }
 
 #[cfg(test)]
@@ -209,15 +256,21 @@ mod tests {
     }
 
     #[test]
-    fn quadrant_top_right() {
+    fn zone_top_right() {
         let face = make_face(350.0, 50.0, 100.0, 100.0);
-        assert_eq!(face_quadrant(&face, 640, 480), Quadrant::TopRight);
+        assert_eq!(face_zone(&face, 640, 480), Zone::Quarter(Quadrant::TopRight));
     }
 
     #[test]
-    fn quadrant_bottom_left() {
+    fn zone_bottom_left() {
         let face = make_face(50.0, 300.0, 100.0, 100.0);
-        assert_eq!(face_quadrant(&face, 640, 480), Quadrant::BottomLeft);
+        assert_eq!(face_zone(&face, 640, 480), Zone::Quarter(Quadrant::BottomLeft));
+    }
+
+    #[test]
+    fn zone_central() {
+        let face = make_face(220.0, 140.0, 200.0, 200.0);
+        assert_eq!(face_zone(&face, 640, 480), Zone::Central);
     }
 
 }

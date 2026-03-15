@@ -12,7 +12,7 @@ use atrium_api::{
 };
 use chrono::{DateTime, Utc};
 use clap::Parser;
-use face_detection::{ArchetypeConfig, FaceDetector, annotate_image, face_quadrant};
+use face_detection::{ArchetypeConfig, FaceDetector, annotate_image, classify};
 use jetstream_oxide::{
     DefaultJetstreamEndpoints, JetstreamCompression, JetstreamConfig, JetstreamConnector,
     events::{JetstreamEvent, commit::CommitEvent},
@@ -131,17 +131,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 };
 
-                let faces = detector.detect(&dynamic_image);
+                let classification = classify(&detector, &dynamic_image, &archetype_config);
 
-                // Only keep images with exactly one frontal face
-                let frontal_faces: Vec<_> = faces.iter().filter(|f| f.is_frontal()).collect();
-                if frontal_faces.len() != 1 {
-                    continue;
-                }
-
-                let face = frontal_faces[0];
-                let quadrant =
-                    face_quadrant(face, dynamic_image.width(), dynamic_image.height());
+                let quadrant = match classification {
+                    face_detection::Classification::Accepted(q) => q,
+                    face_detection::Classification::Rejected(_) => continue,
+                };
 
                 let archetype = match quadrant {
                     face_detection::Quadrant::TopLeft => Archetype::TopLeft,
@@ -150,6 +145,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     face_detection::Quadrant::BottomRight => Archetype::BottomRight,
                 };
 
+                let faces = detector.detect(&dynamic_image);
+                let face = faces
+                    .iter()
+                    .find(|f| f.is_frontal())
+                    .expect("classify accepted, so a frontal face exists");
                 let annotated = annotate_image(&dynamic_image, face);
 
                 let record = ImageRecord {

@@ -46,6 +46,7 @@ impl PartialOrd for Percentage {
 pub enum Rejection {
     FaceTooSmall,
     FaceTooLarge,
+    FaceInCentralZone,
 }
 
 impl std::fmt::Display for Rejection {
@@ -53,6 +54,7 @@ impl std::fmt::Display for Rejection {
         match self {
             Self::FaceTooSmall => write!(f, "FaceTooSmall"),
             Self::FaceTooLarge => write!(f, "FaceTooLarge"),
+            Self::FaceInCentralZone => write!(f, "FaceInCentralZone"),
         }
     }
 }
@@ -64,6 +66,7 @@ impl std::str::FromStr for Rejection {
         match s {
             "FaceTooSmall" => Ok(Self::FaceTooSmall),
             "FaceTooLarge" => Ok(Self::FaceTooLarge),
+            "FaceInCentralZone" => Ok(Self::FaceInCentralZone),
             other => Err(format!("unknown rejection: {other}")),
         }
     }
