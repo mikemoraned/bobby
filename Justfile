@@ -19,7 +19,7 @@ build:
     cargo build
 
 test:
-    cargo test
+    cargo test --release
 
 clippy:
     cargo clippy --workspace -- -D warnings
