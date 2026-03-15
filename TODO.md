@@ -191,7 +191,7 @@ We're now going to start using some real models to find and detect faces.
         * another that handles the calling of code to specfically classify images and save them to the store
 
 * [ ] apply cosmetics
-    * [ ] rather than being primary a log-style output, change `skeet-find` `main.rs` so that it uses https://docs.rs/indicatif/latest/indicatif/ to produce a persistent summary line that contains:
+    * [x] rather than being primarily a log-style output, change `skeet-find` `main.rs` so that it uses https://docs.rs/indicatif/latest/indicatif/ to produce a persistent summary line that contains:
         * a continuous spinner to show it is alive
         * how long it has been running
         * number of:

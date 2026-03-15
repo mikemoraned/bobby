@@ -4,9 +4,11 @@ mod classify_and_store;
 mod firehose;
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use clap::Parser;
 use face_detection::{ArchetypeConfig, FaceDetector};
+use indicatif::{ProgressBar, ProgressStyle};
 use skeet_store::SkeetStore;
 use tracing::{info, warn};
 
@@ -40,7 +42,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let receiver = firehose::connect().await?;
 
-    info!("connected to jetstream, listening for posts...");
+    let spinner = ProgressBar::new_spinner();
+    #[allow(clippy::literal_string_with_formatting_args)]
+    let style = ProgressStyle::with_template("{elapsed_precise} {spinner} {msg}")
+        .expect("valid template")
+        .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏-");
+    spinner.set_style(style);
+    spinner.enable_steady_tick(Duration::from_millis(100));
+    spinner.set_message("connected, listening for posts...");
 
     let mut post_count: u64 = 0;
     let mut image_post_count: u64 = 0;
@@ -51,12 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let skeet_images = firehose::extract_skeet_images(&event, &http).await;
         if skeet_images.is_empty() {
             if post_count.is_multiple_of(500) {
-                info!(
-                    posts = post_count,
-                    image_posts = image_post_count,
-                    saved = saved_count,
-                    "progress"
-                );
+                update_spinner(&spinner, post_count, image_post_count, saved_count);
             }
             continue;
         }
@@ -71,10 +75,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &config_version,
             ) {
                 classify_and_store::save(&store, &record, &mut saved_count).await;
+                update_spinner(&spinner, post_count, image_post_count, saved_count);
             }
         }
     }
 
+    spinner.finish_with_message("jetstream connection closed");
     warn!("jetstream connection closed");
     Ok(())
+}
+
+fn update_spinner(spinner: &ProgressBar, posts: u64, images: u64, saved: u64) {
+    spinner.set_message(format!(
+        "skeets: {posts} | images: {images} | saved: {saved}"
+    ));
 }
