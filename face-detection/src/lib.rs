@@ -124,7 +124,7 @@ fn to_face(d: Detection, scale_x: f32, scale_y: f32) -> Face {
     }
 }
 
-use euclid::default::{Point2D, Rect, Size2D};
+use euclid::default::{Point2D, Rect, Size2D, Vector2D};
 
 fn overlap_area(a: &Rect<f32>, b: &Rect<f32>) -> f32 {
     a.intersection(b).map_or(0.0, |r| r.area())
@@ -139,23 +139,22 @@ fn overlap_area(a: &Rect<f32>, b: &Rect<f32>) -> f32 {
 pub fn face_zone(face: &Face, image_width: u32, image_height: u32) -> Zone {
     let unit_w = image_width as f32 / 4.0;
     let unit_h = image_height as f32 / 4.0;
-    let zone_size = Size2D::new(unit_w * 2.0, unit_h * 2.0);
-
     let face_rect = Rect::new(
         Point2D::new(face.x, face.y),
         Size2D::new(face.width, face.height),
     );
 
+    let base = Rect::new(Point2D::origin(), Size2D::new(unit_w * 2.0, unit_h * 2.0));
     let zones: [(Zone, Rect<f32>); 9] = [
-        (Zone::TopLeft,      Rect::new(Point2D::new(0.0,          0.0),          zone_size)),
-        (Zone::TopCenter,    Rect::new(Point2D::new(unit_w,       0.0),          zone_size)),
-        (Zone::TopRight,     Rect::new(Point2D::new(unit_w * 2.0, 0.0),          zone_size)),
-        (Zone::CenterLeft,   Rect::new(Point2D::new(0.0,          unit_h),       zone_size)),
-        (Zone::CenterCenter, Rect::new(Point2D::new(unit_w,       unit_h),       zone_size)),
-        (Zone::CenterRight,  Rect::new(Point2D::new(unit_w * 2.0, unit_h),       zone_size)),
-        (Zone::BottomLeft,   Rect::new(Point2D::new(0.0,          unit_h * 2.0), zone_size)),
-        (Zone::BottomCenter, Rect::new(Point2D::new(unit_w,       unit_h * 2.0), zone_size)),
-        (Zone::BottomRight,  Rect::new(Point2D::new(unit_w * 2.0, unit_h * 2.0), zone_size)),
+        (Zone::TopLeft,      base.translate(Vector2D::new(0.0,          0.0))),
+        (Zone::TopCenter,    base.translate(Vector2D::new(unit_w,       0.0))),
+        (Zone::TopRight,     base.translate(Vector2D::new(unit_w * 2.0, 0.0))),
+        (Zone::CenterLeft,   base.translate(Vector2D::new(0.0,          unit_h))),
+        (Zone::CenterCenter, base.translate(Vector2D::new(unit_w,       unit_h))),
+        (Zone::CenterRight,  base.translate(Vector2D::new(unit_w * 2.0, unit_h))),
+        (Zone::BottomLeft,   base.translate(Vector2D::new(0.0,          unit_h * 2.0))),
+        (Zone::BottomCenter, base.translate(Vector2D::new(unit_w,       unit_h * 2.0))),
+        (Zone::BottomRight,  base.translate(Vector2D::new(unit_w * 2.0, unit_h * 2.0))),
     ];
 
     zones
