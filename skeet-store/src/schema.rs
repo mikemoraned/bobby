@@ -3,6 +3,18 @@ use std::sync::Arc;
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
 
 pub const TABLE_NAME: &str = "images_v4";
+pub const VALIDATE_TABLE_NAME: &str = "validate_v1";
+
+pub fn validate_v1_schema() -> Arc<Schema> {
+    Arc::new(Schema::new(vec![
+        Field::new(
+            "timestamp",
+            DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
+            false,
+        ),
+        Field::new("random_number", DataType::Int64, false),
+    ]))
+}
 
 pub fn images_v4_schema() -> Arc<Schema> {
     Arc::new(Schema::new(vec![

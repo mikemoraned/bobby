@@ -11,6 +11,7 @@ clap = { workspace = true }
 futures = "0.3"
 image = { workspace = true }
 lancedb = "0.26"
+rand = "0.9"
 shared = { workspace = true }
 thiserror = "2"
 tokio = { workspace = true }

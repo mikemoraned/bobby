@@ -223,19 +223,42 @@ We're now going to start using some real models to find and detect faces.
 * [x] apply cosmetics
     * [x] update `skeet-finder` so that it keeps count of how often each rejection reason is seen, and shows that alongside a percentage
 
-* the sizes of images are quite large, and filling up local disk. For now, store on my NAS
-    * [ ] update all references to `store` to be instead go to `/Volumes/home/bobby/store `; do this in the `Justfile` by pulling out a STORE variable and using that
+* the sizes of images are quite large, and filling up local disk.
+    * For now, store on my NAS:
+        * [x] update all references to `store` to instead go to `/Volumes/home/bobby/store `; do this in the `Justfile` by pulling out a STORE variable and using that
+        * [x] to validate that saving and loading to a location can work let's add a small `validate-storage` cli:
+            * [x] the `open` method of `SkeetStore` should also create a new `validate_v1` table (if not present) with a schema of:
+                * timestamp
+                * random number
+            * [x] add a new `validate()` method on `SkeetStore` which validates by
+                * appending a new (timestamp, random number) row to `validate_v1` table
+                * does a query by the random number and checks the timestamp found is the one it just created
+            * [x] this validate method should be called by a new `validate-storage` cli in `skeet-store` and also by the main.rs, first thing after it calls `open`
+            * [x] add a new `validate-storage` rule to the `Justfile`
+        * ok looks like it is failing with this error:
+        ```
+        Error: Lance(Lance { source: IO { source: Generic { store: "LocalFileSystem", source: UnableToRenameFile { source: Os { code: 45, kind: Uncategorized, message: "Operation not supported" } } }, location: Location { file: "/Users/mxm/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/lance-table-2.0.0/src/io/commit.rs", line: 1095, column: 50 } } })
+        ```
+            * [x] this is probably some weirdness with the way this directory is mounted on my Synology NAS as an SMB volume. Ultimately I want to store this on an S3-compatible system so I don't want to spend too much time on this. However, let's do some minimal investigation.
+            * **Investigation result:** LanceDB uses atomic file renames (`rename()`) for commits. macOS SMB mounts don't support this (OS error 45 = `ENOTSUP`). This is a fundamental limitation of SMB, not a bug in our code.
+            * **Solutions considered and excluded (for now):**
+                * Use NFS instead of SMB — better rename support, but still filesystem-level workaround
+                * Run MinIO on the Synology via Docker/Container Manager — provides a local S3-compatible endpoint at `http://<NAS-IP>:9000`
+                * Switch LanceDB to S3 backend — supported via `lancedb = { features = ["aws"] }` and `lancedb::connect("s3://bucket/path").storage_options(...)`
+            * **Decision:** park this for now. When we move to S3 storage (which is the long-term plan), this problem goes away. For now, use a local store path.
+    * [x] actually just revert back to using a local store for now
 
 * [x] we'd like to remove any images that contain text as these are very unlikely to be the archetype we want
     * see `examples/5c228b9a-8115-498b-854d-08f2fad5f7f1.png` and `examples/09a57394-66aa-4745-b16c-523c02e6bf0d.png` as examples we should reject as Rejection::TooMuchText
     * all existing examples which are currently matched should continue to match an archetype i.e. not be filtered out
-    * add a parameter to `shared/archetype.toml` of `max_glyphs_allowed` and set it to `5`
+    * add a parameter to `shared/archetype.toml` of `max_glyphs_allowed` and initially set it to `5`
     * suggested implementation, in a new `text-detection` crate:
         * [x] estimate glyph count:
             * option 1: use an ML model or an existing Rust crate which can run OCR against an image
                 * this should ideally be one which supports multiple languages as we want to exclude non-english as well
             * option 2: alternatively, find a more general model that can detect/count glyphs in an image even if it can't parse them to text
         * [x] reject any images that have too many glyphs
+    
 
 * [ ] let's add metadata for the images that are exemplars i.e. really good examples of what we want
     * [ ] add `exemplar` = True/False property to the items in examples/expected.toml with the following labelled as exemplar, and everything else not

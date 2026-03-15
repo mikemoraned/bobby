@@ -12,7 +12,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use arrow_array::{
-    Array, LargeBinaryArray, RecordBatch, RecordBatchIterator, StringArray,
+    Array, Int64Array, LargeBinaryArray, RecordBatch, RecordBatchIterator, StringArray,
     TimestampMicrosecondArray,
 };
 use chrono::{DateTime, TimeZone, Utc};
@@ -20,7 +20,7 @@ use futures::TryStreamExt;
 use image::DynamicImage;
 use lancedb::query::{ExecutableQuery, QueryBase};
 
-use schema::{TABLE_NAME, images_v4_schema};
+use schema::{TABLE_NAME, VALIDATE_TABLE_NAME, images_v4_schema, validate_v1_schema};
 
 pub struct SkeetStore {
     db: lancedb::Connection,
@@ -36,6 +36,11 @@ impl SkeetStore {
         let table_names = db.table_names().execute().await?;
         if !table_names.contains(&TABLE_NAME.to_string()) {
             db.create_empty_table(TABLE_NAME, images_v4_schema())
+                .execute()
+                .await?;
+        }
+        if !table_names.contains(&VALIDATE_TABLE_NAME.to_string()) {
+            db.create_empty_table(VALIDATE_TABLE_NAME, validate_v1_schema())
                 .execute()
                 .await?;
         }
@@ -116,6 +121,58 @@ impl SkeetStore {
     pub async fn count(&self) -> Result<usize, StoreError> {
         let table = self.db.open_table(TABLE_NAME).execute().await?;
         Ok(table.count_rows(None).await?)
+    }
+
+    pub async fn validate(&self) -> Result<(), StoreError> {
+        let now = Utc::now();
+        let timestamp_micros = now.timestamp_micros();
+        let random_number = rand::random::<i64>();
+
+        let schema = validate_v1_schema();
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(
+                    TimestampMicrosecondArray::from(vec![timestamp_micros])
+                        .with_timezone("UTC"),
+                ),
+                Arc::new(Int64Array::from(vec![random_number])),
+            ],
+        )?;
+
+        let table = self.db.open_table(VALIDATE_TABLE_NAME).execute().await?;
+        let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
+        table.add(batches).execute().await?;
+
+        let result_batches: Vec<RecordBatch> = table
+            .query()
+            .only_if(format!("random_number = {random_number}"))
+            .execute()
+            .await?
+            .try_collect()
+            .await?;
+
+        if result_batches.is_empty() {
+            return Err(StoreError::ValidationFailed(
+                "no rows returned for validation query".to_string(),
+            ));
+        }
+
+        let timestamps = typed_column::<TimestampMicrosecondArray>(&result_batches[0], "timestamp")?;
+        if result_batches[0].num_rows() == 0 {
+            return Err(StoreError::ValidationFailed(
+                "no rows returned for validation query".to_string(),
+            ));
+        }
+
+        let found_micros = timestamps.value(0);
+        if found_micros != timestamp_micros {
+            return Err(StoreError::ValidationFailed(format!(
+                "timestamp mismatch: expected {timestamp_micros}, got {found_micros}"
+            )));
+        }
+
+        Ok(())
     }
 
     pub async fn unique_skeet_ids(&self) -> Result<Vec<SkeetId>, StoreError> {

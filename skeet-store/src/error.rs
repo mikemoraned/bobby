@@ -22,4 +22,7 @@ pub enum StoreError {
 
     #[error("invalid archetype in store: {0}")]
     InvalidArchetype(String),
+
+    #[error("storage validation failed: {0}")]
+    ValidationFailed(String),
 }

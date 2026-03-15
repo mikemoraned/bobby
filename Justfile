@@ -1,3 +1,5 @@
+STORE := "store"
+
 default:
     just --list
 
@@ -27,8 +29,11 @@ check: build clippy test
 classify-examples:
     cargo run --release --bin classify-examples
 
+validate-storage:
+    cargo run --release --bin validate-storage -- --store-path {{ STORE }}
+
 find:
-    cargo run --release --bin skeet-finder -- --store-path store
+    cargo run --release --bin skeet-finder -- --store-path {{ STORE }}
 
 feed:
-    cargo run --release --bin skeet-feed -- --store-path store
+    cargo run --release --bin skeet-feed -- --store-path {{ STORE }}
