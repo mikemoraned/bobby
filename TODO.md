@@ -327,7 +327,78 @@ We're now going to start using some real models to find and detect faces.
         ]
     ```
 
-## Slice 5: 
+## Slice 5: Meta: Split TODO.md into Claude Code memory hierarchy
+
+### Why
+
+A single monolithic TODO.md wastes tokens and reduces instruction-following quality. We need to split it by **lifespan** and **loading strategy** following current best practices:
+
+- Keep CLAUDE.md under 200 lines; it loads every session ([Anthropic docs](https://code.claude.com/docs/en/memory))
+- Use `.claude/rules/` with `paths:` frontmatter for language-specific rules that only load when touching matching files ([Anthropic docs](https://code.claude.com/docs/en/memory))
+- Use `docs/` for on-demand context referenced via `@docs/filename.md` ([HumanLayer](https://www.humanlayer.dev/blog/writing-a-good-claude-md), [Code Centre](https://cuong.io/blog/2025/06/15-claude-code-best-practices-memory-management))
+- Separate content by rate-of-change: permanent invariants vs medium-term architecture vs ephemeral slice tasks ([alexop.dev](https://alexop.dev/posts/stop-bloating-your-claude-md-progressive-disclosure-ai-coding-tools/))
+
+### Target structure
+
+```
+project-root/
+├── CLAUDE.md                        # ≤40 lines. Every session.
+├── .claude/
+│   └── rules/
+│       ├── rust.md                  # paths: **/*.rs, **/Cargo.toml
+│       └── python.md                # paths: **/*.py, **/pyproject.toml
+└── docs/
+    ├── architecture.md              # on-demand
+    ├── next-slices.md               # on-demand
+    ├── current-slice.md             # on-demand
+    └── completed-slices.md          # on-demand
+```
+
+### Steps
+
+- [ ] create `CLAUDE.md` at project root containing only:
+    - [ ] 1-2 line project purpose
+    - [ ] prerequisites (`just prerequisites`)
+    - [ ] key commands (`just find`, `just feed`, `just clippy`, `just validate-storage`)
+    - [ ] one line: "We follow a Walking Skeleton approach: incremental end-to-end slices."
+    - [ ] a "Reference Docs" section pointing to `docs/architecture.md`, `docs/next-slices.md`, `docs/current-slice.md`, `docs/completed-slices.md` with "read whichever are relevant before starting work"
+    - [ ] the "Invariants / Style" section from TODO.md (models dir, self-documenting code, stability, CLI params, Justfile)
+    - [ ] nothing else — no language-specific rules, no slice details, no architecture
+
+- [ ] create `.claude/rules/rust.md` with frontmatter `paths: ["**/*.rs", "**/Cargo.toml"]` containing:
+    - [ ] the "Rust specifics" section from TODO.md (doc guidelines, external crates, workspace deps, toolchain, unwrap policy, NewType idiom, Option/Result usage, thiserror, module structure, testing approach)
+
+- [ ] create `.claude/rules/python.md` with frontmatter `paths: ["**/*.py", "**/pyproject.toml"]` containing:
+    - [ ] the "Python specifics" section from TODO.md (use `uv` for deps)
+
+- [ ] create `docs/architecture.md` containing:
+    - [ ] the "Background" context about the original Twitter project
+    - [ ] the "Target Architecture" section (skeet-finder, skeet-store, skeet-feed)
+    - [ ] the "Constraints, trade-offs and technology choices" section (Rust preference, Burn for ML, sampling approach)
+
+- [ ] create `docs/next-slices.md` containing:
+    - [ ] the next slices after the **currently active slice** and its **remaining unchecked tasks**
+        * right now, this is Slice 6 and 7
+
+- [ ] create `docs/current-slice.md` containing:
+    - [ ] only the **currently active slice** and its **remaining unchecked tasks**
+        * currently active slice is this one, "Slice 5: Meta: Split TODO.md into Claude Code memory hierarchy"
+
+- [ ] create `docs/completed-slices.md` containing:
+    - [ ] a condensed summary of each fully completed slice (what was built, key decisions made)
+    - [ ] no need to preserve individual checkbox items — summarise by outcome
+
+- [ ] delete `TODO.md`
+
+### Validation
+
+- [ ] `CLAUDE.md` is under 50 lines
+- [ ] `.claude/rules/rust.md` has correct `paths:` YAML frontmatter
+- [ ] `.claude/rules/python.md` has correct `paths:` YAML frontmatter
+- [ ] `docs/next-slices.md` contains only Slice 6 and 7 remaining tasks
+- [ ] `docs/current-slice.md` contains only Slice 5 remaining tasks
+- [ ] `docs/completed-slices.md` covers Slices 1-4
+- [ ] no information from TODO.md has been lost — every section is accounted for in one of the new files
 
 ## Slice 6: Tweak recognition parameters and filtering
 
