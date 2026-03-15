@@ -1,24 +1,19 @@
-# Current Slice: Slice 5 — Meta: Split TODO.md into Claude Code memory hierarchy
+# Current Slice: Slice 6 — Tweak recognition parameters and filtering
 
-## All tasks complete.
-
-### Tasks (done)
-
-- [x] create `CLAUDE.md` at project root
-- [x] create `.claude/rules/rust.md`
-- [x] create `.claude/rules/python.md`
-- [x] create `docs/architecture.md`
-- [x] create `docs/next-slices.md`
-- [x] create `docs/current-slice.md`
-- [x] create `docs/completed-slices.md`
-- [x] delete `TODO.md`
-
-### Validation (done)
-
-- [x] `CLAUDE.md` is under 50 lines (38)
-- [x] `.claude/rules/rust.md` has correct `paths:` YAML frontmatter
-- [x] `.claude/rules/python.md` has correct `paths:` YAML frontmatter
-- [x] `docs/next-slices.md` contains only Slice 6 and 7 remaining tasks
-- [x] `docs/current-slice.md` contains only Slice 5 remaining tasks
-- [x] `docs/completed-slices.md` covers Slices 1–4
-- [x] no information from TODO.md has been lost — every section is accounted for in one of the new files
+* [ ] face position:
+    * from looking at some real examples which are definite non-matches, commonly a face appearing in top-middle is an anti-indicator.
+    * refine as follows:
+        * [ ] add a new set of Zones, still same size as one quarter of the image:
+            * TOP_CENTER
+            * BOTTOM_CENTER
+            * LEFT_CENTER
+            * RIGHT_CENTER
+        * [ ] of the expanded set of Zones, only the following should match to an Archetype:
+            * TOP_LEFT, TOP_RIGHT
+            * BOTTOM_LEFT, BOTTOM_RIGHT
+        * the expectation is that faces previously matching to TOP_LEFT or TOP_RIGHT will now match to TOP_CENTER and be dropped
+* [ ] pre-filtering still perhaps being missed
+    * [ ] the example `at://did:plc:wsdcu5le5birr37kohts2aqa/app.bsky.feed.post/3mh4ogusm4c23` shows up in the JS bluesky viewer with the text "The author of the quoted post has requested their posts not be displayed on external sites." which implies we should also be finding and blocking it. It's possible this is a "re-skeet" of someone else's content. However, if so, we should also ignore.
+* [ ] text showing up which we should filter on
+    * `examples/0f206499-82f4-48a0-bb22-0acded0982f9.png` should be filtered as Rejection::TooMuchText
+    * we may need to tweak how we use text information. For example, maybe we shouldn't filter on number of detected glyphs, but instead on what percentage of the image is text?

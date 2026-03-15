@@ -46,3 +46,7 @@ Added face detection and archetype matching:
 - Added exemplar metadata to expected.toml for key example images
 - Verified adult-based filtering with `metadata-dump` CLI and `add_to_blocklist` CLI
 - Extended `blocked_labels()` to check both post labels (porn) and author labels (!no-unauthenticated)
+
+## Slice 5: Meta: Split TODO.md into Claude Code memory hierarchy
+
+Restructured project documentation for Claude Code workflows. Created `CLAUDE.md` at project root, `.claude/rules/` with Rust and Python rule files (with `paths:` frontmatter), and split the monolithic `TODO.md` into `docs/architecture.md`, `docs/current-slice.md`, `docs/next-slices.md`, and `docs/completed-slices.md`. Deleted the original `TODO.md` with no information loss.
