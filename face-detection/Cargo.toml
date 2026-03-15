@@ -9,6 +9,7 @@ workspace = true
 [dependencies]
 burn = { version = "~0.20", default-features = false, features = ["ndarray"] }
 burn-store = { version = "~0.20", features = ["burnpack"] }
+euclid = "0.22"
 image = { workspace = true }
 imageproc = "0.25"
 shared = { workspace = true }

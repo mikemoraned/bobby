@@ -270,7 +270,15 @@ We're now going to start using some real models to find and detect faces.
     * [x] actually, I don't think `classify_and_store` is needed anymore:
         * [x] `classify_image` can live in `classify.rs`
         * [x] `save` can be moved into the `main.rs` in `skeet-finder`
-    * [ ] generic things like `Rect` and `translate` should come from an external crate that has robust well-tested versions of these; we're not doing anything hugely complicated here with them, so probably correct, but to reduce the downstream burden we should research and find a replacement from a robust crate that is specialised for this and commonly used.
+    * [x] generic things like `Rect` and `translate` should come from an external crate that has robust well-tested versions of these; we're not doing anything hugely complicated here with them, so probably correct, but to reduce the downstream burden we should research and find a replacement from a robust crate that is specialised for this and commonly used.
+
+* [ ] usability / debugging:
+    * [ ] indicate what the detected text was:
+        * [ ] ideally, update annotate to show the bounding box on image where text was detected
+        * [ ] add a new column in images table which is `detected_text` (UTF-8) (this changes the version)
+    * [ ] add columns in `skeet-feed` UI:
+        * [ ] show the version of config that was used
+        * [ ] show the detected text
 
 * [ ] let's add metadata for the images that are exemplars i.e. really good examples of what we want
     * [ ] add `exemplar` = True/False property to the items in examples/expected.toml with the following labelled as exemplar, and everything else not

@@ -124,27 +124,10 @@ fn to_face(d: Detection, scale_x: f32, scale_y: f32) -> Face {
     }
 }
 
-struct Rect {
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-}
+use euclid::default::{Point2D, Rect, Size2D, Vector2D};
 
-impl Rect {
-    fn translate(&self, dx: f32, dy: f32) -> Self {
-        Self { x: self.x + dx, y: self.y + dy, w: self.w, h: self.h }
-    }
-
-    fn overlap_area(&self, other: &Self) -> f32 {
-        let x_overlap = (self.x + self.w).min(other.x + other.w) - self.x.max(other.x);
-        let y_overlap = (self.y + self.h).min(other.y + other.h) - self.y.max(other.y);
-        if x_overlap > 0.0 && y_overlap > 0.0 {
-            x_overlap * y_overlap
-        } else {
-            0.0
-        }
-    }
+fn overlap_area(a: &Rect<f32>, b: &Rect<f32>) -> f32 {
+    a.intersection(b).map_or(0.0, |r| r.area())
 }
 
 /// Map a face to a zone by measuring overlap with each of the 5 zones
@@ -155,23 +138,25 @@ pub fn face_zone(face: &Face, image_width: u32, image_height: u32) -> Zone {
     let half_w = iw / 2.0;
     let half_h = ih / 2.0;
 
-    let face_rect = Rect { x: face.x, y: face.y, w: face.width, h: face.height };
+    let face_rect = Rect::new(
+        Point2D::new(face.x, face.y),
+        Size2D::new(face.width, face.height),
+    );
 
-    let top_left_quarter = Rect { x: 0.0, y: 0.0, w: half_w, h: half_h };
-    let zones: [(Zone, Rect); 5] = [
-        (Zone::Quarter(Quadrant::TopLeft), top_left_quarter.translate(0.0, 0.0)),
-        (Zone::Quarter(Quadrant::TopRight), top_left_quarter.translate(half_w, 0.0)),
-        (Zone::Quarter(Quadrant::BottomLeft), top_left_quarter.translate(0.0, half_h)),
-        (Zone::Quarter(Quadrant::BottomRight), top_left_quarter.translate(half_w, half_h)),
-        (Zone::Central, top_left_quarter.translate(iw / 4.0, ih / 4.0)),
+    let quarter = Rect::new(Point2D::origin(), Size2D::new(half_w, half_h));
+    let zones: [(Zone, Rect<f32>); 5] = [
+        (Zone::Quarter(Quadrant::TopLeft), quarter.translate(Vector2D::zero())),
+        (Zone::Quarter(Quadrant::TopRight), quarter.translate(Vector2D::new(half_w, 0.0))),
+        (Zone::Quarter(Quadrant::BottomLeft), quarter.translate(Vector2D::new(0.0, half_h))),
+        (Zone::Quarter(Quadrant::BottomRight), quarter.translate(Vector2D::new(half_w, half_h))),
+        (Zone::Central, quarter.translate(Vector2D::new(iw / 4.0, ih / 4.0))),
     ];
 
     zones
         .into_iter()
         .max_by(|(_, a), (_, b)| {
-            face_rect
-                .overlap_area(a)
-                .partial_cmp(&face_rect.overlap_area(b))
+            overlap_area(&face_rect, a)
+                .partial_cmp(&overlap_area(&face_rect, b))
                 .expect("non-NaN overlap values")
         })
         .expect("zones is non-empty")
