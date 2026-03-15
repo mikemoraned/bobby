@@ -54,20 +54,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::write(&json_path, &pretty)?;
     eprintln!("Saved JSON to {}", json_path.display());
 
-    // Append to blocklist.toml
+    // Add to blocklist.toml
     let toml_path = blocklist_dir.join("blocklist.toml");
-    let mut content = std::fs::read_to_string(&toml_path).unwrap_or_default();
+    let mut config = shared::BlocklistConfig::from_file(&toml_path)
+        .unwrap_or_default();
 
-    // Check if already present
-    if content.contains(&args.at_uri) {
-        eprintln!("URI already in blocklist, skipping config update");
-    } else {
-        content.push_str(&format!(
-            "\n[[blocked]]\nat_uri = \"{}\"\nreason = \"{}\"\n",
-            args.at_uri, args.reason
-        ));
-        std::fs::write(&toml_path, &content)?;
+    let entry = shared::BlockedEntry {
+        at_uri: args.at_uri.clone(),
+        reason: args.reason,
+    };
+
+    if config.add(entry) {
+        config.save(&toml_path)?;
         eprintln!("Added to {}", toml_path.display());
+    } else {
+        eprintln!("URI already in blocklist, skipping config update");
     }
 
     Ok(())

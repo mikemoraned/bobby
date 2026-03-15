@@ -314,6 +314,18 @@ We're now going to start using some real models to find and detect faces.
                 }
             ],
             ```
+    * [x] `at://did:plc:3bebghh7fygmfwjo6udrye43/app.bsky.feed.post/3mh4gatfe2c2d` should be excluded because it is marked as `!no-unauthenticated"` (see JSON snippet below). Use `add_to_blocklist` for this and make the changes to ensure this is caught and filtered out.
+    ```
+    "labels": [
+          {
+            "cid": "bafyreia6fdcpkifef47kv7ad63rkgeoswaianmgmiw4g6erwrj2q3wfzbm",
+            "cts": "1970-01-01T00:00:00.000Z",
+            "src": "did:plc:3bebghh7fygmfwjo6udrye43",
+            "uri": "at://did:plc:3bebghh7fygmfwjo6udrye43/app.bsky.actor.profile/self",
+            "val": "!no-unauthenticated"
+          }
+        ]
+    ```
 
 
 ## Slice 5: Make minimal version available online

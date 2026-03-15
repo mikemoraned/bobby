@@ -3,19 +3,7 @@
 use std::path::Path;
 
 use libtest_mimic::{Arguments, Trial};
-use serde::Deserialize;
-
-#[derive(Deserialize)]
-struct BlocklistConfig {
-    blocked: Vec<BlockedEntry>,
-}
-
-#[derive(Deserialize)]
-struct BlockedEntry {
-    at_uri: String,
-    #[allow(dead_code)]
-    reason: String,
-}
+use shared::BlocklistConfig;
 
 fn main() {
     let args = Arguments::from_args();
@@ -23,10 +11,8 @@ fn main() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let blocklist_dir = root.join("blocklist");
 
-    let config_text = std::fs::read_to_string(blocklist_dir.join("blocklist.toml"))
-        .unwrap_or_else(|e| panic!("failed to read blocklist.toml: {e}"));
-    let config: BlocklistConfig = toml::from_str(&config_text)
-        .unwrap_or_else(|e| panic!("failed to parse blocklist.toml: {e}"));
+    let config = BlocklistConfig::from_file(&blocklist_dir.join("blocklist.toml"))
+        .unwrap_or_else(|e| panic!("failed to load blocklist.toml: {e}"));
 
     let mut trials = Vec::new();
 

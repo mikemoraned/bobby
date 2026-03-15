@@ -5,6 +5,9 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 
 use chrono::{DateTime, Utc};
 use image::DynamicImage;
+mod blocklist;
+
+pub use blocklist::{BlockedEntry, BlocklistConfig};
 use serde::Deserialize;
 
 /// A percentage value in the range 0.0–100.0.

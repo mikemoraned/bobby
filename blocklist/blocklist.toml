@@ -3,3 +3,7 @@
 [[blocked]]
 at_uri = "at://did:plc:iyqgkr3bmlxwma7i63imodfs/app.bsky.feed.post/3mh4g7iacos23"
 reason = "external porn label"
+
+[[blocked]]
+at_uri = "at://did:plc:3bebghh7fygmfwjo6udrye43/app.bsky.feed.post/3mh4gatfe2c2d"
+reason = "author no-unauthenticated label"
