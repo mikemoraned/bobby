@@ -1,7 +1,7 @@
 ---
 name: next-slice
 description: Archive the current slice to completed-slices.md and promote the next slice from next-slices.md to current-slice.md
-user_invocable: true
+user-invocable: true
 ---
 
 # Next Slice
