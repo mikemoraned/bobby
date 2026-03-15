@@ -1,6 +1,6 @@
 use face_detection::{
-    ArchetypeConfig, Classification, ConfigVersion, FaceDetector, Quadrant, annotate_image,
-    classify,
+    ArchetypeConfig, Classification, ConfigVersion, FaceDetector, Quadrant, Rejection,
+    annotate_image, classify,
 };
 use skeet_store::{
     Archetype, DiscoveredAt, ImageId, ImageRecord, OriginalAt, SkeetStore,
@@ -14,13 +14,13 @@ pub fn classify_image(
     detector: &FaceDetector,
     archetype_config: &ArchetypeConfig,
     config_version: &ConfigVersion,
-) -> Option<ImageRecord> {
+) -> Result<ImageRecord, Vec<Rejection>> {
     let skin_mask = skin_detection::detect_skin(&skeet_image.image);
     let classification = classify(detector, &skeet_image.image, &skin_mask, archetype_config);
 
     let quadrant = match classification {
         Classification::Accepted(q) => q,
-        Classification::Rejected(_) => return None,
+        Classification::Rejected(reasons) => return Err(reasons),
     };
 
     let archetype = match quadrant {
@@ -37,7 +37,7 @@ pub fn classify_image(
         .expect("classify accepted, so a frontal face exists");
     let annotated = annotate_image(&skeet_image.image, face, &skin_mask);
 
-    Some(ImageRecord {
+    Ok(ImageRecord {
         image_id: ImageId::new(),
         skeet_id: skeet_image.skeet_id,
         image: skeet_image.image,

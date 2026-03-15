@@ -3,11 +3,13 @@
 mod classify_and_store;
 mod firehose;
 
+use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::Parser;
-use face_detection::{ArchetypeConfig, FaceDetector};
+use face_detection::{ArchetypeConfig, FaceDetector, Rejection};
 use indicatif::{ProgressBar, ProgressStyle};
 use skeet_store::SkeetStore;
 use tracing::{info, warn};
@@ -54,13 +56,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut post_count: u64 = 0;
     let mut image_post_count: u64 = 0;
     let mut saved_count: u64 = 0;
+    let mut rejection_counts: HashMap<Rejection, u64> = HashMap::new();
+
     while let Ok(event) = receiver.recv_async().await {
         post_count += 1;
 
         let skeet_images = firehose::extract_skeet_images(&event, &http).await;
         if skeet_images.is_empty() {
             if post_count.is_multiple_of(500) {
-                update_spinner(&spinner, post_count, image_post_count, saved_count);
+                update_spinner(
+                    &spinner,
+                    post_count,
+                    image_post_count,
+                    saved_count,
+                    &rejection_counts,
+                );
             }
             continue;
         }
@@ -68,15 +78,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         image_post_count += 1;
 
         for skeet_image in skeet_images {
-            if let Some(record) = classify_and_store::classify_image(
+            match classify_and_store::classify_image(
                 skeet_image,
                 &detector,
                 &archetype_config,
                 &config_version,
             ) {
-                classify_and_store::save(&store, &record, &mut saved_count).await;
-                update_spinner(&spinner, post_count, image_post_count, saved_count);
+                Ok(record) => {
+                    classify_and_store::save(&store, &record, &mut saved_count).await;
+                }
+                Err(reasons) => {
+                    for reason in &reasons {
+                        *rejection_counts.entry(*reason).or_default() += 1;
+                    }
+                }
             }
+            update_spinner(
+                &spinner,
+                post_count,
+                image_post_count,
+                saved_count,
+                &rejection_counts,
+            );
         }
     }
 
@@ -85,13 +108,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn update_spinner(spinner: &ProgressBar, posts: u64, images: u64, saved: u64) {
+fn update_spinner(
+    spinner: &ProgressBar,
+    posts: u64,
+    images: u64,
+    saved: u64,
+    rejections: &HashMap<Rejection, u64>,
+) {
     let hit_rate = if images > 0 {
         (saved as f64 / images as f64) * 100.0
     } else {
         0.0
     };
-    spinner.set_message(format!(
+
+    let mut msg = format!(
         "skeets: {posts} | images: {images} | saved: {saved} ({hit_rate:.1}%)"
-    ));
+    );
+
+    if !rejections.is_empty() {
+        let total_rejections: u64 = rejections.values().sum();
+        let mut sorted: Vec<_> = rejections.iter().collect();
+        sorted.sort_by_key(|(r, _)| r.to_string());
+
+        write!(msg, " | rejected: {total_rejections} (").expect("write to String");
+        for (i, (reason, count)) in sorted.iter().enumerate() {
+            let pct = (**count as f64 / total_rejections as f64) * 100.0;
+            if i > 0 {
+                write!(msg, ", ").expect("write to String");
+            }
+            write!(msg, "{reason}: {count} [{pct:.0}%]").expect("write to String");
+        }
+        write!(msg, ")").expect("write to String");
+    }
+
+    spinner.set_message(msg);
 }

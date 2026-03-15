@@ -220,6 +220,21 @@ We're now going to start using some real models to find and detect faces.
 
 ## Slice 4: False positive: Removing text
 
+* [x] apply cosmetics
+    * [x] update `skeet-finder` so that it keeps count of how often each rejection reason is seen, and shows that alongside a percentage
+
+* [ ] we'd like to remove any images that contain text as these are very unlikely to be the archetype we want
+    * see `examples/5c228b9a-8115-498b-854d-08f2fad5f7f1.png` and `examples/09a57394-66aa-4745-b16c-523c02e6bf0d.png` as examples we should reject as Rejection::TooMuchText
+    * all existing examples which are currently matched should continue to match an archetype i.e. not be filtered out
+    * add a parameter to `shared/archetype.toml` of `max_glyphs_allowed` and set it to `5`
+    * suggested implementation, in a new `text-detection` crate:
+        * [ ] estimate glyph count:
+            * option 1: use an ML model or an existing Rust crate which can run OCR against an image
+                * this should ideally be one which supports multiple languages as we want to exclude non-english as well
+            * option 2: alternatively, find a more general model that can detect/count glyphs in an image even if it can't parse them to text
+        * [ ] reject any images that have too many glyphs
+
+
 ## Slice N ...
 
 # Target Architecture
