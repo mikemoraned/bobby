@@ -272,20 +272,20 @@ We're now going to start using some real models to find and detect faces.
         * [x] `save` can be moved into the `main.rs` in `skeet-finder`
     * [x] generic things like `Rect` and `translate` should come from an external crate that has robust well-tested versions of these; we're not doing anything hugely complicated here with them, so probably correct, but to reduce the downstream burden we should research and find a replacement from a robust crate that is specialised for this and commonly used.
 
-* [ ] usability / debugging:
+* [x] usability / debugging:
     * [x] indicate what the detected text was:
-        * [ ] ideally, update annotate to show the bounding box on image where text was detected
-        * [ ] add a new column in images table which is `detected_text` (UTF-8) (this changes the version)
-        * [ ] update `classify_examples` so that it also says what the detected text was
+        * [x] ideally, update annotate to show the bounding box on image where text was detected
+        * [x] add a new column in images table which is `detected_text` (UTF-8) (this changes the version)
+        * [x] update `classify-examples` so that it also says what the detected text was
     * [x] add columns in `skeet-feed` UI:
-        * [ ] show the version of config that was used
-        * [ ] show the detected text
+        * [x] show the version of config that was used
+        * [x] show the detected text
 
-* [ ] let's add metadata for the images that are exemplars i.e. really good examples of what we want
-    * [ ] add `exemplar` = True/False property to the items in examples/expected.toml with the following labelled as exemplar, and everything else not
-        * examples/4472a427-f6bd-4e55-87bd-86f5f91e187e.png
-        * examples/eno7kayhhljgvgwc7ttdoojx_3mfev3xjylk2w_0.png
-        * examples/bafkreiaj24jwns3psvpdkv2437ldxhnrwa64ypyxnsz2awq6lwrf3eidna.png
+* [x] let's add metadata for the images that are exemplars i.e. really good examples of what we want, and then make changes as needed to ensure they are recognised
+    * [x] add `exemplar` = True/False property to the items in examples/expected.toml with the following labelled as exemplar, and everything else not
+        * examples/4472a427-f6bd-4e55-87bd-86f5f91e187e.png (recognised at bottom left)
+        * examples/eno7kayhhljgvgwc7ttdoojx_3mfev3xjylk2w_0.png (recognised at top right)
+        * examples/bafkreiaj24jwns3psvpdkv2437ldxhnrwa64ypyxnsz2awq6lwrf3eidna.png (recognised at top right)
         * examples/jbbneqrt2fxcij3kjwxdu54m_3mfev4a57a22u_0.png (note that it is ok that this one is currently not recognised)
 
 ## Slice 5: Make minimal version available online

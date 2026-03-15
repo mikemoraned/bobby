@@ -10,4 +10,4 @@ min_face_skin_pct = 30.0
 max_outside_face_skin_pct = 15.0
 
 # Maximum number of detected text word regions before rejecting.
-max_glyphs_allowed = 40
+max_glyphs_allowed = 45
