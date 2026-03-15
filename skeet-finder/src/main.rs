@@ -86,7 +86,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn update_spinner(spinner: &ProgressBar, posts: u64, images: u64, saved: u64) {
+    let hit_rate = if images > 0 {
+        (saved as f64 / images as f64) * 100.0
+    } else {
+        0.0
+    };
     spinner.set_message(format!(
-        "skeets: {posts} | images: {images} | saved: {saved}"
+        "skeets: {posts} | images: {images} | saved: {saved} ({hit_rate:.1}%)"
     ));
 }
