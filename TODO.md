@@ -122,7 +122,7 @@ We're now going to start using some real models to find and detect faces.
             * examples/eno7kayhhljgvgwc7ttdoojx_3mfev3xjylk2w_0.png : Archetype::TOP_RIGHT
             * examples/jbbneqrt2fxcij3kjwxdu54m_3mfev4a57a22u_0.png : Archetype::BOTTOM_LEFT
 
-* [ ] to aid in debugging:
+* [x] to aid in debugging:
     * [x] annotated images:
         * [x] create an ability to create an annotated image out of each image found which shows:
             * the bounding box of the face (in red)
@@ -177,6 +177,10 @@ We're now going to start using some real models to find and detect faces.
             * map a detected face to a Zone by measuring %-age overlap with each of them, and choosing max overlap
             * if an face maps to the Central Zone, then it doesn't match the Archetype (maps to None) and if it's one of the quarter Zones, then it maps to the associated Archetype
         * note that this means `examples/jbbneqrt2fxcij3kjwxdu54m_3mfev4a57a22u_0.png` is, for now, excluded as face is in centre. For now, we accept this and may add more complex categorisation
+    * [x] ensure we exclude images with multiple faces
+        * for example `examples/43344f90-e12f-4c06-bd54-ec7fb51211e1.png` should be exluded with an enum value of "TooManyFaces"
+        * [x] update expectations
+        * [x] fix code to ensure we reject this image
 
 
 ## Slice 3: False positive: Removing pron

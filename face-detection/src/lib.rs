@@ -137,8 +137,12 @@ pub fn classify(
 ) -> Classification {
     let faces = detector.detect(image);
 
+    if faces.len() > 1 {
+        return Classification::Rejected(vec![Rejection::TooManyFaces]);
+    }
+
     let Some(face) = faces.iter().find(|f| f.is_frontal()) else {
-        return Classification::Rejected(vec![]);
+        return Classification::Rejected(vec![Rejection::TooFewFrontalFaces]);
     };
 
     let pct = face.area_pct(image.width(), image.height());

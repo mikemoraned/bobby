@@ -47,6 +47,8 @@ pub enum Rejection {
     FaceTooSmall,
     FaceTooLarge,
     FaceInCentralZone,
+    TooManyFaces,
+    TooFewFrontalFaces,
 }
 
 impl std::fmt::Display for Rejection {
@@ -55,6 +57,8 @@ impl std::fmt::Display for Rejection {
             Self::FaceTooSmall => write!(f, "FaceTooSmall"),
             Self::FaceTooLarge => write!(f, "FaceTooLarge"),
             Self::FaceInCentralZone => write!(f, "FaceInCentralZone"),
+            Self::TooManyFaces => write!(f, "TooManyFaces"),
+            Self::TooFewFrontalFaces => write!(f, "TooFewFrontalFaces"),
         }
     }
 }
@@ -67,6 +71,8 @@ impl std::str::FromStr for Rejection {
             "FaceTooSmall" => Ok(Self::FaceTooSmall),
             "FaceTooLarge" => Ok(Self::FaceTooLarge),
             "FaceInCentralZone" => Ok(Self::FaceInCentralZone),
+            "TooManyFaces" => Ok(Self::TooManyFaces),
+            "TooFewFrontalFaces" => Ok(Self::TooFewFrontalFaces),
             other => Err(format!("unknown rejection: {other}")),
         }
     }
