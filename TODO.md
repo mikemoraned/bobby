@@ -244,7 +244,7 @@ We're now going to start using some real models to find and detect faces.
             * **Solutions considered and excluded (for now):**
                 * Use NFS instead of SMB — better rename support, but still filesystem-level workaround
                 * Run MinIO on the Synology via Docker/Container Manager — provides a local S3-compatible endpoint at `http://<NAS-IP>:9000`
-                * Switch LanceDB to S3 backend — supported via `lancedb = { features = ["aws"] }` and `lancedb::connect("s3://bucket/path").storage_options(...)`
+                * Swith LanceDB to S3 backend — supported via `lancedb = { features = ["aws"] }` and `lancedb::connect("s3://bucket/path").storage_options(...)`
             * **Decision:** park this for now. When we move to S3 storage (which is the long-term plan), this problem goes away. For now, use a local store path.
     * [x] actually just revert back to using a local store for now
 
@@ -267,9 +267,9 @@ We're now going to start using some real models to find and detect faces.
             * [ ] `classify` and all related work done should move to `classify_and_store`
             * [ ] `tests/examples.rs` in `face-detecion` should move to `skeet-finder`
             * [ ] `bin/classify_examples.rs` in `face-detecion` should move to `skeet-finder`
-    * [ ] actually, I don't think `classify_and_store` is needed anymore:
-        * [ ] `classify_image` can live in `classify.rs`
-        * [ ] `save` can be moved into the `main.rs` in `skeet-finder`
+    * [x] actually, I don't think `classify_and_store` is needed anymore:
+        * [x] `classify_image` can live in `classify.rs`
+        * [x] `save` can be moved into the `main.rs` in `skeet-finder`
     * [ ] generic things like `Rect` and `translate` should come from an external crate that has robust well-tested versions of these; we're not doing anything hugely complicated here with them, so probably correct, but to reduce the downstream burden we should research and find a replacement from a robust crate that is specialised for this and commonly used.
 
 * [ ] let's add metadata for the images that are exemplars i.e. really good examples of what we want
@@ -277,6 +277,40 @@ We're now going to start using some real models to find and detect faces.
         * examples/4472a427-f6bd-4e55-87bd-86f5f91e187e.png
         * examples/eno7kayhhljgvgwc7ttdoojx_3mfev3xjylk2w_0.png
         * examples/jbbneqrt2fxcij3kjwxdu54m_3mfev4a57a22u_0.png (note that it is ok that this one is currently not recognised)
+
+## Slice 5: Make minimal version available online
+
+What we want to get to is:
+* `skeet-finder` still running locally on demand, but saving data to the cloud somewhere
+* `skeet-feed` running as a website at `bobby.houseofmoran.io` which reads from the cloud
+
+* [ ] update `skeet-finder` / `skeet-store` to save data to an S3-compatible location
+    * I use https://bunny.net and would like to use their product for this (docs: https://docs.bunny.net/api-reference/storage / https://bunny.net/storage/)
+    * I have already created a `hom-bobby` zone
+    * desired usage:
+        * for local usage, read-only and read-write keys are stored in 1Password and are accessed using dev integration
+            * this can be done via passing a command-line argument to cli commands which is fetched in the Justfile via something like:
+            ```
+            READ_WRITE_KEY := `op read "op://Dev/hom-bobby-read-write/password"`
+            ```
+            * alternatively, if there is a native integration in Rust to fetch secrets from 1Password I'd prefer to use that and only pass the name of the secret (`Dev/hom-bobby-read-write`)
+        * the URL for the S3 bucket should be passed into the CLI for `skeet-finder`
+            * it should continue to also work for local dirs as well i.e. it's not forced to always use remote S3
+* [ ] update `skeet-feed` to run on fly.io and read from the bunny S3 location
+    * secrets with be managed using fly secrets which I will separately set up i.e. I will create `HOM_BOBBY_READ_ONLY` secret
+    * desired usage:
+        * right now there should be no reason for it to do any writes so only the read-only password will be given
+        * the skeet-feed should be updated like the finder to read from the S3 bucket or a local dir
+        * this will be deployed and published manually from my machine and there be a set of integ tests which validate deployment was successful. there should also be a `bobby-prod` and `bobby-staging` version
+            * see https://github.com/mikemoraned/fosdem/blob/main/Justfile and related setup for an example of how to do this
+* [ ] add observability:
+    * [ ] we should switch to tokio-tracing and associated observability setup support; keep it as simple as possible
+        * the intent is to make this our pluggable layer which allows following to be done without lots of bespoke support or awareness of where info ends up
+        * for example, any shared code used by `skeet-finder` and `skeet-feed` like `skeet-store` or `shared` should be unaware of deployment context
+    * [ ] `skeet-finder` should be updated to, when running locally, output to a local `logs` dir, following timestamped files, like in unix, with auto-rollover etc
+        * it should continue to have a persistent indicatif local UI
+    * [ ] `skeet-feed` should log traces to a cloud-based opentracing provider
+        * my preference is honeycomb, where I have an existing free account
 
 ## Slice N ...
 

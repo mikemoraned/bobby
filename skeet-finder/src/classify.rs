@@ -1,12 +1,17 @@
+use face_detection::{FaceDetector, annotate_image};
 use image::{DynamicImage, GrayImage};
 use shared::{
-    ArchetypeConfig, Classification, Percentage, Rejection, Zone,
+    ArchetypeConfig, Classification, ConfigVersion, Percentage, Quadrant, Rejection,
+    SkeetImage, Zone,
+};
+use skeet_store::{
+    Archetype, DiscoveredAt, ImageId, ImageRecord, OriginalAt,
 };
 
 /// Classify an image: detect frontal faces, check area, skin, and text thresholds,
 /// return quadrant or rejection.
 pub fn classify(
-    detector: &face_detection::FaceDetector,
+    detector: &FaceDetector,
     image: &DynamicImage,
     skin_mask: &GrayImage,
     word_count: usize,
@@ -67,4 +72,52 @@ pub fn classify(
         Zone::Quarter(quadrant) => Classification::Accepted(quadrant),
         Zone::Central => Classification::Rejected(vec![Rejection::FaceInCentralZone]),
     }
+}
+
+pub fn classify_image(
+    skeet_image: SkeetImage,
+    detector: &FaceDetector,
+    text_detector: &text_detection::TextDetector,
+    archetype_config: &ArchetypeConfig,
+    config_version: &ConfigVersion,
+) -> Result<ImageRecord, Vec<Rejection>> {
+    let skin_mask = skin_detection::detect_skin(&skeet_image.image);
+    let word_count = text_detector.count_characters(&skeet_image.image);
+    let classification = classify(
+        detector,
+        &skeet_image.image,
+        &skin_mask,
+        word_count,
+        archetype_config,
+    );
+
+    let quadrant = match classification {
+        Classification::Accepted(q) => q,
+        Classification::Rejected(reasons) => return Err(reasons),
+    };
+
+    let archetype = match quadrant {
+        Quadrant::TopLeft => Archetype::TopLeft,
+        Quadrant::TopRight => Archetype::TopRight,
+        Quadrant::BottomLeft => Archetype::BottomLeft,
+        Quadrant::BottomRight => Archetype::BottomRight,
+    };
+
+    let faces = detector.detect(&skeet_image.image);
+    let face = faces
+        .iter()
+        .find(|f| f.is_frontal())
+        .expect("classify accepted, so a frontal face exists");
+    let annotated = annotate_image(&skeet_image.image, face, &skin_mask);
+
+    Ok(ImageRecord {
+        image_id: ImageId::new(),
+        skeet_id: skeet_image.skeet_id,
+        image: skeet_image.image,
+        discovered_at: DiscoveredAt::now(),
+        original_at: OriginalAt::new(skeet_image.original_at),
+        archetype,
+        annotated_image: annotated,
+        config_version: config_version.clone(),
+    })
 }

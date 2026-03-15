@@ -8778,6 +8778,8 @@ dependencies = [
 name = "shared"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "image",
  "serde",
  "toml 0.8.23",
 ]

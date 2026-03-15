@@ -3,6 +3,8 @@
 use std::fmt::Write as _;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
+use chrono::{DateTime, Utc};
+use image::DynamicImage;
 use serde::Deserialize;
 
 /// A percentage value in the range 0.0–100.0.
@@ -209,6 +211,31 @@ impl std::str::FromStr for Quadrant {
             other => Err(format!("unknown quadrant: {other}")),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SkeetId(String);
+
+impl SkeetId {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for SkeetId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+pub struct SkeetImage {
+    pub skeet_id: SkeetId,
+    pub original_at: DateTime<Utc>,
+    pub image: DynamicImage,
 }
 
 #[cfg(test)]

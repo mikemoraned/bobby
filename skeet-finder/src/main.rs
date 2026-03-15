@@ -1,6 +1,5 @@
 #![warn(clippy::all, clippy::nursery)]
 
-mod classify_and_store;
 mod firehose;
 
 use std::collections::HashMap;
@@ -10,9 +9,9 @@ use std::time::Duration;
 
 use clap::Parser;
 use face_detection::FaceDetector;
-use shared::{ArchetypeConfig, Rejection};
 use indicatif::{ProgressBar, ProgressStyle};
-use skeet_store::SkeetStore;
+use shared::{ArchetypeConfig, Rejection};
+use skeet_store::{ImageRecord, SkeetStore};
 use tracing::{info, warn};
 
 #[derive(Parser)]
@@ -83,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         image_post_count += 1;
 
         for skeet_image in skeet_images {
-            match classify_and_store::classify_image(
+            match skeet_finder::classify_image(
                 skeet_image,
                 &detector,
                 &text_detector,
@@ -91,7 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &config_version,
             ) {
                 Ok(record) => {
-                    classify_and_store::save(&store, &record, &mut saved_count).await;
+                    save(&store, &record, &mut saved_count).await;
                 }
                 Err(reasons) => {
                     for reason in &reasons {
@@ -112,6 +111,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     spinner.finish_with_message("jetstream connection closed");
     warn!("jetstream connection closed");
     Ok(())
+}
+
+async fn save(store: &SkeetStore, record: &ImageRecord, saved_count: &mut u64) {
+    match store.add(record).await {
+        Ok(()) => {
+            *saved_count += 1;
+            info!(
+                saved = *saved_count,
+                skeet_id = %record.skeet_id,
+                archetype = %record.archetype,
+                "saved image"
+            );
+        }
+        Err(e) => {
+            warn!(error = %e, "failed to save image to store");
+        }
+    }
 }
 
 fn update_spinner(

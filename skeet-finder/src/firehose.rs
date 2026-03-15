@@ -7,21 +7,14 @@ use atrium_api::{
     types::{BlobRef, TypedBlobRef, Union},
 };
 use chrono::{DateTime, Utc};
-use image::DynamicImage;
 use jetstream_oxide::{
     DefaultJetstreamEndpoints, JetstreamCompression, JetstreamConfig, JetstreamConnector,
     JetstreamReceiver,
     events::{JetstreamEvent, commit::CommitEvent},
     exports::Nsid,
 };
-use skeet_store::SkeetId;
+use shared::{SkeetId, SkeetImage};
 use tracing::warn;
-
-pub struct SkeetImage {
-    pub skeet_id: SkeetId,
-    pub original_at: DateTime<Utc>,
-    pub image: DynamicImage,
-}
 
 pub async fn connect() -> Result<JetstreamReceiver, Box<dyn std::error::Error>> {
     let config = JetstreamConfig {

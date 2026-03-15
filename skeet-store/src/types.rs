@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use image::DynamicImage;
+pub use shared::SkeetId;
 use shared::ConfigVersion;
 use uuid::Uuid;
 
@@ -33,25 +34,6 @@ impl std::str::FromStr for ImageId {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Self(Uuid::parse_str(s)?))
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SkeetId(String);
-
-impl SkeetId {
-    pub fn new(id: impl Into<String>) -> Self {
-        Self(id.into())
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::fmt::Display for SkeetId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
     }
 }
 
