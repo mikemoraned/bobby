@@ -9,7 +9,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::Parser;
-use face_detection::{ArchetypeConfig, FaceDetector, Rejection};
+use face_detection::FaceDetector;
+use shared::{ArchetypeConfig, Rejection};
 use indicatif::{ProgressBar, ProgressStyle};
 use skeet_store::SkeetStore;
 use tracing::{info, warn};

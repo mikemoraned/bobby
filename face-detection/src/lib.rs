@@ -15,12 +15,10 @@ pub mod model {
 }
 
 use burn::backend::NdArray;
-use image::{DynamicImage, GrayImage};
+use image::DynamicImage;
 use postprocess::{Detection, decode_and_filter};
 use preprocess::image_to_tensor;
-pub use shared::{
-    ArchetypeConfig, Classification, ConfigVersion, Percentage, Quadrant, Rejection,
-};
+pub use shared::{Percentage, Quadrant, Zone};
 
 type Backend = NdArray;
 
@@ -76,6 +74,12 @@ impl Face {
         nose_offset < 0.35
     }
 
+    /// Face area as a percentage of the total image area.
+    pub fn area_pct(&self, image_width: u32, image_height: u32) -> Percentage {
+        let face_area = self.width * self.height;
+        let image_area = image_width as f32 * image_height as f32;
+        Percentage::new((face_area / image_area) * 100.0)
+    }
 }
 
 impl FaceDetector {
@@ -120,87 +124,6 @@ fn to_face(d: Detection, scale_x: f32, scale_y: f32) -> Face {
     }
 }
 
-impl Face {
-    /// Face area as a percentage of the total image area.
-    pub fn area_pct(&self, image_width: u32, image_height: u32) -> Percentage {
-        let face_area = self.width * self.height;
-        let image_area = image_width as f32 * image_height as f32;
-        Percentage::new((face_area / image_area) * 100.0)
-    }
-}
-
-/// Classify an image: detect frontal faces, check area, skin, and text thresholds,
-/// return quadrant or rejection.
-pub fn classify(
-    detector: &FaceDetector,
-    image: &DynamicImage,
-    skin_mask: &GrayImage,
-    word_count: usize,
-    config: &ArchetypeConfig,
-) -> Classification {
-    let faces = detector.detect(image);
-
-    if faces.len() > 1 {
-        return Classification::Rejected(vec![Rejection::TooManyFaces]);
-    }
-
-    let Some(face) = faces.iter().find(|f| f.is_frontal()) else {
-        return Classification::Rejected(vec![Rejection::TooFewFrontalFaces]);
-    };
-
-    let pct = face.area_pct(image.width(), image.height());
-    let mut reasons = Vec::new();
-
-    if pct < config.min_face_area_pct {
-        reasons.push(Rejection::FaceTooSmall);
-    }
-    if pct > config.max_face_area_pct {
-        reasons.push(Rejection::FaceTooLarge);
-    }
-
-    // Skin detection checks
-    let face_skin = skin_detection::skin_pct_in_rect(
-        skin_mask,
-        face.x as u32,
-        face.y as u32,
-        face.width as u32,
-        face.height as u32,
-    );
-    let outside_skin = skin_detection::skin_pct_outside_rect(
-        skin_mask,
-        face.x as u32,
-        face.y as u32,
-        face.width as u32,
-        face.height as u32,
-    );
-
-    if Percentage::new(face_skin) < config.min_face_skin_pct {
-        reasons.push(Rejection::TooLittleFaceSkin);
-    }
-    if Percentage::new(outside_skin) > config.max_outside_face_skin_pct {
-        reasons.push(Rejection::TooMuchSkinOutsideFace);
-    }
-
-    if word_count > config.max_glyphs_allowed as usize {
-        reasons.push(Rejection::TooMuchText);
-    }
-
-    if !reasons.is_empty() {
-        return Classification::Rejected(reasons);
-    }
-
-    match face_zone(face, image.width(), image.height()) {
-        Zone::Quarter(quadrant) => Classification::Accepted(quadrant),
-        Zone::Central => Classification::Rejected(vec![Rejection::FaceInCentralZone]),
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Zone {
-    Quarter(Quadrant),
-    Central,
-}
-
 struct Rect {
     x: f32,
     y: f32,
@@ -226,7 +149,7 @@ impl Rect {
 
 /// Map a face to a zone by measuring overlap with each of the 5 zones
 /// (4 corner quarters + 1 central) and choosing the zone with maximum overlap.
-fn face_zone(face: &Face, image_width: u32, image_height: u32) -> Zone {
+pub fn face_zone(face: &Face, image_width: u32, image_height: u32) -> Zone {
     let iw = image_width as f32;
     let ih = image_height as f32;
     let half_w = iw / 2.0;
@@ -306,5 +229,4 @@ mod tests {
         let face = make_face(220.0, 140.0, 200.0, 200.0);
         assert_eq!(face_zone(&face, 640, 480), Zone::Central);
     }
-
 }

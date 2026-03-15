@@ -173,6 +173,12 @@ pub enum Classification {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Zone {
+    Quarter(Quadrant),
+    Central,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Quadrant {
     TopLeft,
     TopRight,

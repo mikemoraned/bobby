@@ -1,6 +1,6 @@
-use face_detection::{
-    ArchetypeConfig, Classification, ConfigVersion, FaceDetector, Quadrant, Rejection,
-    annotate_image, classify,
+use face_detection::{FaceDetector, annotate_image};
+use shared::{
+    ArchetypeConfig, Classification, ConfigVersion, Quadrant, Rejection,
 };
 use skeet_store::{
     Archetype, DiscoveredAt, ImageId, ImageRecord, OriginalAt, SkeetStore,
@@ -18,7 +18,7 @@ pub fn classify_image(
 ) -> Result<ImageRecord, Vec<Rejection>> {
     let skin_mask = skin_detection::detect_skin(&skeet_image.image);
     let word_count = text_detector.count_characters(&skeet_image.image);
-    let classification = classify(
+    let classification = skeet_finder::classify(
         detector,
         &skeet_image.image,
         &skin_mask,

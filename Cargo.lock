@@ -3684,13 +3684,8 @@ dependencies = [
  "candle-core",
  "image",
  "imageproc",
- "libtest-mimic",
  "lzma-rust2",
- "serde",
  "shared",
- "skin-detection",
- "text-detection",
- "toml 0.8.23",
 ]
 
 [[package]]
@@ -8884,11 +8879,15 @@ dependencies = [
  "image",
  "indicatif",
  "jetstream-oxide",
+ "libtest-mimic",
  "reqwest",
+ "serde",
+ "shared",
  "skeet-store",
  "skin-detection",
  "text-detection",
  "tokio",
+ "toml 0.8.23",
  "tracing",
  "tracing-subscriber",
 ]

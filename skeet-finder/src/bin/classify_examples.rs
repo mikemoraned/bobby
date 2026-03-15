@@ -2,7 +2,8 @@
 
 use std::path::Path;
 
-use face_detection::{ArchetypeConfig, Classification, FaceDetector, classify};
+use face_detection::FaceDetector;
+use shared::{ArchetypeConfig, Classification};
 
 fn main() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
@@ -72,7 +73,7 @@ fn main() {
 
         println!("  characters: {char_count}");
 
-        let classification = classify(&detector, &img, &skin_mask, char_count, &config);
+        let classification = skeet_finder::classify(&detector, &img, &skin_mask, char_count, &config);
         match &classification {
             Classification::Accepted(quadrant) => println!("  classification: Accepted({quadrant})"),
             Classification::Rejected(reasons) if reasons.is_empty() => {

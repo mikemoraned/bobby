@@ -259,6 +259,18 @@ We're now going to start using some real models to find and detect faces.
             * option 2: alternatively, find a more general model that can detect/count glyphs in an image even if it can't parse them to text
         * [x] reject any images that have too many glyphs
     
+* [ ] apply refactorings
+    * [x] some of the responsibilities of different modules aren't great e.g. `classify` in `face-detection` knows about things like word-count. We need to refactor towards this responsibility split:
+        * crates like `text-detection`, `skin-detection`, `face-detection` should be leaf crates which know about their own detection area and not be aware of others
+            * as an indicator of this, they should only depend on `shared` crate and no others crates in the repo
+        * any pulling together of decisions around classification, which depend on these, should happen in `skeet-finder`. So, for example:
+            * [ ] `classify` and all related work done should move to `classify_and_store`
+            * [ ] `tests/examples.rs` in `face-detecion` should move to `skeet-finder`
+            * [ ] `bin/classify_examples.rs` in `face-detecion` should move to `skeet-finder`
+    * [ ] actually, I don't think `classify_and_store` is needed anymore:
+        * [ ] `classify_image` can live in `classify.rs`
+        * [ ] `save` can be moved into the `main.rs` in `skeet-finder`
+    * [ ] generic things like `Rect` and `translate` should come from an external crate that has robust well-tested versions of these; we're not doing anything hugely complicated here with them, so probably correct, but to reduce the downstream burden we should research and find a replacement from a robust crate that is specialised for this and commonly used.
 
 * [ ] let's add metadata for the images that are exemplars i.e. really good examples of what we want
     * [ ] add `exemplar` = True/False property to the items in examples/expected.toml with the following labelled as exemplar, and everything else not

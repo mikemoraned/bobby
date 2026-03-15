@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 use std::path::Path;
 
-use face_detection::{FaceDetector, classify};
+use face_detection::FaceDetector;
 use libtest_mimic::{Arguments, Trial};
 use serde::Deserialize;
 use shared::{ArchetypeConfig, Classification, Quadrant, Rejection};
@@ -91,7 +91,7 @@ fn main() {
                 .map_err(|e| format!("failed to load {}: {e}", img_path.display()))?;
             let skin_mask = skin_detection::detect_skin(&img);
             let word_count = with_text_detector(|td| td.count_characters(&img));
-            let actual = with_detector(|d| classify(d, &img, &skin_mask, word_count, &config));
+            let actual = with_detector(|d| skeet_finder::classify(d, &img, &skin_mask, word_count, &config));
             if actual != expected {
                 return Err(format!("expected {expected:?}, got {actual:?}").into());
             }
