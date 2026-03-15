@@ -48,7 +48,7 @@ pub async fn extract_skeet_images(
         return Vec::new();
     };
 
-    if has_adult_content_label(&post.data.labels) {
+    if has_excluded_label(&post.data.labels) {
         return Vec::new();
     }
 
@@ -112,9 +112,9 @@ pub async fn extract_skeet_images(
     results
 }
 
-const ADULT_CONTENT_LABELS: &[&str] = &["porn", "sexual", "nudity"];
+const EXCLUDED_LABELS: &[&str] = &["porn", "sexual", "nudity", "!no-unauthenticated"];
 
-fn has_adult_content_label(labels: &Option<Union<RecordLabelsRefs>>) -> bool {
+fn has_excluded_label(labels: &Option<Union<RecordLabelsRefs>>) -> bool {
     let Some(Union::Refs(RecordLabelsRefs::ComAtprotoLabelDefsSelfLabels(self_labels))) = labels
     else {
         return false;
@@ -122,7 +122,7 @@ fn has_adult_content_label(labels: &Option<Union<RecordLabelsRefs>>) -> bool {
     self_labels
         .values
         .iter()
-        .any(|label| ADULT_CONTENT_LABELS.contains(&label.val.as_str()))
+        .any(|label| EXCLUDED_LABELS.contains(&label.val.as_str()))
 }
 
 fn extract_images(embed: &Option<Union<RecordEmbedRefs>>) -> Vec<&Image> {
