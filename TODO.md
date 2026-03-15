@@ -259,7 +259,7 @@ We're now going to start using some real models to find and detect faces.
             * option 2: alternatively, find a more general model that can detect/count glyphs in an image even if it can't parse them to text
         * [x] reject any images that have too many glyphs
     
-* [ ] apply refactorings
+* [x] apply refactorings
     * [x] some of the responsibilities of different modules aren't great e.g. `classify` in `face-detection` knows about things like word-count. We need to refactor towards this responsibility split:
         * crates like `text-detection`, `skin-detection`, `face-detection` should be leaf crates which know about their own detection area and not be aware of others
             * as an indicator of this, they should only depend on `shared` crate and no others crates in the repo
@@ -273,10 +273,11 @@ We're now going to start using some real models to find and detect faces.
     * [x] generic things like `Rect` and `translate` should come from an external crate that has robust well-tested versions of these; we're not doing anything hugely complicated here with them, so probably correct, but to reduce the downstream burden we should research and find a replacement from a robust crate that is specialised for this and commonly used.
 
 * [ ] usability / debugging:
-    * [ ] indicate what the detected text was:
+    * [x] indicate what the detected text was:
         * [ ] ideally, update annotate to show the bounding box on image where text was detected
         * [ ] add a new column in images table which is `detected_text` (UTF-8) (this changes the version)
-    * [ ] add columns in `skeet-feed` UI:
+        * [ ] update `classify_examples` so that it also says what the detected text was
+    * [x] add columns in `skeet-feed` UI:
         * [ ] show the version of config that was used
         * [ ] show the detected text
 
@@ -284,6 +285,7 @@ We're now going to start using some real models to find and detect faces.
     * [ ] add `exemplar` = True/False property to the items in examples/expected.toml with the following labelled as exemplar, and everything else not
         * examples/4472a427-f6bd-4e55-87bd-86f5f91e187e.png
         * examples/eno7kayhhljgvgwc7ttdoojx_3mfev3xjylk2w_0.png
+        * examples/bafkreiaj24jwns3psvpdkv2437ldxhnrwa64ypyxnsz2awq6lwrf3eidna.png
         * examples/jbbneqrt2fxcij3kjwxdu54m_3mfev4a57a22u_0.png (note that it is ok that this one is currently not recognised)
 
 ## Slice 5: Make minimal version available online
@@ -304,12 +306,13 @@ What we want to get to is:
             * alternatively, if there is a native integration in Rust to fetch secrets from 1Password I'd prefer to use that and only pass the name of the secret (`Dev/hom-bobby-read-write`)
         * the URL for the S3 bucket should be passed into the CLI for `skeet-finder`
             * it should continue to also work for local dirs as well i.e. it's not forced to always use remote S3
+    * [ ] also need to update `validate-storage` to work with this
 * [ ] update `skeet-feed` to run on fly.io and read from the bunny S3 location
-    * secrets with be managed using fly secrets which I will separately set up i.e. I will create `HOM_BOBBY_READ_ONLY` secret
+    * secrets will be managed using fly secrets which I will separately set up i.e. I will create `HOM_BOBBY_READ_ONLY` secret
     * desired usage:
         * right now there should be no reason for it to do any writes so only the read-only password will be given
         * the skeet-feed should be updated like the finder to read from the S3 bucket or a local dir
-        * this will be deployed and published manually from my machine and there be a set of integ tests which validate deployment was successful. there should also be a `bobby-prod` and `bobby-staging` version
+        * this will be deployed and published manually from my machine and there will be a set of integ tests which validate deployment was successful. there should also be a `bobby-prod` and `bobby-staging` version
             * see https://github.com/mikemoraned/fosdem/blob/main/Justfile and related setup for an example of how to do this
 * [ ] add observability:
     * [ ] we should switch to tokio-tracing and associated observability setup support; keep it as simple as possible

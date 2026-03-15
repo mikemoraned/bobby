@@ -44,7 +44,8 @@ fn main() {
         }
 
         let skin_mask = skin_detection::detect_skin(&img);
-        let char_count = text_detector.count_characters(&img);
+        let text_result = text_detector.detect(&img);
+        let char_count = text_result.character_count();
 
         for (i, face) in faces.iter().enumerate() {
             let pct = face.area_pct(img.width(), img.height());
@@ -72,6 +73,9 @@ fn main() {
         }
 
         println!("  characters: {char_count}");
+        if !text_result.lines.is_empty() {
+            println!("  detected text: {:?}", text_result.full_text());
+        }
 
         let classification = skeet_finder::classify(&detector, &img, &skin_mask, char_count, &config);
         match &classification {

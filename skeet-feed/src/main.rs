@@ -26,11 +26,19 @@ struct Args {
 struct FeedEntry {
     image_id: String,
     archetype: String,
+    config_version: String,
+    detected_text: String,
     at_uri: String,
     web_url: String,
 }
 
-fn to_feed_entry(image_id: &ImageId, skeet_id: &SkeetId, archetype: &Archetype) -> Option<FeedEntry> {
+fn to_feed_entry(
+    image_id: &ImageId,
+    skeet_id: &SkeetId,
+    archetype: &Archetype,
+    config_version: &str,
+    detected_text: &str,
+) -> Option<FeedEntry> {
     let at_uri = skeet_id.as_str();
     let stripped = at_uri.strip_prefix("at://")?;
     let (did, rest) = stripped.split_once('/')?;
@@ -38,6 +46,8 @@ fn to_feed_entry(image_id: &ImageId, skeet_id: &SkeetId, archetype: &Archetype) 
     Some(FeedEntry {
         image_id: image_id.to_string(),
         archetype: archetype.to_string(),
+        config_version: config_version.to_string(),
+        detected_text: detected_text.to_string(),
         at_uri: at_uri.to_string(),
         web_url: format!("https://bsky.app/profile/{did}/post/{rkey}"),
     })
@@ -64,7 +74,15 @@ async fn feed() -> cot::Result<Html> {
     let entries: Vec<FeedEntry> = summaries
         .iter()
         .take(MAX_FEED_ENTRIES)
-        .filter_map(|img| to_feed_entry(&img.image_id, &img.skeet_id, &img.archetype))
+        .filter_map(|img| {
+            to_feed_entry(
+                &img.image_id,
+                &img.skeet_id,
+                &img.archetype,
+                img.config_version.as_str(),
+                &img.detected_text,
+            )
+        })
         .collect();
 
     let template = FeedTemplate { entries };
@@ -166,7 +184,8 @@ mod tests {
         let image_id = ImageId::new();
         let skeet_id = SkeetId::new("at://did:plc:abc123/app.bsky.feed.post/xyz789");
         let archetype = Archetype::TopRight;
-        let entry = to_feed_entry(&image_id, &skeet_id, &archetype).expect("should produce entry");
+        let entry = to_feed_entry(&image_id, &skeet_id, &archetype, "v1", "hello")
+            .expect("should produce entry");
         assert_eq!(entry.at_uri, "at://did:plc:abc123/app.bsky.feed.post/xyz789");
         assert_eq!(
             entry.web_url,
@@ -179,7 +198,7 @@ mod tests {
         let image_id = ImageId::new();
         let skeet_id = SkeetId::new("not-an-at-uri");
         let archetype = Archetype::TopRight;
-        assert!(to_feed_entry(&image_id, &skeet_id, &archetype).is_none());
+        assert!(to_feed_entry(&image_id, &skeet_id, &archetype, "v1", "").is_none());
     }
 
     #[test]
@@ -187,6 +206,6 @@ mod tests {
         let image_id = ImageId::new();
         let skeet_id = SkeetId::new("at://did:plc:abc123/app.bsky.feed.like/xyz789");
         let archetype = Archetype::TopRight;
-        assert!(to_feed_entry(&image_id, &skeet_id, &archetype).is_none());
+        assert!(to_feed_entry(&image_id, &skeet_id, &archetype, "v1", "").is_none());
     }
 }

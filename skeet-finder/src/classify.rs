@@ -1,4 +1,4 @@
-use face_detection::{FaceDetector, annotate_image};
+use face_detection::{FaceDetector, TextRegion, annotate_image};
 use image::{DynamicImage, GrayImage};
 use shared::{
     ArchetypeConfig, Classification, ConfigVersion, Percentage, Quadrant, Rejection,
@@ -82,12 +82,12 @@ pub fn classify_image(
     config_version: &ConfigVersion,
 ) -> Result<ImageRecord, Vec<Rejection>> {
     let skin_mask = skin_detection::detect_skin(&skeet_image.image);
-    let word_count = text_detector.count_characters(&skeet_image.image);
+    let text_result = text_detector.detect(&skeet_image.image);
     let classification = classify(
         detector,
         &skeet_image.image,
         &skin_mask,
-        word_count,
+        text_result.character_count(),
         archetype_config,
     );
 
@@ -108,7 +108,19 @@ pub fn classify_image(
         .iter()
         .find(|f| f.is_frontal())
         .expect("classify accepted, so a frontal face exists");
-    let annotated = annotate_image(&skeet_image.image, face, &skin_mask);
+
+    let text_regions: Vec<TextRegion> = text_result
+        .lines
+        .iter()
+        .map(|line| TextRegion {
+            x: line.x,
+            y: line.y,
+            width: line.width,
+            height: line.height,
+        })
+        .collect();
+    let annotated = annotate_image(&skeet_image.image, face, &skin_mask, &text_regions);
+    let detected_text = text_result.full_text();
 
     Ok(ImageRecord {
         image_id: ImageId::new(),
@@ -119,5 +131,6 @@ pub fn classify_image(
         archetype,
         annotated_image: annotated,
         config_version: config_version.clone(),
+        detected_text,
     })
 }

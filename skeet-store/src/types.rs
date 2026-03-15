@@ -120,6 +120,7 @@ pub struct ImageRecord {
     pub archetype: Archetype,
     pub annotated_image: DynamicImage,
     pub config_version: ConfigVersion,
+    pub detected_text: String,
 }
 
 #[cfg(test)]

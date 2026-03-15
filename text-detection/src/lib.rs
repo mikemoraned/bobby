@@ -1,11 +1,46 @@
 #![warn(clippy::all, clippy::nursery)]
 
 use image::DynamicImage;
-use ocrs::{ImageSource, OcrEngine, OcrEngineParams};
+use ocrs::{ImageSource, OcrEngine, OcrEngineParams, TextItem};
 use rten::Model;
 
 pub struct TextDetector {
     engine: OcrEngine,
+}
+
+/// A region of detected text with its bounding box and recognized content.
+#[derive(Debug, Clone)]
+pub struct DetectedText {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    pub text: String,
+}
+
+/// Result of running text detection on an image.
+#[derive(Debug, Clone)]
+pub struct TextDetectionResult {
+    pub lines: Vec<DetectedText>,
+}
+
+impl TextDetectionResult {
+    /// Count the total number of non-whitespace characters across all detected lines.
+    pub fn character_count(&self) -> usize {
+        self.lines
+            .iter()
+            .map(|line| line.text.chars().filter(|c| !c.is_whitespace()).count())
+            .sum()
+    }
+
+    /// Join all detected text into a single string, separated by newlines.
+    pub fn full_text(&self) -> String {
+        self.lines
+            .iter()
+            .map(|line| line.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 }
 
 impl TextDetector {
@@ -30,18 +65,47 @@ impl TextDetector {
         )
     }
 
-    /// Count the number of recognized text characters in the image.
-    pub fn count_characters(&self, image: &DynamicImage) -> usize {
+    /// Detect and recognize text in the image, returning bounding boxes and text.
+    pub fn detect(&self, image: &DynamicImage) -> TextDetectionResult {
         let rgb = image.to_rgb8();
         let Ok(img_source) = ImageSource::from_bytes(rgb.as_raw(), rgb.dimensions()) else {
-            return 0;
+            return TextDetectionResult { lines: Vec::new() };
         };
         let Ok(ocr_input) = self.engine.prepare_input(img_source) else {
-            return 0;
+            return TextDetectionResult { lines: Vec::new() };
         };
-        let Ok(text) = self.engine.get_text(&ocr_input) else {
-            return 0;
+
+        let Ok(words) = self.engine.detect_words(&ocr_input) else {
+            return TextDetectionResult { lines: Vec::new() };
         };
-        text.chars().filter(|c| !c.is_whitespace()).count()
+
+        let word_lines = self.engine.find_text_lines(&ocr_input, &words);
+
+        let Ok(text_lines) = self.engine.recognize_text(&ocr_input, &word_lines) else {
+            return TextDetectionResult { lines: Vec::new() };
+        };
+
+        let lines = text_lines
+            .into_iter()
+            .flatten()
+            .map(|line| {
+                let text: String = line.to_string();
+                let rect = line.bounding_rect();
+                DetectedText {
+                    x: rect.left(),
+                    y: rect.top(),
+                    width: rect.width(),
+                    height: rect.height(),
+                    text,
+                }
+            })
+            .collect();
+
+        TextDetectionResult { lines }
+    }
+
+    /// Count the number of recognized text characters in the image.
+    pub fn count_characters(&self, image: &DynamicImage) -> usize {
+        self.detect(image).character_count()
     }
 }

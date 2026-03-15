@@ -20,7 +20,7 @@ use futures::TryStreamExt;
 use image::DynamicImage;
 use lancedb::query::{ExecutableQuery, QueryBase};
 
-use schema::{TABLE_NAME, VALIDATE_TABLE_NAME, images_v4_schema, validate_v1_schema};
+use schema::{TABLE_NAME, VALIDATE_TABLE_NAME, images_v5_schema, validate_v1_schema};
 
 pub struct SkeetStore {
     db: lancedb::Connection,
@@ -35,7 +35,7 @@ impl SkeetStore {
 
         let table_names = db.table_names().execute().await?;
         if !table_names.contains(&TABLE_NAME.to_string()) {
-            db.create_empty_table(TABLE_NAME, images_v4_schema())
+            db.create_empty_table(TABLE_NAME, images_v5_schema())
                 .execute()
                 .await?;
         }
@@ -49,7 +49,7 @@ impl SkeetStore {
     }
 
     pub async fn add(&self, record: &ImageRecord) -> Result<(), StoreError> {
-        let schema = images_v4_schema();
+        let schema = images_v5_schema();
 
         let image_bytes = encode_image_as_png(&record.image)?;
         let annotated_bytes = encode_image_as_png(&record.annotated_image)?;
@@ -71,6 +71,7 @@ impl SkeetStore {
                 Arc::new(StringArray::from(vec![record.archetype.as_str()])),
                 Arc::new(LargeBinaryArray::from_vec(vec![&annotated_bytes])),
                 Arc::new(StringArray::from(vec![record.config_version.as_str()])),
+                Arc::new(StringArray::from(vec![record.detected_text.as_str()])),
             ],
         )?;
 
@@ -98,6 +99,7 @@ impl SkeetStore {
                 "original_at",
                 "archetype",
                 "config_version",
+                "detected_text",
             ]))
             .execute()
             .await?
@@ -210,6 +212,7 @@ pub struct StoredImage {
     pub archetype: Archetype,
     pub annotated_image: DynamicImage,
     pub config_version: ConfigVersion,
+    pub detected_text: String,
 }
 
 pub struct StoredImageSummary {
@@ -219,6 +222,7 @@ pub struct StoredImageSummary {
     pub original_at: DateTime<Utc>,
     pub archetype: Archetype,
     pub config_version: ConfigVersion,
+    pub detected_text: String,
 }
 
 struct SummaryColumns<'a> {
@@ -228,6 +232,7 @@ struct SummaryColumns<'a> {
     original_ats: &'a TimestampMicrosecondArray,
     archetypes: &'a StringArray,
     config_versions: &'a StringArray,
+    detected_texts: &'a StringArray,
 }
 
 impl<'a> SummaryColumns<'a> {
@@ -239,6 +244,7 @@ impl<'a> SummaryColumns<'a> {
             original_ats: typed_column::<TimestampMicrosecondArray>(batch, "original_at")?,
             archetypes: typed_column::<StringArray>(batch, "archetype")?,
             config_versions: typed_column::<StringArray>(batch, "config_version")?,
+            detected_texts: typed_column::<StringArray>(batch, "detected_text")?,
         })
     }
 
@@ -259,6 +265,7 @@ impl<'a> SummaryColumns<'a> {
             original_at: micros_to_datetime(self.original_ats.value(i)),
             archetype,
             config_version,
+            detected_text: self.detected_texts.value(i).to_string(),
         })
     }
 }
@@ -294,6 +301,7 @@ fn batches_to_stored_images(batches: &[RecordBatch]) -> Result<Vec<StoredImage>,
                 archetype: summary.archetype,
                 annotated_image,
                 config_version: summary.config_version,
+                detected_text: summary.detected_text,
             });
         }
     }
@@ -350,6 +358,7 @@ mod tests {
             archetype: Archetype::TopRight,
             annotated_image: test_image(),
             config_version: ConfigVersion::from("test"),
+            detected_text: String::new(),
         };
 
         store.add(&record).await.unwrap();
@@ -381,6 +390,7 @@ mod tests {
                 archetype: Archetype::BottomLeft,
                 annotated_image: test_image(),
                 config_version: ConfigVersion::from("test"),
+                detected_text: String::new(),
             };
             store.add(&record).await.unwrap();
         }
@@ -406,6 +416,7 @@ mod tests {
             archetype: Archetype::BottomRight,
             annotated_image: test_image(),
             config_version: ConfigVersion::from("test"),
+            detected_text: String::new(),
         };
 
         store.add(&record).await.unwrap();
@@ -430,6 +441,7 @@ mod tests {
             archetype: Archetype::TopLeft,
             annotated_image: test_image(),
             config_version: ConfigVersion::from("test"),
+            detected_text: String::new(),
         };
 
         {
