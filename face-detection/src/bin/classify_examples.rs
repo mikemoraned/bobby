@@ -41,16 +41,34 @@ fn main() {
             continue;
         }
 
+        let skin_mask = skin_detection::detect_skin(&img);
+
         for (i, face) in faces.iter().enumerate() {
             let pct = face.area_pct(img.width(), img.height());
             let frontal = face.is_frontal();
+
+            let face_skin = skin_detection::skin_pct_in_rect(
+                &skin_mask,
+                face.x as u32,
+                face.y as u32,
+                face.width as u32,
+                face.height as u32,
+            );
+            let outside_skin = skin_detection::skin_pct_outside_rect(
+                &skin_mask,
+                face.x as u32,
+                face.y as u32,
+                face.width as u32,
+                face.height as u32,
+            );
+
             println!(
-                "  face {i}: score={:.3}, frontal={frontal}, area={pct}, bbox=({:.0}, {:.0}, {:.0}x{:.0})",
+                "  face {i}: score={:.3}, frontal={frontal}, area={pct}, bbox=({:.0}, {:.0}, {:.0}x{:.0}), face_skin={face_skin:.1}%, outside_skin={outside_skin:.1}%",
                 face.score, face.x, face.y, face.width, face.height
             );
         }
 
-        let classification = classify(&detector, &img, &config);
+        let classification = classify(&detector, &img, &skin_mask, &config);
         match &classification {
             Classification::Accepted(quadrant) => println!("  classification: Accepted({quadrant})"),
             Classification::Rejected(reasons) if reasons.is_empty() => {

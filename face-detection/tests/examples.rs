@@ -78,7 +78,8 @@ fn main() {
         trials.push(Trial::test(format!("{stem}::classification"), move || {
             let img = image::open(&img_path)
                 .map_err(|e| format!("failed to load {}: {e}", img_path.display()))?;
-            let actual = with_detector(|d| classify(d, &img, &config));
+            let skin_mask = skin_detection::detect_skin(&img);
+            let actual = with_detector(|d| classify(d, &img, &skin_mask, &config));
             if actual != expected {
                 return Err(format!("expected {expected:?}, got {actual:?}").into());
             }

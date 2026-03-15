@@ -15,7 +15,7 @@ pub mod model {
 }
 
 use burn::backend::NdArray;
-use image::DynamicImage;
+use image::{DynamicImage, GrayImage};
 use postprocess::{Detection, decode_and_filter};
 use preprocess::image_to_tensor;
 pub use shared::{
@@ -129,10 +129,11 @@ impl Face {
     }
 }
 
-/// Classify an image: detect frontal faces, check area thresholds, return quadrant or rejection.
+/// Classify an image: detect frontal faces, check area and skin thresholds, return quadrant or rejection.
 pub fn classify(
     detector: &FaceDetector,
     image: &DynamicImage,
+    skin_mask: &GrayImage,
     config: &ArchetypeConfig,
 ) -> Classification {
     let faces = detector.detect(image);
@@ -153,6 +154,29 @@ pub fn classify(
     }
     if pct > config.max_face_area_pct {
         reasons.push(Rejection::FaceTooLarge);
+    }
+
+    // Skin detection checks
+    let face_skin = skin_detection::skin_pct_in_rect(
+        skin_mask,
+        face.x as u32,
+        face.y as u32,
+        face.width as u32,
+        face.height as u32,
+    );
+    let outside_skin = skin_detection::skin_pct_outside_rect(
+        skin_mask,
+        face.x as u32,
+        face.y as u32,
+        face.width as u32,
+        face.height as u32,
+    );
+
+    if Percentage::new(face_skin) < config.min_face_skin_pct {
+        reasons.push(Rejection::TooLittleFaceSkin);
+    }
+    if Percentage::new(outside_skin) > config.max_outside_face_skin_pct {
+        reasons.push(Rejection::TooMuchSkinOutsideFace);
     }
 
     if !reasons.is_empty() {

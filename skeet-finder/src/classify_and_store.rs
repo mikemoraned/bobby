@@ -15,7 +15,8 @@ pub fn classify_image(
     archetype_config: &ArchetypeConfig,
     config_version: &ConfigVersion,
 ) -> Option<ImageRecord> {
-    let classification = classify(detector, &skeet_image.image, archetype_config);
+    let skin_mask = skin_detection::detect_skin(&skeet_image.image);
+    let classification = classify(detector, &skeet_image.image, &skin_mask, archetype_config);
 
     let quadrant = match classification {
         Classification::Accepted(q) => q,
@@ -34,7 +35,7 @@ pub fn classify_image(
         .iter()
         .find(|f| f.is_frontal())
         .expect("classify accepted, so a frontal face exists");
-    let annotated = annotate_image(&skeet_image.image, face);
+    let annotated = annotate_image(&skeet_image.image, face, &skin_mask);
 
     Some(ImageRecord {
         image_id: ImageId::new(),

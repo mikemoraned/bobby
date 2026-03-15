@@ -190,11 +190,32 @@ We're now going to start using some real models to find and detect faces.
         * one that purely handles the Bluesky or JetStream-specific work of getting any skeets that contain images, and downloading these images
         * another that handles the calling of code to specfically classify images and save them to the store
 
+* [ ] apply cosmetics
+    * [ ] rather than being primary a log-style output, change `skeet-find` `main.rs` so that it uses https://docs.rs/indicatif/latest/indicatif/ to produce a persistent summary line that contains:
+        * a continuous spinner to show it is alive
+        * how long it has been running
+        * number of:
+            * skeets seen
+            * images seen
+            * images saved
+
 * [x] apply simple checks
     * [x] some skeets show as having `(i) Adult Content` when viewed in bluesky. We should extract this from the metadata we see and filter out any skeets with this flag.
     * [x] some skeets are labelled as "The author of this post has requested their posts not be displayed on external sites.". We should also filter these out, as an indicator of dodginess/sensitivity
 
 * [ ] skin-based checks
+    * we want to use presence and absence of skin as an inclusion filter and an exclusion filter:
+        * [ ] inclusion: any identified face bounding boxes must include at least some %-age of skin (guess 70% to begin with)
+            * this needs to be defined as a new `min_face_skin_pct` in `archetype.toml`
+            * all example images currently labelled as matching an archetype should pass this check
+        * [ ] exclusion: any skin areas outside of an identified face must be limited. Suggest the remaining area that's allowed to be covered is small e.g. only 10% of area outside of a face bounding box can be skin
+            * this needs to be defined as a new `max_outside_face_skin_pct` in `archetype.toml` 
+            * see the `examples/8978262e-3540-4593-bf8f-dfaf4de2b27f.png` image as one example which should be labelled as rejection for a reason of Rejection::TooMuchSkinOutsideFace
+    * suggested implementation, in a new `skin-detection` crate:
+        * [ ] find an ML model we can use in Rust or an existing Rust library that categorises individual pixels as skin or not based on ranges of colors that are expected to come from skin; we should use existing science as much as possible and try to account for skin color of different ethnicities
+        * [ ] use this to take an image and produce a binary image which is the boolean yes/no for each pixel on whether it is skin
+        * [ ] update the annotations so that this is used as a 50% opacity mask on the original image
+        * [ ] apply the inclusions/exclusions logic by running skin-detection alongside face-detection and then combining the outputs together as needed
     * ...
 
 ## Slice 4: False positive: Removing text

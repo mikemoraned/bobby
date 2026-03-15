@@ -1,14 +1,24 @@
-use image::{DynamicImage, Rgba, RgbaImage};
+use image::{DynamicImage, GrayImage, Rgba, RgbaImage};
 use imageproc::drawing::{draw_hollow_rect_mut, draw_line_segment_mut};
 use imageproc::rect::Rect;
 
 use crate::Face;
 
 const RED: Rgba<u8> = Rgba([255, 0, 0, 255]);
+const SKIN_OVERLAY: Rgba<u8> = Rgba([0, 200, 100, 128]);
 
-pub fn annotate_image(image: &DynamicImage, face: &Face) -> DynamicImage {
+pub fn annotate_image(image: &DynamicImage, face: &Face, skin_mask: &GrayImage) -> DynamicImage {
     let mut canvas: RgbaImage = image.to_rgba8();
     let (img_w, img_h) = (canvas.width() as i32, canvas.height() as i32);
+
+    // Skin mask overlay at 50% opacity
+    for (x, y, pixel) in canvas.enumerate_pixels_mut() {
+        if skin_mask.get_pixel(x, y).0[0] > 0 {
+            pixel[0] = ((u16::from(pixel[0]) + u16::from(SKIN_OVERLAY[0])) / 2) as u8;
+            pixel[1] = ((u16::from(pixel[1]) + u16::from(SKIN_OVERLAY[1])) / 2) as u8;
+            pixel[2] = ((u16::from(pixel[2]) + u16::from(SKIN_OVERLAY[2])) / 2) as u8;
+        }
+    }
 
     let x = face.x as i32;
     let y = face.y as i32;

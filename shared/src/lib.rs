@@ -49,6 +49,8 @@ pub enum Rejection {
     FaceInCentralZone,
     TooManyFaces,
     TooFewFrontalFaces,
+    TooLittleFaceSkin,
+    TooMuchSkinOutsideFace,
 }
 
 impl std::fmt::Display for Rejection {
@@ -59,6 +61,8 @@ impl std::fmt::Display for Rejection {
             Self::FaceInCentralZone => write!(f, "FaceInCentralZone"),
             Self::TooManyFaces => write!(f, "TooManyFaces"),
             Self::TooFewFrontalFaces => write!(f, "TooFewFrontalFaces"),
+            Self::TooLittleFaceSkin => write!(f, "TooLittleFaceSkin"),
+            Self::TooMuchSkinOutsideFace => write!(f, "TooMuchSkinOutsideFace"),
         }
     }
 }
@@ -73,6 +77,8 @@ impl std::str::FromStr for Rejection {
             "FaceInCentralZone" => Ok(Self::FaceInCentralZone),
             "TooManyFaces" => Ok(Self::TooManyFaces),
             "TooFewFrontalFaces" => Ok(Self::TooFewFrontalFaces),
+            "TooLittleFaceSkin" => Ok(Self::TooLittleFaceSkin),
+            "TooMuchSkinOutsideFace" => Ok(Self::TooMuchSkinOutsideFace),
             other => Err(format!("unknown rejection: {other}")),
         }
     }
@@ -113,6 +119,8 @@ impl From<&str> for ConfigVersion {
 pub struct ArchetypeConfig {
     pub min_face_area_pct: Percentage,
     pub max_face_area_pct: Percentage,
+    pub min_face_skin_pct: Percentage,
+    pub max_outside_face_skin_pct: Percentage,
 }
 
 impl ArchetypeConfig {
@@ -131,7 +139,9 @@ impl ArchetypeConfig {
     pub fn version(&self) -> ConfigVersion {
         let mut entries = vec![
             ("max_face_area_pct", self.max_face_area_pct.value().to_bits()),
+            ("max_outside_face_skin_pct", self.max_outside_face_skin_pct.value().to_bits()),
             ("min_face_area_pct", self.min_face_area_pct.value().to_bits()),
+            ("min_face_skin_pct", self.min_face_skin_pct.value().to_bits()),
         ];
         entries.sort_by_key(|(k, _)| *k);
 

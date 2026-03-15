@@ -12,6 +12,7 @@ burn-store = { version = "~0.20", features = ["burnpack"] }
 image = { workspace = true }
 imageproc = "0.25"
 shared = { workspace = true }
+skin-detection = { path = "../skin-detection" }
 
 # Pin transitive deps to avoid burn-import build failures
 lzma-rust2 = "~0.15.7"
@@ -20,6 +21,7 @@ candle-core = "=0.9.1"
 [dev-dependencies]
 libtest-mimic = "0.8"
 serde = { workspace = true }
+skin-detection = { path = "../skin-detection" }
 toml = { workspace = true }
 
 [[bin]]

@@ -14,6 +14,7 @@ face-detection = { path = "../face-detection" }
 image = { workspace = true }
 jetstream-oxide = "0.1"
 reqwest = { version = "0.12", features = ["rustls-tls"], default-features = false }
+skin-detection = { path = "../skin-detection" }
 skeet-store = { path = "../skeet-store" }
 tokio = { workspace = true }
 tracing = "0.1"

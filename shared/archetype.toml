@@ -2,3 +2,9 @@
 # Faces smaller than min or larger than max are rejected.
 min_face_area_pct = 5.0
 max_face_area_pct = 35.0
+
+# Skin detection thresholds.
+# Minimum percentage of skin pixels within the face bounding box.
+min_face_skin_pct = 30.0
+# Maximum percentage of skin pixels outside the face bounding box.
+max_outside_face_skin_pct = 15.0

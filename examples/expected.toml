@@ -12,12 +12,16 @@ rejected = ["TooManyFaces"]
 
 [[example]]
 path = "1de8f881-78be-4a89-8155-f85e5543b342.png"
-rejected = ["FaceTooLarge"]
+rejected = ["FaceTooLarge", "TooMuchSkinOutsideFace"]
 
 [[example]]
 path = "a5d59a02-b46e-478b-ac46-801f67b9ac40.png"
-rejected = ["FaceInCentralZone"]
+rejected = ["TooMuchSkinOutsideFace"]
 
 [[example]]
 path = "43344f90-e12f-4c06-bd54-ec7fb51211e1.png"
 rejected = ["TooManyFaces"]
+
+[[example]]
+path = "8978262e-3540-4593-bf8f-dfaf4de2b27f.png"
+rejected = ["TooMuchSkinOutsideFace"]
