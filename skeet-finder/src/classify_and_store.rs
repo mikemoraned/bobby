@@ -1,0 +1,66 @@
+use face_detection::{
+    ArchetypeConfig, Classification, ConfigVersion, FaceDetector, Quadrant, annotate_image,
+    classify,
+};
+use skeet_store::{
+    Archetype, DiscoveredAt, ImageId, ImageRecord, OriginalAt, SkeetStore,
+};
+use tracing::{info, warn};
+
+use crate::firehose::SkeetImage;
+
+pub fn classify_image(
+    skeet_image: SkeetImage,
+    detector: &FaceDetector,
+    archetype_config: &ArchetypeConfig,
+    config_version: &ConfigVersion,
+) -> Option<ImageRecord> {
+    let classification = classify(detector, &skeet_image.image, archetype_config);
+
+    let quadrant = match classification {
+        Classification::Accepted(q) => q,
+        Classification::Rejected(_) => return None,
+    };
+
+    let archetype = match quadrant {
+        Quadrant::TopLeft => Archetype::TopLeft,
+        Quadrant::TopRight => Archetype::TopRight,
+        Quadrant::BottomLeft => Archetype::BottomLeft,
+        Quadrant::BottomRight => Archetype::BottomRight,
+    };
+
+    let faces = detector.detect(&skeet_image.image);
+    let face = faces
+        .iter()
+        .find(|f| f.is_frontal())
+        .expect("classify accepted, so a frontal face exists");
+    let annotated = annotate_image(&skeet_image.image, face);
+
+    Some(ImageRecord {
+        image_id: ImageId::new(),
+        skeet_id: skeet_image.skeet_id,
+        image: skeet_image.image,
+        discovered_at: DiscoveredAt::now(),
+        original_at: OriginalAt::new(skeet_image.original_at),
+        archetype,
+        annotated_image: annotated,
+        config_version: config_version.clone(),
+    })
+}
+
+pub async fn save(store: &SkeetStore, record: &ImageRecord, saved_count: &mut u64) {
+    match store.add(record).await {
+        Ok(()) => {
+            *saved_count += 1;
+            info!(
+                saved = *saved_count,
+                skeet_id = %record.skeet_id,
+                archetype = %record.archetype,
+                "saved image"
+            );
+        }
+        Err(e) => {
+            warn!(error = %e, "failed to save image to store");
+        }
+    }
+}

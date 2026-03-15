@@ -143,7 +143,7 @@ We're now going to start using some real models to find and detect faces.
             * [x] update the feed to always show a limited selection of most recent images
                 * it should show the most recently-found 50 skeets
 
-* [ ] ignore faces of wrong size, position or number:
+* [x] ignore faces of wrong size, position or number:
     * [x] regularize examples and tests, so that they are driven by config:
         * currently, we have tests like `example_top_right_face` which are very specific and embed the paths to the example files directly. The intent is to make tests be driven by config and appear as separate tests in the runner. So, for example, if I have a TOML config file which lists a bunch of examples, I'd like to have a separate tests each of which tests a particular *aspect* of these examples, but which each example appears as a separate executed test in the runner output. The intent is that I can drive tests by examples whilst making it appear like they were written as individual tests. So, I'd probably like to move to something like https://crates.io/crates/libtest-mimic which is more config-driven. 
         * [x] alongside examples, create an `expected.toml` (TOML format) file, which captures, for each image in that dir:
@@ -184,6 +184,18 @@ We're now going to start using some real models to find and detect faces.
 
 
 ## Slice 3: False positive: Removing pron
+
+* [ ] apply refactorings:
+    * [x] the code in `main.rs` in `skeet-finder` is too complicated. Break it into two sub-modules:
+        * one that purely handles the Bluesky or JetStream-specific work of getting any skeets that contain images, and downloading these images
+        * another that handles the calling of code to specfically classify images and save them to the store
+
+* [ ] apply simple checks
+    * [ ] some skeets show as having `(i) Adult Content` when viewed in bluesky. We should extract this from the metadata we see and filter out any skeets with this flag.
+    * [ ] some skeets are labelled as "The author of this post has requested their posts not be displayed on external sites.". We should also filter these out, as an indicator of dodginess/sensitivity
+
+* [ ] skin-based checks
+    * ...
 
 ## Slice 4: False positive: Removing text
 

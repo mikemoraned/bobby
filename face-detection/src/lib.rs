@@ -19,7 +19,7 @@ use image::DynamicImage;
 use postprocess::{Detection, decode_and_filter};
 use preprocess::image_to_tensor;
 pub use shared::{
-    ArchetypeConfig, Classification, Percentage, Quadrant, Rejection,
+    ArchetypeConfig, Classification, ConfigVersion, Percentage, Quadrant, Rejection,
 };
 
 type Backend = NdArray;
