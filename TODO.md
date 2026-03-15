@@ -288,7 +288,7 @@ We're now going to start using some real models to find and detect faces.
         * examples/bafkreiaj24jwns3psvpdkv2437ldxhnrwa64ypyxnsz2awq6lwrf3eidna.png (recognised at top right)
         * examples/jbbneqrt2fxcij3kjwxdu54m_3mfev4a57a22u_0.png (note that it is ok that this one is currently not recognised)
 
-* [ ] sanity-check that adult-based filtering is still working
+* [x] sanity-check that adult-based filtering is still working
     * [x] add a debug-focussed cli called `metadata-dump` in `skeet-finder` that:
         1. can take an image id, find it in the store
         2. find the related skeet id
