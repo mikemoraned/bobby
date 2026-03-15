@@ -1,0 +1,12 @@
+[package]
+name = "text-detection"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+image = { workspace = true }
+ocrs = "0.12"
+rten = "0.24"

@@ -12,11 +12,19 @@ use crate::firehose::SkeetImage;
 pub fn classify_image(
     skeet_image: SkeetImage,
     detector: &FaceDetector,
+    text_detector: &text_detection::TextDetector,
     archetype_config: &ArchetypeConfig,
     config_version: &ConfigVersion,
 ) -> Result<ImageRecord, Vec<Rejection>> {
     let skin_mask = skin_detection::detect_skin(&skeet_image.image);
-    let classification = classify(detector, &skeet_image.image, &skin_mask, archetype_config);
+    let word_count = text_detector.count_characters(&skeet_image.image);
+    let classification = classify(
+        detector,
+        &skeet_image.image,
+        &skin_mask,
+        word_count,
+        archetype_config,
+    );
 
     let quadrant = match classification {
         Classification::Accepted(q) => q,

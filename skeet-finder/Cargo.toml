@@ -17,6 +17,7 @@ jetstream-oxide = "0.1"
 reqwest = { version = "0.12", features = ["rustls-tls"], default-features = false }
 skin-detection = { path = "../skin-detection" }
 skeet-store = { path = "../skeet-store" }
+text-detection = { path = "../text-detection" }
 tokio = { workspace = true }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

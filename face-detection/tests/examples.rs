@@ -23,6 +23,7 @@ struct Example {
 
 thread_local! {
     static DETECTOR: RefCell<Option<FaceDetector>> = const { RefCell::new(None) };
+    static TEXT_DETECTOR: RefCell<Option<text_detection::TextDetector>> = const { RefCell::new(None) };
 }
 
 fn with_detector<R>(f: impl FnOnce(&FaceDetector) -> R) -> R {
@@ -32,6 +33,16 @@ fn with_detector<R>(f: impl FnOnce(&FaceDetector) -> R) -> R {
             *opt = Some(FaceDetector::from_bundled_weights());
         }
         f(opt.as_ref().expect("detector initialized above"))
+    })
+}
+
+fn with_text_detector<R>(f: impl FnOnce(&text_detection::TextDetector) -> R) -> R {
+    TEXT_DETECTOR.with(|cell| {
+        let mut opt = cell.borrow_mut();
+        if opt.is_none() {
+            *opt = Some(text_detection::TextDetector::from_bundled_models());
+        }
+        f(opt.as_ref().expect("text detector initialized above"))
     })
 }
 
@@ -79,7 +90,8 @@ fn main() {
             let img = image::open(&img_path)
                 .map_err(|e| format!("failed to load {}: {e}", img_path.display()))?;
             let skin_mask = skin_detection::detect_skin(&img);
-            let actual = with_detector(|d| classify(d, &img, &skin_mask, &config));
+            let word_count = with_text_detector(|td| td.count_characters(&img));
+            let actual = with_detector(|d| classify(d, &img, &skin_mask, word_count, &config));
             if actual != expected {
                 return Err(format!("expected {expected:?}, got {actual:?}").into());
             }

@@ -34,6 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let store = SkeetStore::open(&args.store_path).await?;
     let http = reqwest::Client::new();
     let detector = FaceDetector::from_bundled_weights();
+    let text_detector = text_detection::TextDetector::from_bundled_models();
 
     let archetype_config = ArchetypeConfig::from_file(
         &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/archetype.toml"),
@@ -81,6 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             match classify_and_store::classify_image(
                 skeet_image,
                 &detector,
+                &text_detector,
                 &archetype_config,
                 &config_version,
             ) {

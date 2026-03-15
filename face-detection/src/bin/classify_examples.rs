@@ -12,6 +12,7 @@ fn main() {
         .expect("load archetype.toml");
 
     let detector = FaceDetector::from_bundled_weights();
+    let text_detector = text_detection::TextDetector::from_bundled_models();
 
     let mut entries: Vec<_> = std::fs::read_dir(&examples_dir)
         .expect("read examples dir")
@@ -42,6 +43,7 @@ fn main() {
         }
 
         let skin_mask = skin_detection::detect_skin(&img);
+        let char_count = text_detector.count_characters(&img);
 
         for (i, face) in faces.iter().enumerate() {
             let pct = face.area_pct(img.width(), img.height());
@@ -68,7 +70,9 @@ fn main() {
             );
         }
 
-        let classification = classify(&detector, &img, &skin_mask, &config);
+        println!("  characters: {char_count}");
+
+        let classification = classify(&detector, &img, &skin_mask, char_count, &config);
         match &classification {
             Classification::Accepted(quadrant) => println!("  classification: Accepted({quadrant})"),
             Classification::Rejected(reasons) if reasons.is_empty() => {

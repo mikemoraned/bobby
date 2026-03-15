@@ -25,3 +25,11 @@ rejected = ["TooManyFaces"]
 [[example]]
 path = "8978262e-3540-4593-bf8f-dfaf4de2b27f.png"
 rejected = ["TooMuchSkinOutsideFace"]
+
+[[example]]
+path = "5c228b9a-8115-498b-854d-08f2fad5f7f1.png"
+rejected = ["TooMuchText"]
+
+[[example]]
+path = "09a57394-66aa-4745-b16c-523c02e6bf0d.png"
+rejected = ["TooMuchText"]

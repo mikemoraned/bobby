@@ -11,7 +11,7 @@ fn config_version() {
         .unwrap_or_else(|e| panic!("failed to load {}: {e}", config_path.display()));
 
     let actual = config.version();
-    let expected = "f2dfe072";
+    let expected = "bbf0d4e1";
     assert_eq!(
         actual.as_str(),
         expected,

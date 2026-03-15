@@ -51,6 +51,7 @@ pub enum Rejection {
     TooFewFrontalFaces,
     TooLittleFaceSkin,
     TooMuchSkinOutsideFace,
+    TooMuchText,
 }
 
 impl std::fmt::Display for Rejection {
@@ -63,6 +64,7 @@ impl std::fmt::Display for Rejection {
             Self::TooFewFrontalFaces => write!(f, "TooFewFrontalFaces"),
             Self::TooLittleFaceSkin => write!(f, "TooLittleFaceSkin"),
             Self::TooMuchSkinOutsideFace => write!(f, "TooMuchSkinOutsideFace"),
+            Self::TooMuchText => write!(f, "TooMuchText"),
         }
     }
 }
@@ -79,6 +81,7 @@ impl std::str::FromStr for Rejection {
             "TooFewFrontalFaces" => Ok(Self::TooFewFrontalFaces),
             "TooLittleFaceSkin" => Ok(Self::TooLittleFaceSkin),
             "TooMuchSkinOutsideFace" => Ok(Self::TooMuchSkinOutsideFace),
+            "TooMuchText" => Ok(Self::TooMuchText),
             other => Err(format!("unknown rejection: {other}")),
         }
     }
@@ -121,6 +124,7 @@ pub struct ArchetypeConfig {
     pub max_face_area_pct: Percentage,
     pub min_face_skin_pct: Percentage,
     pub max_outside_face_skin_pct: Percentage,
+    pub max_glyphs_allowed: u32,
 }
 
 impl ArchetypeConfig {
@@ -139,6 +143,7 @@ impl ArchetypeConfig {
     pub fn version(&self) -> ConfigVersion {
         let mut entries = vec![
             ("max_face_area_pct", self.max_face_area_pct.value().to_bits()),
+            ("max_glyphs_allowed", self.max_glyphs_allowed),
             ("max_outside_face_skin_pct", self.max_outside_face_skin_pct.value().to_bits()),
             ("min_face_area_pct", self.min_face_area_pct.value().to_bits()),
             ("min_face_skin_pct", self.min_face_skin_pct.value().to_bits()),

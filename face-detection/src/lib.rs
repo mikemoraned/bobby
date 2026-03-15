@@ -129,11 +129,13 @@ impl Face {
     }
 }
 
-/// Classify an image: detect frontal faces, check area and skin thresholds, return quadrant or rejection.
+/// Classify an image: detect frontal faces, check area, skin, and text thresholds,
+/// return quadrant or rejection.
 pub fn classify(
     detector: &FaceDetector,
     image: &DynamicImage,
     skin_mask: &GrayImage,
+    word_count: usize,
     config: &ArchetypeConfig,
 ) -> Classification {
     let faces = detector.detect(image);
@@ -177,6 +179,10 @@ pub fn classify(
     }
     if Percentage::new(outside_skin) > config.max_outside_face_skin_pct {
         reasons.push(Rejection::TooMuchSkinOutsideFace);
+    }
+
+    if word_count > config.max_glyphs_allowed as usize {
+        reasons.push(Rejection::TooMuchText);
     }
 
     if !reasons.is_empty() {
