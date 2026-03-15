@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     eprintln!("image_id:       {}", stored.image_id);
     eprintln!("skeet_id:       {}", stored.skeet_id);
-    eprintln!("archetype:      {}", stored.archetype);
+    eprintln!("zone:           {}", stored.zone);
     eprintln!("config_version: {}", stored.config_version);
     eprintln!("discovered_at:  {}", stored.discovered_at);
     eprintln!("original_at:    {}", stored.original_at);

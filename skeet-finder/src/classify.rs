@@ -1,12 +1,10 @@
 use face_detection::{FaceDetector, TextRegion, annotate_image};
 use image::{DynamicImage, GrayImage};
 use shared::{
-    ArchetypeConfig, Classification, ConfigVersion, Percentage, Quadrant, Rejection,
+    ArchetypeConfig, Classification, ConfigVersion, Percentage, Rejection,
     SkeetImage, Zone,
 };
-use skeet_store::{
-    Archetype, DiscoveredAt, ImageId, ImageRecord, OriginalAt,
-};
+use skeet_store::{DiscoveredAt, ImageId, ImageRecord, OriginalAt};
 
 /// Classify an image: detect frontal faces, check area, skin, and text thresholds,
 /// return quadrant or rejection.
@@ -68,10 +66,24 @@ pub fn classify(
         return Classification::Rejected(reasons);
     }
 
-    match face_detection::face_zone(face, image.width(), image.height()) {
-        Zone::Quarter(quadrant) => Classification::Accepted(quadrant),
-        Zone::Central => Classification::Rejected(vec![Rejection::FaceInCentralZone]),
+    let zone = face_detection::face_zone(face, image.width(), image.height());
+    if is_accepted_zone(zone) {
+        Classification::Accepted(zone)
+    } else {
+        Classification::Rejected(vec![Rejection::FaceNotInAcceptedZone])
     }
+}
+
+const fn is_accepted_zone(zone: Zone) -> bool {
+    matches!(
+        zone,
+        Zone::TopLeft
+            | Zone::TopRight
+            | Zone::CenterLeft
+            | Zone::CenterRight
+            | Zone::BottomLeft
+            | Zone::BottomRight
+    )
 }
 
 pub fn classify_image(
@@ -91,16 +103,9 @@ pub fn classify_image(
         archetype_config,
     );
 
-    let quadrant = match classification {
-        Classification::Accepted(q) => q,
+    let zone = match classification {
+        Classification::Accepted(z) => z,
         Classification::Rejected(reasons) => return Err(reasons),
-    };
-
-    let archetype = match quadrant {
-        Quadrant::TopLeft => Archetype::TopLeft,
-        Quadrant::TopRight => Archetype::TopRight,
-        Quadrant::BottomLeft => Archetype::BottomLeft,
-        Quadrant::BottomRight => Archetype::BottomRight,
     };
 
     let faces = detector.detect(&skeet_image.image);
@@ -128,7 +133,7 @@ pub fn classify_image(
         image: skeet_image.image,
         discovered_at: DiscoveredAt::now(),
         original_at: OriginalAt::new(skeet_image.original_at),
-        archetype,
+        zone,
         annotated_image: annotated,
         config_version: config_version.clone(),
         detected_text,

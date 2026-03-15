@@ -5,7 +5,7 @@ mod types;
 
 pub use error::StoreError;
 pub use shared::ConfigVersion;
-pub use types::{Archetype, DiscoveredAt, ImageId, ImageRecord, OriginalAt, SkeetId};
+pub use types::{DiscoveredAt, ImageId, ImageRecord, OriginalAt, SkeetId, Zone};
 
 use std::io::Cursor;
 use std::path::Path;
@@ -20,7 +20,7 @@ use futures::TryStreamExt;
 use image::DynamicImage;
 use lancedb::query::{ExecutableQuery, QueryBase};
 
-use schema::{TABLE_NAME, VALIDATE_TABLE_NAME, images_v5_schema, validate_v1_schema};
+use schema::{TABLE_NAME, VALIDATE_TABLE_NAME, images_v6_schema, validate_v1_schema};
 
 pub struct SkeetStore {
     db: lancedb::Connection,
@@ -35,7 +35,7 @@ impl SkeetStore {
 
         let table_names = db.table_names().execute().await?;
         if !table_names.contains(&TABLE_NAME.to_string()) {
-            db.create_empty_table(TABLE_NAME, images_v5_schema())
+            db.create_empty_table(TABLE_NAME, images_v6_schema())
                 .execute()
                 .await?;
         }
@@ -49,7 +49,7 @@ impl SkeetStore {
     }
 
     pub async fn add(&self, record: &ImageRecord) -> Result<(), StoreError> {
-        let schema = images_v5_schema();
+        let schema = images_v6_schema();
 
         let image_bytes = encode_image_as_png(&record.image)?;
         let annotated_bytes = encode_image_as_png(&record.annotated_image)?;
@@ -68,7 +68,7 @@ impl SkeetStore {
                     TimestampMicrosecondArray::from(vec![record.original_at.timestamp_micros()])
                         .with_timezone("UTC"),
                 ),
-                Arc::new(StringArray::from(vec![record.archetype.as_str()])),
+                Arc::new(StringArray::from(vec![record.zone.to_string().as_str()])),
                 Arc::new(LargeBinaryArray::from_vec(vec![&annotated_bytes])),
                 Arc::new(StringArray::from(vec![record.config_version.as_str()])),
                 Arc::new(StringArray::from(vec![record.detected_text.as_str()])),
@@ -209,7 +209,7 @@ pub struct StoredImage {
     pub image: DynamicImage,
     pub discovered_at: DateTime<Utc>,
     pub original_at: DateTime<Utc>,
-    pub archetype: Archetype,
+    pub zone: Zone,
     pub annotated_image: DynamicImage,
     pub config_version: ConfigVersion,
     pub detected_text: String,
@@ -220,7 +220,7 @@ pub struct StoredImageSummary {
     pub skeet_id: SkeetId,
     pub discovered_at: DateTime<Utc>,
     pub original_at: DateTime<Utc>,
-    pub archetype: Archetype,
+    pub zone: Zone,
     pub config_version: ConfigVersion,
     pub detected_text: String,
 }
@@ -249,7 +249,7 @@ impl<'a> SummaryColumns<'a> {
     }
 
     fn to_summary(&self, i: usize) -> Result<StoredImageSummary, StoreError> {
-        let archetype: Archetype = self.archetypes
+        let zone: Zone = self.archetypes
             .value(i)
             .parse()
             .map_err(|_| StoreError::InvalidArchetype(self.archetypes.value(i).to_string()))?;
@@ -263,7 +263,7 @@ impl<'a> SummaryColumns<'a> {
             skeet_id: SkeetId::new(self.skeet_ids.value(i)),
             discovered_at: micros_to_datetime(self.discovered_ats.value(i)),
             original_at: micros_to_datetime(self.original_ats.value(i)),
-            archetype,
+            zone,
             config_version,
             detected_text: self.detected_texts.value(i).to_string(),
         })
@@ -298,7 +298,7 @@ fn batches_to_stored_images(batches: &[RecordBatch]) -> Result<Vec<StoredImage>,
                 image,
                 discovered_at: summary.discovered_at,
                 original_at: summary.original_at,
-                archetype: summary.archetype,
+                zone: summary.zone,
                 annotated_image,
                 config_version: summary.config_version,
                 detected_text: summary.detected_text,
@@ -355,7 +355,7 @@ mod tests {
             image: test_image(),
             discovered_at: DiscoveredAt::now(),
             original_at: OriginalAt::new(Utc::now()),
-            archetype: Archetype::TopRight,
+            zone: Zone::TopRight,
             annotated_image: test_image(),
             config_version: ConfigVersion::from("test"),
             detected_text: String::new(),
@@ -370,7 +370,7 @@ mod tests {
         assert_eq!(images[0].skeet_id, record.skeet_id);
         assert_eq!(images[0].image.width(), 2);
         assert_eq!(images[0].image.height(), 2);
-        assert_eq!(images[0].archetype, Archetype::TopRight);
+        assert_eq!(images[0].zone, Zone::TopRight);
     }
 
     #[tokio::test]
@@ -387,7 +387,7 @@ mod tests {
                 image: test_image(),
                 discovered_at: DiscoveredAt::now(),
                 original_at: OriginalAt::new(Utc::now()),
-                archetype: Archetype::BottomLeft,
+                zone: Zone::BottomLeft,
                 annotated_image: test_image(),
                 config_version: ConfigVersion::from("test"),
                 detected_text: String::new(),
@@ -413,7 +413,7 @@ mod tests {
             image: test_image(),
             discovered_at: DiscoveredAt::now(),
             original_at: OriginalAt::new(Utc::now()),
-            archetype: Archetype::BottomRight,
+            zone: Zone::BottomRight,
             annotated_image: test_image(),
             config_version: ConfigVersion::from("test"),
             detected_text: String::new(),
@@ -425,7 +425,7 @@ mod tests {
         assert_eq!(summaries.len(), 1);
         assert_eq!(summaries[0].image_id, record.image_id);
         assert_eq!(summaries[0].skeet_id, record.skeet_id);
-        assert_eq!(summaries[0].archetype, Archetype::BottomRight);
+        assert_eq!(summaries[0].zone, Zone::BottomRight);
     }
 
     #[tokio::test]
@@ -438,7 +438,7 @@ mod tests {
             image: test_image(),
             discovered_at: DiscoveredAt::now(),
             original_at: OriginalAt::new(Utc::now()),
-            archetype: Archetype::TopLeft,
+            zone: Zone::TopLeft,
             annotated_image: test_image(),
             config_version: ConfigVersion::from("test"),
             detected_text: String::new(),

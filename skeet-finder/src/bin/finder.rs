@@ -118,7 +118,7 @@ async fn save(store: &SkeetStore, record: &ImageRecord, saved_count: &mut u64) {
             info!(
                 saved = *saved_count,
                 skeet_id = %record.skeet_id,
-                archetype = %record.archetype,
+                zone = %record.zone,
                 "saved image"
             );
         }

@@ -6,7 +6,7 @@ use std::path::Path;
 use face_detection::FaceDetector;
 use libtest_mimic::{Arguments, Trial};
 use serde::Deserialize;
-use shared::{ArchetypeConfig, Classification, Quadrant, Rejection};
+use shared::{ArchetypeConfig, Classification, Rejection, Zone};
 
 #[derive(Deserialize)]
 struct ExpectedConfig {
@@ -51,8 +51,8 @@ fn with_text_detector<R>(f: impl FnOnce(&text_detection::TextDetector) -> R) -> 
 
 fn expected_classification(example: &Example) -> Classification {
     if let Some(archetype) = &example.archetype {
-        let quadrant: Quadrant = archetype.parse().unwrap_or_else(|e| panic!("{e}"));
-        Classification::Accepted(quadrant)
+        let zone: Zone = archetype.parse().unwrap_or_else(|e| panic!("{e}"));
+        Classification::Accepted(zone)
     } else {
         let reasons = example
             .rejected

@@ -79,7 +79,7 @@ fn main() {
 
         let classification = skeet_finder::classify(&detector, &img, &skin_mask, char_count, &config);
         match &classification {
-            Classification::Accepted(quadrant) => println!("  classification: Accepted({quadrant})"),
+            Classification::Accepted(zone) => println!("  classification: Accepted({zone})"),
             Classification::Rejected(reasons) if reasons.is_empty() => {
                 println!("  classification: Rejected (no frontal face)");
             }

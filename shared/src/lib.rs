@@ -51,7 +51,7 @@ impl PartialOrd for Percentage {
 pub enum Rejection {
     FaceTooSmall,
     FaceTooLarge,
-    FaceInCentralZone,
+    FaceNotInAcceptedZone,
     TooManyFaces,
     TooFewFrontalFaces,
     TooLittleFaceSkin,
@@ -64,7 +64,7 @@ impl std::fmt::Display for Rejection {
         match self {
             Self::FaceTooSmall => write!(f, "FaceTooSmall"),
             Self::FaceTooLarge => write!(f, "FaceTooLarge"),
-            Self::FaceInCentralZone => write!(f, "FaceInCentralZone"),
+            Self::FaceNotInAcceptedZone => write!(f, "FaceNotInAcceptedZone"),
             Self::TooManyFaces => write!(f, "TooManyFaces"),
             Self::TooFewFrontalFaces => write!(f, "TooFewFrontalFaces"),
             Self::TooLittleFaceSkin => write!(f, "TooLittleFaceSkin"),
@@ -81,7 +81,7 @@ impl std::str::FromStr for Rejection {
         match s {
             "FaceTooSmall" => Ok(Self::FaceTooSmall),
             "FaceTooLarge" => Ok(Self::FaceTooLarge),
-            "FaceInCentralZone" => Ok(Self::FaceInCentralZone),
+            "FaceNotInAcceptedZone" => Ok(Self::FaceNotInAcceptedZone),
             "TooManyFaces" => Ok(Self::TooManyFaces),
             "TooFewFrontalFaces" => Ok(Self::TooFewFrontalFaces),
             "TooLittleFaceSkin" => Ok(Self::TooLittleFaceSkin),
@@ -170,48 +170,59 @@ impl ArchetypeConfig {
     }
 }
 
-/// Result of classifying an image: either an archetype (quadrant) or rejection reasons.
+/// Result of classifying an image: either an accepted zone or rejection reasons.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Classification {
-    Accepted(Quadrant),
+    Accepted(Zone),
     Rejected(Vec<Rejection>),
 }
 
+/// A zone within the image, defined by overlaying a 4x4 grid and taking 2x2
+/// blocks at each valid offset (0, 1, 2) in both X and Y, giving 9 zones.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Zone {
-    Quarter(Quadrant),
-    Central,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Quadrant {
     TopLeft,
+    TopCenter,
     TopRight,
+    CenterLeft,
+    CenterCenter,
+    CenterRight,
     BottomLeft,
+    BottomCenter,
     BottomRight,
 }
 
-impl std::fmt::Display for Quadrant {
+impl std::fmt::Display for Zone {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::TopLeft => write!(f, "TOP_LEFT"),
+            Self::TopCenter => write!(f, "TOP_CENTER"),
             Self::TopRight => write!(f, "TOP_RIGHT"),
+            Self::CenterLeft => write!(f, "CENTER_LEFT"),
+            Self::CenterCenter => write!(f, "CENTER_CENTER"),
+            Self::CenterRight => write!(f, "CENTER_RIGHT"),
             Self::BottomLeft => write!(f, "BOTTOM_LEFT"),
+            Self::BottomCenter => write!(f, "BOTTOM_CENTER"),
             Self::BottomRight => write!(f, "BOTTOM_RIGHT"),
         }
     }
 }
 
-impl std::str::FromStr for Quadrant {
+impl std::str::FromStr for Zone {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "TOP_LEFT" => Ok(Self::TopLeft),
+            "TOP_CENTER" => Ok(Self::TopCenter),
             "TOP_RIGHT" => Ok(Self::TopRight),
+            "CENTER_LEFT" => Ok(Self::CenterLeft),
+            "CENTER_CENTER" => Ok(Self::CenterCenter),
+            "CENTER_RIGHT" => Ok(Self::CenterRight),
             "BOTTOM_LEFT" => Ok(Self::BottomLeft),
+            "BOTTOM_CENTER" => Ok(Self::BottomCenter),
             "BOTTOM_RIGHT" => Ok(Self::BottomRight),
-            other => Err(format!("unknown quadrant: {other}")),
+            other => Err(format!("unknown zone: {other}")),
         }
     }
 }
@@ -280,16 +291,22 @@ mod tests {
     }
 
     #[test]
-    fn quadrant_roundtrips_through_string() {
-        for q in [
-            Quadrant::TopLeft,
-            Quadrant::TopRight,
-            Quadrant::BottomLeft,
-            Quadrant::BottomRight,
+    fn zone_roundtrips_through_string() {
+        for z in [
+            Zone::TopLeft,
+            Zone::TopCenter,
+            Zone::TopRight,
+            Zone::CenterLeft,
+            Zone::CenterCenter,
+            Zone::CenterRight,
+            Zone::BottomLeft,
+            Zone::BottomCenter,
+            Zone::BottomRight,
         ] {
-            let s = q.to_string();
-            let parsed: Quadrant = s.parse().expect("should parse");
-            assert_eq!(parsed, q);
+            let s = z.to_string();
+            let parsed: Zone = s.parse().expect("should parse");
+            assert_eq!(parsed, z);
         }
     }
+
 }

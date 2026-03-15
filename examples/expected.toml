@@ -5,17 +5,17 @@ exemplar = true
 
 [[example]]
 path = "jbbneqrt2fxcij3kjwxdu54m_3mfev4a57a22u_0.png"
-rejected = ["FaceInCentralZone"]
+rejected = ["FaceNotInAcceptedZone"]
 exemplar = true
 
 [[example]]
 path = "4472a427-f6bd-4e55-87bd-86f5f91e187e.png"
-archetype = "BOTTOM_LEFT"
+archetype = "CENTER_LEFT"
 exemplar = true
 
 [[example]]
 path = "bafkreiaj24jwns3psvpdkv2437ldxhnrwa64ypyxnsz2awq6lwrf3eidna.png"
-archetype = "TOP_RIGHT"
+archetype = "CENTER_RIGHT"
 exemplar = true
 
 [[example]]

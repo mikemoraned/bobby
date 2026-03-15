@@ -12,7 +12,7 @@ use cot::request::extractors::Path;
 use cot::response::Response;
 use cot::router::{Route, Router};
 use cot::{App, AppBuilder, Body, Project, StatusCode, Template};
-use skeet_store::{Archetype, ImageId, SkeetId, SkeetStore};
+use skeet_store::{ImageId, SkeetId, SkeetStore, Zone};
 
 static STORE_PATH: OnceLock<PathBuf> = OnceLock::new();
 
@@ -35,7 +35,7 @@ struct FeedEntry {
 fn to_feed_entry(
     image_id: &ImageId,
     skeet_id: &SkeetId,
-    archetype: &Archetype,
+    zone: &Zone,
     config_version: &str,
     detected_text: &str,
 ) -> Option<FeedEntry> {
@@ -45,7 +45,7 @@ fn to_feed_entry(
     let rkey = rest.strip_prefix("app.bsky.feed.post/")?;
     Some(FeedEntry {
         image_id: image_id.to_string(),
-        archetype: archetype.to_string(),
+        archetype: zone.to_string(),
         config_version: config_version.to_string(),
         detected_text: detected_text.to_string(),
         at_uri: at_uri.to_string(),
@@ -78,7 +78,7 @@ async fn feed() -> cot::Result<Html> {
             to_feed_entry(
                 &img.image_id,
                 &img.skeet_id,
-                &img.archetype,
+                &img.zone,
                 img.config_version.as_str(),
                 &img.detected_text,
             )
@@ -183,7 +183,7 @@ mod tests {
     fn converts_at_uri_to_entry() {
         let image_id = ImageId::new();
         let skeet_id = SkeetId::new("at://did:plc:abc123/app.bsky.feed.post/xyz789");
-        let archetype = Archetype::TopRight;
+        let archetype = Zone::TopRight;
         let entry = to_feed_entry(&image_id, &skeet_id, &archetype, "v1", "hello")
             .expect("should produce entry");
         assert_eq!(entry.at_uri, "at://did:plc:abc123/app.bsky.feed.post/xyz789");
@@ -197,7 +197,7 @@ mod tests {
     fn returns_none_for_invalid_uri() {
         let image_id = ImageId::new();
         let skeet_id = SkeetId::new("not-an-at-uri");
-        let archetype = Archetype::TopRight;
+        let archetype = Zone::TopRight;
         assert!(to_feed_entry(&image_id, &skeet_id, &archetype, "v1", "").is_none());
     }
 
@@ -205,7 +205,7 @@ mod tests {
     fn returns_none_for_non_post_uri() {
         let image_id = ImageId::new();
         let skeet_id = SkeetId::new("at://did:plc:abc123/app.bsky.feed.like/xyz789");
-        let archetype = Archetype::TopRight;
+        let archetype = Zone::TopRight;
         assert!(to_feed_entry(&image_id, &skeet_id, &archetype, "v1", "").is_none());
     }
 }

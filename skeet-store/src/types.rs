@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use image::DynamicImage;
 pub use shared::SkeetId;
+pub use shared::Zone;
 use shared::ConfigVersion;
 use uuid::Uuid;
 
@@ -71,45 +72,6 @@ impl OriginalAt {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Archetype {
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
-}
-
-impl Archetype {
-    pub const fn as_str(&self) -> &'static str {
-        match self {
-            Self::TopLeft => "TOP_LEFT",
-            Self::TopRight => "TOP_RIGHT",
-            Self::BottomLeft => "BOTTOM_LEFT",
-            Self::BottomRight => "BOTTOM_RIGHT",
-        }
-    }
-}
-
-impl std::str::FromStr for Archetype {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "TOP_LEFT" => Ok(Self::TopLeft),
-            "TOP_RIGHT" => Ok(Self::TopRight),
-            "BOTTOM_LEFT" => Ok(Self::BottomLeft),
-            "BOTTOM_RIGHT" => Ok(Self::BottomRight),
-            other => Err(format!("unknown archetype: {other}")),
-        }
-    }
-}
-
-impl std::fmt::Display for Archetype {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
 #[derive(Debug)]
 pub struct ImageRecord {
     pub image_id: ImageId,
@@ -117,7 +79,7 @@ pub struct ImageRecord {
     pub image: DynamicImage,
     pub discovered_at: DiscoveredAt,
     pub original_at: OriginalAt,
-    pub archetype: Archetype,
+    pub zone: Zone,
     pub annotated_image: DynamicImage,
     pub config_version: ConfigVersion,
     pub detected_text: String,

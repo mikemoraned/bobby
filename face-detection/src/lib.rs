@@ -18,7 +18,7 @@ use burn::backend::NdArray;
 use image::DynamicImage;
 use postprocess::{Detection, decode_and_filter};
 use preprocess::image_to_tensor;
-pub use shared::{Percentage, Quadrant, Zone};
+pub use shared::{Percentage, Zone};
 
 type Backend = NdArray;
 
@@ -124,32 +124,38 @@ fn to_face(d: Detection, scale_x: f32, scale_y: f32) -> Face {
     }
 }
 
-use euclid::default::{Point2D, Rect, Size2D, Vector2D};
+use euclid::default::{Point2D, Rect, Size2D};
 
 fn overlap_area(a: &Rect<f32>, b: &Rect<f32>) -> f32 {
     a.intersection(b).map_or(0.0, |r| r.area())
 }
 
-/// Map a face to a zone by measuring overlap with each of the 5 zones
-/// (4 corner quarters + 1 central) and choosing the zone with maximum overlap.
+/// Map a face to a zone by measuring overlap with each of the 9 zones
+/// and choosing the zone with maximum overlap.
+///
+/// Zones are defined on a 4x4 grid where each zone is a 2x2 block.
+/// One grid unit on X = width/4, one grid unit on Y = height/4.
+/// Valid offsets are 0, 1, 2 in each axis, giving 9 zones.
 pub fn face_zone(face: &Face, image_width: u32, image_height: u32) -> Zone {
-    let iw = image_width as f32;
-    let ih = image_height as f32;
-    let half_w = iw / 2.0;
-    let half_h = ih / 2.0;
+    let unit_w = image_width as f32 / 4.0;
+    let unit_h = image_height as f32 / 4.0;
+    let zone_size = Size2D::new(unit_w * 2.0, unit_h * 2.0);
 
     let face_rect = Rect::new(
         Point2D::new(face.x, face.y),
         Size2D::new(face.width, face.height),
     );
 
-    let quarter = Rect::new(Point2D::origin(), Size2D::new(half_w, half_h));
-    let zones: [(Zone, Rect<f32>); 5] = [
-        (Zone::Quarter(Quadrant::TopLeft), quarter.translate(Vector2D::zero())),
-        (Zone::Quarter(Quadrant::TopRight), quarter.translate(Vector2D::new(half_w, 0.0))),
-        (Zone::Quarter(Quadrant::BottomLeft), quarter.translate(Vector2D::new(0.0, half_h))),
-        (Zone::Quarter(Quadrant::BottomRight), quarter.translate(Vector2D::new(half_w, half_h))),
-        (Zone::Central, quarter.translate(Vector2D::new(iw / 4.0, ih / 4.0))),
+    let zones: [(Zone, Rect<f32>); 9] = [
+        (Zone::TopLeft,      Rect::new(Point2D::new(0.0,          0.0),          zone_size)),
+        (Zone::TopCenter,    Rect::new(Point2D::new(unit_w,       0.0),          zone_size)),
+        (Zone::TopRight,     Rect::new(Point2D::new(unit_w * 2.0, 0.0),          zone_size)),
+        (Zone::CenterLeft,   Rect::new(Point2D::new(0.0,          unit_h),       zone_size)),
+        (Zone::CenterCenter, Rect::new(Point2D::new(unit_w,       unit_h),       zone_size)),
+        (Zone::CenterRight,  Rect::new(Point2D::new(unit_w * 2.0, unit_h),       zone_size)),
+        (Zone::BottomLeft,   Rect::new(Point2D::new(0.0,          unit_h * 2.0), zone_size)),
+        (Zone::BottomCenter, Rect::new(Point2D::new(unit_w,       unit_h * 2.0), zone_size)),
+        (Zone::BottomRight,  Rect::new(Point2D::new(unit_w * 2.0, unit_h * 2.0), zone_size)),
     ];
 
     zones
@@ -199,19 +205,30 @@ mod tests {
 
     #[test]
     fn zone_top_right() {
-        let face = make_face(350.0, 50.0, 100.0, 100.0);
-        assert_eq!(face_zone(&face, 640, 480), Zone::Quarter(Quadrant::TopRight));
+        // Face fully in the right half of the top row (x offset 2, y offset 0)
+        let face = make_face(400.0, 20.0, 100.0, 100.0);
+        assert_eq!(face_zone(&face, 640, 480), Zone::TopRight);
     }
 
     #[test]
     fn zone_bottom_left() {
-        let face = make_face(50.0, 300.0, 100.0, 100.0);
-        assert_eq!(face_zone(&face, 640, 480), Zone::Quarter(Quadrant::BottomLeft));
+        // Face in the left column, bottom row
+        let face = make_face(20.0, 300.0, 100.0, 100.0);
+        assert_eq!(face_zone(&face, 640, 480), Zone::BottomLeft);
     }
 
     #[test]
-    fn zone_central() {
+    fn zone_center_center() {
+        // Face in the middle of the image
         let face = make_face(220.0, 140.0, 200.0, 200.0);
-        assert_eq!(face_zone(&face, 640, 480), Zone::Central);
+        assert_eq!(face_zone(&face, 640, 480), Zone::CenterCenter);
+    }
+
+    #[test]
+    fn zone_top_center() {
+        // Face centered horizontally at the top — the key new rejection zone
+        // For 640 wide: unit_w = 160, so TopCenter covers x=[160, 480], y=[0, 240]
+        let face = make_face(220.0, 20.0, 100.0, 100.0);
+        assert_eq!(face_zone(&face, 640, 480), Zone::TopCenter);
     }
 }

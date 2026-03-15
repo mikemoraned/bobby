@@ -16,10 +16,11 @@ pub fn blocked_labels(post_thread_json: &Value) -> Vec<String> {
         };
 
         for label in labels {
-            if let Some(val) = label.get("val").and_then(Value::as_str) {
-                if BLOCKED_LABEL_VALUES.contains(&val) && !found.contains(&val.to_string()) {
-                    found.push(val.to_string());
-                }
+            if let Some(val) = label.get("val").and_then(Value::as_str)
+                && BLOCKED_LABEL_VALUES.contains(&val)
+                && !found.contains(&val.to_string())
+            {
+                found.push(val.to_string());
             }
         }
     }

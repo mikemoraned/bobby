@@ -19,6 +19,7 @@ paths:
 - Errors: use structured enums with [thiserror](https://docs.rs/thiserror/latest/thiserror/)
 - Module structure: different kinds of things (schemas, layers) belong in their own module with their own tests
 - Cross-crate models go in a `shared` crate's `lib.rs`
+- Keep shared/library types as pure data types — don't add policy or business-logic methods to them. Policy logic belongs in the crate that owns the decision. Only inherent behaviour (formatting, parsing, construction) belongs on the type itself.
 - Testing:
   - Core functionality gets inline unit tests
   - Multi-part integration gets integ tests (use captured real data)
