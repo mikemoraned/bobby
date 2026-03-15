@@ -191,7 +191,7 @@ We're now going to start using some real models to find and detect faces.
         * another that handles the calling of code to specfically classify images and save them to the store
 
 * [ ] apply simple checks
-    * [ ] some skeets show as having `(i) Adult Content` when viewed in bluesky. We should extract this from the metadata we see and filter out any skeets with this flag.
+    * [x] some skeets show as having `(i) Adult Content` when viewed in bluesky. We should extract this from the metadata we see and filter out any skeets with this flag.
     * [ ] some skeets are labelled as "The author of this post has requested their posts not be displayed on external sites.". We should also filter these out, as an indicator of dodginess/sensitivity
 
 * [ ] skin-based checks

@@ -1,7 +1,7 @@
 use atrium_api::{
     app::bsky::{
         embed::{images::Image, record_with_media::MainMediaRefs},
-        feed::post::RecordEmbedRefs,
+        feed::post::{RecordEmbedRefs, RecordLabelsRefs},
     },
     record::KnownRecord,
     types::{BlobRef, TypedBlobRef, Union},
@@ -47,6 +47,10 @@ pub async fn extract_skeet_images(
     let KnownRecord::AppBskyFeedPost(post) = &commit.record else {
         return Vec::new();
     };
+
+    if has_adult_content_label(&post.data.labels) {
+        return Vec::new();
+    }
 
     let image_refs = extract_images(&post.data.embed);
     if image_refs.is_empty() {
@@ -106,6 +110,19 @@ pub async fn extract_skeet_images(
     }
 
     results
+}
+
+const ADULT_CONTENT_LABELS: &[&str] = &["porn", "sexual", "nudity"];
+
+fn has_adult_content_label(labels: &Option<Union<RecordLabelsRefs>>) -> bool {
+    let Some(Union::Refs(RecordLabelsRefs::ComAtprotoLabelDefsSelfLabels(self_labels))) = labels
+    else {
+        return false;
+    };
+    self_labels
+        .values
+        .iter()
+        .any(|label| ADULT_CONTENT_LABELS.contains(&label.val.as_str()))
 }
 
 fn extract_images(embed: &Option<Union<RecordEmbedRefs>>) -> Vec<&Image> {
