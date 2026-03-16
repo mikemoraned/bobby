@@ -15,8 +15,6 @@ struct Args {
     reason: String,
 }
 
-const BSKY_PUBLIC_API: &str = "https://public.api.bsky.app/xrpc";
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
@@ -33,20 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Download the post thread JSON
     eprintln!("Fetching {}", args.at_uri);
     let http = reqwest::Client::new();
-    let resp = http
-        .get(format!("{BSKY_PUBLIC_API}/app.bsky.feed.getPostThread"))
-        .query(&[("uri", args.at_uri.as_str()), ("depth", "0"), ("parentHeight", "0")])
-        .send()
-        .await?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        eprintln!("API error ({status}): {body}");
-        std::process::exit(1);
-    }
-
-    let json: serde_json::Value = resp.json().await?;
+    let json = skeet_finder::metadata::fetch_post_thread(&http, &args.at_uri).await?;
 
     // Save the JSON
     let json_path = blocklist_dir.join(format!("{rkey}.json"));

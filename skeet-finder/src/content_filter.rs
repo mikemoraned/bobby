@@ -3,7 +3,11 @@ use serde_json::Value;
 const BLOCKED_LABEL_VALUES: &[&str] = &["porn", "sexual", "nudity", "!no-unauthenticated"];
 
 /// Paths within a `getPostThread` JSON response that may contain blocking labels.
-const LABEL_PATHS: &[&str] = &["/thread/post/labels", "/thread/post/author/labels"];
+const LABEL_PATHS: &[&str] = &[
+    "/thread/post/labels",
+    "/thread/post/author/labels",
+    "/thread/post/embed/record/record/author/labels",
+];
 
 /// Check whether a `getPostThread` JSON response contains labels that should
 /// cause the post to be blocked. Returns the list of blocked label values found.
@@ -74,6 +78,30 @@ mod tests {
             }
         });
         assert!(blocked_labels(&json).is_empty());
+    }
+
+    #[test]
+    fn detects_quoted_record_author_no_unauthenticated() {
+        let json = serde_json::json!({
+            "thread": {
+                "post": {
+                    "author": { "labels": [] },
+                    "labels": [],
+                    "embed": {
+                        "record": {
+                            "record": {
+                                "author": {
+                                    "labels": [
+                                        { "val": "!no-unauthenticated", "src": "did:plc:quoted" }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        assert_eq!(blocked_labels(&json), vec!["!no-unauthenticated"]);
     }
 
     #[test]

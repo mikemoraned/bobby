@@ -1,9 +1,11 @@
-# Each entry is an at:// URI that should be blocked by the content filter.
-# The corresponding JSON is saved alongside as {rkey}.json.
+[[blocked]]
+at_uri = "at://did:plc:3bebghh7fygmfwjo6udrye43/app.bsky.feed.post/3mh4gatfe2c2d"
+reason = "author no-unauthenticated label"
+
 [[blocked]]
 at_uri = "at://did:plc:iyqgkr3bmlxwma7i63imodfs/app.bsky.feed.post/3mh4g7iacos23"
 reason = "external porn label"
 
 [[blocked]]
-at_uri = "at://did:plc:3bebghh7fygmfwjo6udrye43/app.bsky.feed.post/3mh4gatfe2c2d"
-reason = "author no-unauthenticated label"
+at_uri = "at://did:plc:wsdcu5le5birr37kohts2aqa/app.bsky.feed.post/3mh4ogusm4c23"
+reason = "quoted author has !no-unauthenticated label"

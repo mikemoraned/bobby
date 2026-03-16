@@ -22,9 +22,15 @@
             * Zone = anything else => None
         * the expectation is that faces that previously mostly overlapped TOP_LEFT or TOP_RIGHT will now match to TOP_CENTER and be dropped
 
-* [ ] pre-filtering still perhaps being missed
-    * [ ] the example `at://did:plc:wsdcu5le5birr37kohts2aqa/app.bsky.feed.post/3mh4ogusm4c23` shows up in the JS bluesky viewer with the text "The author of the quoted post has requested their posts not be displayed on external sites." which implies we should also be finding and blocking it. It's possible this is a "re-skeet" of someone else's content. However, if so, we should also ignore.
+* [x] pre-filtering still perhaps being missed
+    * [x] the example `at://did:plc:wsdcu5le5birr37kohts2aqa/app.bsky.feed.post/3mh4ogusm4c23` shows up in the JS bluesky viewer with the text "The author of the quoted post has requested their posts not be displayed on external sites." which implies we should also be finding and blocking it. It's possible this is a "re-skeet" of someone else's content. However, if so, we should also ignore.
+    * [x] to help debugging this, split `metadata_dump` into two new clis (which should share code if possible, in a new `metadata` module):
+        * `image_metadata_dump` : this is effectively the same as `metadata_dump` and is focussed on helping debug an existing stored image
+        * `at_metadata_dump` : this is a more generic cli which takes an at URL and dumps the info; the at message doens't need to be associated to an existing skeet
 
-* [ ] text showing up which we should filter on
-    * `examples/0f206499-82f4-48a0-bb22-0acded0982f9.png` should be filtered as Rejection::TooMuchText
-    * we may need to tweak how we use text information. For example, maybe we shouldn't filter on number of detected glyphs, but instead on what percentage of the image is text? Consider adding new parameters in `archetype.toml` for this.
+* [ ] text is showing up which we should be filter on i.e. the text-based filtering doesn't seem to be working all that well
+    * for example, `examples/0f206499-82f4-48a0-bb22-0acded0982f9.png` should be filtered out as Rejection::TooMuchText
+    * we need to tweak how we use the text information we get. 
+    * For example, maybe we shouldn't filter on number of detected glyphs, but instead on what percentage of the image is text? 
+        * we should consider adding new parameters in `archetype.toml` to control this
+    * in summary, we should use the relative size of text areas as a filter: large text area implies it is not the kind of image we want

@@ -38,8 +38,12 @@ name = "classify-examples"
 path = "src/bin/classify_examples.rs"
 
 [[bin]]
-name = "metadata-dump"
-path = "src/bin/metadata_dump.rs"
+name = "image-metadata-dump"
+path = "src/bin/image_metadata_dump.rs"
+
+[[bin]]
+name = "at-metadata-dump"
+path = "src/bin/at_metadata_dump.rs"
 
 [[bin]]
 name = "add-to-blocklist"

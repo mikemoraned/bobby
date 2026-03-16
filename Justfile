@@ -37,3 +37,12 @@ find:
 
 feed:
     cargo run --release --bin skeet-feed -- --store-path {{ STORE }}
+
+image-metadata-dump image_id:
+    cargo run --release --bin image-metadata-dump -- --store-path {{ STORE }} --image-id {{ image_id }}
+
+at-metadata-dump at_uri:
+    cargo run --release --bin at-metadata-dump -- --at-uri {{ at_uri }}
+
+add-to-blocklist at_uri reason="manual":
+    cargo run --release --bin add-to-blocklist -- "{{ at_uri }}" --reason "{{ reason }}"
