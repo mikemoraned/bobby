@@ -4347,6 +4347,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "geo"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f3901269ec6d4f6068d3f09e5f02f995bd076398dcd1dfec407cd230b02d11b"
+dependencies = [
+ "earcutr",
+ "float_next_after",
+ "geo-types",
+ "geographiclib-rs",
+ "i_overlay",
+ "log",
+ "num-traits",
+ "rand 0.8.5",
+ "robust",
+ "rstar",
+ "sif-itree",
+ "spade",
+]
+
+[[package]]
 name = "geo-traits"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4392,7 +4412,7 @@ checksum = "fa84300361ce57fb875bcaa6e32b95b0aff5c6b1af692b936bdd58ff343f4394"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
- "geo",
+ "geo 0.31.0",
  "geo-traits",
  "geoarrow-array",
  "geoarrow-schema",
@@ -4421,7 +4441,7 @@ dependencies = [
  "arrow-array",
  "arrow-schema",
  "datafusion",
- "geo",
+ "geo 0.31.0",
  "geo-traits",
  "geoarrow-array",
  "geoarrow-expr-geo",
@@ -8810,6 +8830,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
+name = "sif-itree"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7f45b8998ced5134fb1d75732c77842a3e888f19c1ff98481822e8fbfbf930b"
+
+[[package]]
 name = "signal-hook-registry"
 version = "1.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9643,6 +9669,7 @@ dependencies = [
 name = "text-detection"
 version = "0.1.0"
 dependencies = [
+ "geo 0.32.0",
  "image",
  "ocrs",
  "rten",

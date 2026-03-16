@@ -7,6 +7,7 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+geo = "0.32.0"
 image = { workspace = true }
 ocrs = "0.12"
 rten = "0.24"

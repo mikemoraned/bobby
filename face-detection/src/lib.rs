@@ -15,6 +15,7 @@ pub mod model {
 }
 
 use burn::backend::NdArray;
+use euclid::default::{Point2D, Rect, Size2D, Vector2D};
 use image::DynamicImage;
 use postprocess::{Detection, decode_and_filter};
 use preprocess::image_to_tensor;
@@ -75,10 +76,23 @@ impl Face {
     }
 
     /// Face area as a percentage of the total image area.
+    ///
+    /// The face bounding box is clipped to the image boundaries so that
+    /// regions extending outside the image are not counted.
     pub fn area_pct(&self, image_width: u32, image_height: u32) -> Percentage {
-        let face_area = self.width * self.height;
         let image_area = image_width as f32 * image_height as f32;
-        Percentage::new((face_area / image_area) * 100.0)
+        let face_rect = Rect::new(
+            Point2D::new(self.x, self.y),
+            Size2D::new(self.width, self.height),
+        );
+        let image_rect = Rect::new(
+            Point2D::origin(),
+            Size2D::new(image_width as f32, image_height as f32),
+        );
+        let clipped_area = face_rect
+            .intersection(&image_rect)
+            .map_or(0.0, |r| r.area());
+        Percentage::new((clipped_area / image_area) * 100.0)
     }
 }
 
@@ -123,8 +137,6 @@ fn to_face(d: Detection, scale_x: f32, scale_y: f32) -> Face {
         },
     }
 }
-
-use euclid::default::{Point2D, Rect, Size2D, Vector2D};
 
 fn overlap_area(a: &Rect<f32>, b: &Rect<f32>) -> f32 {
     a.intersection(b).map_or(0.0, |r| r.area())
@@ -229,5 +241,17 @@ mod tests {
         // For 640 wide: unit_w = 160, so TopCenter covers x=[160, 480], y=[0, 240]
         let face = make_face(220.0, 20.0, 100.0, 100.0);
         assert_eq!(face_zone(&face, 640, 480), Zone::TopCenter);
+    }
+
+    #[test]
+    fn area_pct_capped_at_100_when_bbox_exceeds_image() {
+        // Face bbox extends well beyond the 100x100 image
+        let face = make_face(-10.0, -10.0, 200.0, 200.0);
+        let pct = face.area_pct(100, 100);
+        assert!(
+            pct.value() <= 100.0,
+            "area_pct should be capped at 100.0, got {}",
+            pct.value()
+        );
     }
 }

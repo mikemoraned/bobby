@@ -1,5 +1,6 @@
 #![warn(clippy::all, clippy::nursery)]
 
+use geo::{Area, BooleanOps, Rect as GeoRect, coord};
 use image::DynamicImage;
 use ocrs::{ImageSource, OcrEngine, OcrEngineParams, TextItem};
 use rten::Model;
@@ -34,17 +35,51 @@ impl TextDetectionResult {
     }
 
     /// Calculate the percentage of the image area covered by detected text bounding boxes.
+    ///
+    /// Overlapping text regions are unioned so that shared pixels are only
+    /// counted once, preventing the result from exceeding 100%.
     pub fn text_area_pct(&self, image_width: u32, image_height: u32) -> f32 {
         let image_area = f64::from(image_width) * f64::from(image_height);
         if image_area == 0.0 {
             return 0.0;
         }
-        let text_area: f64 = self
+
+        let image_rect = GeoRect::new(
+            coord! { x: 0.0, y: 0.0 },
+            coord! { x: f64::from(image_width), y: f64::from(image_height) },
+        );
+
+        let polygons: Vec<_> = self
             .lines
             .iter()
-            .map(|line| f64::from(line.width.max(0)) * f64::from(line.height.max(0)))
-            .sum();
-        (text_area / image_area * 100.0) as f32
+            .filter(|line| line.width > 0 && line.height > 0)
+            .filter_map(|line| {
+                let text_rect = GeoRect::new(
+                    coord! { x: f64::from(line.x), y: f64::from(line.y) },
+                    coord! {
+                        x: f64::from(line.x + line.width),
+                        y: f64::from(line.y + line.height)
+                    },
+                );
+                let clipped = text_rect.to_polygon().intersection(&image_rect.to_polygon());
+                if clipped.unsigned_area() > 0.0 {
+                    Some(clipped)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if polygons.is_empty() {
+            return 0.0;
+        }
+
+        let mut union = polygons[0].clone();
+        for poly in &polygons[1..] {
+            union = union.union(poly);
+        }
+
+        (union.unsigned_area() / image_area * 100.0) as f32
     }
 
     /// Join all detected text into a single string, separated by newlines.
@@ -121,5 +156,33 @@ impl TextDetector {
     /// Count the number of recognized text characters in the image.
     pub fn count_characters(&self, image: &DynamicImage) -> usize {
         self.detect(image).character_count()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn text_area_pct_capped_at_100_with_overlapping_boxes() {
+        let result = TextDetectionResult {
+            lines: vec![
+                DetectedText { x: 0, y: 0, width: 100, height: 100, text: "A".into() },
+                DetectedText { x: 10, y: 10, width: 100, height: 100, text: "B".into() },
+            ],
+        };
+        let pct = result.text_area_pct(100, 100);
+        assert!(
+            pct <= 100.0,
+            "text_area_pct should be capped at 100.0, got {pct}"
+        );
+    }
+
+    #[test]
+    fn text_area_pct_zero_image_returns_zero() {
+        let result = TextDetectionResult {
+            lines: vec![DetectedText { x: 0, y: 0, width: 10, height: 10, text: "A".into() }],
+        };
+        assert_eq!(result.text_area_pct(0, 0), 0.0);
     }
 }

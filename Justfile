@@ -33,10 +33,10 @@ validate-storage:
     cargo run --release --bin validate-storage -- --store-path {{ STORE }}
 
 find:
-    cargo run --release --bin finder -- --store-path {{ STORE }}
+    RUST_BACKTRACE=1 cargo run --release --bin finder -- --store-path {{ STORE }}
 
 feed:
-    cargo run --release --bin skeet-feed -- --store-path {{ STORE }}
+    RUST_BACKTRACE=1 cargo run --release --bin skeet-feed -- --store-path {{ STORE }}
 
 image-metadata-dump image_id:
     cargo run --release --bin image-metadata-dump -- --store-path {{ STORE }} --image-id {{ image_id }}
