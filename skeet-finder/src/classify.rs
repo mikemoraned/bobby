@@ -12,7 +12,7 @@ pub fn classify(
     detector: &FaceDetector,
     image: &DynamicImage,
     skin_mask: &GrayImage,
-    word_count: usize,
+    text_area_pct: Percentage,
     config: &ArchetypeConfig,
 ) -> Classification {
     let faces = detector.detect(image);
@@ -58,7 +58,7 @@ pub fn classify(
         reasons.push(Rejection::TooMuchSkinOutsideFace);
     }
 
-    if word_count > config.max_glyphs_allowed as usize {
+    if text_area_pct > config.max_text_area_pct {
         reasons.push(Rejection::TooMuchText);
     }
 
@@ -95,11 +95,14 @@ pub fn classify_image(
 ) -> Result<ImageRecord, Vec<Rejection>> {
     let skin_mask = skin_detection::detect_skin(&skeet_image.image);
     let text_result = text_detector.detect(&skeet_image.image);
+    let text_area_pct = Percentage::new(
+        text_result.text_area_pct(skeet_image.image.width(), skeet_image.image.height()),
+    );
     let classification = classify(
         detector,
         &skeet_image.image,
         &skin_mask,
-        text_result.character_count(),
+        text_area_pct,
         archetype_config,
     );
 

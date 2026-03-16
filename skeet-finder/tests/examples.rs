@@ -93,8 +93,11 @@ fn main() {
             let img = image::open(&img_path)
                 .map_err(|e| format!("failed to load {}: {e}", img_path.display()))?;
             let skin_mask = skin_detection::detect_skin(&img);
-            let word_count = with_text_detector(|td| td.count_characters(&img));
-            let actual = with_detector(|d| skeet_finder::classify(d, &img, &skin_mask, word_count, &config));
+            let text_area_pct = with_text_detector(|td| {
+                let result = td.detect(&img);
+                shared::Percentage::new(result.text_area_pct(img.width(), img.height()))
+            });
+            let actual = with_detector(|d| skeet_finder::classify(d, &img, &skin_mask, text_area_pct, &config));
             if actual != expected {
                 return Err(format!("expected {expected:?}, got {actual:?}").into());
             }

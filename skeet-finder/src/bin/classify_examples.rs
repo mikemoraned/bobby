@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use face_detection::FaceDetector;
-use shared::{ArchetypeConfig, Classification};
+use shared::{ArchetypeConfig, Classification, Percentage};
 
 fn main() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
@@ -46,6 +46,7 @@ fn main() {
         let skin_mask = skin_detection::detect_skin(&img);
         let text_result = text_detector.detect(&img);
         let char_count = text_result.character_count();
+        let text_area_pct = text_result.text_area_pct(img.width(), img.height());
 
         for (i, face) in faces.iter().enumerate() {
             let pct = face.area_pct(img.width(), img.height());
@@ -72,12 +73,13 @@ fn main() {
             );
         }
 
-        println!("  characters: {char_count}");
+        println!("  characters: {char_count}, text_area: {text_area_pct:.1}%");
         if !text_result.lines.is_empty() {
             println!("  detected text: {:?}", text_result.full_text());
         }
 
-        let classification = skeet_finder::classify(&detector, &img, &skin_mask, char_count, &config);
+        let text_area = Percentage::new(text_area_pct);
+        let classification = skeet_finder::classify(&detector, &img, &skin_mask, text_area, &config);
         match &classification {
             Classification::Accepted(zone) => println!("  classification: Accepted({zone})"),
             Classification::Rejected(reasons) if reasons.is_empty() => {

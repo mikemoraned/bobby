@@ -33,6 +33,20 @@ impl TextDetectionResult {
             .sum()
     }
 
+    /// Calculate the percentage of the image area covered by detected text bounding boxes.
+    pub fn text_area_pct(&self, image_width: u32, image_height: u32) -> f32 {
+        let image_area = f64::from(image_width) * f64::from(image_height);
+        if image_area == 0.0 {
+            return 0.0;
+        }
+        let text_area: f64 = self
+            .lines
+            .iter()
+            .map(|line| f64::from(line.width.max(0)) * f64::from(line.height.max(0)))
+            .sum();
+        (text_area / image_area * 100.0) as f32
+    }
+
     /// Join all detected text into a single string, separated by newlines.
     pub fn full_text(&self) -> String {
         self.lines

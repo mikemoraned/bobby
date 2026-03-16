@@ -129,7 +129,7 @@ pub struct ArchetypeConfig {
     pub max_face_area_pct: Percentage,
     pub min_face_skin_pct: Percentage,
     pub max_outside_face_skin_pct: Percentage,
-    pub max_glyphs_allowed: u32,
+    pub max_text_area_pct: Percentage,
 }
 
 impl ArchetypeConfig {
@@ -148,7 +148,7 @@ impl ArchetypeConfig {
     pub fn version(&self) -> ConfigVersion {
         let mut entries = vec![
             ("max_face_area_pct", self.max_face_area_pct.value().to_bits()),
-            ("max_glyphs_allowed", self.max_glyphs_allowed),
+            ("max_text_area_pct", self.max_text_area_pct.value().to_bits()),
             ("max_outside_face_skin_pct", self.max_outside_face_skin_pct.value().to_bits()),
             ("min_face_area_pct", self.min_face_area_pct.value().to_bits()),
             ("min_face_skin_pct", self.min_face_skin_pct.value().to_bits()),

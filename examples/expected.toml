@@ -52,3 +52,8 @@ exemplar = false
 path = "09a57394-66aa-4745-b16c-523c02e6bf0d.png"
 rejected = ["TooMuchText"]
 exemplar = false
+
+[[example]]
+path = "0f206499-82f4-48a0-bb22-0acded0982f9.png"
+rejected = ["TooMuchText"]
+exemplar = false
