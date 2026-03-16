@@ -28,7 +28,7 @@
         * `image_metadata_dump` : this is effectively the same as `metadata_dump` and is focussed on helping debug an existing stored image
         * `at_metadata_dump` : this is a more generic cli which takes an at URL and dumps the info; the at message doens't need to be associated to an existing skeet
 
-* [ ] text is showing up which we should be filter on i.e. the text-based filtering doesn't seem to be working all that well
+* [x] text is showing up which we should be filter on i.e. the text-based filtering doesn't seem to be working all that well
     * for example, `examples/0f206499-82f4-48a0-bb22-0acded0982f9.png` should be filtered out as Rejection::TooMuchText
     * we need to tweak how we use the text information we get. 
     * For example, maybe we shouldn't filter on number of detected glyphs, but instead on what percentage of the image is text? 
