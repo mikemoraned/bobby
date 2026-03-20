@@ -1,9 +1,8 @@
-use std::path::PathBuf;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
-    #[error("invalid path: {0}")]
-    InvalidPath(PathBuf),
+    #[error("invalid store URI: {0}")]
+    InvalidUri(String),
 
     #[error("LanceDB error: {0}")]
     Lance(#[from] lancedb::Error),

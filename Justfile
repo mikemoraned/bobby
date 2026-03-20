@@ -32,6 +32,13 @@ classify-examples:
 validate-storage:
     cargo run --release --bin validate-storage -- --store-path {{ STORE }}
 
+validate-storage-r2:
+    cargo run --release --bin validate-storage -- \
+        --store-path s3://hom-bobby/store \
+        --s3-endpoint "$(op read 'op://Dev/hom-bobby-r2-local-rw-endpoint/password')" \
+        --s3-access-key-id "$(op read 'op://Dev/hom-bobby-r2-local-rw-id/password')" \
+        --s3-secret-access-key "$(op read 'op://Dev/hom-bobby-r2-local-rw-key/password')"
+
 find:
     RUST_BACKTRACE=1 cargo run --release --bin finder -- --store-path {{ STORE }}
 

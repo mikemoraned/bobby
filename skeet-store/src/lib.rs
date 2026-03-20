@@ -8,7 +8,6 @@ pub use shared::ConfigVersion;
 pub use types::{DiscoveredAt, ImageId, ImageRecord, OriginalAt, SkeetId, Zone};
 
 use std::io::Cursor;
-use std::path::Path;
 use std::sync::Arc;
 
 use arrow_array::{
@@ -22,16 +21,63 @@ use lancedb::query::{ExecutableQuery, QueryBase};
 
 use schema::{TABLE_NAME, VALIDATE_TABLE_NAME, images_v6_schema, validate_v1_schema};
 
+#[derive(Clone, Debug, clap::Args)]
+pub struct StoreArgs {
+    /// Store location: local path or S3 URI (e.g. s3://bucket/path)
+    #[arg(long)]
+    pub store_path: String,
+
+    /// S3-compatible endpoint URL (e.g. https://<account>.r2.cloudflarestorage.com)
+    #[arg(long)]
+    pub s3_endpoint: Option<String>,
+
+    /// S3 access key ID
+    #[arg(long)]
+    pub s3_access_key_id: Option<String>,
+
+    /// S3 secret access key
+    #[arg(long)]
+    pub s3_secret_access_key: Option<String>,
+
+    /// S3 region (default: auto, suitable for Cloudflare R2)
+    #[arg(long, default_value = "auto")]
+    pub s3_region: String,
+}
+
+impl StoreArgs {
+    pub fn storage_options(&self) -> Vec<(String, String)> {
+        let mut opts = Vec::new();
+        if let Some(endpoint) = &self.s3_endpoint {
+            opts.push(("aws_endpoint".into(), endpoint.clone()));
+        }
+        if let Some(key_id) = &self.s3_access_key_id {
+            opts.push(("aws_access_key_id".into(), key_id.clone()));
+        }
+        if let Some(secret) = &self.s3_secret_access_key {
+            opts.push(("aws_secret_access_key".into(), secret.clone()));
+        }
+        opts.push(("aws_region".into(), self.s3_region.clone()));
+        opts
+    }
+
+    pub async fn open_store(&self) -> Result<SkeetStore, StoreError> {
+        SkeetStore::open(&self.store_path, self.storage_options()).await
+    }
+}
+
 pub struct SkeetStore {
     db: lancedb::Connection,
 }
 
 impl SkeetStore {
-    pub async fn open(path: &Path) -> Result<Self, StoreError> {
-        let path_str = path
-            .to_str()
-            .ok_or_else(|| StoreError::InvalidPath(path.to_path_buf()))?;
-        let db = lancedb::connect(path_str).execute().await?;
+    pub async fn open(
+        uri: &str,
+        storage_options: Vec<(String, String)>,
+    ) -> Result<Self, StoreError> {
+        let db = lancedb::connect(uri)
+            .storage_options(storage_options)
+            .execute()
+            .await?;
 
         let table_names = db.table_names().execute().await?;
         if !table_names.contains(&TABLE_NAME.to_string()) {
@@ -342,10 +388,16 @@ mod tests {
         DynamicImage::ImageRgba8(ImageBuffer::from_pixel(2, 2, Rgba([255, 0, 0, 255])))
     }
 
+    async fn open_temp_store(dir: &tempfile::TempDir) -> SkeetStore {
+        SkeetStore::open(dir.path().to_str().expect("valid path"), vec![])
+            .await
+            .expect("open store")
+    }
+
     #[tokio::test]
     async fn roundtrip_store_and_retrieve() {
         let dir = tempfile::tempdir().unwrap();
-        let store = SkeetStore::open(dir.path()).await.unwrap();
+        let store = open_temp_store(&dir).await;
 
         assert_eq!(store.count().await.unwrap(), 0);
 
@@ -376,7 +428,7 @@ mod tests {
     #[tokio::test]
     async fn multiple_images_per_skeet() {
         let dir = tempfile::tempdir().unwrap();
-        let store = SkeetStore::open(dir.path()).await.unwrap();
+        let store = open_temp_store(&dir).await;
 
         let skeet_id = SkeetId::new("at://did:plc:abc/app.bsky.feed.post/456");
 
@@ -405,7 +457,7 @@ mod tests {
     #[tokio::test]
     async fn list_all_summaries() {
         let dir = tempfile::tempdir().unwrap();
-        let store = SkeetStore::open(dir.path()).await.unwrap();
+        let store = open_temp_store(&dir).await;
 
         let record = ImageRecord {
             image_id: ImageId::new(),
@@ -445,11 +497,11 @@ mod tests {
         };
 
         {
-            let store = SkeetStore::open(dir.path()).await.unwrap();
+            let store = open_temp_store(&dir).await;
             store.add(&record).await.unwrap();
         }
 
-        let store = SkeetStore::open(dir.path()).await.unwrap();
+        let store = open_temp_store(&dir).await;
         assert_eq!(store.count().await.unwrap(), 1);
     }
 }

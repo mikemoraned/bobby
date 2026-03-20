@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
 
-    let store = SkeetStore::open(&args.store_path).await?;
+    let store = SkeetStore::open(args.store_path.to_str().expect("valid path"), vec![]).await?;
     store.validate().await?;
     info!("storage validation passed");
 

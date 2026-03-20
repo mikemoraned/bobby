@@ -124,7 +124,7 @@ async fn open_store() -> cot::Result<SkeetStore> {
     let store_path = STORE_PATH
         .get()
         .ok_or_else(|| cot::Error::internal("store path not initialized"))?;
-    SkeetStore::open(store_path)
+    SkeetStore::open(store_path.to_str().expect("valid path"), vec![])
         .await
         .map_err(|e| cot::Error::internal(format!("failed to open store: {e}")))
 }

@@ -26,7 +26,7 @@ struct Args {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let store = SkeetStore::open(&args.store_path).await?;
+    let store = SkeetStore::open(args.store_path.to_str().expect("valid path"), vec![]).await?;
     let stored = store
         .get_by_id(&args.image_id)
         .await?
