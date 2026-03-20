@@ -2,20 +2,19 @@
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
-use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::Parser;
 use face_detection::FaceDetector;
 use indicatif::{ProgressBar, ProgressStyle};
 use shared::{ArchetypeConfig, Rejection};
-use skeet_store::{ImageRecord, SkeetStore};
+use skeet_store::{ImageRecord, SkeetStore, StoreArgs};
 use tracing::{info, warn};
 
 #[derive(Parser)]
 struct Args {
-    #[arg(long)]
-    store_path: PathBuf,
+    #[command(flatten)]
+    store: StoreArgs,
 }
 
 #[tokio::main]
@@ -29,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
 
-    let store = SkeetStore::open(args.store_path.to_str().expect("valid path"), vec![]).await?;
+    let store = args.store.open_store().await?;
     store.validate().await?;
     info!("storage validation passed");
 

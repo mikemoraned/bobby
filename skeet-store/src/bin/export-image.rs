@@ -3,13 +3,13 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use skeet_store::{ImageId, SkeetStore};
+use skeet_store::{ImageId, StoreArgs};
 
 #[derive(Parser)]
 #[command(about = "Export an image from the store to a file")]
 struct Args {
-    #[arg(long)]
-    store_path: PathBuf,
+    #[command(flatten)]
+    store: StoreArgs,
 
     #[arg(long)]
     image_id: ImageId,
@@ -26,7 +26,7 @@ struct Args {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let store = SkeetStore::open(args.store_path.to_str().expect("valid path"), vec![]).await?;
+    let store = args.store.open_store().await?;
     let stored = store
         .get_by_id(&args.image_id)
         .await?

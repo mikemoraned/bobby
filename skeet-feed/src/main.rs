@@ -1,7 +1,6 @@
 #![warn(clippy::all, clippy::nursery)]
 
 use std::io::Cursor;
-use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use clap::Parser;
@@ -12,14 +11,14 @@ use cot::request::extractors::Path;
 use cot::response::Response;
 use cot::router::{Route, Router};
 use cot::{App, AppBuilder, Body, Project, StatusCode, Template};
-use skeet_store::{ImageId, SkeetId, SkeetStore, Zone};
+use skeet_store::{ImageId, SkeetId, SkeetStore, StoreArgs, Zone};
 
-static STORE_PATH: OnceLock<PathBuf> = OnceLock::new();
+static STORE_ARGS: OnceLock<StoreArgs> = OnceLock::new();
 
 #[derive(Parser)]
 struct Args {
-    #[arg(long)]
-    store_path: PathBuf,
+    #[command(flatten)]
+    store: StoreArgs,
 }
 
 #[derive(Debug)]
@@ -121,10 +120,11 @@ async fn annotated_image(Path(image_id_str): Path<String>) -> cot::Result<Respon
 }
 
 async fn open_store() -> cot::Result<SkeetStore> {
-    let store_path = STORE_PATH
+    let store_args = STORE_ARGS
         .get()
-        .ok_or_else(|| cot::Error::internal("store path not initialized"))?;
-    SkeetStore::open(store_path.to_str().expect("valid path"), vec![])
+        .ok_or_else(|| cot::Error::internal("store args not initialized"))?;
+    store_args
+        .open_store()
         .await
         .map_err(|e| cot::Error::internal(format!("failed to open store: {e}")))
 }
@@ -163,9 +163,9 @@ impl Project for FeedProject {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    STORE_PATH
-        .set(args.store_path)
-        .expect("store path already initialized");
+    STORE_ARGS
+        .set(args.store)
+        .expect("store args already initialized");
 
     let bootstrapper = Bootstrapper::new(FeedProject)
         .with_config_name("dev")?

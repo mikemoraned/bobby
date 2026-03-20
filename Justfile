@@ -7,6 +7,9 @@ _op-read-latest vault item:
         | jq -r '[.[] | select(.title == "{{ item }}")] | sort_by(.created_at) | last | .id' \
         | xargs -I{} op read "op://{{ vault }}/{}/password"
 
+_r2-args:
+    @echo "--store-path {{ R2_STORE }} --s3-endpoint $(just _op-read-latest Dev hom-bobby-r2-local-rw-endpoint) --s3-access-key-id $(just _op-read-latest Dev hom-bobby-r2-local-rw-id) --s3-secret-access-key $(just _op-read-latest Dev hom-bobby-r2-local-rw-key) --sse-c-key $(just _op-read-latest Dev hom-bobby-r2-sse-c-key)"
+
 default:
     just --list
 
@@ -44,18 +47,19 @@ validate-storage:
     cargo run --release --bin validate-storage -- --store-path {{ STORE }}
 
 validate-storage-r2:
-    cargo run --release --bin validate-storage -- \
-        --store-path {{ R2_STORE }} \
-        --s3-endpoint "$(just _op-read-latest Dev hom-bobby-r2-local-rw-endpoint)" \
-        --s3-access-key-id "$(just _op-read-latest Dev hom-bobby-r2-local-rw-id)" \
-        --s3-secret-access-key "$(just _op-read-latest Dev hom-bobby-r2-local-rw-key)" \
-        --sse-c-key "$(just _op-read-latest Dev hom-bobby-r2-sse-c-key)"
+    cargo run --release --bin validate-storage -- $(just _r2-args)
 
 find:
     RUST_BACKTRACE=1 cargo run --release --bin finder -- --store-path {{ STORE }}
 
+find-r2:
+    RUST_BACKTRACE=1 cargo run --release --bin finder -- $(just _r2-args)
+
 feed:
     RUST_BACKTRACE=1 cargo run --release --bin skeet-feed -- --store-path {{ STORE }}
+
+feed-r2:
+    RUST_BACKTRACE=1 cargo run --release --bin skeet-feed -- $(just _r2-args)
 
 image-metadata-dump image_id:
     cargo run --release --bin image-metadata-dump -- --store-path {{ STORE }} --image-id {{ image_id }}

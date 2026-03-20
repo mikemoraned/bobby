@@ -46,10 +46,10 @@ Tasks:
     * [x] remotely store name should be called `encrypted-store`
     * [x] Update `validate-storage-r2` Justfile rule: R2 commands to pass `--sse-c-key "$(op read 'op://Dev/hom-bobby-r2-sse-c-key/password')"` 
 
-* [ ] update `skeet-finder` to save data to an S3-compatible location
-    * ...
-    * [ ] migrate remaining binaries (`finder`, `feed`, `export-image`, `image-metadata-dump`) to `StoreArgs`
-    * [ ] update Justfile with R2 commands
+* [x] update `skeet-finder` etc to save data to an S3-compatible location
+    * [x] migrate remaining binaries (`finder`, `feed`, `export-image`, `image-metadata-dump`) to `StoreArgs`
+        * pull out shared behaviour into the `skeet-store` where possible
+    * [x] update Justfile with R2 commands / variables
 
 * [ ] update `skeet-feed` to run on fly.io and read from R2
     * Secrets managed via fly secrets (R2 read-only API token)
