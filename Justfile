@@ -1,4 +1,11 @@
 STORE := "store"
+R2_STORE := "s3://hom-bobby/encrypted-store"
+
+# Read a 1Password item's password by name, picking the most recently created if duplicates exist
+_op-read-latest vault item:
+    @op item list --vault {{ vault }} --format json \
+        | jq -r '[.[] | select(.title == "{{ item }}")] | sort_by(.created_at) | last | .id' \
+        | xargs -I{} op read "op://{{ vault }}/{}/password"
 
 default:
     just --list
@@ -13,7 +20,7 @@ convert-models: download-models
     cd model-conversion && uv run python convert_yunet.py
 
 prerequisites: convert-models
-    brew install protobuf
+    brew install protobuf openssl
 
 build:
     cargo build
@@ -29,15 +36,20 @@ check: build clippy test
 classify-examples:
     cargo run --release --bin classify-examples
 
+generate-sse-c-key:
+    op item create --vault Dev --title hom-bobby-r2-sse-c-key --category password "password=$(openssl rand -base64 32)" 2>/dev/null \
+        || op item edit hom-bobby-r2-sse-c-key --vault Dev "password=$(openssl rand -base64 32)"
+
 validate-storage:
     cargo run --release --bin validate-storage -- --store-path {{ STORE }}
 
 validate-storage-r2:
     cargo run --release --bin validate-storage -- \
-        --store-path s3://hom-bobby/store \
-        --s3-endpoint "$(op read 'op://Dev/hom-bobby-r2-local-rw-endpoint/password')" \
-        --s3-access-key-id "$(op read 'op://Dev/hom-bobby-r2-local-rw-id/password')" \
-        --s3-secret-access-key "$(op read 'op://Dev/hom-bobby-r2-local-rw-key/password')"
+        --store-path {{ R2_STORE }} \
+        --s3-endpoint "$(just _op-read-latest Dev hom-bobby-r2-local-rw-endpoint)" \
+        --s3-access-key-id "$(just _op-read-latest Dev hom-bobby-r2-local-rw-id)" \
+        --s3-secret-access-key "$(just _op-read-latest Dev hom-bobby-r2-local-rw-key)" \
+        --sse-c-key "$(just _op-read-latest Dev hom-bobby-r2-sse-c-key)"
 
 find:
     RUST_BACKTRACE=1 cargo run --release --bin finder -- --store-path {{ STORE }}

@@ -26,24 +26,25 @@ Tasks:
     * [x] update `SkeetStore::open` to support S3 via LanceDB storage options
     * [x] update `validate-storage` to use `StoreArgs`
 
-* [ ] add encryption of content saved to cloud, using SSE-C encryption for data stored in R2:
+* [x] add encryption of content saved to cloud, using SSE-C encryption for data stored in R2:
     * Uses S3 Server-Side Encryption with Customer-Provided Keys (SSE-C)
     * R2 supports SSE-C via S3-compatible API; data encrypted at rest with our key, R2 never stores the key
-    * [ ] generate Encryption key: 256-bit AES key, base64-encoded
-        * [ ] add a Justfile rule to install `openssl` in `prerequisites` via `brew`
-        * [ ] add a Justfile which does following:
+    * No code changes needed in `SkeetStore` internals; encryption is transparent at storage layer
+    * All LanceDB operations (search, indexing, filtering) work normally with SSE-C
+    * [x] generate Encryption key: 256-bit AES key, base64-encoded
+        * [x] add a Justfile rule to install `openssl` in `prerequisites` via `brew`
+        * [x] add a Justfile which does following:
             * generate, via `openssl rand -base64 32`
             * store in 1Password as `hom-bobby-r2-sse-c-key`
                 * this will overwrite any previous value, but this is ok as 1Password keeps a history of I need a previous version back
-    * [ ] integrate to code:
+    * [x] integrate to `validate-storage` cli:
         * Pass two additional storage options through `StoreArgs` (only when targeting S3):
             * `aws_server_side_encryption` = `sse-c`
             * `aws_sse_customer_key_base64` = the base64 key value
         * These are passed through LanceDB `ConnectBuilder::storage_options` → Lance `object_store` crate → R2 as SSE-C headers
         * Add `--sse-c-key` optional CLI arg to `StoreArgs`; when present, inject both storage options
-    * [ ] Update Justfile R2 commands to pass `--sse-c-key "$(op read 'op://Dev/hom-bobby-r2-sse-c-key/password')"` 
-    * No code changes needed in `SkeetStore` internals; encryption is transparent at storage layer
-    * All LanceDB operations (search, indexing, filtering) work normally with SSE-C
+    * [x] remotely store name should be called `encrypted-store`
+    * [x] Update `validate-storage-r2` Justfile rule: R2 commands to pass `--sse-c-key "$(op read 'op://Dev/hom-bobby-r2-sse-c-key/password')"` 
 
 * [ ] update `skeet-finder` to save data to an S3-compatible location
     * ...

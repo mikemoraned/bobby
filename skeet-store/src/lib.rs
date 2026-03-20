@@ -42,6 +42,10 @@ pub struct StoreArgs {
     /// S3 region (default: auto, suitable for Cloudflare R2)
     #[arg(long, default_value = "auto")]
     pub s3_region: String,
+
+    /// SSE-C encryption key (base64-encoded 256-bit AES key); enables server-side encryption
+    #[arg(long)]
+    pub sse_c_key: Option<String>,
 }
 
 impl StoreArgs {
@@ -57,6 +61,10 @@ impl StoreArgs {
             opts.push(("aws_secret_access_key".into(), secret.clone()));
         }
         opts.push(("aws_region".into(), self.s3_region.clone()));
+        if let Some(key) = &self.sse_c_key {
+            opts.push(("aws_server_side_encryption".into(), "sse-c".into()));
+            opts.push(("aws_sse_customer_key_base64".into(), key.clone()));
+        }
         opts
     }
 
