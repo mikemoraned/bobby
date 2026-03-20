@@ -15,6 +15,8 @@ rand = "0.9"
 shared = { workspace = true }
 thiserror = "2"
 tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 uuid = { version = "1", features = ["v4"] }
 
 [lints]

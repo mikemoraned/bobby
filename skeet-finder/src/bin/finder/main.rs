@@ -1,15 +1,18 @@
 #![warn(clippy::all, clippy::nursery)]
 
+mod persistence;
+mod status;
+
 use std::collections::HashMap;
-use std::fmt::Write as _;
-use std::time::Duration;
 
 use clap::Parser;
 use face_detection::FaceDetector;
-use indicatif::{ProgressBar, ProgressStyle};
 use shared::{ArchetypeConfig, Rejection};
-use skeet_store::{ImageRecord, SkeetStore, StoreArgs};
+use skeet_store::StoreArgs;
 use tracing::{info, warn};
+use tracing_appender::rolling;
+use tracing_subscriber::fmt;
+use tracing_subscriber::prelude::*;
 
 #[derive(Parser)]
 struct Args {
@@ -19,11 +22,15 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
+    let file_appender = rolling::daily("logs", "finder.log");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+
+    tracing_subscriber::registry()
+        .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "skeet_finder=info".parse().expect("valid filter")),
         )
+        .with(fmt::layer().with_writer(non_blocking))
         .init();
 
     let args = Args::parse();
@@ -44,15 +51,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(config_version = %config_version, "face detection model loaded");
 
     let receiver = skeet_finder::firehose::connect().await?;
+    info!("firehose connected");
 
-    let spinner = ProgressBar::new_spinner();
-    #[allow(clippy::literal_string_with_formatting_args)]
-    let style = ProgressStyle::with_template("{elapsed_precise} {spinner} {msg}")
-        .expect("valid template")
-        .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏-");
-    spinner.set_style(style);
-    spinner.enable_steady_tick(Duration::from_millis(100));
-    spinner.set_message("connected, listening for posts...");
+    let status = status::create_status();
 
     let mut post_count: u64 = 0;
     let mut image_post_count: u64 = 0;
@@ -65,8 +66,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let skeet_images = skeet_finder::firehose::extract_skeet_images(&event, &http).await;
         if skeet_images.is_empty() {
             if post_count.is_multiple_of(500) {
-                update_spinner(
-                    &spinner,
+                status::update_status(
+                    &status,
                     post_count,
                     image_post_count,
                     saved_count,
@@ -87,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &config_version,
             ) {
                 Ok(record) => {
-                    save(&store, &record, &mut saved_count).await;
+                    persistence::save(&store, &record, &mut saved_count).await;
                 }
                 Err(reasons) => {
                     for reason in &reasons {
@@ -95,8 +96,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-            update_spinner(
-                &spinner,
+            status::update_status(
+                &status,
                 post_count,
                 image_post_count,
                 saved_count,
@@ -105,60 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    spinner.finish_with_message("jetstream connection closed");
-    warn!("jetstream connection closed");
+    status.finish_with_message("jetstream connection closed");
+    warn!("firehose disconnected");
     Ok(())
-}
-
-async fn save(store: &SkeetStore, record: &ImageRecord, saved_count: &mut u64) {
-    match store.add(record).await {
-        Ok(()) => {
-            *saved_count += 1;
-            info!(
-                saved = *saved_count,
-                skeet_id = %record.skeet_id,
-                zone = %record.zone,
-                "saved image"
-            );
-        }
-        Err(e) => {
-            warn!(error = %e, "failed to save image to store");
-        }
-    }
-}
-
-fn update_spinner(
-    spinner: &ProgressBar,
-    posts: u64,
-    images: u64,
-    saved: u64,
-    rejections: &HashMap<Rejection, u64>,
-) {
-    let hit_rate = if images > 0 {
-        (saved as f64 / images as f64) * 100.0
-    } else {
-        0.0
-    };
-
-    let mut msg = format!(
-        "skeets: {posts} | images: {images} | saved: {saved} ({hit_rate:.1}%)"
-    );
-
-    if !rejections.is_empty() {
-        let total_rejections: u64 = rejections.values().sum();
-        let mut sorted: Vec<_> = rejections.iter().collect();
-        sorted.sort_by_key(|(r, _)| r.to_string());
-
-        write!(msg, " | rejected: {total_rejections} (").expect("write to String");
-        for (i, (reason, count)) in sorted.iter().enumerate() {
-            let pct = (**count as f64 / total_rejections as f64) * 100.0;
-            if i > 0 {
-                write!(msg, ", ").expect("write to String");
-            }
-            write!(msg, "{reason}: {count} [{pct:.0}%]").expect("write to String");
-        }
-        write!(msg, ")").expect("write to String");
-    }
-
-    spinner.set_message(msg);
 }

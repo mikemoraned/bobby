@@ -51,6 +51,19 @@ Tasks:
         * pull out shared behaviour into the `skeet-store` where possible
     * [x] update Justfile with R2 commands / variables
 
+* [x] add observability basics:
+    * [x] switch to tokio-tracing
+        * keep it simple as we can, but perhaps research/look for "starter" crates which provide good defaults
+        * shared code (skeet-store, shared) should be unaware of deployment context
+        * any errors/warnings should be logged as such
+    * [x] `skeet-finder` and `skeet-feed`: 
+        * should output to a local `logs/` dir with timestamped files, auto-rollover
+        * keep indicatif UI's where present
+    * [x] do refactoring / clarification pass on all clis:
+        * split out large main files (that don't fit easily on one screen) to separate modules
+        * generally reread and apply the Rust local rules where possible
+    * [x] look through the different cli mains and apply INFO logging for when major steps start and end
+
 * [ ] update `skeet-feed` to run on fly.io and read from R2
     * Secrets managed via fly secrets (R2 read-only API token)
     * Read-only access only
@@ -60,7 +73,4 @@ Tasks:
     * See https://github.com/mikemoraned/fosdem/blob/main/Justfile for example
 
 * [ ] add observability:
-    * [ ] switch to tokio-tracing; keep simple
-        * shared code (skeet-store, shared) should be unaware of deployment context
-    * [ ] `skeet-finder`: output to local `logs/` dir with timestamped files, auto-rollover; keep indicatif UI
     * [ ] `skeet-feed`: log traces to honeycomb (existing free account)

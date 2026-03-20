@@ -2,6 +2,7 @@
 
 use clap::Parser;
 use skeet_store::{ImageId, StoreArgs};
+use tracing::info;
 
 #[derive(Parser)]
 #[command(about = "Look up an image in the store and dump its Bluesky post metadata")]
@@ -15,6 +16,8 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    shared::tracing::init("info");
+
     let args = Args::parse();
 
     let store = args.store.open_store().await?;
@@ -23,22 +26,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?
         .ok_or_else(|| format!("no image found with id {}", args.image_id))?;
 
-    eprintln!("image_id:       {}", stored.image_id);
-    eprintln!("skeet_id:       {}", stored.skeet_id);
-    eprintln!("zone:           {}", stored.zone);
-    eprintln!("config_version: {}", stored.config_version);
-    eprintln!("discovered_at:  {}", stored.discovered_at);
-    eprintln!("original_at:    {}", stored.original_at);
-    eprintln!("detected_text:  {:?}", stored.detected_text);
-    eprintln!(
-        "image_size:     {}x{}",
-        stored.image.width(),
-        stored.image.height()
+    info!(
+        image_id = %stored.image_id,
+        skeet_id = %stored.skeet_id,
+        zone = %stored.zone,
+        config_version = %stored.config_version,
+        discovered_at = %stored.discovered_at,
+        original_at = %stored.original_at,
+        detected_text = ?stored.detected_text,
+        image_size = %format_args!("{}x{}", stored.image.width(), stored.image.height()),
+        "image metadata"
     );
-    eprintln!();
 
     let at_uri = stored.skeet_id.as_str();
-    eprintln!("Fetching post thread for {at_uri} ...");
+    info!(at_uri, "fetching post thread");
 
     let http = reqwest::Client::new();
     let json = skeet_finder::metadata::fetch_post_thread(&http, at_uri).await?;

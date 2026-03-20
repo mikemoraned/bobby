@@ -25,3 +25,6 @@ store/
 
 # ONNX and other models that we convert into burn models
 models/
+
+# Runtime log files
+logs/

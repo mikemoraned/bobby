@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use skeet_store::{ImageId, StoreArgs};
+use tracing::info;
 
 #[derive(Parser)]
 #[command(about = "Export an image from the store to a file")]
@@ -24,6 +25,8 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    shared::tracing::init("info");
+
     let args = Args::parse();
 
     let store = args.store.open_store().await?;
@@ -40,6 +43,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     image.save(&args.output)?;
 
-    eprintln!("Saved to {}", args.output.display());
+    info!(output = %args.output.display(), "saved image");
     Ok(())
 }

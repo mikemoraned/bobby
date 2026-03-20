@@ -1,17 +1,21 @@
 #![warn(clippy::all, clippy::nursery)]
 
-use std::io::Cursor;
+mod handlers;
+
 use std::sync::OnceLock;
 
 use clap::Parser;
 use cot::config::ProjectConfig;
-use cot::html::Html;
 use cot::project::{Bootstrapper, RegisterAppsContext};
-use cot::request::extractors::Path;
-use cot::response::Response;
 use cot::router::{Route, Router};
-use cot::{App, AppBuilder, Body, Project, StatusCode, Template};
-use skeet_store::{ImageId, SkeetId, SkeetStore, StoreArgs, Zone};
+use cot::{App, AppBuilder, Project};
+use skeet_store::StoreArgs;
+use tracing::info;
+use tracing_appender::rolling;
+use tracing_subscriber::fmt;
+use tracing_subscriber::prelude::*;
+
+use handlers::{annotated_image, feed};
 
 static STORE_ARGS: OnceLock<StoreArgs> = OnceLock::new();
 
@@ -19,114 +23,6 @@ static STORE_ARGS: OnceLock<StoreArgs> = OnceLock::new();
 struct Args {
     #[command(flatten)]
     store: StoreArgs,
-}
-
-#[derive(Debug)]
-struct FeedEntry {
-    image_id: String,
-    zone: String,
-    config_version: String,
-    detected_text: String,
-    at_uri: String,
-    web_url: String,
-}
-
-fn to_feed_entry(
-    image_id: &ImageId,
-    skeet_id: &SkeetId,
-    zone: &Zone,
-    config_version: &str,
-    detected_text: &str,
-) -> Option<FeedEntry> {
-    let at_uri = skeet_id.as_str();
-    let stripped = at_uri.strip_prefix("at://")?;
-    let (did, rest) = stripped.split_once('/')?;
-    let rkey = rest.strip_prefix("app.bsky.feed.post/")?;
-    Some(FeedEntry {
-        image_id: image_id.to_string(),
-        zone: zone.to_string(),
-        config_version: config_version.to_string(),
-        detected_text: detected_text.to_string(),
-        at_uri: at_uri.to_string(),
-        web_url: format!("https://bsky.app/profile/{did}/post/{rkey}"),
-    })
-}
-
-#[derive(Debug, Template)]
-#[template(path = "feed.html")]
-struct FeedTemplate {
-    entries: Vec<FeedEntry>,
-}
-
-const MAX_FEED_ENTRIES: usize = 50;
-
-async fn feed() -> cot::Result<Html> {
-    let store = open_store().await?;
-
-    let mut summaries = store
-        .list_all_summaries()
-        .await
-        .map_err(|e| cot::Error::internal(format!("failed to read store: {e}")))?;
-
-    summaries.sort_by(|a, b| b.discovered_at.cmp(&a.discovered_at));
-
-    let entries: Vec<FeedEntry> = summaries
-        .iter()
-        .take(MAX_FEED_ENTRIES)
-        .filter_map(|img| {
-            to_feed_entry(
-                &img.image_id,
-                &img.skeet_id,
-                &img.zone,
-                img.config_version.as_str(),
-                &img.detected_text,
-            )
-        })
-        .collect();
-
-    let template = FeedTemplate { entries };
-    let rendered = template.render()?;
-    Ok(Html::new(rendered))
-}
-
-async fn annotated_image(Path(image_id_str): Path<String>) -> cot::Result<Response> {
-    let image_id: ImageId = image_id_str
-        .parse()
-        .map_err(|_| cot::Error::internal(format!("invalid image id: {image_id_str}")))?;
-
-    let store = open_store().await?;
-    let stored = store
-        .get_by_id(&image_id)
-        .await
-        .map_err(|e| cot::Error::internal(format!("store error: {e}")))?;
-
-    let Some(stored) = stored else {
-        let mut response = Response::new(Body::fixed("not found"));
-        *response.status_mut() = StatusCode::NOT_FOUND;
-        return Ok(response);
-    };
-
-    let mut buf = Cursor::new(Vec::new());
-    stored
-        .annotated_image
-        .write_to(&mut buf, image::ImageFormat::Png)
-        .map_err(|e| cot::Error::internal(format!("failed to encode image: {e}")))?;
-
-    let mut response = Response::new(Body::fixed(buf.into_inner()));
-    response
-        .headers_mut()
-        .insert("content-type", "image/png".parse().expect("valid header"));
-    Ok(response)
-}
-
-async fn open_store() -> cot::Result<SkeetStore> {
-    let store_args = STORE_ARGS
-        .get()
-        .ok_or_else(|| cot::Error::internal("store args not initialized"))?;
-    store_args
-        .open_store()
-        .await
-        .map_err(|e| cot::Error::internal(format!("failed to open store: {e}")))
 }
 
 struct FeedApp;
@@ -162,10 +58,24 @@ impl Project for FeedProject {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let file_appender = rolling::daily("logs", "feed.log");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "skeet_feed=info".parse().expect("valid filter")),
+        )
+        .with(fmt::layer().with_writer(non_blocking))
+        .with(fmt::layer().with_writer(std::io::stderr))
+        .init();
+
     let args = Args::parse();
     STORE_ARGS
         .set(args.store)
         .expect("store args already initialized");
+
+    info!("starting skeet-feed server on 127.0.0.1:8000");
 
     let bootstrapper = Bootstrapper::new(FeedProject)
         .with_config_name("dev")?
@@ -177,6 +87,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
+    use handlers::to_feed_entry;
+    use skeet_store::{ImageId, SkeetId, Zone};
+
     use super::*;
 
     #[test]

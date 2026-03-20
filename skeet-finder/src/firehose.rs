@@ -14,9 +14,10 @@ use jetstream_oxide::{
     exports::Nsid,
 };
 use shared::{SkeetId, SkeetImage};
-use tracing::warn;
+use tracing::{info, warn};
 
 pub async fn connect() -> Result<JetstreamReceiver, Box<dyn std::error::Error>> {
+    info!("connecting to firehose");
     let config = JetstreamConfig {
         endpoint: DefaultJetstreamEndpoints::USEastOne.into(),
         compression: JetstreamCompression::Zstd,

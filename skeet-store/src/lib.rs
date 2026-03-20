@@ -11,6 +11,7 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 use arrow_array::{
+
     Array, Int64Array, LargeBinaryArray, RecordBatch, RecordBatchIterator, StringArray,
     TimestampMicrosecondArray,
 };
@@ -18,6 +19,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use futures::TryStreamExt;
 use image::DynamicImage;
 use lancedb::query::{ExecutableQuery, QueryBase};
+use tracing::info;
 
 use schema::{TABLE_NAME, VALIDATE_TABLE_NAME, images_v6_schema, validate_v1_schema};
 
@@ -82,6 +84,7 @@ impl SkeetStore {
         uri: &str,
         storage_options: Vec<(String, String)>,
     ) -> Result<Self, StoreError> {
+        info!(uri, "opening store");
         let db = lancedb::connect(uri)
             .storage_options(storage_options)
             .execute()
@@ -99,6 +102,7 @@ impl SkeetStore {
                 .await?;
         }
 
+        info!(uri, "store opened");
         Ok(Self { db })
     }
 
