@@ -1,13 +1,16 @@
+use shared::skeet_id::SkeetId;
+
 const BSKY_PUBLIC_API: &str = "https://public.api.bsky.app/xrpc";
 
-/// Fetch the `getPostThread` JSON for a given at:// URI.
+/// Fetch the `getPostThread` JSON for the given skeet.
 pub async fn fetch_post_thread(
     http: &reqwest::Client,
-    at_uri: &str,
+    skeet_id: &SkeetId,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let uri = skeet_id.to_string();
     let resp = http
         .get(format!("{BSKY_PUBLIC_API}/app.bsky.feed.getPostThread"))
-        .query(&[("uri", at_uri), ("depth", "0"), ("parentHeight", "0")])
+        .query(&[("uri", uri.as_str()), ("depth", "0"), ("parentHeight", "0")])
         .send()
         .await?;
 

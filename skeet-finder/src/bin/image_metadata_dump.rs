@@ -38,11 +38,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "image metadata"
     );
 
-    let at_uri = stored.skeet_id.as_str();
-    info!(at_uri, "fetching post thread");
+    info!(at_uri = %stored.skeet_id, "fetching post thread");
 
     let http = reqwest::Client::new();
-    let json = skeet_finder::metadata::fetch_post_thread(&http, at_uri).await?;
+    let json = skeet_finder::metadata::fetch_post_thread(&http, &stored.skeet_id).await?;
     println!("{}", serde_json::to_string_pretty(&json)?);
 
     Ok(())

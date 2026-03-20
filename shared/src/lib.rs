@@ -6,10 +6,12 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use chrono::{DateTime, Utc};
 use image::DynamicImage;
 mod blocklist;
+pub mod skeet_id;
 pub mod tracing;
 
 pub use blocklist::{BlockedEntry, BlocklistConfig};
 use serde::Deserialize;
+use skeet_id::SkeetId;
 
 /// A percentage value in the range 0.0–100.0.
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -225,25 +227,6 @@ impl std::str::FromStr for Zone {
             "BOTTOM_RIGHT" => Ok(Self::BottomRight),
             other => Err(format!("unknown zone: {other}")),
         }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SkeetId(String);
-
-impl SkeetId {
-    pub fn new(id: impl Into<String>) -> Self {
-        Self(id.into())
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::fmt::Display for SkeetId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
     }
 }
 

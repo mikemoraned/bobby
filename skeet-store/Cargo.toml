@@ -13,7 +13,7 @@ image = { workspace = true }
 lancedb = { version = "0.26", features = ["aws"] }
 rand = "0.9"
 shared = { workspace = true }
-thiserror = "2"
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

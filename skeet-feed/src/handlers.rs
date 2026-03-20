@@ -26,16 +26,17 @@ pub fn to_feed_entry(
     config_version: &str,
     detected_text: &str,
 ) -> Option<FeedEntry> {
-    let at_uri = skeet_id.as_str();
-    let stripped = at_uri.strip_prefix("at://")?;
-    let (did, rest) = stripped.split_once('/')?;
-    let rkey = rest.strip_prefix("app.bsky.feed.post/")?;
+    if skeet_id.collection() != "app.bsky.feed.post" {
+        return None;
+    }
+    let did = skeet_id.did();
+    let rkey = skeet_id.rkey();
     Some(FeedEntry {
         image_id: image_id.to_string(),
         zone: zone.to_string(),
         config_version: config_version.to_string(),
         detected_text: detected_text.to_string(),
-        at_uri: at_uri.to_string(),
+        at_uri: skeet_id.to_string(),
         web_url: format!("https://bsky.app/profile/{did}/post/{rkey}"),
     })
 }

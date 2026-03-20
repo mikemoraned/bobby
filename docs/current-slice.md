@@ -64,6 +64,10 @@ Tasks:
         * generally reread and apply the Rust local rules where possible
     * [x] look through the different cli mains and apply INFO logging for when major steps start and end
 
+* [ ] do a general refactoring pass, applying rules
+    * [x] for example, should we apply the NewType pattern to where we are doing stuff with `at` urls in multiple places to construct/extract things?
+    * [ ] look for any other opportunities for refactors/tidyups
+
 * [ ] update `skeet-feed` to run on fly.io and read from R2
     * Secrets managed via fly secrets (R2 read-only API token)
     * Read-only access only

@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use image::DynamicImage;
-pub use shared::SkeetId;
+pub use shared::skeet_id::SkeetId;
 pub use shared::Zone;
 use shared::ConfigVersion;
 use uuid::Uuid;
@@ -98,7 +98,9 @@ mod tests {
 
     #[test]
     fn skeet_id_preserves_value() {
-        let id = SkeetId::new("at://did:plc:abc123/app.bsky.feed.post/xyz");
-        assert_eq!(id.as_str(), "at://did:plc:abc123/app.bsky.feed.post/xyz");
+        let id: SkeetId = "at://did:plc:abc123/app.bsky.feed.post/xyz"
+            .parse()
+            .expect("valid AT URI");
+        assert_eq!(id.to_string(), "at://did:plc:abc123/app.bsky.feed.post/xyz");
     }
 }

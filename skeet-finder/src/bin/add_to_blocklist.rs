@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use clap::Parser;
+use shared::skeet_id::SkeetId;
 use tracing::info;
 
 #[derive(Parser)]
@@ -24,15 +25,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let blocklist_dir = root.join("blocklist");
 
-    let rkey = args
-        .at_uri
-        .rsplit('/')
-        .next()
-        .ok_or("invalid at:// URI: no rkey")?;
+    let skeet_id: SkeetId = args.at_uri.parse()?;
+    let rkey = skeet_id.rkey();
 
-    info!(at_uri = %args.at_uri, "fetching post thread");
+    info!(at_uri = %skeet_id, "fetching post thread");
     let http = reqwest::Client::new();
-    let json = skeet_finder::metadata::fetch_post_thread(&http, &args.at_uri).await?;
+    let json = skeet_finder::metadata::fetch_post_thread(&http, &skeet_id).await?;
 
     let json_path = blocklist_dir.join(format!("{rkey}.json"));
     let pretty = serde_json::to_string_pretty(&json)?;
@@ -44,7 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_default();
 
     let entry = shared::BlockedEntry {
-        at_uri: args.at_uri.clone(),
+        skeet_id,
         reason: args.reason,
     };
 

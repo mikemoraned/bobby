@@ -111,12 +111,13 @@ impl SkeetStore {
 
         let image_bytes = encode_image_as_png(&record.image)?;
         let annotated_bytes = encode_image_as_png(&record.annotated_image)?;
+        let skeet_id_str = record.skeet_id.to_string();
 
         let batch = RecordBatch::try_new(
             schema.clone(),
             vec![
                 Arc::new(StringArray::from(vec![record.image_id.as_str()])),
-                Arc::new(StringArray::from(vec![record.skeet_id.as_str()])),
+                Arc::new(StringArray::from(vec![skeet_id_str.as_str()])),
                 Arc::new(LargeBinaryArray::from_vec(vec![&image_bytes])),
                 Arc::new(
                     TimestampMicrosecondArray::from(vec![record.discovered_at.timestamp_micros()])
@@ -252,7 +253,7 @@ impl SkeetStore {
             for i in 0..batch.num_rows() {
                 let id = skeet_ids.value(i).to_string();
                 if seen.insert(id.clone()) {
-                    ids.push(SkeetId::new(id));
+                    ids.push(SkeetId::new(id)?);
                 }
             }
         }
@@ -318,7 +319,7 @@ impl<'a> SummaryColumns<'a> {
             .expect("ConfigVersion parse is infallible");
         Ok(StoredImageSummary {
             image_id: self.image_ids.value(i).parse()?,
-            skeet_id: SkeetId::new(self.skeet_ids.value(i)),
+            skeet_id: SkeetId::new(self.skeet_ids.value(i))?,
             discovered_at: micros_to_datetime(self.discovered_ats.value(i)),
             original_at: micros_to_datetime(self.original_ats.value(i)),
             zone,
@@ -415,7 +416,7 @@ mod tests {
 
         let record = ImageRecord {
             image_id: ImageId::new(),
-            skeet_id: SkeetId::new("at://did:plc:abc/app.bsky.feed.post/123"),
+            skeet_id: "at://did:plc:abc/app.bsky.feed.post/123".parse().expect("valid test AT URI"),
             image: test_image(),
             discovered_at: DiscoveredAt::now(),
             original_at: OriginalAt::new(Utc::now()),
@@ -442,7 +443,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = open_temp_store(&dir).await;
 
-        let skeet_id = SkeetId::new("at://did:plc:abc/app.bsky.feed.post/456");
+        let skeet_id: SkeetId = "at://did:plc:abc/app.bsky.feed.post/456".parse().expect("valid test AT URI");
 
         for _ in 0..3 {
             let record = ImageRecord {
@@ -473,7 +474,7 @@ mod tests {
 
         let record = ImageRecord {
             image_id: ImageId::new(),
-            skeet_id: SkeetId::new("at://did:plc:abc/app.bsky.feed.post/summ"),
+            skeet_id: "at://did:plc:abc/app.bsky.feed.post/summ".parse().expect("valid test AT URI"),
             image: test_image(),
             discovered_at: DiscoveredAt::now(),
             original_at: OriginalAt::new(Utc::now()),
@@ -498,7 +499,7 @@ mod tests {
 
         let record = ImageRecord {
             image_id: ImageId::new(),
-            skeet_id: SkeetId::new("at://did:plc:abc/app.bsky.feed.post/789"),
+            skeet_id: "at://did:plc:abc/app.bsky.feed.post/789".parse().expect("valid test AT URI"),
             image: test_image(),
             discovered_at: DiscoveredAt::now(),
             original_at: OriginalAt::new(Utc::now()),

@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::skeet_id::SkeetId;
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BlocklistConfig {
     pub blocked: Vec<BlockedEntry>,
@@ -7,7 +9,8 @@ pub struct BlocklistConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockedEntry {
-    pub at_uri: String,
+    #[serde(rename = "at_uri")]
+    pub skeet_id: SkeetId,
     pub reason: String,
 }
 
@@ -27,15 +30,15 @@ impl BlocklistConfig {
         Ok(())
     }
 
-    /// Check whether the given at:// URI is already in the blocklist.
-    pub fn contains(&self, at_uri: &str) -> bool {
-        self.blocked.iter().any(|e| e.at_uri == at_uri)
+    /// Check whether the given skeet is already in the blocklist.
+    pub fn contains(&self, skeet_id: &SkeetId) -> bool {
+        self.blocked.iter().any(|e| e.skeet_id == *skeet_id)
     }
 
-    /// Add an entry to the blocklist, maintaining sorted order by `at_uri`.
-    /// Returns `false` if the URI was already present.
+    /// Add an entry to the blocklist, maintaining sorted order.
+    /// Returns `false` if the skeet was already present.
     pub fn add(&mut self, entry: BlockedEntry) -> bool {
-        if self.contains(&entry.at_uri) {
+        if self.contains(&entry.skeet_id) {
             return false;
         }
         self.blocked.push(entry);
@@ -44,6 +47,6 @@ impl BlocklistConfig {
     }
 
     fn sort(&mut self) {
-        self.blocked.sort_by(|a, b| a.at_uri.cmp(&b.at_uri));
+        self.blocked.sort_by(|a, b| a.skeet_id.cmp(&b.skeet_id));
     }
 }

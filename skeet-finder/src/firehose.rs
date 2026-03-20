@@ -13,7 +13,8 @@ use jetstream_oxide::{
     events::{JetstreamEvent, commit::CommitEvent},
     exports::Nsid,
 };
-use shared::{SkeetId, SkeetImage};
+use shared::SkeetImage;
+use shared::skeet_id::SkeetId;
 use tracing::{info, warn};
 
 pub async fn connect() -> Result<JetstreamReceiver, Box<dyn std::error::Error>> {
@@ -52,10 +53,7 @@ pub async fn extract_skeet_images(
     }
 
     let did = info.did.as_str();
-    let skeet_id = SkeetId::new(format!(
-        "at://{}/app.bsky.feed.post/{}",
-        did, commit.info.rkey
-    ));
+    let skeet_id = SkeetId::for_post(did, &commit.info.rkey);
     let original_at = parse_created_at(&post.data.created_at);
 
     let mut results = Vec::new();

@@ -95,7 +95,9 @@ mod tests {
     #[test]
     fn converts_at_uri_to_entry() {
         let image_id = ImageId::new();
-        let skeet_id = SkeetId::new("at://did:plc:abc123/app.bsky.feed.post/xyz789");
+        let skeet_id: SkeetId = "at://did:plc:abc123/app.bsky.feed.post/xyz789"
+            .parse()
+            .expect("valid AT URI");
         let zone = Zone::TopRight;
         let entry = to_feed_entry(&image_id, &skeet_id, &zone, "v1", "hello")
             .expect("should produce entry");
@@ -107,17 +109,16 @@ mod tests {
     }
 
     #[test]
-    fn returns_none_for_invalid_uri() {
-        let image_id = ImageId::new();
-        let skeet_id = SkeetId::new("not-an-at-uri");
-        let zone = Zone::TopRight;
-        assert!(to_feed_entry(&image_id, &skeet_id, &zone, "v1", "").is_none());
+    fn rejects_invalid_at_uri() {
+        assert!("not-an-at-uri".parse::<SkeetId>().is_err());
     }
 
     #[test]
     fn returns_none_for_non_post_uri() {
         let image_id = ImageId::new();
-        let skeet_id = SkeetId::new("at://did:plc:abc123/app.bsky.feed.like/xyz789");
+        let skeet_id: SkeetId = "at://did:plc:abc123/app.bsky.feed.like/xyz789"
+            .parse()
+            .expect("valid AT URI");
         let zone = Zone::TopRight;
         assert!(to_feed_entry(&image_id, &skeet_id, &zone, "v1", "").is_none());
     }

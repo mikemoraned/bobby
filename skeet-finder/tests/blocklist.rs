@@ -17,14 +17,9 @@ fn main() {
     let mut trials = Vec::new();
 
     for entry in &config.blocked {
-        let rkey = entry
-            .at_uri
-            .rsplit('/')
-            .next()
-            .expect("at:// URI should have an rkey")
-            .to_string();
+        let rkey = entry.skeet_id.rkey().to_string();
         let json_path = blocklist_dir.join(format!("{rkey}.json"));
-        let at_uri = entry.at_uri.clone();
+        let at_uri = entry.skeet_id.to_string();
 
         trials.push(Trial::test(
             format!("{rkey}::should_be_blocked"),

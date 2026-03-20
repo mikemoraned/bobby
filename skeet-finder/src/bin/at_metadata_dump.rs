@@ -15,11 +15,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     shared::tracing::init("info");
 
     let args = Args::parse();
+    let skeet_id: shared::skeet_id::SkeetId = args.at_uri.parse()?;
 
-    info!(at_uri = %args.at_uri, "fetching post thread");
+    info!(at_uri = %skeet_id, "fetching post thread");
 
     let http = reqwest::Client::new();
-    let json = skeet_finder::metadata::fetch_post_thread(&http, &args.at_uri).await?;
+    let json = skeet_finder::metadata::fetch_post_thread(&http, &skeet_id).await?;
     println!("{}", serde_json::to_string_pretty(&json)?);
 
     Ok(())

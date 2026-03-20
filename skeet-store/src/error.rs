@@ -19,6 +19,9 @@ pub enum StoreError {
     #[error("invalid image_id in store: {0}")]
     InvalidImageId(#[from] uuid::Error),
 
+    #[error("invalid skeet_id in store: {0}")]
+    InvalidSkeetId(#[from] shared::skeet_id::SkeetIdError),
+
     #[error("invalid archetype in store: {0}")]
     InvalidArchetype(String),
 
