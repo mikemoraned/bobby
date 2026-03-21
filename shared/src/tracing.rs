@@ -1,13 +1,16 @@
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::filter::Targets;
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::Layer;
 
-fn env_filter(default_filter: &str) -> tracing_subscriber::EnvFilter {
-    tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| default_filter.parse().expect("valid filter"))
+fn targets_filter(default_filter: &str) -> Targets {
+    std::env::var("RUST_LOG")
+        .unwrap_or_else(|_| default_filter.to_string())
+        .parse()
+        .expect("valid filter")
 }
 
 /// Controls whether tokio-console support is enabled.
@@ -82,7 +85,10 @@ fn try_console_layer(
 /// Falls back to `default_filter` if `RUST_LOG` is not set (e.g. `"info"`).
 pub fn init(default_filter: &str) {
     tracing_subscriber::fmt()
-        .with_env_filter(env_filter(default_filter))
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| default_filter.parse().expect("valid filter")),
+        )
         .init();
 }
 
@@ -99,7 +105,7 @@ pub fn init_with_file(
     let (non_blocking, file_guard) = tracing_appender::non_blocking(file_appender);
 
     let (otel_layer, otel_guard) = match try_otel_layer() {
-        Some((layer, guard)) => (Some(layer.with_filter(env_filter(default_filter))), Some(guard)),
+        Some((layer, guard)) => (Some(layer.with_filter(targets_filter(default_filter))), Some(guard)),
         None => (None, None),
     };
 
@@ -111,7 +117,7 @@ pub fn init_with_file(
             fmt::layer()
                 .with_ansi(false)
                 .with_writer(non_blocking)
-                .with_filter(env_filter(default_filter)),
+                .with_filter(targets_filter(default_filter)),
         )
         .with(otel_layer)
         .init();
@@ -139,7 +145,7 @@ pub fn init_with_file_and_stderr(
     let (non_blocking, file_guard) = tracing_appender::non_blocking(file_appender);
 
     let (otel_layer, otel_guard) = match try_otel_layer() {
-        Some((layer, guard)) => (Some(layer.with_filter(env_filter(default_filter))), Some(guard)),
+        Some((layer, guard)) => (Some(layer.with_filter(targets_filter(default_filter))), Some(guard)),
         None => (None, None),
     };
 
@@ -151,9 +157,9 @@ pub fn init_with_file_and_stderr(
             fmt::layer()
                 .with_ansi(false)
                 .with_writer(non_blocking)
-                .with_filter(env_filter(default_filter)),
+                .with_filter(targets_filter(default_filter)),
         )
-        .with(fmt::layer().with_writer(std::io::stderr).with_filter(env_filter(default_filter)))
+        .with(fmt::layer().with_writer(std::io::stderr).with_filter(targets_filter(default_filter)))
         .with(otel_layer)
         .init();
 
