@@ -75,12 +75,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
+    use image::DynamicImage;
     use skeet_feed::handlers::to_feed_entry;
     use skeet_store::{ImageId, SkeetId, Zone};
 
     #[test]
     fn converts_at_uri_to_entry() {
-        let image_id = ImageId::new();
+        let image_id = ImageId::from_image(&DynamicImage::new_rgba8(1, 1));
         let skeet_id: SkeetId = "at://did:plc:abc123/app.bsky.feed.post/xyz789"
             .parse()
             .expect("valid AT URI");
@@ -101,7 +102,7 @@ mod tests {
 
     #[test]
     fn returns_none_for_non_post_uri() {
-        let image_id = ImageId::new();
+        let image_id = ImageId::from_image(&DynamicImage::new_rgba8(1, 1));
         let skeet_id: SkeetId = "at://did:plc:abc123/app.bsky.feed.like/xyz789"
             .parse()
             .expect("valid AT URI");

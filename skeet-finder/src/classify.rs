@@ -130,7 +130,7 @@ pub fn classify_image(
     let detected_text = text_result.full_text();
 
     Ok(ImageRecord {
-        image_id: ImageId::new(),
+        image_id: ImageId::from_image(&skeet_image.image),
         skeet_id: skeet_image.skeet_id,
         image: skeet_image.image,
         discovered_at: DiscoveredAt::now(),

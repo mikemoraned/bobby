@@ -14,14 +14,14 @@ Now that we have a small (sub 1%) amount coming through, we can apply some more 
 
 ### Tasks
 
-* [ ] make `ImageId` a unique key with an index for correctness and performance
-    * [ ] improve performance of `get_by_id` by added an index:
-        1. Add a BTree scalar index on the image_id column e.g. `table.create_index(&["image_id"], Index::BTree(Default::default())).execute().await?`
+* [x] make `ImageId` a unique key with an index for correctness and performance
+    * [x] improve performance of `get_by_id` by added an index:
+        1. Add a BTree scalar index on the image_id column e.g. `table.create_index(&["image_id"], Index::Auto).execute().await?` (should choose BTree behind-the-scenes)
         2. After any writes to the table, call `table.optimize(OptimizeAction::All).execute().await?` to keep the index current
         3. On queries that lookup by `image_id`, add `.limit(1)` and `.select()` with only the columns needed
-    * [ ] update `ImageId` so that it acts like a content-addressable hash
+    * [x] update `ImageId` so that it acts like a content-addressable hash
         * i.e. when it is created it shouldn't just be a random unique uuid, but instead should be a hash (e.g. md5) of the byte contents of the image
-    * [ ] update `skeet-find`/`skeet-store` so that, when it wants to save an image it has found, it first checks to see it does not already exist, based on id
+    * [x] update `skeet-find`/`skeet-store` so that, when it wants to save an image it has found, it first checks to see it does not already exist, based on id
 
 * [ ] minimal `skeet-scorer`
     * add a new table `images_score` which:

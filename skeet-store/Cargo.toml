@@ -17,6 +17,8 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+hex = "0.4"
+md5 = "0.7"
 uuid = { version = "1", features = ["v4"] }
 
 [lints]

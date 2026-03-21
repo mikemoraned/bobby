@@ -5,7 +5,7 @@ mod types;
 
 pub use error::StoreError;
 pub use shared::ConfigVersion;
-pub use types::{DiscoveredAt, ImageId, ImageRecord, OriginalAt, SkeetId, Zone};
+pub use types::{DiscoveredAt, ImageId, ImageRecord, InvalidImageId, OriginalAt, SkeetId, Zone};
 
 use std::io::Cursor;
 use std::sync::Arc;
@@ -17,7 +17,9 @@ use arrow_array::{
 use chrono::{DateTime, TimeZone, Utc};
 use futures::TryStreamExt;
 use image::DynamicImage;
+use lancedb::index::Index;
 use lancedb::query::{ExecutableQuery, QueryBase};
+use lancedb::table::OptimizeAction;
 use tracing::{info, instrument};
 
 use schema::{TABLE_NAME, VALIDATE_TABLE_NAME, images_v6_schema, validate_v1_schema};
@@ -103,6 +105,15 @@ impl SkeetStore {
                 .await?;
         }
 
+        let table = db.open_table(TABLE_NAME).execute().await?;
+        let indices = table.list_indices().await?;
+        if !indices.iter().any(|idx| idx.columns == vec!["image_id"]) {
+            table
+                .create_index(&["image_id"], Index::Auto)
+                .execute()
+                .await?;
+        }
+
         info!(uri, "store opened");
         Ok(Self { db })
     }
@@ -140,6 +151,7 @@ impl SkeetStore {
         let table = self.db.open_table(TABLE_NAME).execute().await?;
         let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
         table.add(batches).execute().await?;
+        table.optimize(OptimizeAction::All).await?;
 
         Ok(())
     }
@@ -178,11 +190,27 @@ impl SkeetStore {
         let batches: Vec<RecordBatch> = table
             .query()
             .only_if(format!("image_id = '{image_id}'"))
+            .limit(1)
             .execute()
             .await?
             .try_collect()
             .await?;
         Ok(batches_to_stored_images(&batches)?.into_iter().next())
+    }
+
+    #[instrument(skip(self))]
+    pub async fn exists(&self, image_id: &ImageId) -> Result<bool, StoreError> {
+        let table = self.db.open_table(TABLE_NAME).execute().await?;
+        let batches: Vec<RecordBatch> = table
+            .query()
+            .only_if(format!("image_id = '{image_id}'"))
+            .select(lancedb::query::Select::columns(&["image_id"]))
+            .limit(1)
+            .execute()
+            .await?
+            .try_collect()
+            .await?;
+        Ok(batches.iter().any(|b| b.num_rows() > 0))
     }
 
     #[instrument(skip(self))]
@@ -402,7 +430,11 @@ mod tests {
     use shared::ConfigVersion;
 
     fn test_image() -> DynamicImage {
-        DynamicImage::ImageRgba8(ImageBuffer::from_pixel(2, 2, Rgba([255, 0, 0, 255])))
+        test_image_with_color(255, 0, 0)
+    }
+
+    fn test_image_with_color(r: u8, g: u8, b: u8) -> DynamicImage {
+        DynamicImage::ImageRgba8(ImageBuffer::from_pixel(2, 2, Rgba([r, g, b, 255])))
     }
 
     async fn open_temp_store(dir: &tempfile::TempDir) -> SkeetStore {
@@ -419,7 +451,7 @@ mod tests {
         assert_eq!(store.count().await.unwrap(), 0);
 
         let record = ImageRecord {
-            image_id: ImageId::new(),
+            image_id: ImageId::from_image(&test_image()),
             skeet_id: "at://did:plc:abc/app.bsky.feed.post/123"
                 .parse()
                 .expect("valid test AT URI"),
@@ -453,11 +485,12 @@ mod tests {
             .parse()
             .expect("valid test AT URI");
 
-        for _ in 0..3 {
+        for i in 0..3 {
+            let img = test_image_with_color(i * 80, 0, 0);
             let record = ImageRecord {
-                image_id: ImageId::new(),
+                image_id: ImageId::from_image(&img),
                 skeet_id: skeet_id.clone(),
-                image: test_image(),
+                image: img,
                 discovered_at: DiscoveredAt::now(),
                 original_at: OriginalAt::new(Utc::now()),
                 zone: Zone::BottomLeft,
@@ -481,7 +514,7 @@ mod tests {
         let store = open_temp_store(&dir).await;
 
         let record = ImageRecord {
-            image_id: ImageId::new(),
+            image_id: ImageId::from_image(&test_image()),
             skeet_id: "at://did:plc:abc/app.bsky.feed.post/summ"
                 .parse()
                 .expect("valid test AT URI"),
@@ -508,7 +541,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
 
         let record = ImageRecord {
-            image_id: ImageId::new(),
+            image_id: ImageId::from_image(&test_image()),
             skeet_id: "at://did:plc:abc/app.bsky.feed.post/789"
                 .parse()
                 .expect("valid test AT URI"),

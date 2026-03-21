@@ -17,7 +17,7 @@ pub enum StoreError {
     ColumnTypeMismatch { column: String },
 
     #[error("invalid image_id in store: {0}")]
-    InvalidImageId(#[from] uuid::Error),
+    InvalidImageId(#[from] crate::types::InvalidImageId),
 
     #[error("invalid skeet_id in store: {0}")]
     InvalidSkeetId(#[from] shared::skeet_id::SkeetIdError),
