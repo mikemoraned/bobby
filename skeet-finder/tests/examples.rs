@@ -97,7 +97,8 @@ fn main() {
                 let result = td.detect(&img);
                 shared::Percentage::new(result.text_area_pct(img.width(), img.height()))
             });
-            let actual = with_detector(|d| skeet_finder::classify(d, &img, &skin_mask, text_area_pct, &config));
+            let faces = with_detector(|d| d.detect(&img));
+            let actual = skeet_finder::classify(&faces, &img, &skin_mask, text_area_pct, &config);
             if actual != expected {
                 return Err(format!("expected {expected:?}, got {actual:?}").into());
             }

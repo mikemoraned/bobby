@@ -1,4 +1,4 @@
-use face_detection::{FaceDetector, TextRegion, annotate_image};
+use face_detection::{Face, FaceDetector, TextRegion, annotate_image};
 use image::{DynamicImage, GrayImage};
 use shared::{
     ArchetypeConfig, Classification, ConfigVersion, Percentage, Rejection,
@@ -6,16 +6,15 @@ use shared::{
 };
 use skeet_store::{DiscoveredAt, ImageId, ImageRecord, OriginalAt};
 
-/// Classify an image: detect frontal faces, check area, skin, and text thresholds,
+/// Classify an image: given pre-detected faces, check area, skin, and text thresholds,
 /// return quadrant or rejection.
 pub fn classify(
-    detector: &FaceDetector,
+    faces: &[Face],
     image: &DynamicImage,
     skin_mask: &GrayImage,
     text_area_pct: Percentage,
     config: &ArchetypeConfig,
 ) -> Classification {
-    let faces = detector.detect(image);
 
     if faces.len() > 1 {
         return Classification::Rejected(vec![Rejection::TooManyFaces]);
@@ -98,8 +97,9 @@ pub fn classify_image(
     let text_area_pct = Percentage::new(
         text_result.text_area_pct(skeet_image.image.width(), skeet_image.image.height()),
     );
+    let faces = detector.detect(&skeet_image.image);
     let classification = classify(
-        detector,
+        &faces,
         &skeet_image.image,
         &skin_mask,
         text_area_pct,
@@ -111,7 +111,6 @@ pub fn classify_image(
         Classification::Rejected(reasons) => return Err(reasons),
     };
 
-    let faces = detector.detect(&skeet_image.image);
     let face = faces
         .iter()
         .find(|f| f.is_frontal())

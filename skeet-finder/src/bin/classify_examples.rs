@@ -79,7 +79,7 @@ fn main() {
         }
 
         let text_area = Percentage::new(text_area_pct);
-        let classification = skeet_finder::classify(&detector, &img, &skin_mask, text_area, &config);
+        let classification = skeet_finder::classify(&faces, &img, &skin_mask, text_area, &config);
         match &classification {
             Classification::Accepted(zone) => println!("  classification: Accepted({zone})"),
             Classification::Rejected(reasons) if reasons.is_empty() => {
