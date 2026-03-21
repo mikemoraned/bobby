@@ -1,8 +1,8 @@
-# Current Slice: Slice 7 — Make minimal version available online
+# Current Slice: Slice 7 — Make version available that can run on different machines
 
 Target:
-* `skeet-finder` still running locally on demand, but saving data to the cloud
-* `skeet-feed` running as a website at `bobby.houseofmoran.io` which reads from the cloud
+* `skeet-feed` and `skeet-finder` still running locally on demand, but saving data to the cloud
+* an instance of `skeet-feed` (at least) can run minimally on my Mac Studio whilst another instance is perhaps running locally on my Macbook Air
 
 Tasks:
 * [x] update  `validate-storage` to save data to an S3-compatible location, but running locally
@@ -101,14 +101,8 @@ Tasks:
         * which, if passed:
             1. enables `tokio-console` support on that port
             2. logs an INFO line which shows the `tokio-console` invocation to use to attach to that cli
-        * suggest doing this by adding a new Enum, TokioConsoleSupport with Enabled/Disabled variants, with Enabled specifying the port; this can be passed to the tracing setups as an arg
-    * [x] update `Justfile` rules for `finder` and `feed` cli's to have the `--tokio-console-port` option with a unique non-default port
+        * implemented via `TokioConsoleSupport` enum (Enabled/Disabled variants) passed to the tracing init functions
+        * when enabled, uses `console_subscriber::ConsoleLayer::builder().init()` as a standalone subscriber — file and OTEL layers are disabled in this mode due to a known incompatibility between `ConsoleLayer` and `fmt::Layer` span tracking (parent spans created by the console layer cause "Span not found" panics in the fmt layer)
+    * [x] can be passed manually when debugging, e.g. `--tokio-console-port 6670`
 
-* [ ] update `skeet-feed` to run on fly.io and read from R2
-    * Secrets managed via fly secrets (R2 read-only API token)
-    * Read-only access only
-    * Update skeet-feed to read from S3 bucket or local dir
-    * Deploy manually; integ tests validate deployment
-    * `bobby-prod` and `bobby-staging` versions
-    * See https://github.com/mikemoraned/fosdem/blob/main/Justfile for example
 

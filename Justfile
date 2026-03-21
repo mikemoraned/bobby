@@ -56,16 +56,16 @@ _otel-key:
     @just _op-read-latest Dev hom-bobby-hcoltp-local-ingest
 
 find:
-    RUST_BACKTRACE=1 cargo run --release --bin finder -- --store-path {{ STORE }} --tokio-console-port 6670
+    RUST_BACKTRACE=1 cargo run --release --bin finder -- --store-path {{ STORE }}
 
 find-r2:
-    RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=$(just _otel-key)" OTEL_SERVICE_NAME=skeet-finder cargo run --release --bin finder -- $(just _r2-args) --tokio-console-port 6670
+    RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=$(just _otel-key)" OTEL_SERVICE_NAME=skeet-finder cargo run --release --bin finder -- $(just _r2-args)
 
 feed:
-    RUST_BACKTRACE=1 cargo run --release --bin skeet-feed -- --store-path {{ STORE }} --tokio-console-port 6671
+    RUST_BACKTRACE=1 cargo run --release --bin skeet-feed -- --store-path {{ STORE }}
 
 feed-r2:
-    RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=$(just _otel-key)" OTEL_SERVICE_NAME=skeet-feed cargo run --release --bin skeet-feed -- $(just _r2-args) --tokio-console-port 6671
+    RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=$(just _otel-key)" OTEL_SERVICE_NAME=skeet-feed cargo run --release --bin skeet-feed -- $(just _r2-args)
 
 image-metadata-dump image_id:
     cargo run --release --bin image-metadata-dump -- --store-path {{ STORE }} --image-id {{ image_id }}
