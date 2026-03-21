@@ -73,6 +73,19 @@ Tasks:
         * [x] extract shared tracing file-appender setup: `finder/main.rs` and `skeet-feed/main.rs` have near-identical tracing init with daily file appender — add a file-appender variant to `shared::tracing`
         * [x] embed `StoredImageSummary` inside `StoredImage`: `StoredImage` duplicates all 7 summary fields — compose instead to reduce duplication and simplify `batches_to_stored_images`
 
+* [x] add tracing of load/save for performance checking:
+    * [x] add trace annotations to methods that are on the paths to saving a `StoredImage` and reading them, across all crates
+        * I am particularly interested in paths that affect `skeet-feed` and `skeet-finder` clis and go through `skeet-store` to and from R2
+    * [x] set up opentelemetry as a publish destination
+        * should use standard env keys by default
+            * if no env keys are provided then a warning should be logged and opentelemetry disabled. however, cli should still start
+        * send traces/logs to honeycomb.io (see https://docs.honeycomb.io/send-data and related)
+        * OTEL_EXPORTER_OTLP_ENDPOINT="https://api.honeycomb.io"
+        * OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=<ingest key>"
+            * ingest api key is stored in `hom-bobby-hcoltp-local-ingest` in 1Password
+        * [x] update Justfile `feed`/`feed-r2` rules to pass above env vars + OTEL_SERVICE_NAME="skeet-feed"
+        * [x] update Justfile `find`/`find-r2` rules to pass above env vars + OTEL_SERVICE_NAME="skeet-finder"
+
 * [ ] update `skeet-feed` to run on fly.io and read from R2
     * Secrets managed via fly secrets (R2 read-only API token)
     * Read-only access only
@@ -81,5 +94,3 @@ Tasks:
     * `bobby-prod` and `bobby-staging` versions
     * See https://github.com/mikemoraned/fosdem/blob/main/Justfile for example
 
-* [ ] add observability:
-    * [ ] `skeet-feed`: log traces to honeycomb (existing free account)

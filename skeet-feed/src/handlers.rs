@@ -5,7 +5,7 @@ use cot::request::extractors::Path;
 use cot::response::Response;
 use cot::{Body, StatusCode, Template};
 use skeet_store::{ImageId, SkeetId, Zone};
-use tracing::{info, warn};
+use tracing::{info, instrument, warn};
 
 use crate::STORE_ARGS;
 
@@ -49,6 +49,7 @@ pub struct FeedTemplate {
 
 pub const MAX_FEED_ENTRIES: usize = 50;
 
+#[instrument]
 pub async fn feed() -> cot::Result<Html> {
     info!("serving feed");
     let store = open_store().await?;
@@ -80,6 +81,7 @@ pub async fn feed() -> cot::Result<Html> {
     Ok(Html::new(rendered))
 }
 
+#[instrument(skip_all, fields(image_id = %image_id_str))]
 pub async fn annotated_image(Path(image_id_str): Path<String>) -> cot::Result<Response> {
     info!(image_id = %image_id_str, "serving annotated image");
     let image_id: ImageId = image_id_str
@@ -112,6 +114,7 @@ pub async fn annotated_image(Path(image_id_str): Path<String>) -> cot::Result<Re
     Ok(response)
 }
 
+#[instrument]
 async fn open_store() -> cot::Result<skeet_store::SkeetStore> {
     let store_args = STORE_ARGS
         .get()

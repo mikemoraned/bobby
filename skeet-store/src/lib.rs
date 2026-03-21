@@ -19,7 +19,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use futures::TryStreamExt;
 use image::DynamicImage;
 use lancedb::query::{ExecutableQuery, QueryBase};
-use tracing::info;
+use tracing::{info, instrument};
 
 use schema::{TABLE_NAME, VALIDATE_TABLE_NAME, images_v6_schema, validate_v1_schema};
 
@@ -70,6 +70,7 @@ impl StoreArgs {
         opts
     }
 
+    #[instrument(skip(self), fields(store_path = %self.store_path))]
     pub async fn open_store(&self) -> Result<SkeetStore, StoreError> {
         SkeetStore::open(&self.store_path, self.storage_options()).await
     }
@@ -80,6 +81,7 @@ pub struct SkeetStore {
 }
 
 impl SkeetStore {
+    #[instrument(skip(storage_options))]
     pub async fn open(
         uri: &str,
         storage_options: Vec<(String, String)>,
@@ -106,6 +108,7 @@ impl SkeetStore {
         Ok(Self { db })
     }
 
+    #[instrument(skip(self, record), fields(image_id = %record.image_id, skeet_id = %record.skeet_id))]
     pub async fn add(&self, record: &ImageRecord) -> Result<(), StoreError> {
         let schema = images_v6_schema();
 
@@ -142,12 +145,14 @@ impl SkeetStore {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     pub async fn list_all(&self) -> Result<Vec<StoredImage>, StoreError> {
         let table = self.db.open_table(TABLE_NAME).execute().await?;
         let batches: Vec<RecordBatch> = table.query().execute().await?.try_collect().await?;
         batches_to_stored_images(&batches)
     }
 
+    #[instrument(skip(self))]
     pub async fn list_all_summaries(&self) -> Result<Vec<StoredImageSummary>, StoreError> {
         let table = self.db.open_table(TABLE_NAME).execute().await?;
         let batches: Vec<RecordBatch> = table
@@ -168,6 +173,7 @@ impl SkeetStore {
         batches_to_summaries(&batches)
     }
 
+    #[instrument(skip(self))]
     pub async fn get_by_id(&self, image_id: &ImageId) -> Result<Option<StoredImage>, StoreError> {
         let table = self.db.open_table(TABLE_NAME).execute().await?;
         let batches: Vec<RecordBatch> = table
@@ -180,11 +186,13 @@ impl SkeetStore {
         Ok(batches_to_stored_images(&batches)?.into_iter().next())
     }
 
+    #[instrument(skip(self))]
     pub async fn count(&self) -> Result<usize, StoreError> {
         let table = self.db.open_table(TABLE_NAME).execute().await?;
         Ok(table.count_rows(None).await?)
     }
 
+    #[instrument(skip(self))]
     pub async fn validate(&self) -> Result<(), StoreError> {
         let now = Utc::now();
         let timestamp_micros = now.timestamp_micros();
@@ -237,6 +245,7 @@ impl SkeetStore {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     pub async fn unique_skeet_ids(&self) -> Result<Vec<SkeetId>, StoreError> {
         let table = self.db.open_table(TABLE_NAME).execute().await?;
         let batches: Vec<RecordBatch> = table
