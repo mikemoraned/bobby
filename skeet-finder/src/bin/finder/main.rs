@@ -10,9 +10,6 @@ use face_detection::FaceDetector;
 use shared::{ArchetypeConfig, Rejection};
 use skeet_store::StoreArgs;
 use tracing::{info, warn};
-use tracing_appender::rolling;
-use tracing_subscriber::fmt;
-use tracing_subscriber::prelude::*;
 
 #[derive(Parser)]
 struct Args {
@@ -22,16 +19,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let file_appender = rolling::daily("logs", "finder.log");
-    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
-
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "skeet_finder=info".parse().expect("valid filter")),
-        )
-        .with(fmt::layer().with_writer(non_blocking))
-        .init();
+    let _guard = shared::tracing::init_with_file("skeet_finder=info", "finder.log");
 
     let args = Args::parse();
 

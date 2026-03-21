@@ -10,8 +10,7 @@ workspace = true
 clap = { workspace = true }
 cot = "0.5"
 image = { workspace = true }
+shared = { workspace = true }
 skeet-store = { path = "../skeet-store" }
 tokio = { workspace = true }
 tracing = { workspace = true }
-tracing-appender = { workspace = true }
-tracing-subscriber = { workspace = true }

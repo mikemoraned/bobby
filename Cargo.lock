@@ -9418,6 +9418,7 @@ dependencies = [
  "serde",
  "thiserror 2.0.18",
  "toml 0.8.23",
+ "tracing-appender",
  "tracing-subscriber",
 ]
 
@@ -9509,11 +9510,10 @@ dependencies = [
  "clap",
  "cot",
  "image",
+ "shared",
  "skeet-store",
  "tokio",
  "tracing",
- "tracing-appender",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -9538,8 +9538,6 @@ dependencies = [
  "tokio",
  "toml 0.8.23",
  "tracing",
- "tracing-appender",
- "tracing-subscriber",
 ]
 
 [[package]]

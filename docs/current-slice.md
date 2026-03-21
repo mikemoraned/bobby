@@ -70,7 +70,7 @@ Tasks:
         * [x] eliminate redundant face detection in `classify_image`: `classify()` already runs `detector.detect()`, but `classify_image` calls it a second time to get the face for annotation — restructure to avoid duplicate ML inference
         * [x] deduplicate excluded-labels constants: `EXCLUDED_LABELS` in `firehose.rs` and `BLOCKED_LABEL_VALUES` in `content_filter.rs` are identical lists — extract to a single constant in a `labels` module inside `shared`
         * [x] fix `ImageId::as_str()` returning `String` instead of `&str`: violates Rust `as_str()` conventions — call sites should use `Display`/`.to_string()` instead
-        * [ ] extract shared tracing file-appender setup: `finder/main.rs` and `skeet-feed/main.rs` have near-identical tracing init with daily file appender — add a file-appender variant to `shared::tracing`
+        * [x] extract shared tracing file-appender setup: `finder/main.rs` and `skeet-feed/main.rs` have near-identical tracing init with daily file appender — add a file-appender variant to `shared::tracing`
         * [ ] embed `StoredImageSummary` inside `StoredImage`: `StoredImage` duplicates all 7 summary fields — compose instead to reduce duplication and simplify `batches_to_stored_images`
 
 * [ ] update `skeet-feed` to run on fly.io and read from R2

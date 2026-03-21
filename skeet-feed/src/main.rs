@@ -11,9 +11,6 @@ use cot::router::{Route, Router};
 use cot::{App, AppBuilder, Project};
 use skeet_store::StoreArgs;
 use tracing::info;
-use tracing_appender::rolling;
-use tracing_subscriber::fmt;
-use tracing_subscriber::prelude::*;
 
 use handlers::{annotated_image, feed};
 
@@ -58,17 +55,7 @@ impl Project for FeedProject {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let file_appender = rolling::daily("logs", "feed.log");
-    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
-
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "skeet_feed=info".parse().expect("valid filter")),
-        )
-        .with(fmt::layer().with_writer(non_blocking))
-        .with(fmt::layer().with_writer(std::io::stderr))
-        .init();
+    let _guard = shared::tracing::init_with_file_and_stderr("skeet_feed=info", "feed.log");
 
     let args = Args::parse();
     STORE_ARGS

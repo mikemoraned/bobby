@@ -22,8 +22,6 @@ skeet-store = { path = "../skeet-store" }
 text-detection = { path = "../text-detection" }
 tokio = { workspace = true }
 tracing = { workspace = true }
-tracing-appender = { workspace = true }
-tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 libtest-mimic = "0.8"
