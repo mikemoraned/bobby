@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+console-subscriber = { workspace = true }
 chrono = { workspace = true }
 image = { workspace = true }
 serde = { workspace = true }
@@ -11,6 +12,7 @@ opentelemetry = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
 tracing-appender = { workspace = true }

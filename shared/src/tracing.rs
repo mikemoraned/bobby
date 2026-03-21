@@ -3,6 +3,7 @@ use opentelemetry_sdk::trace::SdkTracerProvider;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::*;
+use tracing_subscriber::Layer;
 
 fn env_filter(default_filter: &str) -> tracing_subscriber::EnvFilter {
     tracing_subscriber::EnvFilter::try_from_default_env()
@@ -70,15 +71,21 @@ pub fn init_with_file(default_filter: &str, filename: &str) -> TracingGuard {
     let (non_blocking, file_guard) = tracing_appender::non_blocking(file_appender);
 
     let (otel_layer, otel_guard) = match try_otel_layer() {
-        Some((layer, guard)) => (Some(layer), Some(guard)),
+        Some((layer, guard)) => (Some(layer.with_filter(env_filter(default_filter))), Some(guard)),
         None => (None, None),
     };
 
+    let (console_layer, console_server) = console_subscriber::ConsoleLayer::builder()
+        .with_default_env()
+        .build();
+
     tracing_subscriber::registry()
-        .with(env_filter(default_filter))
-        .with(fmt::layer().with_writer(non_blocking))
+        .with(console_layer)
+        .with(fmt::layer().with_writer(non_blocking).with_filter(env_filter(default_filter)))
         .with(otel_layer)
         .init();
+
+    tokio::spawn(console_server.serve());
 
     TracingGuard {
         _file_guard: file_guard,
@@ -95,16 +102,22 @@ pub fn init_with_file_and_stderr(default_filter: &str, filename: &str) -> Tracin
     let (non_blocking, file_guard) = tracing_appender::non_blocking(file_appender);
 
     let (otel_layer, otel_guard) = match try_otel_layer() {
-        Some((layer, guard)) => (Some(layer), Some(guard)),
+        Some((layer, guard)) => (Some(layer.with_filter(env_filter(default_filter))), Some(guard)),
         None => (None, None),
     };
 
+    let (console_layer, console_server) = console_subscriber::ConsoleLayer::builder()
+        .with_default_env()
+        .build();
+
     tracing_subscriber::registry()
-        .with(env_filter(default_filter))
-        .with(fmt::layer().with_writer(non_blocking))
-        .with(fmt::layer().with_writer(std::io::stderr))
+        .with(console_layer)
+        .with(fmt::layer().with_writer(non_blocking).with_filter(env_filter(default_filter)))
+        .with(fmt::layer().with_writer(std::io::stderr).with_filter(env_filter(default_filter)))
         .with(otel_layer)
         .init();
+
+    tokio::spawn(console_server.serve());
 
     TracingGuard {
         _file_guard: file_guard,

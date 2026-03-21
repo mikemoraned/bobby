@@ -24,6 +24,7 @@ convert-models: download-models
 
 prerequisites: convert-models
     brew install protobuf openssl
+    cargo install tokio-console
 
 build:
     cargo build

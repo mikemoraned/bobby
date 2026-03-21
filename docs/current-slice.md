@@ -86,6 +86,15 @@ Tasks:
         * [x] update Justfile `feed`/`feed-r2` rules to pass above env vars + OTEL_SERVICE_NAME="skeet-feed"
         * [x] update Justfile `find`/`find-r2` rules to pass above env vars + OTEL_SERVICE_NAME="skeet-finder"
 
+* [x] add tokio-console for local trace inspection
+    * install: `cargo install tokio-console`
+    * add `console-subscriber = "0.5"` to relevant binary crates (must match `tokio-console` 0.1.14; both use `console-api` 0.9)
+    * call `console_subscriber::init()` in main (can coexist with existing tracing layers)
+    * enable tokio's unstable tracing: compile with `RUSTFLAGS="--cfg tokio_unstable"`
+    * run `tokio-console` in a separate terminal to connect to the app (default `127.0.0.1:6669`)
+    * gives live TUI view of spawned tasks, poll times, waker counts, resources
+    * local only, no OTLP; uses its own gRPC protocol
+
 * [ ] update `skeet-feed` to run on fly.io and read from R2
     * Secrets managed via fly secrets (R2 read-only API token)
     * Read-only access only
