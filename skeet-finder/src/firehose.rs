@@ -104,8 +104,6 @@ pub async fn extract_skeet_images(
     results
 }
 
-const EXCLUDED_LABELS: &[&str] = &["porn", "sexual", "nudity", "!no-unauthenticated"];
-
 fn has_excluded_label(labels: &Option<Union<RecordLabelsRefs>>) -> bool {
     let Some(Union::Refs(RecordLabelsRefs::ComAtprotoLabelDefsSelfLabels(self_labels))) = labels
     else {
@@ -114,7 +112,7 @@ fn has_excluded_label(labels: &Option<Union<RecordLabelsRefs>>) -> bool {
     self_labels
         .values
         .iter()
-        .any(|label| EXCLUDED_LABELS.contains(&label.val.as_str()))
+        .any(|label| shared::labels::EXCLUDED_VALUES.contains(&label.val.as_str()))
 }
 
 fn extract_images(embed: &Option<Union<RecordEmbedRefs>>) -> Vec<&Image> {

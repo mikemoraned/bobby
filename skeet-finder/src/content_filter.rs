@@ -1,7 +1,5 @@
 use serde_json::Value;
 
-const BLOCKED_LABEL_VALUES: &[&str] = &["porn", "sexual", "nudity", "!no-unauthenticated"];
-
 /// Paths within a `getPostThread` JSON response that may contain blocking labels.
 const LABEL_PATHS: &[&str] = &[
     "/thread/post/labels",
@@ -21,7 +19,7 @@ pub fn blocked_labels(post_thread_json: &Value) -> Vec<String> {
 
         for label in labels {
             if let Some(val) = label.get("val").and_then(Value::as_str)
-                && BLOCKED_LABEL_VALUES.contains(&val)
+                && shared::labels::EXCLUDED_VALUES.contains(&val)
                 && !found.contains(&val.to_string())
             {
                 found.push(val.to_string());

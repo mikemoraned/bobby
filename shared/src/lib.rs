@@ -6,6 +6,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use chrono::{DateTime, Utc};
 use image::DynamicImage;
 mod blocklist;
+pub mod labels;
 pub mod skeet_id;
 pub mod tracing;
 
