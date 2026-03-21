@@ -1,13 +1,11 @@
 #![warn(clippy::all, clippy::nursery)]
 
-mod persistence;
-mod status;
-
 use std::collections::HashMap;
 
 use clap::Parser;
 use face_detection::FaceDetector;
 use shared::{ArchetypeConfig, Rejection};
+use skeet_finder::{persistence, status};
 use skeet_store::StoreArgs;
 use tracing::{info, warn};
 

@@ -1,20 +1,13 @@
 #![warn(clippy::all, clippy::nursery)]
 
-mod handlers;
-
-use std::sync::OnceLock;
-
 use clap::Parser;
 use cot::config::ProjectConfig;
 use cot::project::{Bootstrapper, RegisterAppsContext};
 use cot::router::{Route, Router};
 use cot::{App, AppBuilder, Project};
+use skeet_feed::handlers::{annotated_image, feed};
 use skeet_store::StoreArgs;
 use tracing::info;
-
-use handlers::{annotated_image, feed};
-
-static STORE_ARGS: OnceLock<StoreArgs> = OnceLock::new();
 
 #[derive(Parser)]
 struct Args {
@@ -58,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _guard = shared::tracing::init_with_file_and_stderr("skeet_feed=info", "feed.log");
 
     let args = Args::parse();
-    STORE_ARGS
+    skeet_feed::STORE_ARGS
         .set(args.store)
         .expect("store args already initialized");
 
@@ -74,10 +67,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
-    use handlers::to_feed_entry;
+    use skeet_feed::handlers::to_feed_entry;
     use skeet_store::{ImageId, SkeetId, Zone};
-
-    use super::*;
 
     #[test]
     fn converts_at_uri_to_entry() {

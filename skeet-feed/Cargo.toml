@@ -14,3 +14,7 @@ shared = { workspace = true }
 skeet-store = { path = "../skeet-store" }
 tokio = { workspace = true }
 tracing = { workspace = true }
+
+[[bin]]
+name = "skeet-feed"
+path = "src/bin/skeet_feed.rs"
