@@ -52,26 +52,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut post_count: u64 = 0;
     let mut image_post_count: u64 = 0;
     let mut saved_count: u64 = 0;
+    let mut rejected_count: u64 = 0;
     let mut rejection_counts: HashMap<Rejection, u64> = HashMap::new();
 
     while let Ok(event) = receiver.recv_async().await {
         post_count += 1;
 
         let skeet_images = skeet_finder::firehose::extract_skeet_images(&event, &http).await;
-        if skeet_images.is_empty() {
-            if post_count.is_multiple_of(500) {
-                status::update_status(
-                    &status,
-                    post_count,
-                    image_post_count,
-                    saved_count,
-                    &rejection_counts,
-                );
-            }
-            continue;
-        }
-
-        image_post_count += 1;
+        image_post_count += skeet_images.len() as u64;
 
         for skeet_image in skeet_images {
             match skeet_finder::classify_image(
@@ -85,19 +73,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     persistence::save(&store, &record, &mut saved_count).await;
                 }
                 Err(reasons) => {
+                    rejected_count += 1;
                     for reason in &reasons {
                         *rejection_counts.entry(*reason).or_default() += 1;
                     }
                 }
             }
-            status::update_status(
-                &status,
-                post_count,
-                image_post_count,
-                saved_count,
-                &rejection_counts,
-            );
         }
+
+        status::update_status(
+            &status,
+            post_count,
+            image_post_count,
+            saved_count,
+            rejected_count,
+            &rejection_counts,
+        );
     }
 
     status.finish_with_message("jetstream connection closed");

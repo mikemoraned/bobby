@@ -22,7 +22,8 @@ pub fn update_status(
     posts: u64,
     images: u64,
     saved: u64,
-    rejections: &HashMap<Rejection, u64>,
+    rejected: u64,
+    rejection_reasons: &HashMap<Rejection, u64>,
 ) {
     let hit_rate = if images > 0 {
         (saved as f64 / images as f64) * 100.0
@@ -31,17 +32,17 @@ pub fn update_status(
     };
 
     let mut msg = format!(
-        "skeets: {posts} | images: {images} | saved: {saved} ({hit_rate:.1}%)"
+        "skeets: {posts} | images: {images} | saved: {saved} ({hit_rate:.1}%) | rejected: {rejected}"
     );
 
-    if !rejections.is_empty() {
-        let total_rejections: u64 = rejections.values().sum();
-        let mut sorted: Vec<_> = rejections.iter().collect();
+    if !rejection_reasons.is_empty() {
+        let total_reasons: u64 = rejection_reasons.values().sum();
+        let mut sorted: Vec<_> = rejection_reasons.iter().collect();
         sorted.sort_by_key(|(r, _)| r.to_string());
 
-        write!(msg, " | rejected: {total_rejections} (").expect("write to String");
+        write!(msg, " (").expect("write to String");
         for (i, (reason, count)) in sorted.iter().enumerate() {
-            let pct = (**count as f64 / total_rejections as f64) * 100.0;
+            let pct = (**count as f64 / total_reasons as f64) * 100.0;
             if i > 0 {
                 write!(msg, ", ").expect("write to String");
             }

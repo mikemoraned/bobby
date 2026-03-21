@@ -23,6 +23,17 @@ Now that we have a small (sub 1%) amount coming through, we can apply some more 
         * i.e. when it is created it shouldn't just be a random unique uuid, but instead should be a hash (e.g. md5) of the byte contents of the image
     * [x] update `skeet-find`/`skeet-store` so that, when it wants to save an image it has found, it first checks to see it does not already exist, based on id
 
+* [ ] fixes / refactorings:
+    * [x] the status summary for `find` appears to be wrong. `rejected` appears to be a count of rejected reasons and not rejected images. It should always be a count of rejected images with the invariant that `images = saved + rejected`. See example below of this being broken:
+    ```
+    00:03:03 ⠸ skeets: 1483 | images: 183 | saved: 0 (0.0%) | rejected: 281 (FaceNotInAcceptedZone: 3 [1%], FaceTooLarge: 1 [0%], FaceTooSmall: 40 [14%], TooFewFrontalFaces: 169 [60%], TooLittleFaceSkin: 8 [3%], TooManyFaces: 25 [9%], TooMuchSkinOutsideFace: 14 [5%], TooMuchText: 21 [7%])
+    ```
+    * [ ] we shouldn't be passing secrets as command-line variables, but instead as ENV variables. 
+        * Some rust rules may need updated to allow this.
+        * What we want is:
+            * secrets are passed as env variables
+            * we should probably use `op run` here which can contain a file like `foo.env` which contains a mapping of needed ENV variables to the secrets path.
+
 * [ ] minimal `skeet-scorer`
     * add a new table `images_score` which:
         * contains an `ImageId` as a key which is a foreign key to the `images` table for that image
