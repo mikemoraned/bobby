@@ -27,21 +27,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or_else(|| format!("no image found with id {}", args.image_id))?;
 
     info!(
-        image_id = %stored.image_id,
-        skeet_id = %stored.skeet_id,
-        zone = %stored.zone,
-        config_version = %stored.config_version,
-        discovered_at = %stored.discovered_at,
-        original_at = %stored.original_at,
-        detected_text = ?stored.detected_text,
+        image_id = %stored.summary.image_id,
+        skeet_id = %stored.summary.skeet_id,
+        zone = %stored.summary.zone,
+        config_version = %stored.summary.config_version,
+        discovered_at = %stored.summary.discovered_at,
+        original_at = %stored.summary.original_at,
+        detected_text = ?stored.summary.detected_text,
         image_size = %format_args!("{}x{}", stored.image.width(), stored.image.height()),
         "image metadata"
     );
 
-    info!(at_uri = %stored.skeet_id, "fetching post thread");
+    info!(at_uri = %stored.summary.skeet_id, "fetching post thread");
 
     let http = reqwest::Client::new();
-    let json = skeet_finder::metadata::fetch_post_thread(&http, &stored.skeet_id).await?;
+    let json = skeet_finder::metadata::fetch_post_thread(&http, &stored.summary.skeet_id).await?;
     println!("{}", serde_json::to_string_pretty(&json)?);
 
     Ok(())

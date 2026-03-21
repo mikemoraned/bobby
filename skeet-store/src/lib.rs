@@ -264,15 +264,9 @@ impl SkeetStore {
 }
 
 pub struct StoredImage {
-    pub image_id: ImageId,
-    pub skeet_id: SkeetId,
+    pub summary: StoredImageSummary,
     pub image: DynamicImage,
-    pub discovered_at: DateTime<Utc>,
-    pub original_at: DateTime<Utc>,
-    pub zone: Zone,
     pub annotated_image: DynamicImage,
-    pub config_version: ConfigVersion,
-    pub detected_text: String,
 }
 
 pub struct StoredImageSummary {
@@ -353,15 +347,9 @@ fn batches_to_stored_images(batches: &[RecordBatch]) -> Result<Vec<StoredImage>,
             let image = image::load_from_memory(images.value(i))?;
             let annotated_image = image::load_from_memory(annotated_images.value(i))?;
             results.push(StoredImage {
-                image_id: summary.image_id,
-                skeet_id: summary.skeet_id,
+                summary,
                 image,
-                discovered_at: summary.discovered_at,
-                original_at: summary.original_at,
-                zone: summary.zone,
                 annotated_image,
-                config_version: summary.config_version,
-                detected_text: summary.detected_text,
             });
         }
     }
@@ -432,11 +420,11 @@ mod tests {
 
         let images = store.list_all().await.unwrap();
         assert_eq!(images.len(), 1);
-        assert_eq!(images[0].image_id, record.image_id);
-        assert_eq!(images[0].skeet_id, record.skeet_id);
+        assert_eq!(images[0].summary.image_id, record.image_id);
+        assert_eq!(images[0].summary.skeet_id, record.skeet_id);
         assert_eq!(images[0].image.width(), 2);
         assert_eq!(images[0].image.height(), 2);
-        assert_eq!(images[0].zone, Zone::TopRight);
+        assert_eq!(images[0].summary.zone, Zone::TopRight);
     }
 
     #[tokio::test]

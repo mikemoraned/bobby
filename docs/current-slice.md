@@ -64,14 +64,14 @@ Tasks:
         * generally reread and apply the Rust local rules where possible
     * [x] look through the different cli mains and apply INFO logging for when major steps start and end
 
-* [ ] do a general refactoring pass, applying rules
+* [x] do a general refactoring pass, applying rules
     * [x] for example, should we apply the NewType pattern to where we are doing stuff with `at` urls in multiple places to construct/extract things?
-    * [ ] look for any other opportunities for refactors/tidyups
+    * [x] look for any other opportunities for refactors/tidyups
         * [x] eliminate redundant face detection in `classify_image`: `classify()` already runs `detector.detect()`, but `classify_image` calls it a second time to get the face for annotation — restructure to avoid duplicate ML inference
         * [x] deduplicate excluded-labels constants: `EXCLUDED_LABELS` in `firehose.rs` and `BLOCKED_LABEL_VALUES` in `content_filter.rs` are identical lists — extract to a single constant in a `labels` module inside `shared`
         * [x] fix `ImageId::as_str()` returning `String` instead of `&str`: violates Rust `as_str()` conventions — call sites should use `Display`/`.to_string()` instead
         * [x] extract shared tracing file-appender setup: `finder/main.rs` and `skeet-feed/main.rs` have near-identical tracing init with daily file appender — add a file-appender variant to `shared::tracing`
-        * [ ] embed `StoredImageSummary` inside `StoredImage`: `StoredImage` duplicates all 7 summary fields — compose instead to reduce duplication and simplify `batches_to_stored_images`
+        * [x] embed `StoredImageSummary` inside `StoredImage`: `StoredImage` duplicates all 7 summary fields — compose instead to reduce duplication and simplify `batches_to_stored_images`
 
 * [ ] update `skeet-feed` to run on fly.io and read from R2
     * Secrets managed via fly secrets (R2 read-only API token)
