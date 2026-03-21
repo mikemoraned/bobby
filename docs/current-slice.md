@@ -86,7 +86,7 @@ Tasks:
         * [x] update Justfile `feed`/`feed-r2` rules to pass above env vars + OTEL_SERVICE_NAME="skeet-feed"
         * [x] update Justfile `find`/`find-r2` rules to pass above env vars + OTEL_SERVICE_NAME="skeet-finder"
 
-* [x] add tokio-console for local trace inspection
+* [x] add tokio-console for local inspection
     * install: `cargo install tokio-console`
     * add `console-subscriber = "0.5"` to relevant binary crates (must match `tokio-console` 0.1.14; both use `console-api` 0.9)
     * call `console_subscriber::init()` in main (can coexist with existing tracing layers)
@@ -94,6 +94,15 @@ Tasks:
     * run `tokio-console` in a separate terminal to connect to the app (default `127.0.0.1:6669`)
     * gives live TUI view of spawned tasks, poll times, waker counts, resources
     * local only, no OTLP; uses its own gRPC protocol
+
+* [x] make tokio-console usable with different cli processes, and disabled by default
+    * [x] for all cli's, tokio-console support should be disabled by default i.e. nothing is listening by default
+    * [x] add an ability for any of the cli's to have a `--tokio-console-port` option:
+        * which, if passed:
+            1. enables `tokio-console` support on that port
+            2. logs an INFO line which shows the `tokio-console` invocation to use to attach to that cli
+        * suggest doing this by adding a new Enum, TokioConsoleSupport with Enabled/Disabled variants, with Enabled specifying the port; this can be passed to the tracing setups as an arg
+    * [x] update `Justfile` rules for `finder` and `feed` cli's to have the `--tokio-console-port` option with a unique non-default port
 
 * [ ] update `skeet-feed` to run on fly.io and read from R2
     * Secrets managed via fly secrets (R2 read-only API token)

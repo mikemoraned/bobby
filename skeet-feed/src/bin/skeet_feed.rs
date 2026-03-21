@@ -13,6 +13,10 @@ use tracing::info;
 struct Args {
     #[command(flatten)]
     store: StoreArgs,
+
+    /// Enable tokio-console on this port
+    #[arg(long)]
+    tokio_console_port: Option<u16>,
 }
 
 struct FeedApp;
@@ -48,9 +52,13 @@ impl Project for FeedProject {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let _guard = shared::tracing::init_with_file_and_stderr("skeet_feed=info", "feed.log");
-
     let args = Args::parse();
+
+    let console = args.tokio_console_port.map_or(
+        shared::tracing::TokioConsoleSupport::Disabled,
+        |port| shared::tracing::TokioConsoleSupport::Enabled { port },
+    );
+    let _guard = shared::tracing::init_with_file_and_stderr("skeet_feed=info,shared=info,skeet_store=info", "feed.log", console);
     skeet_feed::STORE_ARGS
         .set(args.store)
         .expect("store args already initialized");

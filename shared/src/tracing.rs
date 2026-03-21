@@ -10,6 +10,12 @@ fn env_filter(default_filter: &str) -> tracing_subscriber::EnvFilter {
         .unwrap_or_else(|_| default_filter.parse().expect("valid filter"))
 }
 
+/// Controls whether tokio-console support is enabled.
+pub enum TokioConsoleSupport {
+    Disabled,
+    Enabled { port: u16 },
+}
+
 /// Guard that shuts down the OpenTelemetry tracer provider on drop.
 pub struct OtelGuard {
     provider: SdkTracerProvider,
@@ -53,6 +59,24 @@ where
     Some((layer, OtelGuard { provider }))
 }
 
+fn try_console_layer(
+    console: &TokioConsoleSupport,
+) -> Option<console_subscriber::ConsoleLayer> {
+    let TokioConsoleSupport::Enabled { port } = console else {
+        return None;
+    };
+
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], *port));
+    let (console_layer, console_server) = console_subscriber::ConsoleLayer::builder()
+        .server_addr(addr)
+        .with_default_env()
+        .build();
+
+    tokio::spawn(console_server.serve());
+
+    Some(console_layer)
+}
+
 /// Initialize a stderr tracing subscriber with `RUST_LOG` env support.
 ///
 /// Falls back to `default_filter` if `RUST_LOG` is not set (e.g. `"info"`).
@@ -66,7 +90,11 @@ pub fn init(default_filter: &str) {
 ///
 /// Logs are written to `logs/{filename}` with daily rotation.
 /// The returned guards must be held for the lifetime of the program.
-pub fn init_with_file(default_filter: &str, filename: &str) -> TracingGuard {
+pub fn init_with_file(
+    default_filter: &str,
+    filename: &str,
+    console: TokioConsoleSupport,
+) -> TracingGuard {
     let file_appender = tracing_appender::rolling::daily("logs", filename);
     let (non_blocking, file_guard) = tracing_appender::non_blocking(file_appender);
 
@@ -75,17 +103,22 @@ pub fn init_with_file(default_filter: &str, filename: &str) -> TracingGuard {
         None => (None, None),
     };
 
-    let (console_layer, console_server) = console_subscriber::ConsoleLayer::builder()
-        .with_default_env()
-        .build();
+    let console_layer = try_console_layer(&console);
 
     tracing_subscriber::registry()
         .with(console_layer)
-        .with(fmt::layer().with_writer(non_blocking).with_filter(env_filter(default_filter)))
+        .with(
+            fmt::layer()
+                .with_ansi(false)
+                .with_writer(non_blocking)
+                .with_filter(env_filter(default_filter)),
+        )
         .with(otel_layer)
         .init();
 
-    tokio::spawn(console_server.serve());
+    if let TokioConsoleSupport::Enabled { port } = console {
+        tracing::info!("tokio-console enabled: run `tokio-console http://127.0.0.1:{port}`");
+    }
 
     TracingGuard {
         _file_guard: file_guard,
@@ -97,7 +130,11 @@ pub fn init_with_file(default_filter: &str, filename: &str) -> TracingGuard {
 /// and optional OpenTelemetry.
 ///
 /// The returned guards must be held for the lifetime of the program.
-pub fn init_with_file_and_stderr(default_filter: &str, filename: &str) -> TracingGuard {
+pub fn init_with_file_and_stderr(
+    default_filter: &str,
+    filename: &str,
+    console: TokioConsoleSupport,
+) -> TracingGuard {
     let file_appender = tracing_appender::rolling::daily("logs", filename);
     let (non_blocking, file_guard) = tracing_appender::non_blocking(file_appender);
 
@@ -106,18 +143,23 @@ pub fn init_with_file_and_stderr(default_filter: &str, filename: &str) -> Tracin
         None => (None, None),
     };
 
-    let (console_layer, console_server) = console_subscriber::ConsoleLayer::builder()
-        .with_default_env()
-        .build();
+    let console_layer = try_console_layer(&console);
 
     tracing_subscriber::registry()
         .with(console_layer)
-        .with(fmt::layer().with_writer(non_blocking).with_filter(env_filter(default_filter)))
+        .with(
+            fmt::layer()
+                .with_ansi(false)
+                .with_writer(non_blocking)
+                .with_filter(env_filter(default_filter)),
+        )
         .with(fmt::layer().with_writer(std::io::stderr).with_filter(env_filter(default_filter)))
         .with(otel_layer)
         .init();
 
-    tokio::spawn(console_server.serve());
+    if let TokioConsoleSupport::Enabled { port } = console {
+        tracing::info!("tokio-console enabled: run `tokio-console http://127.0.0.1:{port}`");
+    }
 
     TracingGuard {
         _file_guard: file_guard,

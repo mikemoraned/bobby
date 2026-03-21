@@ -13,13 +13,21 @@ use tracing::{info, warn};
 struct Args {
     #[command(flatten)]
     store: StoreArgs,
+
+    /// Enable tokio-console on this port
+    #[arg(long)]
+    tokio_console_port: Option<u16>,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let _guard = shared::tracing::init_with_file("skeet_finder=info", "finder.log");
-
     let args = Args::parse();
+
+    let console = args.tokio_console_port.map_or(
+        shared::tracing::TokioConsoleSupport::Disabled,
+        |port| shared::tracing::TokioConsoleSupport::Enabled { port },
+    );
+    let _guard = shared::tracing::init_with_file("skeet_finder=info,shared=info,skeet_store=info", "finder.log", console);
 
     let store = args.store.open_store().await?;
     store.validate().await?;
