@@ -60,3 +60,14 @@ Refined face position classification and text/pre-filtering:
 - Improved pre-filtering: detect and block re-skeets/quoted posts with author opt-out labels.
 - Split `metadata_dump` CLI into `image_metadata_dump` and `at_metadata_dump` (shared `metadata` module) for better debugging.
 - Switched text filtering from glyph count to text area percentage of the image, with new parameters in `archetype.toml`, reducing false positives from overlaid text.
+
+## Slice 7: Make version available that can run on different machines
+
+Moved storage to the cloud and added observability:
+
+- **Cloudflare R2 storage**: `SkeetStore::open` now accepts S3 URIs with storage options via `StoreArgs` (clap-derived). All binaries (`finder`, `feed`, `validate-storage`, `image-metadata-dump`) migrated to `StoreArgs`. R2 credentials stored in 1Password, accessed via Justfile helpers.
+- **SSE-C encryption**: data at rest encrypted with customer-provided 256-bit AES key via S3-compatible SSE-C headers, transparent to LanceDB operations. Key stored in 1Password.
+- **Tracing and observability**: switched to `tokio-tracing` with daily rolling file appender (ANSI disabled for file output) and optional stderr output. Added `#[instrument]` annotations across `SkeetStore` methods, `persistence::save`, and feed handlers for performance visibility.
+- **OpenTelemetry**: optional OTLP exporter layer activated by `OTEL_EXPORTER_OTLP_ENDPOINT` env var; when absent, a warning is logged and OTEL is disabled. Configured for Honeycomb via Justfile `*-r2` rules with ingest key from 1Password.
+- **tokio-console**: opt-in via `--tokio-console-port` CLI arg on `finder` and `feed`. Uses `console_subscriber::ConsoleLayer::builder().init()` as a standalone subscriber — file and OTEL layers are disabled in this mode due to a known incompatibility between `ConsoleLayer` and `fmt::Layer` span tracking.
+- **Refactoring**: eliminated redundant face detection in `classify_image`, deduplicated excluded-labels constants, fixed `ImageId::as_str()` conventions, extracted shared tracing setup to `shared::tracing`, embedded `StoredImageSummary` inside `StoredImage`.
