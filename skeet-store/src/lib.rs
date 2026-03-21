@@ -31,15 +31,15 @@ pub struct StoreArgs {
     pub store_path: String,
 
     /// S3-compatible endpoint URL (e.g. https://<account>.r2.cloudflarestorage.com)
-    #[arg(long)]
+    #[arg(long, env = "BOBBY_S3_ENDPOINT")]
     pub s3_endpoint: Option<String>,
 
     /// S3 access key ID
-    #[arg(long)]
+    #[arg(long, env = "BOBBY_S3_ACCESS_KEY_ID")]
     pub s3_access_key_id: Option<String>,
 
     /// S3 secret access key
-    #[arg(long)]
+    #[arg(long, env = "BOBBY_S3_SECRET_ACCESS_KEY")]
     pub s3_secret_access_key: Option<String>,
 
     /// S3 region (default: auto, suitable for Cloudflare R2)
@@ -47,7 +47,7 @@ pub struct StoreArgs {
     pub s3_region: String,
 
     /// SSE-C encryption key (base64-encoded 256-bit AES key); enables server-side encryption
-    #[arg(long)]
+    #[arg(long, env = "BOBBY_SSE_C_KEY")]
     pub sse_c_key: Option<String>,
 }
 

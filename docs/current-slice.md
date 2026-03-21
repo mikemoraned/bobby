@@ -28,7 +28,7 @@ Now that we have a small (sub 1%) amount coming through, we can apply some more 
     ```
     00:03:03 ⠸ skeets: 1483 | images: 183 | saved: 0 (0.0%) | rejected: 281 (FaceNotInAcceptedZone: 3 [1%], FaceTooLarge: 1 [0%], FaceTooSmall: 40 [14%], TooFewFrontalFaces: 169 [60%], TooLittleFaceSkin: 8 [3%], TooManyFaces: 25 [9%], TooMuchSkinOutsideFace: 14 [5%], TooMuchText: 21 [7%])
     ```
-    * [ ] we shouldn't be passing secrets as command-line variables, but instead as ENV variables. 
+    * [x] we shouldn't be passing secrets as command-line variables, but instead as ENV variables.
         * Some rust rules may need updated to allow this.
         * What we want is:
             * secrets are passed as env variables

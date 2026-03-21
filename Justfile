@@ -1,15 +1,6 @@
 STORE := "store"
 R2_STORE := "s3://hom-bobby/encrypted-store"
 
-# Read a 1Password item's password by name, picking the most recently created if duplicates exist
-_op-read-latest vault item:
-    @op item list --vault {{ vault }} --format json \
-        | jq -r '[.[] | select(.title == "{{ item }}")] | sort_by(.created_at) | last | .id' \
-        | xargs -I{} op read "op://{{ vault }}/{}/password"
-
-_r2-args:
-    @echo "--store-path {{ R2_STORE }} --s3-endpoint $(just _op-read-latest Dev hom-bobby-r2-local-rw-endpoint) --s3-access-key-id $(just _op-read-latest Dev hom-bobby-r2-local-rw-id) --s3-secret-access-key $(just _op-read-latest Dev hom-bobby-r2-local-rw-key) --sse-c-key $(just _op-read-latest Dev hom-bobby-r2-sse-c-key)"
-
 default:
     just --list
 
@@ -48,24 +39,21 @@ validate-storage:
     cargo run --release --bin validate-storage -- --store-path {{ STORE }}
 
 validate-storage-r2:
-    cargo run --release --bin validate-storage -- $(just _r2-args)
+    op run --env-file bobby.env -- cargo run --release --bin validate-storage -- --store-path {{ R2_STORE }}
 
 OTEL_ENDPOINT := "https://api.honeycomb.io"
-
-_otel-key:
-    @just _op-read-latest Dev hom-bobby-hcoltp-local-ingest
 
 find:
     RUST_BACKTRACE=1 cargo run --release --bin finder -- --store-path {{ STORE }}
 
 find-r2:
-    RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=$(just _otel-key)" OTEL_SERVICE_NAME=skeet-finder cargo run --release --bin finder -- $(just _r2-args)
+    RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_SERVICE_NAME=skeet-finder op run --env-file bobby.env -- cargo run --release --bin finder -- --store-path {{ R2_STORE }}
 
 feed:
     RUST_BACKTRACE=1 cargo run --release --bin skeet-feed -- --store-path {{ STORE }}
 
 feed-r2:
-    RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=$(just _otel-key)" OTEL_SERVICE_NAME=skeet-feed cargo run --release --bin skeet-feed -- $(just _r2-args)
+    RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_SERVICE_NAME=skeet-feed op run --env-file bobby.env -- cargo run --release --bin skeet-feed -- --store-path {{ R2_STORE }}
 
 image-metadata-dump image_id:
     cargo run --release --bin image-metadata-dump -- --store-path {{ STORE }} --image-id {{ image_id }}
