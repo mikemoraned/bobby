@@ -12,10 +12,6 @@ impl ImageId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }
-
-    pub fn as_str(&self) -> String {
-        self.0.to_string()
-    }
 }
 
 impl Default for ImageId {
@@ -92,7 +88,7 @@ mod tests {
     #[test]
     fn image_id_roundtrips_through_string() {
         let id = ImageId::new();
-        let parsed: ImageId = id.as_str().parse().unwrap();
+        let parsed: ImageId = id.to_string().parse().unwrap();
         assert_eq!(id, parsed);
     }
 

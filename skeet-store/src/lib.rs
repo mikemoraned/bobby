@@ -111,12 +111,13 @@ impl SkeetStore {
 
         let image_bytes = encode_image_as_png(&record.image)?;
         let annotated_bytes = encode_image_as_png(&record.annotated_image)?;
+        let image_id_str = record.image_id.to_string();
         let skeet_id_str = record.skeet_id.to_string();
 
         let batch = RecordBatch::try_new(
             schema.clone(),
             vec![
-                Arc::new(StringArray::from(vec![record.image_id.as_str()])),
+                Arc::new(StringArray::from(vec![image_id_str.as_str()])),
                 Arc::new(StringArray::from(vec![skeet_id_str.as_str()])),
                 Arc::new(LargeBinaryArray::from_vec(vec![&image_bytes])),
                 Arc::new(
@@ -171,7 +172,7 @@ impl SkeetStore {
         let table = self.db.open_table(TABLE_NAME).execute().await?;
         let batches: Vec<RecordBatch> = table
             .query()
-            .only_if(format!("image_id = '{}'", image_id.as_str()))
+            .only_if(format!("image_id = '{image_id}'"))
             .execute()
             .await?
             .try_collect()
