@@ -11,7 +11,6 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 use arrow_array::{
-
     Array, Int64Array, LargeBinaryArray, RecordBatch, RecordBatchIterator, StringArray,
     TimestampMicrosecondArray,
 };
@@ -203,8 +202,7 @@ impl SkeetStore {
             schema.clone(),
             vec![
                 Arc::new(
-                    TimestampMicrosecondArray::from(vec![timestamp_micros])
-                        .with_timezone("UTC"),
+                    TimestampMicrosecondArray::from(vec![timestamp_micros]).with_timezone("UTC"),
                 ),
                 Arc::new(Int64Array::from(vec![random_number])),
             ],
@@ -228,7 +226,8 @@ impl SkeetStore {
             ));
         }
 
-        let timestamps = typed_column::<TimestampMicrosecondArray>(&result_batches[0], "timestamp")?;
+        let timestamps =
+            typed_column::<TimestampMicrosecondArray>(&result_batches[0], "timestamp")?;
         if result_batches[0].num_rows() == 0 {
             return Err(StoreError::ValidationFailed(
                 "no rows returned for validation query".to_string(),
@@ -299,6 +298,7 @@ struct SummaryColumns<'a> {
 }
 
 impl<'a> SummaryColumns<'a> {
+    #[instrument(skip(batch))]
     fn extract(batch: &'a RecordBatch) -> Result<Self, StoreError> {
         Ok(Self {
             image_ids: typed_column::<StringArray>(batch, "image_id")?,
@@ -311,8 +311,10 @@ impl<'a> SummaryColumns<'a> {
         })
     }
 
+    #[instrument(skip(self))]
     fn to_summary(&self, i: usize) -> Result<StoredImageSummary, StoreError> {
-        let zone: Zone = self.archetypes
+        let zone: Zone = self
+            .archetypes
             .value(i)
             .parse()
             .map_err(|_| StoreError::InvalidArchetype(self.archetypes.value(i).to_string()))?;
@@ -333,6 +335,7 @@ impl<'a> SummaryColumns<'a> {
     }
 }
 
+#[instrument(skip(batches))]
 fn batches_to_summaries(batches: &[RecordBatch]) -> Result<Vec<StoredImageSummary>, StoreError> {
     let mut results = Vec::new();
     for batch in batches {
@@ -344,6 +347,7 @@ fn batches_to_summaries(batches: &[RecordBatch]) -> Result<Vec<StoredImageSummar
     Ok(results)
 }
 
+#[instrument(skip(batches))]
 fn batches_to_stored_images(batches: &[RecordBatch]) -> Result<Vec<StoredImage>, StoreError> {
     let mut results = Vec::new();
     for batch in batches {
@@ -365,6 +369,7 @@ fn batches_to_stored_images(batches: &[RecordBatch]) -> Result<Vec<StoredImage>,
     Ok(results)
 }
 
+#[instrument(skip(batch))]
 fn typed_column<'a, T: Array + 'static>(
     batch: &'a RecordBatch,
     name: &str,
@@ -377,6 +382,7 @@ fn typed_column<'a, T: Array + 'static>(
         })
 }
 
+#[instrument(skip(img))]
 fn encode_image_as_png(img: &DynamicImage) -> Result<Vec<u8>, image::ImageError> {
     let mut buf = Cursor::new(Vec::new());
     img.write_to(&mut buf, image::ImageFormat::Png)?;
@@ -414,7 +420,9 @@ mod tests {
 
         let record = ImageRecord {
             image_id: ImageId::new(),
-            skeet_id: "at://did:plc:abc/app.bsky.feed.post/123".parse().expect("valid test AT URI"),
+            skeet_id: "at://did:plc:abc/app.bsky.feed.post/123"
+                .parse()
+                .expect("valid test AT URI"),
             image: test_image(),
             discovered_at: DiscoveredAt::now(),
             original_at: OriginalAt::new(Utc::now()),
@@ -441,7 +449,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = open_temp_store(&dir).await;
 
-        let skeet_id: SkeetId = "at://did:plc:abc/app.bsky.feed.post/456".parse().expect("valid test AT URI");
+        let skeet_id: SkeetId = "at://did:plc:abc/app.bsky.feed.post/456"
+            .parse()
+            .expect("valid test AT URI");
 
         for _ in 0..3 {
             let record = ImageRecord {
@@ -472,7 +482,9 @@ mod tests {
 
         let record = ImageRecord {
             image_id: ImageId::new(),
-            skeet_id: "at://did:plc:abc/app.bsky.feed.post/summ".parse().expect("valid test AT URI"),
+            skeet_id: "at://did:plc:abc/app.bsky.feed.post/summ"
+                .parse()
+                .expect("valid test AT URI"),
             image: test_image(),
             discovered_at: DiscoveredAt::now(),
             original_at: OriginalAt::new(Utc::now()),
@@ -497,7 +509,9 @@ mod tests {
 
         let record = ImageRecord {
             image_id: ImageId::new(),
-            skeet_id: "at://did:plc:abc/app.bsky.feed.post/789".parse().expect("valid test AT URI"),
+            skeet_id: "at://did:plc:abc/app.bsky.feed.post/789"
+                .parse()
+                .expect("valid test AT URI"),
             image: test_image(),
             discovered_at: DiscoveredAt::now(),
             original_at: OriginalAt::new(Utc::now()),
