@@ -4,13 +4,14 @@ use cot::html::Html;
 use cot::request::extractors::Path;
 use cot::response::Response;
 use cot::{Body, StatusCode, Template};
-use skeet_store::{ImageId, SkeetId, Zone};
+use skeet_store::{DiscoveredAt, ImageId, SkeetId, Zone};
 use tracing::{info, instrument, warn};
 
 use crate::Store;
 
 #[derive(Debug)]
 pub struct FeedEntry {
+    pub discovered_at: String,
     pub image_id: String,
     pub zone: String,
     pub config_version: String,
@@ -20,6 +21,7 @@ pub struct FeedEntry {
 }
 
 pub fn to_feed_entry(
+    discovered_at: &DiscoveredAt,
     image_id: &ImageId,
     skeet_id: &SkeetId,
     zone: &Zone,
@@ -32,6 +34,7 @@ pub fn to_feed_entry(
     let did = skeet_id.did();
     let rkey = skeet_id.rkey();
     Some(FeedEntry {
+        discovered_at: discovered_at.format_short(),
         image_id: image_id.to_string(),
         zone: zone.to_string(),
         config_version: config_version.to_string(),
@@ -65,6 +68,7 @@ pub async fn feed(Store(store): Store) -> cot::Result<Html> {
         .take(MAX_FEED_ENTRIES)
         .filter_map(|img| {
             to_feed_entry(
+                &img.discovered_at,
                 &img.image_id,
                 &img.skeet_id,
                 &img.zone,

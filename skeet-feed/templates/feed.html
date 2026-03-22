@@ -30,6 +30,7 @@
             <table>
                 <thead>
                     <tr>
+                        <th>Discovered</th>
                         <th>ID</th>
                         <th>Zone</th>
                         <th>Config</th>
@@ -41,6 +42,7 @@
                 <tbody>
                     {% for entry in &entries %}
                         <tr>
+                            <td class="id">{{ entry.discovered_at }}</td>
                             <td class="id">{{ entry.image_id }}</td>
                             <td>{{ entry.zone }}</td>
                             <td class="version">{{ entry.config_version }}</td>

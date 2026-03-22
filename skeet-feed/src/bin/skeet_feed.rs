@@ -95,16 +95,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use image::DynamicImage;
     use skeet_feed::handlers::to_feed_entry;
-    use skeet_store::{ImageId, SkeetId, Zone};
+    use skeet_store::{DiscoveredAt, ImageId, SkeetId, Zone};
 
     #[test]
     fn converts_at_uri_to_entry() {
+        let discovered_at = DiscoveredAt::now();
         let image_id = ImageId::from_image(&DynamicImage::new_rgba8(1, 1));
         let skeet_id: SkeetId = "at://did:plc:abc123/app.bsky.feed.post/xyz789"
             .parse()
             .expect("valid AT URI");
         let zone = Zone::TopRight;
-        let entry = to_feed_entry(&image_id, &skeet_id, &zone, "v1", "hello")
+        let entry = to_feed_entry(&discovered_at, &image_id, &skeet_id, &zone, "v1", "hello")
             .expect("should produce entry");
         assert_eq!(entry.at_uri, "at://did:plc:abc123/app.bsky.feed.post/xyz789");
         assert_eq!(
@@ -120,11 +121,12 @@ mod tests {
 
     #[test]
     fn returns_none_for_non_post_uri() {
+        let discovered_at = DiscoveredAt::now();
         let image_id = ImageId::from_image(&DynamicImage::new_rgba8(1, 1));
         let skeet_id: SkeetId = "at://did:plc:abc123/app.bsky.feed.like/xyz789"
             .parse()
             .expect("valid AT URI");
         let zone = Zone::TopRight;
-        assert!(to_feed_entry(&image_id, &skeet_id, &zone, "v1", "").is_none());
+        assert!(to_feed_entry(&discovered_at, &image_id, &skeet_id, &zone, "v1", "").is_none());
     }
 }

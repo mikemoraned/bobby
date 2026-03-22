@@ -66,6 +66,10 @@ impl DiscoveredAt {
     pub const fn timestamp_micros(&self) -> i64 {
         self.0.timestamp_micros()
     }
+
+    pub fn format_short(&self) -> String {
+        self.0.format("%Y-%m-%d %H:%M").to_string()
+    }
 }
 
 impl fmt::Display for DiscoveredAt {
