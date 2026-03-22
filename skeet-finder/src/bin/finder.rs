@@ -33,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             shared::tracing::TokioConsoleSupport::Enabled { port }
         });
     let _guard = shared::tracing::init_with_file_and_stderr(
-        "skeet_finder=info,shared=info,skeet_store=info",
+        "skeet_finder=info,shared=info,skeet_store=info,lance_io=warn,object_store=warn",
         "finder.log",
         console,
     );
@@ -55,7 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let fallback = match &args.fallback_local_store {
         Some(path) => {
-            let fallback_store = SkeetStore::open(path, vec![]).await?;
+            let fallback_store = SkeetStore::open(path, vec![], None).await?;
             info!(path = %path, "fallback local store opened");
             Some(fallback_store)
         }
@@ -65,7 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Pipeline: firehose → meta filter → image filter → save
     let (firehose_tx, mut firehose_rx) = mpsc::channel::<SkeetCandidate>(16);
     let (meta_tx, mut meta_rx) = mpsc::channel::<MetaResult>(16);
-    let (image_tx, mut image_rx) = mpsc::channel::<ImageResult>(16);
+    let (image_tx, mut image_rx) = mpsc::channel::<ImageResult>(100);
 
     let meta_http = http.clone();
 

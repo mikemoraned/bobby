@@ -8,6 +8,7 @@ pub use shared::ConfigVersion;
 pub use types::{DiscoveredAt, ImageId, ImageRecord, InvalidImageId, OriginalAt, SkeetId, Zone};
 
 use std::io::Cursor;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use arrow_array::{
@@ -23,6 +24,8 @@ use lancedb::table::OptimizeAction;
 use tracing::{info, instrument};
 
 use schema::{TABLE_NAME, VALIDATE_TABLE_NAME, images_v6_schema, validate_v1_schema};
+
+const DEFAULT_COMPACT_EVERY_N_WRITES: u64 = 100;
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct StoreArgs {
@@ -49,9 +52,17 @@ pub struct StoreArgs {
     /// SSE-C encryption key (base64-encoded 256-bit AES key); enables server-side encryption
     #[arg(long, env = "BOBBY_SSE_C_KEY")]
     pub sse_c_key: Option<String>,
+
+    /// Trigger automatic compaction after this many writes (omit to disable)
+    #[arg(long, default_value_t = DEFAULT_COMPACT_EVERY_N_WRITES)]
+    pub compact_every_n_writes: u64,
 }
 
 impl StoreArgs {
+    const fn compact_option(&self) -> Option<u64> {
+        Some(self.compact_every_n_writes)
+    }
+
     pub fn storage_options(&self) -> Vec<(String, String)> {
         let mut opts = Vec::new();
         if let Some(endpoint) = &self.s3_endpoint {
@@ -64,8 +75,10 @@ impl StoreArgs {
             opts.push(("aws_secret_access_key".into(), secret.clone()));
         }
         opts.push(("aws_region".into(), self.s3_region.clone()));
+        opts.push(("timeout".into(), "120s".into()));
+        opts.push(("connect_timeout".into(), "10s".into()));
         opts.push(("client_max_retries".into(), "0".into()));
-        opts.push(("client_retry_timeout".into(), "30".into()));
+        opts.push(("client_retry_timeout".into(), "60".into()));
         if let Some(key) = &self.sse_c_key {
             opts.push(("aws_server_side_encryption".into(), "sse-c".into()));
             opts.push(("aws_sse_customer_key_base64".into(), key.clone()));
@@ -75,13 +88,20 @@ impl StoreArgs {
 
     #[instrument(skip(self), fields(store_path = %self.store_path))]
     pub async fn open_store(&self) -> Result<SkeetStore, StoreError> {
-        SkeetStore::open(&self.store_path, self.storage_options()).await
+        SkeetStore::open(
+            &self.store_path,
+            self.storage_options(),
+            self.compact_option(),
+        )
+        .await
     }
 }
 
 pub struct SkeetStore {
     images_table: lancedb::Table,
     validate_table: lancedb::Table,
+    writes_since_compact: AtomicU64,
+    compact_every_n_writes: Option<u64>,
 }
 
 impl SkeetStore {
@@ -89,6 +109,7 @@ impl SkeetStore {
     pub async fn open(
         uri: &str,
         storage_options: Vec<(String, String)>,
+        compact_every_n_writes: Option<u64>,
     ) -> Result<Self, StoreError> {
         info!(uri, "opening store");
         let db = lancedb::connect(uri)
@@ -119,10 +140,12 @@ impl SkeetStore {
 
         let validate_table = db.open_table(VALIDATE_TABLE_NAME).execute().await?;
 
-        info!(uri, "store opened");
+        info!(uri, ?compact_every_n_writes, "store opened");
         Ok(Self {
             images_table,
             validate_table,
+            writes_since_compact: AtomicU64::new(0),
+            compact_every_n_writes,
         })
     }
 
@@ -158,8 +181,27 @@ impl SkeetStore {
 
         let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
         self.images_table.add(batches).execute().await?;
-        self.images_table.optimize(OptimizeAction::All).await?;
+        self.compact_if_needed().await?;
 
+        Ok(())
+    }
+
+    #[instrument(skip(self))]
+    pub async fn compact(&self) -> Result<(), StoreError> {
+        info!("compacting store");
+        self.images_table.optimize(OptimizeAction::All).await?;
+        self.writes_since_compact.store(0, Ordering::Relaxed);
+        info!("compaction complete");
+        Ok(())
+    }
+
+    async fn compact_if_needed(&self) -> Result<(), StoreError> {
+        if let Some(threshold) = self.compact_every_n_writes {
+            let count = self.writes_since_compact.fetch_add(1, Ordering::Relaxed) + 1;
+            if count >= threshold {
+                self.compact().await?;
+            }
+        }
         Ok(())
     }
 
@@ -221,7 +263,7 @@ impl SkeetStore {
         self.images_table
             .delete(&format!("image_id = '{image_id}'"))
             .await?;
-        self.images_table.optimize(OptimizeAction::All).await?;
+        self.compact_if_needed().await?;
         Ok(())
     }
 
@@ -471,7 +513,7 @@ mod tests {
     }
 
     async fn open_temp_store(dir: &tempfile::TempDir) -> SkeetStore {
-        SkeetStore::open(dir.path().to_str().expect("valid path"), vec![])
+        SkeetStore::open(dir.path().to_str().expect("valid path"), vec![], None)
             .await
             .expect("open store")
     }

@@ -54,6 +54,17 @@ Now that we have a small (sub 1%) amount coming through, we can apply some more 
                     1. when it finds an image in fallback store that already exists in remote store, it does a deeper comparison where it asks ImageRecord (or similar) to a deep equal on the bytes stored. It should show whether that worked or not
                     2. when it has verified it definiyely exists remotely with exact same content in step 1, it should delete that image from the local fallback store
                         * this will involve extending `SkeetStore` to have a `delete_by_id` method, and associated tests
+        * [ ] increase reliability to remote R2 stores:
+            * Theories on R2 timeout errors (2026-03-22):
+                1. **Per-request HTTP timeout too short for large range reads** — lance-io downloads 5–13 MB ranges; with the default object_store per-request timeout (~5 s) and a variable home connection this easily times out. lance-io retries 3× internally regardless of `client_max_retries`.
+                2. **R2 rate limiting under concurrent load** — a single `exists()` call can trigger 300+ iops (visible in lance execution logs). Confirmed no 429s in R2 dashboard, but throttling may manifest as slow/dropped connections.
+                3. **Lance dataset fragmentation** — each `add()` creates a new data fragment. Over time this fans reads across many small files, amplifying the probability of at least one range read timing out.
+                4. **Stale multipart uploads** — confirmed cleared via `abort-multipart-uploads` (no outstanding uploads as of 2026-03-22).
+            * TODOs:
+                * [ ] set generous HTTP timeouts (`timeout`, `connect_timeout`) in storage_options, and increase the save-stage channel buffer to 100 to take advantage of the decoupled save stage
+                * [ ] enable `lance_io=debug,object_store=debug` logging to see per-request HTTP timings
+                * [ ] auto-compact: trigger a compaction step after every N writes (configurable, default 100) to reduce fragment count
+                * [ ] add a `compact` CLI to force-compact the lance dataset on demand
 
 * [x] correctness:
     * [x] write a SKILL which is invocable by `/add-to-blocklist` which:

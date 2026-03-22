@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
 
-    let source = SkeetStore::open(&args.source_store_path, vec![]).await?;
+    let source = SkeetStore::open(&args.source_store_path, vec![], None).await?;
     info!(path = %args.source_store_path, "opened source (fallback) store");
 
     let target = args.target.open_store().await?;

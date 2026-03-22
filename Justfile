@@ -80,5 +80,14 @@ abort-multipart-uploads:
 abort-multipart-uploads-confirm:
     op run --env-file bobby.env -- cargo run --release --bin abort-multipart-uploads -- --store-path {{ R2_STORE }} --abort
 
+compact:
+    cargo run --release --bin compact -- --store-path {{ STORE }}
+
+compact-fallback:
+    cargo run --release --bin compact -- --store-path {{ FALLBACK_STORE }}
+
+compact-r2:
+    op run --env-file bobby.env -- cargo run --release --bin compact -- --store-path {{ R2_STORE }}
+
 add-to-blocklist at_uri reason="manual":
     cargo run --release --bin add-to-blocklist -- "{{ at_uri }}" --reason "{{ reason }}"
