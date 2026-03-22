@@ -1,10 +1,8 @@
 #![warn(clippy::all, clippy::nursery)]
 
-use std::collections::HashMap;
-
 use clap::Parser;
 use face_detection::FaceDetector;
-use shared::{ArchetypeConfig, Rejection};
+use shared::ArchetypeConfig;
 use skeet_finder::{persistence, status};
 use skeet_store::StoreArgs;
 use tracing::{info, warn};
@@ -49,13 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     store.validate().await?;
     info!("storage validation passed");
 
-    let mut post_count: u64 = 0;
-    let mut image_post_count: u64 = 0;
-    let mut saved_count: u64 = 0;
-    let mut rejected_count: u64 = 0;
-    let mut rejection_counts: HashMap<Rejection, u64> = HashMap::new();
-    let mut last_log = std::time::Instant::now();
-    let log_interval = std::time::Duration::from_secs(30);
+    let mut status = status::Status::new(std::time::Duration::from_secs(30), 100);
     let recv_timeout = std::time::Duration::from_secs(30);
 
     loop {
@@ -75,11 +67,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             };
 
-            post_count += 1;
-
             let skeet_images =
                 skeet_finder::firehose::extract_skeet_images(&event, &http).await;
-            image_post_count += skeet_images.len() as u64;
+            let image_count = skeet_images.len() as u64;
 
             for skeet_image in skeet_images {
                 match skeet_finder::classify_image(
@@ -90,30 +80,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &config_version,
                 ) {
                     Ok(record) => {
-                        persistence::save(&store, &record, &mut saved_count).await;
+                        persistence::save(&store, &record, &mut status).await;
                     }
                     Err(reasons) => {
-                        rejected_count += 1;
-                        for reason in &reasons {
-                            *rejection_counts.entry(*reason).or_default() += 1;
-                        }
+                        status.record_rejected(&reasons);
                     }
                 }
             }
 
-            if post_count == 1
-                || post_count.is_multiple_of(100)
-                || last_log.elapsed() >= log_interval
-            {
-                status::log_summary(
-                    post_count,
-                    image_post_count,
-                    saved_count,
-                    rejected_count,
-                    &rejection_counts,
-                );
-                last_log = std::time::Instant::now();
-            }
+            status.record_post(image_count);
         }
     }
 }

@@ -1,8 +1,9 @@
+use crate::status::Status;
 use skeet_store::{ImageRecord, SkeetStore};
 use tracing::{info, instrument, warn};
 
-#[instrument(skip(store, record, saved_count), fields(image_id = %record.image_id, skeet_id = %record.skeet_id))]
-pub async fn save(store: &SkeetStore, record: &ImageRecord, saved_count: &mut u64) {
+#[instrument(skip(store, record, status), fields(image_id = %record.image_id, skeet_id = %record.skeet_id))]
+pub async fn save(store: &SkeetStore, record: &ImageRecord, status: &mut Status) {
     match store.exists(&record.image_id).await {
         Ok(true) => {
             info!(image_id = %record.image_id, "image already exists, skipping");
@@ -16,9 +17,9 @@ pub async fn save(store: &SkeetStore, record: &ImageRecord, saved_count: &mut u6
 
     match store.add(record).await {
         Ok(()) => {
-            *saved_count += 1;
+            status.record_saved();
             info!(
-                saved = *saved_count,
+                saved = status.saved_count(),
                 skeet_id = %record.skeet_id,
                 zone = %record.zone,
                 "saved image"
