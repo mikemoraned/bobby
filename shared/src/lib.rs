@@ -61,6 +61,7 @@ pub enum Rejection {
     TooLittleFaceSkin,
     TooMuchSkinOutsideFace,
     TooMuchText,
+    BlockedByMetadata,
 }
 
 impl std::fmt::Display for Rejection {
@@ -74,6 +75,7 @@ impl std::fmt::Display for Rejection {
             Self::TooLittleFaceSkin => write!(f, "TooLittleFaceSkin"),
             Self::TooMuchSkinOutsideFace => write!(f, "TooMuchSkinOutsideFace"),
             Self::TooMuchText => write!(f, "TooMuchText"),
+            Self::BlockedByMetadata => write!(f, "BlockedByMetadata"),
         }
     }
 }
@@ -91,6 +93,7 @@ impl std::str::FromStr for Rejection {
             "TooLittleFaceSkin" => Ok(Self::TooLittleFaceSkin),
             "TooMuchSkinOutsideFace" => Ok(Self::TooMuchSkinOutsideFace),
             "TooMuchText" => Ok(Self::TooMuchText),
+            "BlockedByMetadata" => Ok(Self::BlockedByMetadata),
             other => Err(format!("unknown rejection: {other}")),
         }
     }

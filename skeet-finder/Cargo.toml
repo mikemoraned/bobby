@@ -55,3 +55,7 @@ harness = false
 [[test]]
 name = "blocklist"
 harness = false
+
+[[test]]
+name = "filter_meta"
+harness = false

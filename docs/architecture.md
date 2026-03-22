@@ -20,3 +20,7 @@ The original project scanned Twitter's firehose, applied face detection (via Ope
 - **ML:** use existing models or Rust libraries for face-detection and landmark identification
 - **Burn:** use [Burn](https://burn.dev) ([GitHub](https://github.com/tracel-ai/burn)) for running ML models
 - **Sampling:** processing at line-speed may not be possible — sampling is fine. Simple parts (e.g. checking if a message contains an image) should be inline with receiving a message.
+
+## Testing
+
+- **Blocklist as test fixture:** the `blocklist/` directory captures real examples of skeets that should have been blocked (adult content, `!no-unauthenticated` authors, etc.). Each entry has a `getPostThread` JSON snapshot. The blocklist is *not* used in the live pipeline — it exists purely to drive integration tests that verify the metadata filtering logic works correctly.

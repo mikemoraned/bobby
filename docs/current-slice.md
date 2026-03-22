@@ -55,7 +55,7 @@ Now that we have a small (sub 1%) amount coming through, we can apply some more 
                     2. when it has verified it definiyely exists remotely with exact same content in step 1, it should delete that image from the local fallback store
                         * this will involve extending `SkeetStore` to have a `delete_by_id` method, and associated tests
 
-* [ ] correctness:
+* [x] correctness:
     * [x] write a SKILL which is invocable by `/add-to-blocklist` which:
         1. Asks user whether we want to use the fallback store or the remote store 
         2. Asks user for what they want to block. This can either be an image id or an at id. It should work out which it is by whether it starts with `at://` or not
@@ -63,18 +63,21 @@ Now that we have a small (sub 1%) amount coming through, we can apply some more 
         4. Based on these answers:
             1. (Optionally) fetches image id details, if needed, to find the `at://` URL using appropriate Justfile rule for remote or fallback store (`image-metadata-dump-r2` or `image-metadata-dump-fallback `)
             2. runs Justfile rule `add-to-blocklist` for `at://` URL with `reason` given
-    * [ ] I'm not convinced the filtering by Adult content and "The author of this post has requested their posts not be displayed on external sites." is working properly. 
+    * [x] I'm not convinced the filtering by Adult content and "The author of this post has requested their posts not be displayed on external sites." is working properly.
         * Here are three examples that should have been filtered that I have added to blocklist:
             * "at://did:plc:4cg25zjw2wuqvnduwqgy7ozt/app.bsky.feed.post/3mhne43icps2l", "at://did:plc:4yqhj5inp67fgorcbewk5zfm/app.bsky.feed.post/3mhnexg5g3k2o" => should have been blocked as asks to not be displayed on external sites
             * "at://did:plc:vx76uzb6m2lvgh3kvbiagsg3/app.bsky.feed.post/3mhne4wdiuc2d" => should have been blocked as adult content
-        * [ ] we need to examine/fix:
-            * [ ] why weren't these specific examples fixed/blocked? (examine and apply fixes)
-            * [ ] is there something more fundamental here in that perhaps we are writing tests / blocking these in code that is not actually used in main firehose path?
+        * [x] we need to examine/fix:
+            * [x] why weren't these specific examples fixed/blocked? (examine and apply fixes)
+            * [x] is there something more fundamental here in that perhaps we are writing tests / blocking these in code that is not actually used in main firehose path?
                 * suggest adding a stronger integ test (like `blocklist.rs` and `examples.ts`) which runs the real firehose code but with pre-loaded inputs (i.e. the blocklist json data) and asserts that nothing gets through that should be blocked
                 * it may easiest to do this by first splitting the `filter_stage` into two sub-stages:
                     * `filter_meta_stage` : applies the blocklist filters which only require metadata about a Skeet
                     * `filter_image_stage` : applies the remaining filters which require accessing an actual image
-                * our integ test then probably only needs to test the code in the `filter_meta_stage` and so avoids having to mock out things like image fetching etc 
+                * our integ test then probably only needs to test the code in the `filter_meta_stage` and so avoids having to mock out things like image fetching etc
+                * we should do this in a Red/Green/Refactor style i.e.
+                    * if the theory is correct that we are not using the code we need in main firehose path, we should first prove that by implementing a failing integ test (including doing the refactoring to support this)
+                    * then prove we've fixed it by running the (ideally unaltered) integ tests which should now pass
 
 * [ ] efficiencies / performance:
     * [ ] the `SkeetStore` re-opens the images table each time it uses it (`let table = self.db.open_table(TABLE_NAME).execute().await?;`)

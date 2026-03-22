@@ -68,45 +68,70 @@ pub async fn connect() -> Result<JetstreamReceiver, Box<dyn std::error::Error>> 
     .into())
 }
 
-/// If this event is a post creation with images, download each image and return them.
-/// Returns an empty vec for non-image posts or non-create events.
-pub async fn extract_skeet_images(
-    event: &JetstreamEvent,
-    http: &reqwest::Client,
-) -> Vec<SkeetImage> {
+/// A post that has images but hasn't been downloaded yet.
+pub struct SkeetCandidate {
+    pub skeet_id: SkeetId,
+    pub original_at: DateTime<Utc>,
+    pub image_urls: Vec<String>,
+}
+
+/// If this event is a post creation with images, extract the candidate info
+/// (skeet id + image URLs) without downloading. Returns `None` for non-image
+/// posts or non-create events.
+pub fn extract_skeet_candidate(event: &JetstreamEvent) -> Option<SkeetCandidate> {
     let JetstreamEvent::Commit(CommitEvent::Create { info, commit }) = event else {
-        return Vec::new();
+        return None;
     };
     let KnownRecord::AppBskyFeedPost(post) = &commit.record else {
-        return Vec::new();
+        return None;
     };
 
     if has_excluded_label(&post.data.labels) {
-        return Vec::new();
+        return None;
     }
 
     let image_refs = extract_images(&post.data.embed);
     if image_refs.is_empty() {
-        return Vec::new();
+        return None;
     }
 
     let did = info.did.as_str();
     let skeet_id = SkeetId::for_post(did, &commit.info.rkey);
     let original_at = parse_created_at(&post.data.created_at);
 
-    let mut results = Vec::new();
+    let mut image_urls = Vec::new();
     for image_ref in &image_refs {
         let Some(cid) = blob_cid(&image_ref.data.image) else {
             warn!("skipping image with unrecognized blob ref format");
             continue;
         };
-
-        let url = format!(
+        image_urls.push(format!(
             "https://cdn.bsky.app/img/feed_thumbnail/plain/{}/{}@jpeg",
             did, cid
-        );
+        ));
+    }
 
-        let bytes = match http.get(&url).send().await {
+    if image_urls.is_empty() {
+        return None;
+    }
+
+    Some(SkeetCandidate {
+        skeet_id,
+        original_at,
+        image_urls,
+    })
+}
+
+/// Download the images for a candidate, returning a `SkeetImage` for each
+/// that downloads and decodes successfully.
+pub async fn download_candidate_images(
+    candidate: &SkeetCandidate,
+    http: &reqwest::Client,
+) -> Vec<SkeetImage> {
+    let mut results = Vec::new();
+
+    for url in &candidate.image_urls {
+        let bytes = match http.get(url).send().await {
             Ok(resp) if resp.status().is_success() => match resp.bytes().await {
                 Ok(b) => b,
                 Err(e) => {
@@ -133,8 +158,8 @@ pub async fn extract_skeet_images(
         };
 
         results.push(SkeetImage {
-            skeet_id: skeet_id.clone(),
-            original_at,
+            skeet_id: candidate.skeet_id.clone(),
+            original_at: candidate.original_at,
             image: dynamic_image,
         });
     }
