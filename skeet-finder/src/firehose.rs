@@ -102,7 +102,7 @@ pub async fn extract_skeet_images(
         };
 
         let url = format!(
-            "https://cdn.bsky.app/img/feed_fullsize/plain/{}/{}@jpeg",
+            "https://cdn.bsky.app/img/feed_thumbnail/plain/{}/{}@jpeg",
             did, cid
         );
 
