@@ -216,6 +216,16 @@ impl SkeetStore {
     }
 
     #[instrument(skip(self))]
+    pub async fn delete_by_id(&self, image_id: &ImageId) -> Result<(), StoreError> {
+        let table = self.db.open_table(TABLE_NAME).execute().await?;
+        table
+            .delete(&format!("image_id = '{image_id}'"))
+            .await?;
+        table.optimize(OptimizeAction::All).await?;
+        Ok(())
+    }
+
+    #[instrument(skip(self))]
     pub async fn count(&self) -> Result<usize, StoreError> {
         let table = self.db.open_table(TABLE_NAME).execute().await?;
         Ok(table.count_rows(None).await?)
@@ -305,6 +315,14 @@ pub struct StoredImage {
     pub summary: StoredImageSummary,
     pub image: DynamicImage,
     pub annotated_image: DynamicImage,
+}
+
+impl StoredImage {
+    pub fn content_matches(&self, other: &Self) -> Result<bool, StoreError> {
+        let self_bytes = encode_image_as_png(&self.image)?;
+        let other_bytes = encode_image_as_png(&other.image)?;
+        Ok(self_bytes == other_bytes)
+    }
 }
 
 impl From<StoredImage> for ImageRecord {

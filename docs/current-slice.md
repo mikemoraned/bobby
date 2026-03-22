@@ -50,6 +50,10 @@ Now that we have a small (sub 1%) amount coming through, we can apply some more 
                     * a new `--fallback-local-store` param should be introduced to `find-r2` and cli so that it use a local `fallback` dir
                     * update `Status` so that it has a count of `saved-remotely` and `saved-fallack` whilst still keeping track of overall `saved`
                 * [x] add a new `redrive-r2` CLI bin to `skeet-store` which can be used to reconcile the local store with a remote one by attempting to upload anything that exists in the local `fallback` store but not in the remote one in R2
+                * [x] extend `redrive-r2` and `skeet-store` mod so that:
+                    1. when it finds an image in fallback store that already exists in remote store, it does a deeper comparison where it asks ImageRecord (or similar) to a deep equal on the bytes stored. It should show whether that worked or not
+                    2. when it has verified it definiyely exists remotely with exact same content in step 1, it should delete that image from the local fallback store
+                        * this will involve extending `SkeetStore` to have a `delete_by_id` method, and associated tests
 
 * [ ] minimal `skeet-scorer`
     * add a new table `images_score` which:
