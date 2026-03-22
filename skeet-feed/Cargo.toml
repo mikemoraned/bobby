@@ -13,6 +13,7 @@ image = { workspace = true }
 shared = { workspace = true }
 skeet-store = { path = "../skeet-store" }
 tokio = { workspace = true }
+tower = "0.5"
 tracing = { workspace = true }
 
 [[bin]]

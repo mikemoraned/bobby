@@ -2,9 +2,12 @@
 
 use clap::Parser;
 use cot::config::ProjectConfig;
-use cot::project::{Bootstrapper, RegisterAppsContext};
+use cot::project::{
+    Bootstrapper, MiddlewareContext, RegisterAppsContext, RootHandler, RootHandlerBuilder,
+};
 use cot::router::{Route, Router};
 use cot::{App, AppBuilder, Project};
+use skeet_feed::StoreLayer;
 use skeet_feed::handlers::{annotated_image, feed};
 use skeet_store::StoreArgs;
 use tracing::info;
@@ -38,7 +41,9 @@ impl App for FeedApp {
     }
 }
 
-struct FeedProject;
+struct FeedProject {
+    store_layer: StoreLayer,
+}
 
 impl Project for FeedProject {
     fn config(&self, _config_name: &str) -> cot::Result<ProjectConfig> {
@@ -47,6 +52,14 @@ impl Project for FeedProject {
 
     fn register_apps(&self, apps: &mut AppBuilder, _context: &RegisterAppsContext) {
         apps.register_with_views(FeedApp, "");
+    }
+
+    fn middlewares(
+        &self,
+        handler: RootHandlerBuilder,
+        _context: &MiddlewareContext,
+    ) -> RootHandler {
+        handler.middleware(self.store_layer.clone()).build()
     }
 }
 
@@ -59,13 +72,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         |port| shared::tracing::TokioConsoleSupport::Enabled { port },
     );
     let _guard = shared::tracing::init_with_file_and_stderr("skeet_feed=info,shared=info,skeet_store=info", "feed.log", console);
-    skeet_feed::STORE_ARGS
-        .set(args.store)
-        .expect("store args already initialized");
+    let store = args
+        .store
+        .open_store()
+        .await
+        .expect("failed to open store at startup");
 
     info!("starting skeet-feed server on 127.0.0.1:8000");
 
-    let bootstrapper = Bootstrapper::new(FeedProject)
+    let project = FeedProject {
+        store_layer: StoreLayer::new(store),
+    };
+    let bootstrapper = Bootstrapper::new(project)
         .with_config_name("dev")?
         .boot()
         .await?;

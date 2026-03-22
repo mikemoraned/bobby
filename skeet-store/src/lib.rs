@@ -80,7 +80,8 @@ impl StoreArgs {
 }
 
 pub struct SkeetStore {
-    db: lancedb::Connection,
+    images_table: lancedb::Table,
+    validate_table: lancedb::Table,
 }
 
 impl SkeetStore {
@@ -107,17 +108,22 @@ impl SkeetStore {
                 .await?;
         }
 
-        let table = db.open_table(TABLE_NAME).execute().await?;
-        let indices = table.list_indices().await?;
+        let images_table = db.open_table(TABLE_NAME).execute().await?;
+        let indices = images_table.list_indices().await?;
         if !indices.iter().any(|idx| idx.columns == vec!["image_id"]) {
-            table
+            images_table
                 .create_index(&["image_id"], Index::Auto)
                 .execute()
                 .await?;
         }
 
+        let validate_table = db.open_table(VALIDATE_TABLE_NAME).execute().await?;
+
         info!(uri, "store opened");
-        Ok(Self { db })
+        Ok(Self {
+            images_table,
+            validate_table,
+        })
     }
 
     #[instrument(skip(self, record), fields(image_id = %record.image_id, skeet_id = %record.skeet_id))]
@@ -150,25 +156,22 @@ impl SkeetStore {
             ],
         )?;
 
-        let table = self.db.open_table(TABLE_NAME).execute().await?;
         let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
-        table.add(batches).execute().await?;
-        table.optimize(OptimizeAction::All).await?;
+        self.images_table.add(batches).execute().await?;
+        self.images_table.optimize(OptimizeAction::All).await?;
 
         Ok(())
     }
 
     #[instrument(skip(self))]
     pub async fn list_all(&self) -> Result<Vec<StoredImage>, StoreError> {
-        let table = self.db.open_table(TABLE_NAME).execute().await?;
-        let batches: Vec<RecordBatch> = table.query().execute().await?.try_collect().await?;
+        let batches: Vec<RecordBatch> = self.images_table.query().execute().await?.try_collect().await?;
         batches_to_stored_images(&batches)
     }
 
     #[instrument(skip(self))]
     pub async fn list_all_summaries(&self) -> Result<Vec<StoredImageSummary>, StoreError> {
-        let table = self.db.open_table(TABLE_NAME).execute().await?;
-        let batches: Vec<RecordBatch> = table
+        let batches: Vec<RecordBatch> = self.images_table
             .query()
             .select(lancedb::query::Select::columns(&[
                 "image_id",
@@ -188,8 +191,7 @@ impl SkeetStore {
 
     #[instrument(skip(self))]
     pub async fn get_by_id(&self, image_id: &ImageId) -> Result<Option<StoredImage>, StoreError> {
-        let table = self.db.open_table(TABLE_NAME).execute().await?;
-        let batches: Vec<RecordBatch> = table
+        let batches: Vec<RecordBatch> = self.images_table
             .query()
             .only_if(format!("image_id = '{image_id}'"))
             .limit(1)
@@ -202,8 +204,7 @@ impl SkeetStore {
 
     #[instrument(skip(self))]
     pub async fn exists(&self, image_id: &ImageId) -> Result<bool, StoreError> {
-        let table = self.db.open_table(TABLE_NAME).execute().await?;
-        let batches: Vec<RecordBatch> = table
+        let batches: Vec<RecordBatch> = self.images_table
             .query()
             .only_if(format!("image_id = '{image_id}'"))
             .select(lancedb::query::Select::columns(&["image_id"]))
@@ -217,18 +218,16 @@ impl SkeetStore {
 
     #[instrument(skip(self))]
     pub async fn delete_by_id(&self, image_id: &ImageId) -> Result<(), StoreError> {
-        let table = self.db.open_table(TABLE_NAME).execute().await?;
-        table
+        self.images_table
             .delete(&format!("image_id = '{image_id}'"))
             .await?;
-        table.optimize(OptimizeAction::All).await?;
+        self.images_table.optimize(OptimizeAction::All).await?;
         Ok(())
     }
 
     #[instrument(skip(self))]
     pub async fn count(&self) -> Result<usize, StoreError> {
-        let table = self.db.open_table(TABLE_NAME).execute().await?;
-        Ok(table.count_rows(None).await?)
+        Ok(self.images_table.count_rows(None).await?)
     }
 
     #[instrument(skip(self))]
@@ -248,11 +247,10 @@ impl SkeetStore {
             ],
         )?;
 
-        let table = self.db.open_table(VALIDATE_TABLE_NAME).execute().await?;
         let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
-        table.add(batches).execute().await?;
+        self.validate_table.add(batches).execute().await?;
 
-        let result_batches: Vec<RecordBatch> = table
+        let result_batches: Vec<RecordBatch> = self.validate_table
             .query()
             .only_if(format!("random_number = {random_number}"))
             .execute()
@@ -286,8 +284,7 @@ impl SkeetStore {
 
     #[instrument(skip(self))]
     pub async fn unique_skeet_ids(&self) -> Result<Vec<SkeetId>, StoreError> {
-        let table = self.db.open_table(TABLE_NAME).execute().await?;
-        let batches: Vec<RecordBatch> = table
+        let batches: Vec<RecordBatch> = self.images_table
             .query()
             .select(lancedb::query::Select::columns(&["skeet_id"]))
             .execute()

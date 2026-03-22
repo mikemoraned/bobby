@@ -7,7 +7,7 @@ use cot::{Body, StatusCode, Template};
 use skeet_store::{ImageId, SkeetId, Zone};
 use tracing::{info, instrument, warn};
 
-use crate::STORE_ARGS;
+use crate::Store;
 
 #[derive(Debug)]
 pub struct FeedEntry {
@@ -49,10 +49,9 @@ pub struct FeedTemplate {
 
 pub const MAX_FEED_ENTRIES: usize = 50;
 
-#[instrument]
-pub async fn feed() -> cot::Result<Html> {
+#[instrument(skip_all)]
+pub async fn feed(Store(store): Store) -> cot::Result<Html> {
     info!("serving feed");
-    let store = open_store().await?;
 
     let mut summaries = store
         .list_all_summaries()
@@ -82,13 +81,15 @@ pub async fn feed() -> cot::Result<Html> {
 }
 
 #[instrument(skip_all, fields(image_id = %image_id_str))]
-pub async fn annotated_image(Path(image_id_str): Path<String>) -> cot::Result<Response> {
+pub async fn annotated_image(
+    Store(store): Store,
+    Path(image_id_str): Path<String>,
+) -> cot::Result<Response> {
     info!(image_id = %image_id_str, "serving annotated image");
     let image_id: ImageId = image_id_str
         .parse()
         .map_err(|_| cot::Error::internal(format!("invalid image id: {image_id_str}")))?;
 
-    let store = open_store().await?;
     let stored = store
         .get_by_id(&image_id)
         .await
@@ -112,15 +113,4 @@ pub async fn annotated_image(Path(image_id_str): Path<String>) -> cot::Result<Re
         .headers_mut()
         .insert("content-type", "image/png".parse().expect("valid header"));
     Ok(response)
-}
-
-#[instrument]
-async fn open_store() -> cot::Result<skeet_store::SkeetStore> {
-    let store_args = STORE_ARGS
-        .get()
-        .ok_or_else(|| cot::Error::internal("store args not initialized"))?;
-    store_args
-        .open_store()
-        .await
-        .map_err(|e| cot::Error::internal(format!("failed to open store: {e}")))
 }

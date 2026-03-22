@@ -79,14 +79,16 @@ Now that we have a small (sub 1%) amount coming through, we can apply some more 
                     * if the theory is correct that we are not using the code we need in main firehose path, we should first prove that by implementing a failing integ test (including doing the refactoring to support this)
                     * then prove we've fixed it by running the (ideally unaltered) integ tests which should now pass
 
-* [ ] efficiencies / performance:
-    * [ ] the `SkeetStore` re-opens the images table each time it uses it (`let table = self.db.open_table(TABLE_NAME).execute().await?;`)
+* [x] efficiencies / performance:
+    * [x] the `SkeetStore` re-opens the images table each time it uses it (`let table = self.db.open_table(TABLE_NAME).execute().await?;`)
         * I suspect it doesn't need to do that and can instead keep it open. Have a look at the docs for `open_table` on recommended usage and see if it's recommended / allowed to keep it open.
-    * [ ] in `skeet-feed` in `handler.rs`, `feed` and `annotated_image` methods call `open_store` on each call. They probably don't have to, and could instead have a `SkeetStore` preopened on startup and saved in some context. See https://cot.rs and related docs for recommendations on how to do this.
+    * [x] in `skeet-feed` in `handler.rs`, `feed` and `annotated_image` methods call `open_store` on each call. They probably don't have to, and could instead have a `SkeetStore` preopened on startup and saved in some context.
+        * See https://cot.rs and related docs (https://docs.rs/axum/latest/axum/) for recommendations on how to do this.
+            * For example it is typical in Axum apps (which cot uses) to hold global things like DB's in AppState; see https://docs.rs/axum/latest/axum/extract/struct.State.html
 
 * [ ] minimal `skeet-scorer`
-    * add a new table `images_score` which:
-        * contains an `ImageId` as a key which is a foreign key to the `images` table for that image
+    * add a new table `images_score` which contains:
+        * an `ImageId` as a key which is a foreign key to the `images` table for that image
         * an f32 score
     * we will use OpenAI here, accessed via Rust API's, as our content generator
         * even though we are using OpenAI in this initial pass, we should use Rust crates which are generic and allow other LLM's to be plugged in later

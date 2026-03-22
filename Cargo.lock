@@ -9978,6 +9978,7 @@ dependencies = [
  "shared",
  "skeet-store",
  "tokio",
+ "tower",
  "tracing",
 ]
 
