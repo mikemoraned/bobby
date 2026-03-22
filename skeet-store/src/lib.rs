@@ -78,7 +78,7 @@ impl StoreArgs {
         opts.push(("timeout".into(), "120s".into()));
         opts.push(("connect_timeout".into(), "10s".into()));
         opts.push(("client_max_retries".into(), "3".into()));
-        opts.push(("client_retry_timeout".into(), "60".into()));
+        opts.push(("client_retry_timeout".into(), "300".into()));
         if let Some(key) = &self.sse_c_key {
             opts.push(("aws_server_side_encryption".into(), "sse-c".into()));
             opts.push(("aws_sse_customer_key_base64".into(), key.clone()));
