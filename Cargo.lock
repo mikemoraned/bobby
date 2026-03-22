@@ -9645,6 +9645,7 @@ dependencies = [
  "chrono",
  "clap",
  "face-detection",
+ "fastrand",
  "image",
  "jetstream-oxide",
  "libtest-mimic",

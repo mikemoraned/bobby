@@ -32,8 +32,10 @@ pub async fn connect() -> Result<JetstreamReceiver, Box<dyn std::error::Error>> 
 
     let wanted_collections = vec!["app.bsky.feed.post".parse::<Nsid>()?];
 
-    for endpoint in ALL_ENDPOINTS {
-        let endpoint_str: String = endpoint.into();
+    let mut endpoints: Vec<String> = ALL_ENDPOINTS.map(Into::into).to_vec();
+    fastrand::shuffle(&mut endpoints);
+
+    for endpoint_str in &endpoints {
         info!(endpoint = %endpoint_str, "trying endpoint");
 
         let config = JetstreamConfig {

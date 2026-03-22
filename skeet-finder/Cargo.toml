@@ -11,6 +11,7 @@ atrium-api = { version = "0.25", default-features = false, features = ["namespac
 chrono = { workspace = true }
 clap = { workspace = true }
 face-detection = { path = "../face-detection" }
+fastrand = "2"
 image = { workspace = true }
 jetstream-oxide = "0.1"
 reqwest = { version = "0.12", features = ["rustls-tls", "json"], default-features = false }
