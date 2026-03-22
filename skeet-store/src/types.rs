@@ -1,8 +1,10 @@
+use std::fmt;
+
 use chrono::{DateTime, Utc};
 use image::DynamicImage;
-pub use shared::skeet_id::SkeetId;
-pub use shared::Zone;
 use shared::ConfigVersion;
+pub use shared::Zone;
+pub use shared::skeet_id::SkeetId;
 use uuid::Uuid;
 
 const V2_PREFIX: &str = "v2:";
@@ -49,7 +51,7 @@ impl std::str::FromStr for ImageId {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DiscoveredAt(DateTime<Utc>);
 
 impl DiscoveredAt {
@@ -61,16 +63,18 @@ impl DiscoveredAt {
         Self(dt)
     }
 
-    pub const fn as_datetime(&self) -> &DateTime<Utc> {
-        &self.0
-    }
-
     pub const fn timestamp_micros(&self) -> i64 {
         self.0.timestamp_micros()
     }
 }
 
-#[derive(Debug, Clone)]
+impl fmt::Display for DiscoveredAt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct OriginalAt(DateTime<Utc>);
 
 impl OriginalAt {
@@ -78,12 +82,14 @@ impl OriginalAt {
         Self(dt)
     }
 
-    pub const fn as_datetime(&self) -> &DateTime<Utc> {
-        &self.0
-    }
-
     pub const fn timestamp_micros(&self) -> i64 {
         self.0.timestamp_micros()
+    }
+}
+
+impl fmt::Display for OriginalAt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
