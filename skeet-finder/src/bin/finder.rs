@@ -3,9 +3,10 @@
 use clap::Parser;
 use face_detection::FaceDetector;
 use shared::ArchetypeConfig;
-use skeet_finder::{persistence, status};
+use skeet_finder::pipeline::FilterResult;
 use skeet_store::StoreArgs;
-use tracing::{info, warn};
+use tokio::sync::mpsc;
+use tracing::info;
 
 #[derive(Parser)]
 struct Args {
@@ -47,48 +48,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     store.validate().await?;
     info!("storage validation passed");
 
-    let mut status = status::Status::new(std::time::Duration::from_secs(30), 100);
-    let recv_timeout = std::time::Duration::from_secs(30);
+    let (tx, mut rx) = mpsc::channel::<FilterResult>(16);
 
-    loop {
-        let receiver = skeet_finder::firehose::connect().await?;
-        info!("firehose connected, listening for posts...");
+    tokio::spawn(async move {
+        skeet_finder::filter_stage::run(
+            tx,
+            http,
+            detector,
+            text_detector,
+            archetype_config,
+            config_version,
+        )
+        .await;
+    });
 
-        loop {
-            let event = match tokio::time::timeout(recv_timeout, receiver.recv_async()).await {
-                Ok(Ok(event)) => event,
-                Ok(Err(_)) => {
-                    warn!("firehose channel closed");
-                    break;
-                }
-                Err(_) => {
-                    warn!("no message received in {recv_timeout:?}, reconnecting");
-                    break;
-                }
-            };
+    skeet_finder::save_stage::run(&mut rx, &store).await;
 
-            let skeet_images =
-                skeet_finder::firehose::extract_skeet_images(&event, &http).await;
-            let image_count = skeet_images.len() as u64;
-
-            for skeet_image in skeet_images {
-                match skeet_finder::classify_image(
-                    skeet_image,
-                    &detector,
-                    &text_detector,
-                    &archetype_config,
-                    &config_version,
-                ) {
-                    Ok(record) => {
-                        persistence::save(&store, &record, &mut status).await;
-                    }
-                    Err(reasons) => {
-                        status.record_rejected(&reasons);
-                    }
-                }
-            }
-
-            status.record_post(image_count);
-        }
-    }
+    Ok(())
 }
