@@ -53,11 +53,17 @@ find-r2:
 feed:
     RUST_BACKTRACE=1 cargo run --release --bin skeet-feed -- --store-path {{ STORE }}
 
+feed-fallback:
+    RUST_BACKTRACE=1 cargo run --release --bin skeet-feed -- --store-path {{ FALLBACK_STORE }}
+
 feed-r2:
     RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_SERVICE_NAME=skeet-feed op run --env-file bobby.env -- cargo run --release --bin skeet-feed -- --store-path {{ R2_STORE }}
 
 image-metadata-dump image_id:
     cargo run --release --bin image-metadata-dump -- --store-path {{ STORE }} --image-id {{ image_id }}
+
+image-metadata-dump-fallback image_id:
+    cargo run --release --bin image-metadata-dump -- --store-path {{ FALLBACK_STORE }} --image-id {{ image_id }}
 
 at-metadata-dump at_uri:
     cargo run --release --bin at-metadata-dump -- --at-uri {{ at_uri }}
