@@ -14,6 +14,7 @@ pub struct Status {
     last_log: Instant,
     log_interval: Duration,
     log_every_n: u64,
+    started_at: Instant,
 }
 
 impl Status {
@@ -27,6 +28,7 @@ impl Status {
             last_log: Instant::now(),
             log_interval,
             log_every_n,
+            started_at: Instant::now(),
         }
     }
 
@@ -73,8 +75,15 @@ impl Status {
         let saved = self.saved_count;
         let rejected = self.rejected_count;
 
+        let elapsed = self.started_at.elapsed().as_secs_f64();
+        let skeets_per_sec = if elapsed > 0.0 {
+            posts as f64 / elapsed
+        } else {
+            0.0
+        };
+
         let mut msg = format!(
-            "skeets: {posts} | images: {images} | saved: {saved} ({hit_rate:.1}%) | rejected: {rejected}"
+            "skeets: {posts} ({skeets_per_sec:.1}/s) | images: {images} | saved: {saved} ({hit_rate:.1}%) | rejected: {rejected}"
         );
 
         if !self.rejection_counts.is_empty() {
