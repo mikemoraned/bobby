@@ -4,7 +4,7 @@ use clap::Parser;
 use face_detection::FaceDetector;
 use shared::ArchetypeConfig;
 use skeet_finder::pipeline::FilterResult;
-use skeet_store::StoreArgs;
+use skeet_store::{SkeetStore, StoreArgs};
 use tokio::sync::mpsc;
 use tracing::info;
 
@@ -12,6 +12,10 @@ use tracing::info;
 struct Args {
     #[command(flatten)]
     store: StoreArgs,
+
+    /// Local fallback store path for when remote saves fail
+    #[arg(long)]
+    fallback_local_store: Option<String>,
 
     /// Enable tokio-console on this port
     #[arg(long)]
@@ -48,6 +52,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     store.validate().await?;
     info!("storage validation passed");
 
+    let fallback = match &args.fallback_local_store {
+        Some(path) => {
+            let fallback_store = SkeetStore::open(path, vec![]).await?;
+            info!(path = %path, "fallback local store opened");
+            Some(fallback_store)
+        }
+        None => None,
+    };
+
     let (tx, mut rx) = mpsc::channel::<FilterResult>(16);
 
     tokio::spawn(async move {
@@ -62,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await;
     });
 
-    skeet_finder::save_stage::run(&mut rx, &store).await;
+    skeet_finder::save_stage::run(&mut rx, &store, fallback.as_ref()).await;
 
     Ok(())
 }

@@ -307,6 +307,22 @@ pub struct StoredImage {
     pub annotated_image: DynamicImage,
 }
 
+impl From<StoredImage> for ImageRecord {
+    fn from(stored: StoredImage) -> Self {
+        Self {
+            image_id: stored.summary.image_id,
+            skeet_id: stored.summary.skeet_id,
+            image: stored.image,
+            discovered_at: DiscoveredAt::new(stored.summary.discovered_at),
+            original_at: OriginalAt::new(stored.summary.original_at),
+            zone: stored.summary.zone,
+            annotated_image: stored.annotated_image,
+            config_version: stored.summary.config_version,
+            detected_text: stored.summary.detected_text,
+        }
+    }
+}
+
 pub struct StoredImageSummary {
     pub image_id: ImageId,
     pub skeet_id: SkeetId,

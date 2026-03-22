@@ -57,6 +57,10 @@ impl DiscoveredAt {
         Self(Utc::now())
     }
 
+    pub const fn new(dt: DateTime<Utc>) -> Self {
+        Self(dt)
+    }
+
     pub const fn as_datetime(&self) -> &DateTime<Utc> {
         &self.0
     }
@@ -83,7 +87,7 @@ impl OriginalAt {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ImageRecord {
     pub image_id: ImageId,
     pub skeet_id: SkeetId,

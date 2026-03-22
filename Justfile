@@ -1,5 +1,6 @@
 STORE := "store"
 R2_STORE := "s3://hom-bobby/encrypted-store"
+FALLBACK_STORE := "fallback-store"
 
 default:
     just --list
@@ -47,7 +48,7 @@ find:
     RUST_BACKTRACE=1 cargo run --release --bin finder -- --store-path {{ STORE }}
 
 find-r2:
-    RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_SERVICE_NAME=skeet-finder op run --env-file bobby.env -- cargo run --release --bin finder -- --store-path {{ R2_STORE }}
+    RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_SERVICE_NAME=skeet-finder op run --env-file bobby.env -- cargo run --release --bin finder -- --store-path {{ R2_STORE }} --fallback-local-store {{ FALLBACK_STORE }}
 
 feed:
     RUST_BACKTRACE=1 cargo run --release --bin skeet-feed -- --store-path {{ STORE }}
@@ -60,6 +61,9 @@ image-metadata-dump image_id:
 
 at-metadata-dump at_uri:
     cargo run --release --bin at-metadata-dump -- --at-uri {{ at_uri }}
+
+redrive-r2:
+    op run --env-file bobby.env -- cargo run --release --bin redrive -- --source-store-path {{ FALLBACK_STORE }} --store-path {{ R2_STORE }}
 
 abort-multipart-uploads:
     op run --env-file bobby.env -- cargo run --release --bin abort-multipart-uploads -- --store-path {{ R2_STORE }}

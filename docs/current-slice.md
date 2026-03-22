@@ -44,12 +44,12 @@ Now that we have a small (sub 1%) amount coming through, we can apply some more 
                     * this is what talks to jetstream, downloads images, applies face/skin/text detection and produces a candidate image
                 * `save` : this what takes the image found and saves to the store
                 * connect these two parts with a pipe/channel where the output is an ImageFound message
-            * [ ] now introduce the idea of a `fallback` local store for when a remote image save fails; this is analogous to a "dead-letter queue" 
-                * [ ] the `save` stage should still attempt to save remotely, but when there is a failure, it instead saves it to the local `fallback` store
+            * [x] now introduce the idea of a `fallback` local store for when a remote image save fails; this is analogous to a "dead-letter queue"
+                * [x] the `save` stage should still attempt to save remotely, but when there is a failure, it instead saves it to the local `fallback` store
                     * both of these stores use `SkeetStore`; one is remote on R2 and one is local
                     * a new `--fallback-local-store` param should be introduced to `find-r2` and cli so that it use a local `fallback` dir
                     * update `Status` so that it has a count of `saved-remotely` and `saved-fallack` whilst still keeping track of overall `saved`
-                * [ ] add a new `redrive-r2` CLI bin to `skeet-store` which can be used to reconcile the local store with a remote one by attempting to upload anything that exists in the local `fallback` store but not in the remote one in R2
+                * [x] add a new `redrive-r2` CLI bin to `skeet-store` which can be used to reconcile the local store with a remote one by attempting to upload anything that exists in the local `fallback` store but not in the remote one in R2
 
 * [ ] minimal `skeet-scorer`
     * add a new table `images_score` which:
