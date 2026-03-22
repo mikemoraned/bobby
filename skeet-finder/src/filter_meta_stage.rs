@@ -35,25 +35,27 @@ pub async fn run(
     while let Some(candidate) = rx.recv().await {
         let image_count = candidate.image_urls.len() as u64;
 
-        let result = match crate::metadata::fetch_post_thread(&http, &candidate.skeet_id).await {
-            Ok(json) => match check_metadata(&json) {
-                MetaFilterOutcome::Pass => MetaResult::Candidate(candidate),
-                MetaFilterOutcome::Blocked(reason) => {
-                    trace!(skeet_id = %candidate.skeet_id, reason, "blocked by metadata");
-                    MetaResult::Rejected(vec![Rejection::BlockedByMetadata])
+        let (result, passed) =
+            match crate::metadata::fetch_post_thread(&http, &candidate.skeet_id).await {
+                Ok(json) => match check_metadata(&json) {
+                    MetaFilterOutcome::Pass => (MetaResult::Candidate(candidate), true),
+                    MetaFilterOutcome::Blocked(reason) => {
+                        trace!(skeet_id = %candidate.skeet_id, reason, "blocked by metadata");
+                        (MetaResult::Rejected(vec![Rejection::BlockedByMetadata]), false)
+                    }
+                },
+                Err(e) => {
+                    trace!(skeet_id = %candidate.skeet_id, error = %e, "failed to fetch post metadata, rejecting");
+                    (MetaResult::Rejected(vec![Rejection::BlockedByMetadata]), false)
                 }
-            },
-            Err(e) => {
-                trace!(skeet_id = %candidate.skeet_id, error = %e, "failed to fetch post metadata, rejecting");
-                MetaResult::Rejected(vec![Rejection::BlockedByMetadata])
-            }
-        };
+            };
 
         if tx.send(result).await.is_err() {
             warn!("downstream dropped, shutting down meta filter");
             return;
         }
 
+        let image_count = if passed { image_count } else { 0 };
         if tx.send(MetaResult::Post { image_count }).await.is_err() {
             warn!("downstream dropped, shutting down meta filter");
             return;
