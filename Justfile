@@ -62,6 +62,9 @@ feed-r2:
 image-metadata-dump image_id:
     cargo run --release --bin image-metadata-dump -- --store-path {{ STORE }} --image-id {{ image_id }}
 
+image-metadata-dump-r2 image_id:
+    op run --env-file bobby.env -- cargo run --release --bin image-metadata-dump -- --store-path {{ R2_STORE }} --image-id {{ image_id }}
+
 image-metadata-dump-fallback image_id:
     cargo run --release --bin image-metadata-dump -- --store-path {{ FALLBACK_STORE }} --image-id {{ image_id }}
 

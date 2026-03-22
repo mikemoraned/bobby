@@ -55,6 +55,32 @@ Now that we have a small (sub 1%) amount coming through, we can apply some more 
                     2. when it has verified it definiyely exists remotely with exact same content in step 1, it should delete that image from the local fallback store
                         * this will involve extending `SkeetStore` to have a `delete_by_id` method, and associated tests
 
+* [ ] correctness:
+    * [x] write a SKILL which is invocable by `/add-to-blocklist` which:
+        1. Asks user whether we want to use the fallback store or the remote store 
+        2. Asks user for what they want to block. This can either be an image id or an at id. It should work out which it is by whether it starts with `at://` or not
+        3. Asks user why they want it blocked, and remember as the `reason`
+        4. Based on these answers:
+            1. (Optionally) fetches image id details, if needed, to find the `at://` URL using appropriate Justfile rule for remote or fallback store (`image-metadata-dump-r2` or `image-metadata-dump-fallback `)
+            2. runs Justfile rule `add-to-blocklist` for `at://` URL with `reason` given
+    * [ ] I'm not convinced the filtering by Adult content and "The author of this post has requested their posts not be displayed on external sites." is working properly. 
+        * Here are three examples that should have been filtered that I have added to blocklist:
+            * "at://did:plc:4cg25zjw2wuqvnduwqgy7ozt/app.bsky.feed.post/3mhne43icps2l", "at://did:plc:4yqhj5inp67fgorcbewk5zfm/app.bsky.feed.post/3mhnexg5g3k2o" => should have been blocked as asks to not be displayed on external sites
+            * "at://did:plc:vx76uzb6m2lvgh3kvbiagsg3/app.bsky.feed.post/3mhne4wdiuc2d" => should have been blocked as adult content
+        * [ ] we need to examine/fix:
+            * [ ] why weren't these specific examples fixed/blocked? (examine and apply fixes)
+            * [ ] is there something more fundamental here in that perhaps we are writing tests / blocking these in code that is not actually used in main firehose path?
+                * suggest adding a stronger integ test (like `blocklist.rs` and `examples.ts`) which runs the real firehose code but with pre-loaded inputs (i.e. the blocklist json data) and asserts that nothing gets through that should be blocked
+                * it may easiest to do this by first splitting the `filter_stage` into two sub-stages:
+                    * `filter_meta_stage` : applies the blocklist filters which only require metadata about a Skeet
+                    * `filter_image_stage` : applies the remaining filters which require accessing an actual image
+                * our integ test then probably only needs to test the code in the `filter_meta_stage` and so avoids having to mock out things like image fetching etc 
+
+* [ ] efficiencies / performance:
+    * [ ] the `SkeetStore` re-opens the images table each time it uses it (`let table = self.db.open_table(TABLE_NAME).execute().await?;`)
+        * I suspect it doesn't need to do that and can instead keep it open. Have a look at the docs for `open_table` on recommended usage and see if it's recommended / allowed to keep it open.
+    * [ ] in `skeet-feed` in `handler.rs`, `feed` and `annotated_image` methods call `open_store` on each call. They probably don't have to, and could instead have a `SkeetStore` preopened on startup and saved in some context. See https://cot.rs and related docs for recommendations on how to do this.
+
 * [ ] minimal `skeet-scorer`
     * add a new table `images_score` which:
         * contains an `ImageId` as a key which is a foreign key to the `images` table for that image
