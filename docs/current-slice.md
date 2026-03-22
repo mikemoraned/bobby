@@ -61,10 +61,17 @@ Now that we have a small (sub 1%) amount coming through, we can apply some more 
                 3. **Lance dataset fragmentation** — each `add()` creates a new data fragment. Over time this fans reads across many small files, amplifying the probability of at least one range read timing out.
                 4. **Stale multipart uploads** — confirmed cleared via `abort-multipart-uploads` (no outstanding uploads as of 2026-03-22).
             * TODOs:
-                * [ ] set generous HTTP timeouts (`timeout`, `connect_timeout`) in storage_options, and increase the save-stage channel buffer to 100 to take advantage of the decoupled save stage
-                * [ ] enable `lance_io=debug,object_store=debug` logging to see per-request HTTP timings
-                * [ ] auto-compact: trigger a compaction step after every N writes (configurable, default 100) to reduce fragment count
-                * [ ] add a `compact` CLI to force-compact the lance dataset on demand
+                * [x] set generous HTTP timeouts (`timeout`, `connect_timeout`) in storage_options, and increase the save-stage channel buffer to 100 to take advantage of the decoupled save stage
+                * [x] enable `lance_io=debug,object_store=debug` logging to see per-request HTTP timings
+                * [x] auto-compact: trigger a compaction step after every N writes (configurable, default 100) to reduce fragment count
+                * [x] add a `compact` CLI to force-compact the lance dataset on demand
+            * LanceDB best-practice audit (2026-03-22):
+                * Docs reviewed: [Storage Configuration](https://docs.lancedb.com/storage/configuration), [FAQ](https://docs.lancedb.com/faq/faq-oss), [Scalar Indexes](https://docs.lancedb.com/indexing/scalar-index), [Lance Object Store](https://lance.org/guide/object_store/)
+                * Findings:
+                    * **`client_max_retries: 0` is too aggressive.** The default is 10, and the retry timeout default is 180s. With the decoupled save stage, retries won't block the pipeline. lance-io retries 3× internally for incomplete responses, but `client_max_retries` governs the object_store S3 client layer (transient HTTP errors, 500s, etc). Setting it to 0 means any transient S3 error is an immediate failure.
+                    * Table lifecycle (open once, reuse), index choice (BTREE via Auto for high-cardinality string), `OptimizeAction::All` (Compact + Prune + Index) are all aligned with guidance.
+                    * Concurrent writers on S3/R2 are safe: `object_store` defaults to `S3ConditionalPut::ETagMatch` which uses `If-None-Match: *` on puts — R2 supports this natively. A racing commit fails with `412 Precondition Failed` and Lance retries at the next version. DynamoDB commit store is deprecated in favour of this. Only relevant concern is efficiency under high contention (retry storms), not correctness — and we have a single writer.
+                * [x] raise `client_max_retries` from 0 to 3 to handle transient S3/R2 errors without blocking the pipeline
 
 * [x] correctness:
     * [x] write a SKILL which is invocable by `/add-to-blocklist` which:
