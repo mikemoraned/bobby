@@ -33,6 +33,11 @@ Now that we have a small (sub 1%) amount coming through, we can apply some more 
         * What we want is:
             * secrets are passed as env variables
             * we should probably use `op run` here which can contain a file like `foo.env` which contains a mapping of needed ENV variables to the secrets path.
+    * [ ] I've been getting connection errors, which may be triggered by my underlying home connection being flaky, but reveal opportunities for more robustness
+        * [x] make firehose connections more robust by randomly choosing an endpoint + setting connect and recieve timeouts after which we give up and retry on a different endpoint
+        * [x] some problems in uploading seem caused by multi-part uploads which timed out
+            * this is probably not fixing the underlying issue, but create a small tool to clear them from R2
+        * [ ] it looks like it may be possible to get a thumbnail version of an image rather than a full one. We should use this if possible as we'll reduce download, analysis, and upload time
 
 * [ ] minimal `skeet-scorer`
     * add a new table `images_score` which:

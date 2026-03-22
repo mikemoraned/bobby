@@ -61,5 +61,11 @@ image-metadata-dump image_id:
 at-metadata-dump at_uri:
     cargo run --release --bin at-metadata-dump -- --at-uri {{ at_uri }}
 
+abort-multipart-uploads:
+    op run --env-file bobby.env -- cargo run --release --bin abort-multipart-uploads -- --store-path {{ R2_STORE }}
+
+abort-multipart-uploads-confirm:
+    op run --env-file bobby.env -- cargo run --release --bin abort-multipart-uploads -- --store-path {{ R2_STORE }} --abort
+
 add-to-blocklist at_uri reason="manual":
     cargo run --release --bin add-to-blocklist -- "{{ at_uri }}" --reason "{{ reason }}"
