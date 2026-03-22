@@ -1,24 +1,10 @@
 use std::collections::HashMap;
 use std::fmt::Write as _;
-use std::time::Duration;
 
-use indicatif::{ProgressBar, ProgressStyle};
 use shared::Rejection;
+use tracing::info;
 
-pub fn create_status() -> ProgressBar {
-    let status = ProgressBar::new_spinner();
-    #[allow(clippy::literal_string_with_formatting_args)]
-    let style = ProgressStyle::with_template("{elapsed_precise} {spinner} {msg}")
-        .expect("valid template")
-        .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏-");
-    status.set_style(style);
-    status.enable_steady_tick(Duration::from_millis(100));
-    status.set_message("connected, listening for posts...");
-    status
-}
-
-pub fn update_status(
-    status: &ProgressBar,
+pub fn log_summary(
     posts: u64,
     images: u64,
     saved: u64,
@@ -51,5 +37,5 @@ pub fn update_status(
         write!(msg, ")").expect("write to String");
     }
 
-    status.set_message(msg);
+    info!("{msg}");
 }

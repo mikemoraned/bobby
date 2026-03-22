@@ -23,15 +23,16 @@ struct Args {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let console = args.tokio_console_port.map_or(
-        shared::tracing::TokioConsoleSupport::Disabled,
-        |port| shared::tracing::TokioConsoleSupport::Enabled { port },
+    let console = args
+        .tokio_console_port
+        .map_or(shared::tracing::TokioConsoleSupport::Disabled, |port| {
+            shared::tracing::TokioConsoleSupport::Enabled { port }
+        });
+    let _guard = shared::tracing::init_with_file_and_stderr(
+        "skeet_finder=info,shared=info,skeet_store=info",
+        "finder.log",
+        console,
     );
-    let _guard = shared::tracing::init_with_file("skeet_finder=info,shared=info,skeet_store=info", "finder.log", console);
-
-    let store = args.store.open_store().await?;
-    store.validate().await?;
-    info!("storage validation passed");
 
     let http = reqwest::Client::new();
     let detector = FaceDetector::from_bundled_weights();
@@ -44,10 +45,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!(config_version = %config_version, "face detection model loaded");
 
-    let receiver = skeet_finder::firehose::connect().await?;
-    info!("firehose connected");
+    let store = args.store.open_store().await?;
+    store.validate().await?;
+    info!("storage validation passed");
 
-    let status = status::create_status();
+    let receiver = skeet_finder::firehose::connect().await?;
+    info!("firehose connected, listening for posts...");
 
     let mut post_count: u64 = 0;
     let mut image_post_count: u64 = 0;
@@ -81,17 +84,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        status::update_status(
-            &status,
-            post_count,
-            image_post_count,
-            saved_count,
-            rejected_count,
-            &rejection_counts,
-        );
+        if post_count.is_multiple_of(100) {
+            status::log_summary(
+                post_count,
+                image_post_count,
+                saved_count,
+                rejected_count,
+                &rejection_counts,
+            );
+        }
     }
 
-    status.finish_with_message("jetstream connection closed");
     warn!("firehose disconnected");
     Ok(())
 }

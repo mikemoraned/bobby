@@ -15,19 +15,55 @@ use jetstream_oxide::{
 };
 use shared::SkeetImage;
 use shared::skeet_id::SkeetId;
+use std::time::Duration;
 use tracing::{info, warn};
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
+const ALL_ENDPOINTS: [DefaultJetstreamEndpoints; 4] = [
+    DefaultJetstreamEndpoints::USEastOne,
+    DefaultJetstreamEndpoints::USEastTwo,
+    DefaultJetstreamEndpoints::USWestOne,
+    DefaultJetstreamEndpoints::USWestTwo,
+];
 
 pub async fn connect() -> Result<JetstreamReceiver, Box<dyn std::error::Error>> {
     info!("connecting to firehose");
-    let config = JetstreamConfig {
-        endpoint: DefaultJetstreamEndpoints::USEastOne.into(),
-        compression: JetstreamCompression::Zstd,
-        wanted_collections: vec!["app.bsky.feed.post".parse::<Nsid>()?],
-        ..Default::default()
-    };
 
-    let jetstream = JetstreamConnector::new(config)?;
-    Ok(jetstream.connect().await?)
+    let wanted_collections = vec!["app.bsky.feed.post".parse::<Nsid>()?];
+
+    for endpoint in ALL_ENDPOINTS {
+        let endpoint_str: String = endpoint.into();
+        info!(endpoint = %endpoint_str, "trying endpoint");
+
+        let config = JetstreamConfig {
+            endpoint: endpoint_str.clone(),
+            compression: JetstreamCompression::Zstd,
+            wanted_collections: wanted_collections.clone(),
+            max_retries: 0,
+            ..Default::default()
+        };
+
+        let connector = JetstreamConnector::new(config)?;
+        match tokio::time::timeout(CONNECT_TIMEOUT, connector.connect()).await {
+            Ok(Ok(receiver)) => {
+                info!(endpoint = %endpoint_str, "connected to firehose");
+                return Ok(receiver);
+            }
+            Ok(Err(e)) => {
+                warn!(endpoint = %endpoint_str, error = %e, "connection failed");
+            }
+            Err(_) => {
+                warn!(endpoint = %endpoint_str, "connection timed out after {:?}", CONNECT_TIMEOUT);
+            }
+        }
+    }
+
+    Err(format!(
+        "failed to connect to any firehose endpoint after trying all {} endpoints",
+        ALL_ENDPOINTS.len()
+    )
+    .into())
 }
 
 /// If this event is a post creation with images, download each image and return them.
