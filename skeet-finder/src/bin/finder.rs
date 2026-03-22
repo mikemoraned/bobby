@@ -57,6 +57,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut saved_count: u64 = 0;
     let mut rejected_count: u64 = 0;
     let mut rejection_counts: HashMap<Rejection, u64> = HashMap::new();
+    let mut last_log = std::time::Instant::now();
+    let log_interval = std::time::Duration::from_secs(30);
 
     while let Ok(event) = receiver.recv_async().await {
         post_count += 1;
@@ -84,7 +86,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        if post_count.is_multiple_of(100) {
+        if post_count == 1
+            || post_count.is_multiple_of(100)
+            || last_log.elapsed() >= log_interval
+        {
             status::log_summary(
                 post_count,
                 image_post_count,
@@ -92,6 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 rejected_count,
                 &rejection_counts,
             );
+            last_log = std::time::Instant::now();
         }
     }
 
