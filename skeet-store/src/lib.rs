@@ -12,8 +12,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use arrow_array::{
-    Array, Int64Array, LargeBinaryArray, RecordBatch, RecordBatchIterator, StringArray,
-    TimestampMicrosecondArray,
+    Array, Float32Array, Int64Array, LargeBinaryArray, RecordBatch, RecordBatchIterator,
+    StringArray, TimestampMicrosecondArray,
 };
 use chrono::{DateTime, TimeZone, Utc};
 use futures::TryStreamExt;
@@ -23,7 +23,10 @@ use lancedb::query::{ExecutableQuery, QueryBase};
 use lancedb::table::OptimizeAction;
 use tracing::{info, instrument};
 
-use schema::{TABLE_NAME, VALIDATE_TABLE_NAME, images_v6_schema, validate_v1_schema};
+use schema::{
+    SCORE_TABLE_NAME, TABLE_NAME, VALIDATE_TABLE_NAME, images_score_v1_schema, images_v6_schema,
+    validate_v1_schema,
+};
 
 const DEFAULT_COMPACT_EVERY_N_WRITES: u64 = 100;
 
@@ -99,6 +102,7 @@ impl StoreArgs {
 
 pub struct SkeetStore {
     images_table: lancedb::Table,
+    scores_table: lancedb::Table,
     validate_table: lancedb::Table,
     writes_since_compact: AtomicU64,
     compact_every_n_writes: Option<u64>,
@@ -123,6 +127,11 @@ impl SkeetStore {
                 .execute()
                 .await?;
         }
+        if !table_names.contains(&SCORE_TABLE_NAME.to_string()) {
+            db.create_empty_table(SCORE_TABLE_NAME, images_score_v1_schema())
+                .execute()
+                .await?;
+        }
         if !table_names.contains(&VALIDATE_TABLE_NAME.to_string()) {
             db.create_empty_table(VALIDATE_TABLE_NAME, validate_v1_schema())
                 .execute()
@@ -138,11 +147,24 @@ impl SkeetStore {
                 .await?;
         }
 
+        let scores_table = db.open_table(SCORE_TABLE_NAME).execute().await?;
+        let score_indices = scores_table.list_indices().await?;
+        if !score_indices
+            .iter()
+            .any(|idx| idx.columns == vec!["image_id"])
+        {
+            scores_table
+                .create_index(&["image_id"], Index::Auto)
+                .execute()
+                .await?;
+        }
+
         let validate_table = db.open_table(VALIDATE_TABLE_NAME).execute().await?;
 
         info!(uri, ?compact_every_n_writes, "store opened");
         Ok(Self {
             images_table,
+            scores_table,
             validate_table,
             writes_since_compact: AtomicU64::new(0),
             compact_every_n_writes,
@@ -347,6 +369,133 @@ impl SkeetStore {
         }
 
         Ok(ids)
+    }
+
+    #[instrument(skip(self))]
+    pub async fn upsert_score(
+        &self,
+        image_id: &ImageId,
+        score: f32,
+    ) -> Result<(), StoreError> {
+        self.scores_table
+            .delete(&format!("image_id = '{image_id}'"))
+            .await?;
+
+        let schema = images_score_v1_schema();
+        let image_id_str = image_id.to_string();
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(StringArray::from(vec![image_id_str.as_str()])),
+                Arc::new(Float32Array::from(vec![score])),
+            ],
+        )?;
+
+        let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
+        self.scores_table.add(batches).execute().await?;
+        Ok(())
+    }
+
+    #[instrument(skip(self))]
+    pub async fn get_score(&self, image_id: &ImageId) -> Result<Option<f32>, StoreError> {
+        let batches: Vec<RecordBatch> = self
+            .scores_table
+            .query()
+            .only_if(format!("image_id = '{image_id}'"))
+            .limit(1)
+            .execute()
+            .await?
+            .try_collect()
+            .await?;
+
+        if batches.is_empty() || batches[0].num_rows() == 0 {
+            return Ok(None);
+        }
+
+        let scores = typed_column::<Float32Array>(&batches[0], "score")?;
+        Ok(Some(scores.value(0)))
+    }
+
+    #[instrument(skip(self))]
+    pub async fn list_all_image_ids(&self) -> Result<Vec<ImageId>, StoreError> {
+        let batches: Vec<RecordBatch> = self
+            .images_table
+            .query()
+            .select(lancedb::query::Select::columns(&["image_id"]))
+            .execute()
+            .await?
+            .try_collect()
+            .await?;
+
+        let mut ids = Vec::new();
+        for batch in &batches {
+            let image_ids = typed_column::<StringArray>(batch, "image_id")?;
+            for i in 0..batch.num_rows() {
+                ids.push(image_ids.value(i).parse()?);
+            }
+        }
+        Ok(ids)
+    }
+
+    #[instrument(skip(self))]
+    pub async fn list_unscored_image_ids(&self) -> Result<Vec<ImageId>, StoreError> {
+        let all_ids = self.list_all_image_ids().await?;
+
+        let scored_batches: Vec<RecordBatch> = self
+            .scores_table
+            .query()
+            .select(lancedb::query::Select::columns(&["image_id"]))
+            .execute()
+            .await?
+            .try_collect()
+            .await?;
+
+        let mut scored_set = std::collections::HashSet::new();
+        for batch in &scored_batches {
+            let image_ids = typed_column::<StringArray>(batch, "image_id")?;
+            for i in 0..batch.num_rows() {
+                scored_set.insert(image_ids.value(i).to_string());
+            }
+        }
+
+        Ok(all_ids
+            .into_iter()
+            .filter(|id| !scored_set.contains(&id.to_string()))
+            .collect())
+    }
+
+    #[instrument(skip(self))]
+    pub async fn list_scored_summaries_by_score(
+        &self,
+    ) -> Result<Vec<(StoredImageSummary, f32)>, StoreError> {
+        let scored_batches: Vec<RecordBatch> = self
+            .scores_table
+            .query()
+            .execute()
+            .await?
+            .try_collect()
+            .await?;
+
+        let mut score_map = std::collections::HashMap::new();
+        for batch in &scored_batches {
+            let image_ids = typed_column::<StringArray>(batch, "image_id")?;
+            let scores = typed_column::<Float32Array>(batch, "score")?;
+            for i in 0..batch.num_rows() {
+                score_map.insert(image_ids.value(i).to_string(), scores.value(i));
+            }
+        }
+
+        let summaries = self.list_all_summaries().await?;
+        let mut scored: Vec<(StoredImageSummary, f32)> = summaries
+            .into_iter()
+            .filter_map(|s| {
+                let score = score_map.get(&s.image_id.to_string()).copied();
+                score.map(|sc| (s, sc))
+            })
+            .collect();
+
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        Ok(scored)
     }
 }
 
@@ -636,5 +785,95 @@ mod tests {
 
         let store = open_temp_store(&dir).await;
         assert_eq!(store.count().await.unwrap(), 1);
+    }
+
+    fn make_record(skeet_suffix: &str) -> ImageRecord {
+        let img = test_image_with_color(rand::random(), rand::random(), rand::random());
+        ImageRecord {
+            image_id: ImageId::from_image(&img),
+            skeet_id: format!("at://did:plc:abc/app.bsky.feed.post/{skeet_suffix}")
+                .parse()
+                .expect("valid test AT URI"),
+            image: img,
+            discovered_at: DiscoveredAt::now(),
+            original_at: OriginalAt::new(Utc::now()),
+            zone: Zone::TopRight,
+            annotated_image: test_image(),
+            config_version: ConfigVersion::from("test"),
+            detected_text: String::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn upsert_and_read_score() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = open_temp_store(&dir).await;
+        let record = make_record("score1");
+        store.add(&record).await.unwrap();
+
+        assert_eq!(store.get_score(&record.image_id).await.unwrap(), None);
+
+        store.upsert_score(&record.image_id, 0.75).await.unwrap();
+        let score = store.get_score(&record.image_id).await.unwrap();
+        assert_eq!(score, Some(0.75));
+    }
+
+    #[tokio::test]
+    async fn upsert_overwrites_existing_score() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = open_temp_store(&dir).await;
+        let record = make_record("score2");
+        store.add(&record).await.unwrap();
+
+        store.upsert_score(&record.image_id, 0.5).await.unwrap();
+        store.upsert_score(&record.image_id, 0.9).await.unwrap();
+
+        let score = store.get_score(&record.image_id).await.unwrap();
+        assert_eq!(score, Some(0.9));
+    }
+
+    #[tokio::test]
+    async fn list_unscored_returns_images_without_scores() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = open_temp_store(&dir).await;
+
+        let r1 = make_record("unscored1");
+        let r2 = make_record("unscored2");
+        let r3 = make_record("unscored3");
+        store.add(&r1).await.unwrap();
+        store.add(&r2).await.unwrap();
+        store.add(&r3).await.unwrap();
+
+        store.upsert_score(&r1.image_id, 0.8).await.unwrap();
+
+        let unscored = store.list_unscored_image_ids().await.unwrap();
+        assert_eq!(unscored.len(), 2);
+        assert!(unscored.contains(&r2.image_id));
+        assert!(unscored.contains(&r3.image_id));
+        assert!(!unscored.contains(&r1.image_id));
+    }
+
+    #[tokio::test]
+    async fn list_scored_summaries_ordered_by_score() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = open_temp_store(&dir).await;
+
+        let r1 = make_record("scored1");
+        let r2 = make_record("scored2");
+        let r3 = make_record("scored3");
+        store.add(&r1).await.unwrap();
+        store.add(&r2).await.unwrap();
+        store.add(&r3).await.unwrap();
+
+        store.upsert_score(&r1.image_id, 0.3).await.unwrap();
+        store.upsert_score(&r2.image_id, 0.9).await.unwrap();
+        // r3 not scored
+
+        let scored = store.list_scored_summaries_by_score().await.unwrap();
+        assert_eq!(scored.len(), 2);
+        assert_eq!(scored[0].0.image_id, r2.image_id);
+        assert_eq!(scored[0].1, 0.9);
+        assert_eq!(scored[1].0.image_id, r1.image_id);
+        assert_eq!(scored[1].1, 0.3);
     }
 }

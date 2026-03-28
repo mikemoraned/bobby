@@ -91,3 +91,18 @@ compact-r2:
 
 add-to-blocklist at_uri reason="manual":
     cargo run --release --bin add-to-blocklist -- "{{ at_uri }}" --reason "{{ reason }}"
+
+train:
+    op run --env-file bobby.env -- cargo run --release --bin train
+
+rescore:
+    op run --env-file bobby.env -- cargo run --release --bin rescore -- --store-path {{ STORE }}
+
+rescore-r2:
+    op run --env-file bobby.env -- cargo run --release --bin rescore -- --store-path {{ R2_STORE }}
+
+live-score:
+    op run --env-file bobby.env -- cargo run --release --bin live-score -- --store-path {{ STORE }}
+
+live-score-r2:
+    op run --env-file bobby.env -- cargo run --release --bin live-score -- --store-path {{ R2_STORE }}
