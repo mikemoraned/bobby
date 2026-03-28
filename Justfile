@@ -80,6 +80,12 @@ abort-multipart-uploads:
 abort-multipart-uploads-confirm:
     op run --env-file bobby.env -- cargo run --quiet --release --bin abort-multipart-uploads -- --store-path {{ R2_STORE }} --abort
 
+summarise:
+    cargo run --quiet --release --bin summarise -- --store-path {{ STORE }}
+
+summarise-r2:
+    op run --env-file bobby.env -- cargo run --quiet --release --bin summarise -- --store-path {{ R2_STORE }}
+
 compact:
     cargo run --quiet --release --bin compact -- --store-path {{ STORE }}
 

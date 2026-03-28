@@ -22,6 +22,20 @@
             }
             a:hover { text-decoration: underline; }
             .description { color: #666; font-size: 0.9rem; }
+            table.summary {
+                margin: 2rem auto;
+                border-collapse: collapse;
+                text-align: left;
+                font-size: 0.95rem;
+            }
+            table.summary th,
+            table.summary td {
+                padding: 0.3rem 1rem;
+            }
+            table.summary th {
+                color: #666;
+                font-weight: normal;
+            }
         </style>
     </head>
     <body>
@@ -36,5 +50,14 @@
                 <p class="description">Top scored skeets</p>
             </li>
         </ul>
+
+        <h2>Store Summary</h2>
+        <table class="summary">
+            <tr><th>Images</th><td>{{ summary.image_count }}</td></tr>
+            <tr><th>Scores</th><td>{{ summary.score_count }}</td></tr>
+            <tr><th>Scored images</th><td>{{ summary.scored_image_count }}</td></tr>
+            <tr><th>Discovered at</th><td>{{ summary.discovered_at_min }} .. {{ summary.discovered_at_max }}</td></tr>
+            <tr><th>Original at</th><td>{{ summary.original_at_min }} .. {{ summary.original_at_max }}</td></tr>
+        </table>
     </body>
 </html>

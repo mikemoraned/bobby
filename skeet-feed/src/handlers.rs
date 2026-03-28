@@ -44,14 +44,54 @@ pub fn to_feed_entry(
     })
 }
 
+#[derive(Debug)]
+pub struct SummaryView {
+    pub image_count: usize,
+    pub score_count: usize,
+    pub scored_image_count: usize,
+    pub discovered_at_min: String,
+    pub discovered_at_max: String,
+    pub original_at_min: String,
+    pub original_at_max: String,
+}
+
 #[derive(Debug, Template)]
 #[template(path = "home.html")]
-pub struct HomeTemplate;
+pub struct HomeTemplate {
+    pub summary: SummaryView,
+}
 
 #[instrument(skip_all)]
-pub async fn home() -> cot::Result<Html> {
+pub async fn home(Store(store): Store) -> cot::Result<Html> {
     info!("serving home");
-    let template = HomeTemplate;
+    let store_summary = store
+        .summarise()
+        .await
+        .map_err(|e| cot::Error::internal(format!("failed to summarise store: {e}")))?;
+
+    let summary = SummaryView {
+        image_count: store_summary.image_count,
+        score_count: store_summary.score_count,
+        scored_image_count: store_summary.scored_image_count,
+        discovered_at_min: store_summary
+            .discovered_at_range
+            .as_ref()
+            .map_or_else(|| "-".to_string(), |(min, _)| min.format_short()),
+        discovered_at_max: store_summary
+            .discovered_at_range
+            .as_ref()
+            .map_or_else(|| "-".to_string(), |(_, max)| max.format_short()),
+        original_at_min: store_summary
+            .original_at_range
+            .as_ref()
+            .map_or_else(|| "-".to_string(), |(min, _)| min.format_short()),
+        original_at_max: store_summary
+            .original_at_range
+            .as_ref()
+            .map_or_else(|| "-".to_string(), |(_, max)| max.format_short()),
+    };
+
+    let template = HomeTemplate { summary };
     let rendered = template.render()?;
     Ok(Html::new(rendered))
 }

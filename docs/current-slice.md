@@ -124,8 +124,8 @@ Now that we have a small (sub 1%) amount coming through, we can apply some more 
             * it attaches the config version to the score; this will require an update to the table version and schema
             * `live-score` and `rescore` finds those which have not been scored by the latest `ModelVersion`
 
-* [ ] debugging helpers:
-    * [ ] add a small `summarise` cli within `skeet-store` which:
+* [x] debugging helpers:
+    * [x] add a small `summarise` cli within `skeet-store` which:
         * connects to a store and, via `SkeetStore`:
             * counts how many entries there are in each main type of thing i.e. how many images, how many scores
             * counts how many images have a score
@@ -133,8 +133,8 @@ Now that we have a small (sub 1%) amount coming through, we can apply some more 
                 * discovered_at
                 * original_at
         * extract a shared helper for this within `SkeetStore` which creates a `SkeetStoreSummary`
-    * [ ] add `summarise` and `summarise-r2` Justfile rules which run summarise against local and remote store
-    * [ ] this same functionality should also be added to the homepage of the `skeet-feed` so that it shows a `SkeetStoreSummary`
+    * [x] add `summarise` and `summarise-r2` Justfile rules which run summarise against local and remote store
+    * [x] this same functionality should also be added to the homepage of the `skeet-feed` so that it shows a `SkeetStoreSummary`
 
 * [x] updated `skeet-feed` to have two pages, which replace the homepage
     * [x] `latest` : this is the current page which shows the latest skeets received, regardless of whether they have been scored
