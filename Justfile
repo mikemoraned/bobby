@@ -59,6 +59,12 @@ feed-fallback:
 feed-r2:
     RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_SERVICE_NAME=skeet-feed op run --env-file bobby.env -- cargo run --quiet --release --bin skeet-feed -- --store-path {{ R2_STORE }}
 
+export-image image_id:
+    cargo run --quiet --release --bin export-image -- --store-path {{ STORE }} --image-id {{ image_id }} --output examples/{{ image_id }}.png
+
+export-image-r2 image_id:
+    cargo run --quiet --release --bin export-image -- --store-path {{ R2_STORE }} --image-id {{ image_id }} --output examples/{{ image_id }}.png
+
 image-metadata-dump image_id:
     cargo run --quiet --release --bin image-metadata-dump -- --store-path {{ STORE }} --image-id {{ image_id }}
 

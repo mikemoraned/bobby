@@ -57,3 +57,8 @@ exemplar = false
 path = "0f206499-82f4-48a0-bb22-0acded0982f9.png"
 rejected = ["TooMuchText"]
 exemplar = false
+
+[[example]]
+# TODO: change this to be filtered out in deep pass
+path = "v2:65ec937601ba69124a1a8bc8a9084de6.png"
+archetype = "CENTER_LEFT"
