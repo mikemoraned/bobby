@@ -17,92 +17,92 @@ convert-models: download-models
 
 prerequisites: convert-models
     brew install protobuf openssl
-    cargo install tokio-console
+    cargo install --quiet tokio-console
 
 build:
-    cargo build
+    cargo build --quiet
 
 test:
-    cargo test --release -p skeet-feed --features test
-    cargo test --release
+    cargo test --quiet --release -p skeet-feed --features test
+    cargo test --quiet --release
 
 clippy:
-    cargo clippy --workspace -- -D warnings
+    cargo clippy --quiet --workspace -- -D warnings
 
 check: build clippy test
 
 classify-examples:
-    cargo run --release --bin classify-examples
+    cargo run --quiet --release --bin classify-examples
 
 generate-sse-c-key:
     op item create --vault Dev --title hom-bobby-r2-sse-c-key --category password "password=$(openssl rand -base64 32)" 2>/dev/null \
         || op item edit hom-bobby-r2-sse-c-key --vault Dev "password=$(openssl rand -base64 32)"
 
 validate-storage:
-    cargo run --release --bin validate-storage -- --store-path {{ STORE }}
+    cargo run --quiet --release --bin validate-storage -- --store-path {{ STORE }}
 
 validate-storage-r2:
-    op run --env-file bobby.env -- cargo run --release --bin validate-storage -- --store-path {{ R2_STORE }}
+    op run --env-file bobby.env -- cargo run --quiet --release --bin validate-storage -- --store-path {{ R2_STORE }}
 
 find:
-    RUST_BACKTRACE=1 cargo run --release --bin finder -- --store-path {{ STORE }}
+    RUST_BACKTRACE=1 cargo run --quiet --release --bin finder -- --store-path {{ STORE }}
 
 find-r2:
-    RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_SERVICE_NAME=skeet-finder op run --env-file bobby.env -- cargo run --release --bin finder -- --store-path {{ R2_STORE }} --fallback-local-store {{ FALLBACK_STORE }}
+    RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_SERVICE_NAME=skeet-finder op run --env-file bobby.env -- cargo run --quiet --release --bin finder -- --store-path {{ R2_STORE }} --fallback-local-store {{ FALLBACK_STORE }}
 
 feed:
-    RUST_BACKTRACE=1 cargo run --release --bin skeet-feed -- --store-path {{ STORE }}
+    RUST_BACKTRACE=1 cargo run --quiet --release --bin skeet-feed -- --store-path {{ STORE }}
 
 feed-fallback:
-    RUST_BACKTRACE=1 cargo run --release --bin skeet-feed -- --store-path {{ FALLBACK_STORE }}
+    RUST_BACKTRACE=1 cargo run --quiet --release --bin skeet-feed -- --store-path {{ FALLBACK_STORE }}
 
 feed-r2:
-    RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_SERVICE_NAME=skeet-feed op run --env-file bobby.env -- cargo run --release --bin skeet-feed -- --store-path {{ R2_STORE }}
+    RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_SERVICE_NAME=skeet-feed op run --env-file bobby.env -- cargo run --quiet --release --bin skeet-feed -- --store-path {{ R2_STORE }}
 
 image-metadata-dump image_id:
-    cargo run --release --bin image-metadata-dump -- --store-path {{ STORE }} --image-id {{ image_id }}
+    cargo run --quiet --release --bin image-metadata-dump -- --store-path {{ STORE }} --image-id {{ image_id }}
 
 image-metadata-dump-r2 image_id:
-    op run --env-file bobby.env -- cargo run --release --bin image-metadata-dump -- --store-path {{ R2_STORE }} --image-id {{ image_id }}
+    op run --env-file bobby.env -- cargo run --quiet --release --bin image-metadata-dump -- --store-path {{ R2_STORE }} --image-id {{ image_id }}
 
 image-metadata-dump-fallback image_id:
-    cargo run --release --bin image-metadata-dump -- --store-path {{ FALLBACK_STORE }} --image-id {{ image_id }}
+    cargo run --quiet --release --bin image-metadata-dump -- --store-path {{ FALLBACK_STORE }} --image-id {{ image_id }}
 
 at-metadata-dump at_uri:
-    cargo run --release --bin at-metadata-dump -- --at-uri {{ at_uri }}
+    cargo run --quiet --release --bin at-metadata-dump -- --at-uri {{ at_uri }}
 
 redrive-r2:
-    op run --env-file bobby.env -- cargo run --release --bin redrive -- --source-store-path {{ FALLBACK_STORE }} --store-path {{ R2_STORE }}
+    op run --env-file bobby.env -- cargo run --quiet --release --bin redrive -- --source-store-path {{ FALLBACK_STORE }} --store-path {{ R2_STORE }}
 
 abort-multipart-uploads:
-    op run --env-file bobby.env -- cargo run --release --bin abort-multipart-uploads -- --store-path {{ R2_STORE }}
+    op run --env-file bobby.env -- cargo run --quiet --release --bin abort-multipart-uploads -- --store-path {{ R2_STORE }}
 
 abort-multipart-uploads-confirm:
-    op run --env-file bobby.env -- cargo run --release --bin abort-multipart-uploads -- --store-path {{ R2_STORE }} --abort
+    op run --env-file bobby.env -- cargo run --quiet --release --bin abort-multipart-uploads -- --store-path {{ R2_STORE }} --abort
 
 compact:
-    cargo run --release --bin compact -- --store-path {{ STORE }}
+    cargo run --quiet --release --bin compact -- --store-path {{ STORE }}
 
 compact-fallback:
-    cargo run --release --bin compact -- --store-path {{ FALLBACK_STORE }}
+    cargo run --quiet --release --bin compact -- --store-path {{ FALLBACK_STORE }}
 
 compact-r2:
-    op run --env-file bobby.env -- cargo run --release --bin compact -- --store-path {{ R2_STORE }}
+    op run --env-file bobby.env -- cargo run --quiet --release --bin compact -- --store-path {{ R2_STORE }}
 
 add-to-blocklist at_uri reason="manual":
-    cargo run --release --bin add-to-blocklist -- "{{ at_uri }}" --reason "{{ reason }}"
+    cargo run --quiet --release --bin add-to-blocklist -- "{{ at_uri }}" --reason "{{ reason }}"
 
 train:
-    op run --env-file bobby.env -- cargo run --release --bin train
+    op run --env-file bobby.env -- cargo run --quiet --release --bin train
 
 rescore:
-    op run --env-file bobby.env -- cargo run --release --bin rescore -- --store-path {{ STORE }}
+    op run --env-file bobby.env -- cargo run --quiet --release --bin rescore -- --store-path {{ STORE }}
 
 rescore-r2:
-    op run --env-file bobby.env -- cargo run --release --bin rescore -- --store-path {{ R2_STORE }}
+    op run --env-file bobby.env -- cargo run --quiet --release --bin rescore -- --store-path {{ R2_STORE }}
 
 live-score:
-    op run --env-file bobby.env -- cargo run --release --bin live-score -- --store-path {{ STORE }}
+    op run --env-file bobby.env -- cargo run --quiet --release --bin live-score -- --store-path {{ STORE }}
 
 live-score-r2:
-    op run --env-file bobby.env -- cargo run --release --bin live-score -- --store-path {{ R2_STORE }}
+    op run --env-file bobby.env -- cargo run --quiet --release --bin live-score -- --store-path {{ R2_STORE }}

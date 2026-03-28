@@ -39,7 +39,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
     let model = load_model(&args.model_path)?;
-    info!(model_name = %model.model_name, "loaded model");
+    let model_version = model.version();
+    info!(model_name = %model.model_name, %model_version, "loaded model");
 
     let store = args.store.open_store().await?;
     let client = create_client(&args.openai_api_key);
@@ -50,7 +51,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         interval.tick().await;
 
-        let unscored_ids = store.list_unscored_image_ids().await?;
+        let unscored_ids = store
+            .list_unscored_image_ids_for_version(&model_version)
+            .await?;
         if unscored_ids.is_empty() {
             info!("no unscored images");
             continue;
@@ -69,8 +72,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             match score_image(&agent, &stored.image).await {
                 Ok(score) => {
-                    store.upsert_score(image_id, score).await?;
-                    info!(image_id = %image_id, score, "scored");
+                    store
+                        .upsert_score(image_id, &score, &model_version)
+                        .await?;
+                    info!(image_id = %image_id, %score, "scored");
                 }
                 Err(e) => {
                     error!(image_id = %image_id, error = %e, "failed to score");

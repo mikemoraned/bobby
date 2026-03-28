@@ -9,6 +9,7 @@ use rig::completion::message::{ImageDetail, ImageMediaType, Message, UserContent
 use rig::completion::request::Prompt;
 use rig::one_or_many::OneOrMany;
 use rig::providers::openai;
+use shared::Score;
 use tracing::{info, instrument};
 
 #[derive(Debug, thiserror::Error)]
@@ -48,21 +49,14 @@ fn extract_json(text: &str) -> &str {
     &text[start..end]
 }
 
-fn parse_score(response: &str) -> Result<f32, ScoringError> {
+fn parse_score(response: &str) -> Result<Score, ScoringError> {
     let trimmed = response.trim();
     let json_str = extract_json(trimmed);
 
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(json_str)
         && let Some(score) = v.get("score").and_then(|s| s.as_f64())
     {
-        let score = score as f32;
-        return if (0.0..=1.0).contains(&score) {
-            Ok(score)
-        } else {
-            Err(ScoringError::ParseScore(format!(
-                "score {score} out of range 0.0-1.0"
-            )))
-        };
+        return Score::new(score as f32).map_err(|e| ScoringError::ParseScore(e.to_string()));
     }
 
     Err(ScoringError::ParseScore(format!(
@@ -76,7 +70,7 @@ pub type ScoringAgent = Agent<openai::completion::CompletionModel>;
 pub async fn score_image(
     agent: &ScoringAgent,
     image: &DynamicImage,
-) -> Result<f32, ScoringError> {
+) -> Result<Score, ScoringError> {
     let msg = build_image_message(image)?;
 
     let response = agent
@@ -121,13 +115,15 @@ mod tests {
 
     #[test]
     fn parse_score_from_json() {
-        assert!((parse_score(r#"{"score": 0.85}"#).expect("parse") - 0.85).abs() < 0.001);
+        let score: f32 = parse_score(r#"{"score": 0.85}"#).expect("parse").into();
+        assert!((score - 0.85).abs() < 0.001);
     }
 
     #[test]
     fn parse_score_from_markdown_block() {
         let response = "```json\n{\"score\": 0.42}\n```";
-        assert!((parse_score(response).expect("parse") - 0.42).abs() < 0.001);
+        let score: f32 = parse_score(response).expect("parse").into();
+        assert!((score - 0.42).abs() < 0.001);
     }
 
     #[test]

@@ -166,7 +166,7 @@ pub async fn best(Store(store): Store) -> cot::Result<Html> {
             )?;
             Some(BestFeedEntry {
                 entry,
-                score: format!("{score:.2}"),
+                score: format!("{}", score),
             })
         })
         .collect();

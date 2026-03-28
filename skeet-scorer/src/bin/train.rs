@@ -67,18 +67,19 @@ async fn score_examples(
 
         match score_image(agent, &image).await {
             Ok(score) => {
-                let correct = is_correct(example.exemplar, score);
+                let score_f32: f32 = score.into();
+                let correct = is_correct(example.exemplar, score_f32);
                 info!(
                     path = %example.path,
                     exemplar = example.exemplar,
-                    score,
+                    score = score_f32,
                     correct,
                     "scored example"
                 );
                 results.push(ScoredExample {
                     path: example.path.clone(),
                     exemplar: example.exemplar,
-                    score,
+                    score: score_f32,
                     correct,
                 });
             }

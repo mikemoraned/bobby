@@ -120,13 +120,18 @@ Now that we have a small (sub 1%) amount coming through, we can apply some more 
             * reads `model.toml`
     * [ ] add a config version to `model.toml`, and related structs (e.g. `ConfigVersion`), similar to what we have for `archetype.toml`:
         * [ ] add something similar to `ConfigVersion` (maybe `ModelVersion`) which captures a hash of the config as with `archetype.toml`, and is kept up-to-date in a similar way
-        * [ ] update the scoring so that it attaches the config version to the score; this will require an update to the table version
+        * [ ] update the scoring so that:
+            * it attaches the config version to the score; this will require an update to the table version and schema
+            * `live-score` and `rescore` finds those which have not been scored by the latest `ModelVersion`
 
 * [ ] debugging helpers:
     * [ ] add a small `summarise` cli within `skeet-store` which:
         * connects to a store and, via `SkeetStore`:
             * counts how many entries there are in each main type of thing i.e. how many images, how many scores
             * counts how many images have a score
+            * shows min and max of:
+                * discovered_at
+                * original_at
         * extract a shared helper for this within `SkeetStore` which creates a `SkeetStoreSummary`
     * [ ] add `summarise` and `summarise-r2` Justfile rules which run summarise against local and remote store
     * [ ] this same functionality should also be added to the homepage of the `skeet-feed` so that it shows a `SkeetStoreSummary`

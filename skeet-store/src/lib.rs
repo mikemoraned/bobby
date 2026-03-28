@@ -4,7 +4,7 @@ mod schema;
 mod types;
 
 pub use error::StoreError;
-pub use shared::ConfigVersion;
+pub use shared::{ConfigVersion, ModelVersion, Score};
 pub use types::{DiscoveredAt, ImageId, ImageRecord, InvalidImageId, OriginalAt, SkeetId, Zone};
 
 use std::io::Cursor;
@@ -24,7 +24,7 @@ use lancedb::table::OptimizeAction;
 use tracing::{info, instrument};
 
 use schema::{
-    SCORE_TABLE_NAME, TABLE_NAME, VALIDATE_TABLE_NAME, images_score_v1_schema, images_v6_schema,
+    SCORE_TABLE_NAME, TABLE_NAME, VALIDATE_TABLE_NAME, images_score_v2_schema, images_v6_schema,
     validate_v1_schema,
 };
 
@@ -128,7 +128,7 @@ impl SkeetStore {
                 .await?;
         }
         if !table_names.contains(&SCORE_TABLE_NAME.to_string()) {
-            db.create_empty_table(SCORE_TABLE_NAME, images_score_v1_schema())
+            db.create_empty_table(SCORE_TABLE_NAME, images_score_v2_schema())
                 .execute()
                 .await?;
         }
@@ -375,19 +375,22 @@ impl SkeetStore {
     pub async fn upsert_score(
         &self,
         image_id: &ImageId,
-        score: f32,
+        score: &Score,
+        model_version: &ModelVersion,
     ) -> Result<(), StoreError> {
         self.scores_table
             .delete(&format!("image_id = '{image_id}'"))
             .await?;
 
-        let schema = images_score_v1_schema();
+        let schema = images_score_v2_schema();
         let image_id_str = image_id.to_string();
+        let model_version_str = model_version.to_string();
         let batch = RecordBatch::try_new(
             schema.clone(),
             vec![
                 Arc::new(StringArray::from(vec![image_id_str.as_str()])),
-                Arc::new(Float32Array::from(vec![score])),
+                Arc::new(Float32Array::from(vec![f32::from(*score)])),
+                Arc::new(StringArray::from(vec![model_version_str.as_str()])),
             ],
         )?;
 
@@ -397,7 +400,10 @@ impl SkeetStore {
     }
 
     #[instrument(skip(self))]
-    pub async fn get_score(&self, image_id: &ImageId) -> Result<Option<f32>, StoreError> {
+    pub async fn get_score(
+        &self,
+        image_id: &ImageId,
+    ) -> Result<Option<(Score, ModelVersion)>, StoreError> {
         let batches: Vec<RecordBatch> = self
             .scores_table
             .query()
@@ -413,7 +419,14 @@ impl SkeetStore {
         }
 
         let scores = typed_column::<Float32Array>(&batches[0], "score")?;
-        Ok(Some(scores.value(0)))
+        let model_versions = typed_column::<StringArray>(&batches[0], "model_version")?;
+        let score = Score::new(scores.value(0))
+            .map_err(|e| StoreError::ValidationFailed(e.to_string()))?;
+        let model_version: ModelVersion = model_versions
+            .value(0)
+            .parse()
+            .expect("ModelVersion parse is infallible");
+        Ok(Some((score, model_version)))
     }
 
     #[instrument(skip(self))]
@@ -438,36 +451,46 @@ impl SkeetStore {
     }
 
     #[instrument(skip(self))]
-    pub async fn list_unscored_image_ids(&self) -> Result<Vec<ImageId>, StoreError> {
+    pub async fn list_unscored_image_ids_for_version(
+        &self,
+        model_version: &ModelVersion,
+    ) -> Result<Vec<ImageId>, StoreError> {
         let all_ids = self.list_all_image_ids().await?;
 
         let scored_batches: Vec<RecordBatch> = self
             .scores_table
             .query()
-            .select(lancedb::query::Select::columns(&["image_id"]))
+            .select(lancedb::query::Select::columns(&[
+                "image_id",
+                "model_version",
+            ]))
             .execute()
             .await?
             .try_collect()
             .await?;
 
-        let mut scored_set = std::collections::HashSet::new();
+        let mut scored_with_current_version = std::collections::HashSet::new();
+        let version_str = model_version.to_string();
         for batch in &scored_batches {
             let image_ids = typed_column::<StringArray>(batch, "image_id")?;
+            let versions = typed_column::<StringArray>(batch, "model_version")?;
             for i in 0..batch.num_rows() {
-                scored_set.insert(image_ids.value(i).to_string());
+                if versions.value(i) == version_str {
+                    scored_with_current_version.insert(image_ids.value(i).to_string());
+                }
             }
         }
 
         Ok(all_ids
             .into_iter()
-            .filter(|id| !scored_set.contains(&id.to_string()))
+            .filter(|id| !scored_with_current_version.contains(&id.to_string()))
             .collect())
     }
 
     #[instrument(skip(self))]
     pub async fn list_scored_summaries_by_score(
         &self,
-    ) -> Result<Vec<(StoredImageSummary, f32)>, StoreError> {
+    ) -> Result<Vec<(StoredImageSummary, Score)>, StoreError> {
         let scored_batches: Vec<RecordBatch> = self
             .scores_table
             .query()
@@ -481,20 +504,25 @@ impl SkeetStore {
             let image_ids = typed_column::<StringArray>(batch, "image_id")?;
             let scores = typed_column::<Float32Array>(batch, "score")?;
             for i in 0..batch.num_rows() {
-                score_map.insert(image_ids.value(i).to_string(), scores.value(i));
+                let score = Score::new(scores.value(i))
+                    .map_err(|e| StoreError::ValidationFailed(e.to_string()))?;
+                score_map.insert(image_ids.value(i).to_string(), score);
             }
         }
 
         let summaries = self.list_all_summaries().await?;
-        let mut scored: Vec<(StoredImageSummary, f32)> = summaries
+        let mut scored: Vec<(StoredImageSummary, Score)> = summaries
             .into_iter()
             .filter_map(|s| {
-                let score = score_map.get(&s.image_id.to_string()).copied();
+                let score = score_map.remove(&s.image_id.to_string());
                 score.map(|sc| (s, sc))
             })
             .collect();
 
-        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         Ok(scored)
     }
 }
@@ -804,6 +832,10 @@ mod tests {
         }
     }
 
+    fn test_model_version() -> ModelVersion {
+        ModelVersion::from("test_v1")
+    }
+
     #[tokio::test]
     async fn upsert_and_read_score() {
         let dir = tempfile::tempdir().unwrap();
@@ -813,9 +845,14 @@ mod tests {
 
         assert_eq!(store.get_score(&record.image_id).await.unwrap(), None);
 
-        store.upsert_score(&record.image_id, 0.75).await.unwrap();
-        let score = store.get_score(&record.image_id).await.unwrap();
-        assert_eq!(score, Some(0.75));
+        let score = Score::new(0.75).expect("valid score");
+        let mv = test_model_version();
+        store
+            .upsert_score(&record.image_id, &score, &mv)
+            .await
+            .unwrap();
+        let result = store.get_score(&record.image_id).await.unwrap();
+        assert_eq!(result, Some((score, mv)));
     }
 
     #[tokio::test]
@@ -825,11 +862,19 @@ mod tests {
         let record = make_record("score2");
         store.add(&record).await.unwrap();
 
-        store.upsert_score(&record.image_id, 0.5).await.unwrap();
-        store.upsert_score(&record.image_id, 0.9).await.unwrap();
+        let mv = test_model_version();
+        store
+            .upsert_score(&record.image_id, &Score::new(0.5).expect("valid"), &mv)
+            .await
+            .unwrap();
+        let new_score = Score::new(0.9).expect("valid");
+        store
+            .upsert_score(&record.image_id, &new_score, &mv)
+            .await
+            .unwrap();
 
-        let score = store.get_score(&record.image_id).await.unwrap();
-        assert_eq!(score, Some(0.9));
+        let result = store.get_score(&record.image_id).await.unwrap();
+        assert_eq!(result, Some((new_score, mv)));
     }
 
     #[tokio::test]
@@ -844,13 +889,43 @@ mod tests {
         store.add(&r2).await.unwrap();
         store.add(&r3).await.unwrap();
 
-        store.upsert_score(&r1.image_id, 0.8).await.unwrap();
+        let mv = test_model_version();
+        store
+            .upsert_score(&r1.image_id, &Score::new(0.8).expect("valid"), &mv)
+            .await
+            .unwrap();
 
-        let unscored = store.list_unscored_image_ids().await.unwrap();
+        let unscored = store
+            .list_unscored_image_ids_for_version(&mv)
+            .await
+            .unwrap();
         assert_eq!(unscored.len(), 2);
         assert!(unscored.contains(&r2.image_id));
         assert!(unscored.contains(&r3.image_id));
         assert!(!unscored.contains(&r1.image_id));
+    }
+
+    #[tokio::test]
+    async fn list_unscored_includes_images_scored_with_different_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = open_temp_store(&dir).await;
+
+        let r1 = make_record("ver1");
+        store.add(&r1).await.unwrap();
+
+        let old_mv = ModelVersion::from("old_v1");
+        let new_mv = ModelVersion::from("new_v2");
+        store
+            .upsert_score(&r1.image_id, &Score::new(0.8).expect("valid"), &old_mv)
+            .await
+            .unwrap();
+
+        let unscored = store
+            .list_unscored_image_ids_for_version(&new_mv)
+            .await
+            .unwrap();
+        assert_eq!(unscored.len(), 1);
+        assert!(unscored.contains(&r1.image_id));
     }
 
     #[tokio::test]
@@ -865,15 +940,22 @@ mod tests {
         store.add(&r2).await.unwrap();
         store.add(&r3).await.unwrap();
 
-        store.upsert_score(&r1.image_id, 0.3).await.unwrap();
-        store.upsert_score(&r2.image_id, 0.9).await.unwrap();
+        let mv = test_model_version();
+        store
+            .upsert_score(&r1.image_id, &Score::new(0.3).expect("valid"), &mv)
+            .await
+            .unwrap();
+        store
+            .upsert_score(&r2.image_id, &Score::new(0.9).expect("valid"), &mv)
+            .await
+            .unwrap();
         // r3 not scored
 
         let scored = store.list_scored_summaries_by_score().await.unwrap();
         assert_eq!(scored.len(), 2);
         assert_eq!(scored[0].0.image_id, r2.image_id);
-        assert_eq!(scored[0].1, 0.9);
+        assert_eq!(scored[0].1, Score::new(0.9).expect("valid"));
         assert_eq!(scored[1].0.image_id, r1.image_id);
-        assert_eq!(scored[1].1, 0.3);
+        assert_eq!(scored[1].1, Score::new(0.3).expect("valid"));
     }
 }

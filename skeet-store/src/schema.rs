@@ -3,7 +3,7 @@ use std::sync::Arc;
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
 
 pub const TABLE_NAME: &str = "images_v6";
-pub const SCORE_TABLE_NAME: &str = "images_score_v1";
+pub const SCORE_TABLE_NAME: &str = "images_score_v2";
 pub const VALIDATE_TABLE_NAME: &str = "validate_v1";
 
 pub fn validate_v1_schema() -> Arc<Schema> {
@@ -17,10 +17,11 @@ pub fn validate_v1_schema() -> Arc<Schema> {
     ]))
 }
 
-pub fn images_score_v1_schema() -> Arc<Schema> {
+pub fn images_score_v2_schema() -> Arc<Schema> {
     Arc::new(Schema::new(vec![
         Field::new("image_id", DataType::Utf8, false),
         Field::new("score", DataType::Float32, false),
+        Field::new("model_version", DataType::Utf8, false),
     ]))
 }
 

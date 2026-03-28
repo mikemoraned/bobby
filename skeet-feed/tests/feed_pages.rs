@@ -6,7 +6,8 @@ use image::{DynamicImage, ImageBuffer, Rgba};
 use skeet_feed::StoreLayer;
 use skeet_feed::project::FeedProject;
 use skeet_store::{
-    ConfigVersion, DiscoveredAt, ImageId, ImageRecord, OriginalAt, SkeetStore, Zone,
+    ConfigVersion, DiscoveredAt, ImageId, ImageRecord, ModelVersion, OriginalAt, Score, SkeetStore,
+    Zone,
 };
 
 fn test_image() -> DynamicImage {
@@ -90,7 +91,11 @@ async fn best_shows_entries_when_store_has_scored_skeets() {
     let image_id = record.image_id.clone();
     store.add(&record).await.expect("add record");
     store
-        .upsert_score(&image_id, 0.85)
+        .upsert_score(
+            &image_id,
+            &Score::new(0.85).expect("valid score"),
+            &ModelVersion::from("test"),
+        )
         .await
         .expect("upsert score");
 

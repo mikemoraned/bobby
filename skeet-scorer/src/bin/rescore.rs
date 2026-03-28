@@ -32,7 +32,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
     let model = load_model(&args.model_path)?;
-    info!(model_name = %model.model_name, "loaded model");
+    let model_version = model.version();
+    info!(model_name = %model.model_name, %model_version, "loaded model");
 
     let store = args.store.open_store().await?;
     let client = create_client(&args.openai_api_key);
@@ -46,11 +47,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let image_id = &stored.summary.image_id;
         match score_image(&agent, &stored.image).await {
             Ok(score) => {
-                store.upsert_score(image_id, score).await?;
+                store
+                    .upsert_score(image_id, &score, &model_version)
+                    .await?;
                 info!(
                     progress = format!("{}/{}", i + 1, total),
                     image_id = %image_id,
-                    score,
+                    %score,
                     "scored"
                 );
             }

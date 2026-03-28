@@ -1,7 +1,10 @@
 use std::fmt;
+use std::fmt::Write as _;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use shared::ModelVersion;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ModelProvider(String);
@@ -67,6 +70,29 @@ pub struct ScoringModel {
     pub prompt: ScoringPrompt,
 }
 
+impl ScoringModel {
+    pub fn version(&self) -> ModelVersion {
+        let mut entries: Vec<(&str, &str)> = vec![
+            ("model_name", self.model_name.as_str()),
+            ("model_provider", self.model_provider.as_str()),
+            ("prompt", self.prompt.as_str()),
+        ];
+        entries.sort_by_key(|(k, _)| *k);
+
+        let mut hasher = DefaultHasher::new();
+        for (k, v) in &entries {
+            k.hash(&mut hasher);
+            v.hash(&mut hasher);
+        }
+        let hash = hasher.finish();
+
+        let mut version = String::with_capacity(8);
+        write!(version, "{hash:016x}").expect("write to String");
+        version.truncate(8);
+        version.parse().expect("ModelVersion parse is infallible")
+    }
+}
+
 pub fn load_model(path: &Path) -> Result<ScoringModel, Box<dyn std::error::Error>> {
     let content = std::fs::read_to_string(path)?;
     let model: ScoringModel = toml::from_str(&content)?;
@@ -82,6 +108,31 @@ pub fn save_model(path: &Path, model: &ScoringModel) -> Result<(), Box<dyn std::
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn version_is_deterministic() {
+        let model = ScoringModel {
+            model_provider: ModelProvider::openai(),
+            model_name: ModelName::gpt_4o(),
+            prompt: ScoringPrompt::new("Rate this image"),
+        };
+        assert_eq!(model.version(), model.version());
+    }
+
+    #[test]
+    fn version_changes_with_prompt() {
+        let m1 = ScoringModel {
+            model_provider: ModelProvider::openai(),
+            model_name: ModelName::gpt_4o(),
+            prompt: ScoringPrompt::new("Rate this image"),
+        };
+        let m2 = ScoringModel {
+            model_provider: ModelProvider::openai(),
+            model_name: ModelName::gpt_4o(),
+            prompt: ScoringPrompt::new("Different prompt"),
+        };
+        assert_ne!(m1.version(), m2.version());
+    }
 
     #[test]
     fn roundtrip_model() {
