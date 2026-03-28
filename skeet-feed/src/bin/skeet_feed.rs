@@ -1,14 +1,9 @@
 #![warn(clippy::all, clippy::nursery)]
 
 use clap::Parser;
-use cot::config::ProjectConfig;
-use cot::project::{
-    Bootstrapper, MiddlewareContext, RegisterAppsContext, RootHandler, RootHandlerBuilder,
-};
-use cot::router::{Route, Router};
-use cot::{App, AppBuilder, Project};
+use cot::project::Bootstrapper;
 use skeet_feed::StoreLayer;
-use skeet_feed::handlers::{annotated_image, feed};
+use skeet_feed::project::FeedProject;
 use skeet_store::StoreArgs;
 use tracing::info;
 
@@ -20,47 +15,6 @@ struct Args {
     /// Enable tokio-console on this port
     #[arg(long)]
     tokio_console_port: Option<u16>,
-}
-
-struct FeedApp;
-
-impl App for FeedApp {
-    fn name(&self) -> &'static str {
-        env!("CARGO_PKG_NAME")
-    }
-
-    fn router(&self) -> Router {
-        Router::with_urls([
-            Route::with_handler_and_name("/", feed, "feed"),
-            Route::with_handler_and_name(
-                "/skeet/{image_id}/annotated.png",
-                annotated_image,
-                "annotated_image",
-            ),
-        ])
-    }
-}
-
-struct FeedProject {
-    store_layer: StoreLayer,
-}
-
-impl Project for FeedProject {
-    fn config(&self, _config_name: &str) -> cot::Result<ProjectConfig> {
-        Ok(ProjectConfig::dev_default())
-    }
-
-    fn register_apps(&self, apps: &mut AppBuilder, _context: &RegisterAppsContext) {
-        apps.register_with_views(FeedApp, "");
-    }
-
-    fn middlewares(
-        &self,
-        handler: RootHandlerBuilder,
-        _context: &MiddlewareContext,
-    ) -> RootHandler {
-        handler.middleware(self.store_layer.clone()).build()
-    }
 }
 
 #[tokio::main]

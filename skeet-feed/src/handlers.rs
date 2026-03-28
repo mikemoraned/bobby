@@ -45,6 +45,18 @@ pub fn to_feed_entry(
 }
 
 #[derive(Debug, Template)]
+#[template(path = "home.html")]
+pub struct HomeTemplate;
+
+#[instrument(skip_all)]
+pub async fn home() -> cot::Result<Html> {
+    info!("serving home");
+    let template = HomeTemplate;
+    let rendered = template.render()?;
+    Ok(Html::new(rendered))
+}
+
+#[derive(Debug, Template)]
 #[template(path = "feed.html")]
 pub struct FeedTemplate {
     pub entries: Vec<FeedEntry>,
@@ -53,8 +65,8 @@ pub struct FeedTemplate {
 pub const MAX_FEED_ENTRIES: usize = 50;
 
 #[instrument(skip_all)]
-pub async fn feed(Store(store): Store) -> cot::Result<Html> {
-    info!("serving feed");
+pub async fn latest(Store(store): Store) -> cot::Result<Html> {
+    info!("serving latest feed");
 
     let mut summaries = store
         .list_all_summaries()
@@ -78,7 +90,7 @@ pub async fn feed(Store(store): Store) -> cot::Result<Html> {
         })
         .collect();
 
-    info!(count = entries.len(), "serving feed entries");
+    info!(count = entries.len(), "serving latest feed entries");
     let template = FeedTemplate { entries };
     let rendered = template.render()?;
     Ok(Html::new(rendered))
@@ -117,4 +129,50 @@ pub async fn annotated_image(
         .headers_mut()
         .insert("content-type", "image/png".parse().expect("valid header"));
     Ok(response)
+}
+
+#[derive(Debug)]
+pub struct BestFeedEntry {
+    pub entry: FeedEntry,
+    pub score: String,
+}
+
+#[derive(Debug, Template)]
+#[template(path = "best.html")]
+pub struct BestTemplate {
+    pub entries: Vec<BestFeedEntry>,
+}
+
+#[instrument(skip_all)]
+pub async fn best(Store(store): Store) -> cot::Result<Html> {
+    info!("serving best feed");
+
+    let scored = store
+        .list_scored_summaries_by_score()
+        .await
+        .map_err(|e| cot::Error::internal(format!("failed to read store: {e}")))?;
+
+    let entries: Vec<BestFeedEntry> = scored
+        .iter()
+        .take(MAX_FEED_ENTRIES)
+        .filter_map(|(img, score)| {
+            let entry = to_feed_entry(
+                &img.discovered_at,
+                &img.image_id,
+                &img.skeet_id,
+                &img.zone,
+                img.config_version.as_str(),
+                &img.detected_text,
+            )?;
+            Some(BestFeedEntry {
+                entry,
+                score: format!("{score:.2}"),
+            })
+        })
+        .collect();
+
+    info!(count = entries.len(), "serving best feed entries");
+    let template = BestTemplate { entries };
+    let rendered = template.render()?;
+    Ok(Html::new(rendered))
 }

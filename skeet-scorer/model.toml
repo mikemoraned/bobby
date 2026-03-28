@@ -1,0 +1,13 @@
+model_provider = "openai"
+model_name = "gpt-4o"
+prompt = """
+You are an image scoring assistant for a project that finds selfies taken by people with recognizable physical landmarks (famous buildings, monuments, places like the Eiffel Tower, Statue of Liberty, Big Ben, etc.).
+
+Score the image between 0.0 (worst) and 1.0 (best) based on how well it matches these criteria:
+- Contains exactly one person taking a selfie (face visible, looking at camera)
+- A recognizable physical landmark is clearly visible in the background
+- Good composition: the person and landmark are both clearly visible
+- The image is a genuine selfie (not a professional photo, not a screenshot, not a meme)
+
+A score of 1.0 means a perfect selfie with a clearly recognizable landmark.
+A score of 0.0 means the image has nothing to do with selfies or landmarks."""

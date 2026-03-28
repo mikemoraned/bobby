@@ -1,6 +1,7 @@
 STORE := "store"
 R2_STORE := "s3://hom-bobby/encrypted-store"
 FALLBACK_STORE := "fallback-store"
+OTEL_ENDPOINT := "https://api.honeycomb.io"
 
 default:
     just --list
@@ -22,6 +23,7 @@ build:
     cargo build
 
 test:
+    cargo test --release -p skeet-feed --features test
     cargo test --release
 
 clippy:
@@ -41,8 +43,6 @@ validate-storage:
 
 validate-storage-r2:
     op run --env-file bobby.env -- cargo run --release --bin validate-storage -- --store-path {{ R2_STORE }}
-
-OTEL_ENDPOINT := "https://api.honeycomb.io"
 
 find:
     RUST_BACKTRACE=1 cargo run --release --bin finder -- --store-path {{ STORE }}

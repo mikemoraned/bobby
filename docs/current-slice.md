@@ -112,13 +112,26 @@ Now that we have a small (sub 1%) amount coming through, we can apply some more 
         * even though we are using OpenAI in this initial pass, we should use Rust crates which are generic and allow other LLM's to be plugged in later
         * we will pass in OpenAI API keys from 1Password Dev access, `hom-bobby-openai-key`
     * we want to end up with a few clis:
-        * [ ] `train`: goes through all the images in `examples/expected.toml` and attempts to find a summary which gives a high score to the ones labelled `exemplar = true` and a low score to those `exemplar = false`
+        * [x] `train`: goes through all the images in `examples/expected.toml` and attempts to find a summary which gives a high score to the ones labelled `exemplar = true` and a low score to those `exemplar = false`
             * the output of this should be a list of instructions captured in a `model.toml` file, which capture the summary
-        * [ ] `rescore`: go through everything in `images` and assign a score; is allowed to overwrite the score in the `images_score` table
+        * [x] `rescore`: go through everything in `images` and assign a score; is allowed to overwrite the score in the `images_score` table
             * reads `model.toml`
-        * [ ] `live-score` : every minute, finds all images that have been added in past minute and which do not have a score, and assigns one
+        * [x] `live-score` : every minute, finds all images that have been added in past minute and which do not have a score, and assigns one
             * reads `model.toml`
+    * [ ] add a config version to `model.toml`, and related structs (e.g. `ConfigVersion`), similar to what we have for `archetype.toml`:
+        * [ ] add something similar to `ConfigVersion` (maybe `ModelVersion`) which captures a hash of the config as with `archetype.toml`, and is kept up-to-date in a similar way
+        * [ ] update the scoring so that it attaches the config version to the score; this will require an update to the table version
 
-* [ ] updated `skeet-feed` to have two pages:
-    * [ ] `latest` : this is the current page which shows the latest skeets received, regardless of whether they have been scored
+* [ ] debugging helpers:
+    * [ ] add a small `summarise` cli within `skeet-store` which:
+        * connects to a store and, via `SkeetStore`:
+            * counts how many entries there are in each main type of thing i.e. how many images, how many scores
+            * counts how many images have a score
+        * extract a shared helper for this within `SkeetStore` which creates a `SkeetStoreSummary`
+    * [ ] add `summarise` and `summarise-r2` Justfile rules which run summarise against local and remote store
+    * [ ] this same functionality should also be added to the homepage of the `skeet-feed` so that it shows a `SkeetStoreSummary`
+
+* [x] updated `skeet-feed` to have two pages, which replace the homepage
+    * [x] `latest` : this is the current page which shows the latest skeets received, regardless of whether they have been scored
     * [ ] `best` : same as latest except only shows those scored, and orders from best to worst
+    * [x] homepage should have links to each of these

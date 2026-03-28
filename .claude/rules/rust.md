@@ -29,6 +29,7 @@ paths:
   - Core functionality gets inline unit tests
   - Multi-part integration gets integ tests (use captured real data)
   - Prefer high-level invariant-based tests over bespoke examples (consider [quickcheck](https://docs.rs/quickcheck/latest/quickcheck/))
+  - Integration tests must use real application types (e.g. `App`, `Project` impls), not test-only duplicates
 - Binary layout:
   - All binaries must be named files in `src/bin/` (e.g. `src/bin/finder.rs`), never `src/main.rs` or subdirectories like `src/bin/finder/main.rs`
   - Modules used by binaries live under `src/` and are exposed through `lib.rs`, not placed alongside binaries in `src/bin/`

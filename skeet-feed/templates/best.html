@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Skeet Feed</title>
+        <title>Best Skeets</title>
         <style>
             body {
                 font-family: system-ui, sans-serif;
@@ -12,6 +12,7 @@
                 padding: 0 1rem;
             }
             h1 { text-align: center; }
+            nav { text-align: center; margin-bottom: 1rem; }
             .empty { color: #666; text-align: center; margin-top: 2rem; }
             table { width: 100%; border-collapse: collapse; }
             th, td { border: 1px solid #ddd; padding: 0.5rem; vertical-align: top; }
@@ -20,17 +21,19 @@
             td.annotated img { max-width: 300px; max-height: 300px; }
             td.version { font-family: monospace; font-size: 0.85rem; }
             td.text { font-size: 0.85rem; max-width: 200px; white-space: pre-wrap; word-break: break-word; }
+            td.score { font-family: monospace; font-size: 0.85rem; text-align: right; }
         </style>
     </head>
     <body>
         <nav><a href="/">Home</a> | <a href="/latest">Latest</a> | <a href="/best">Best</a></nav>
-        <h1>Latest Skeets</h1>
+        <h1>Best Skeets</h1>
         {% if entries.is_empty() %}
-            <p class="empty">No skeets found yet. Run <code>just find</code> to start collecting.</p>
+            <p class="empty">No scored skeets yet.</p>
         {% else %}
             <table>
                 <thead>
                     <tr>
+                        <th>Score</th>
                         <th>Discovered</th>
                         <th>ID</th>
                         <th>Zone</th>
@@ -43,17 +46,18 @@
                 <tbody>
                     {% for entry in &entries %}
                         <tr>
-                            <td class="id">{{ entry.discovered_at }}</td>
-                            <td class="id">{{ entry.image_id }}</td>
-                            <td>{{ entry.zone }}</td>
-                            <td class="version">{{ entry.config_version }}</td>
+                            <td class="score">{{ entry.score }}</td>
+                            <td class="id">{{ entry.entry.discovered_at }}</td>
+                            <td class="id">{{ entry.entry.image_id }}</td>
+                            <td>{{ entry.entry.zone }}</td>
+                            <td class="version">{{ entry.entry.config_version }}</td>
                             <td class="annotated">
-                                <img src="/skeet/{{ entry.image_id }}/annotated.png" loading="lazy" alt="annotated face detection">
+                                <img src="/skeet/{{ entry.entry.image_id }}/annotated.png" loading="lazy" alt="annotated face detection">
                             </td>
-                            <td class="text">{{ entry.detected_text }}</td>
+                            <td class="text">{{ entry.entry.detected_text }}</td>
                             <td>
-                                <blockquote class="bluesky-embed" data-bluesky-uri="{{ entry.at_uri }}">
-                                    <a href="{{ entry.web_url }}">Loading skeet...</a>
+                                <blockquote class="bluesky-embed" data-bluesky-uri="{{ entry.entry.at_uri }}">
+                                    <a href="{{ entry.entry.web_url }}">Loading skeet...</a>
                                 </blockquote>
                             </td>
                         </tr>
