@@ -1,105 +1,39 @@
 #![warn(clippy::all, clippy::nursery)]
+mod args;
+mod arrow_utils;
 mod error;
 mod schema;
+mod stored;
+mod summary;
 mod types;
 
+pub use args::StoreArgs;
 pub use error::StoreError;
 pub use shared::{ConfigVersion, ModelVersion, Score};
+pub use stored::{StoredImage, StoredImageSummary};
+pub use summary::SkeetStoreSummary;
 pub use types::{DiscoveredAt, ImageId, ImageRecord, InvalidImageId, OriginalAt, SkeetId, Zone};
 
-use std::fmt;
-use std::io::Cursor;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use arrow_array::{
-    Array, Float32Array, Int64Array, LargeBinaryArray, RecordBatch, RecordBatchIterator,
-    StringArray, TimestampMicrosecondArray,
+    Float32Array, Int64Array, LargeBinaryArray, RecordBatch, RecordBatchIterator, StringArray,
+    TimestampMicrosecondArray,
 };
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::Utc;
 use futures::TryStreamExt;
-use image::DynamicImage;
 use lancedb::index::Index;
 use lancedb::query::{ExecutableQuery, QueryBase};
 use lancedb::table::OptimizeAction;
 use tracing::{info, instrument};
 
+use arrow_utils::{encode_image_as_png, min_max_timestamp, typed_column};
 use schema::{
     SCORE_TABLE_NAME, TABLE_NAME, VALIDATE_TABLE_NAME, images_score_v2_schema, images_v6_schema,
     validate_v1_schema,
 };
-
-const DEFAULT_COMPACT_EVERY_N_WRITES: u64 = 100;
-
-#[derive(Clone, Debug, clap::Args)]
-pub struct StoreArgs {
-    /// Store location: local path or S3 URI (e.g. s3://bucket/path)
-    #[arg(long)]
-    pub store_path: String,
-
-    /// S3-compatible endpoint URL (e.g. https://<account>.r2.cloudflarestorage.com)
-    #[arg(long, env = "BOBBY_S3_ENDPOINT")]
-    pub s3_endpoint: Option<String>,
-
-    /// S3 access key ID
-    #[arg(long, env = "BOBBY_S3_ACCESS_KEY_ID")]
-    pub s3_access_key_id: Option<String>,
-
-    /// S3 secret access key
-    #[arg(long, env = "BOBBY_S3_SECRET_ACCESS_KEY")]
-    pub s3_secret_access_key: Option<String>,
-
-    /// S3 region (default: auto, suitable for Cloudflare R2)
-    #[arg(long, default_value = "auto")]
-    pub s3_region: String,
-
-    /// SSE-C encryption key (base64-encoded 256-bit AES key); enables server-side encryption
-    #[arg(long, env = "BOBBY_SSE_C_KEY")]
-    pub sse_c_key: Option<String>,
-
-    /// Trigger automatic compaction after this many writes (omit to disable)
-    #[arg(long, default_value_t = DEFAULT_COMPACT_EVERY_N_WRITES)]
-    pub compact_every_n_writes: u64,
-}
-
-impl StoreArgs {
-    const fn compact_option(&self) -> Option<u64> {
-        Some(self.compact_every_n_writes)
-    }
-
-    pub fn storage_options(&self) -> Vec<(String, String)> {
-        let mut opts = Vec::new();
-        if let Some(endpoint) = &self.s3_endpoint {
-            opts.push(("aws_endpoint".into(), endpoint.clone()));
-        }
-        if let Some(key_id) = &self.s3_access_key_id {
-            opts.push(("aws_access_key_id".into(), key_id.clone()));
-        }
-        if let Some(secret) = &self.s3_secret_access_key {
-            opts.push(("aws_secret_access_key".into(), secret.clone()));
-        }
-        opts.push(("aws_region".into(), self.s3_region.clone()));
-        opts.push(("timeout".into(), "120s".into()));
-        opts.push(("connect_timeout".into(), "10s".into()));
-        opts.push(("client_max_retries".into(), "3".into()));
-        opts.push(("client_retry_timeout".into(), "300".into()));
-        if let Some(key) = &self.sse_c_key {
-            opts.push(("aws_server_side_encryption".into(), "sse-c".into()));
-            opts.push(("aws_sse_customer_key_base64".into(), key.clone()));
-        }
-        opts
-    }
-
-    #[instrument(skip(self), fields(store_path = %self.store_path))]
-    pub async fn open_store(&self) -> Result<SkeetStore, StoreError> {
-        SkeetStore::open(
-            &self.store_path,
-            self.storage_options(),
-            self.compact_option(),
-        )
-        .await
-    }
-}
+use stored::{batches_to_stored_images, batches_to_summaries};
 
 pub struct SkeetStore {
     images_table: lancedb::Table,
@@ -230,13 +164,15 @@ impl SkeetStore {
 
     #[instrument(skip(self))]
     pub async fn list_all(&self) -> Result<Vec<StoredImage>, StoreError> {
-        let batches: Vec<RecordBatch> = self.images_table.query().execute().await?.try_collect().await?;
+        let batches: Vec<RecordBatch> =
+            self.images_table.query().execute().await?.try_collect().await?;
         batches_to_stored_images(&batches)
     }
 
     #[instrument(skip(self))]
     pub async fn list_all_summaries(&self) -> Result<Vec<StoredImageSummary>, StoreError> {
-        let batches: Vec<RecordBatch> = self.images_table
+        let batches: Vec<RecordBatch> = self
+            .images_table
             .query()
             .select(lancedb::query::Select::columns(&[
                 "image_id",
@@ -256,7 +192,8 @@ impl SkeetStore {
 
     #[instrument(skip(self))]
     pub async fn get_by_id(&self, image_id: &ImageId) -> Result<Option<StoredImage>, StoreError> {
-        let batches: Vec<RecordBatch> = self.images_table
+        let batches: Vec<RecordBatch> = self
+            .images_table
             .query()
             .only_if(format!("image_id = '{image_id}'"))
             .limit(1)
@@ -269,7 +206,8 @@ impl SkeetStore {
 
     #[instrument(skip(self))]
     pub async fn exists(&self, image_id: &ImageId) -> Result<bool, StoreError> {
-        let batches: Vec<RecordBatch> = self.images_table
+        let batches: Vec<RecordBatch> = self
+            .images_table
             .query()
             .only_if(format!("image_id = '{image_id}'"))
             .select(lancedb::query::Select::columns(&["image_id"]))
@@ -315,7 +253,8 @@ impl SkeetStore {
         let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
         self.validate_table.add(batches).execute().await?;
 
-        let result_batches: Vec<RecordBatch> = self.validate_table
+        let result_batches: Vec<RecordBatch> = self
+            .validate_table
             .query()
             .only_if(format!("random_number = {random_number}"))
             .execute()
@@ -349,7 +288,8 @@ impl SkeetStore {
 
     #[instrument(skip(self))]
     pub async fn unique_skeet_ids(&self) -> Result<Vec<SkeetId>, StoreError> {
-        let batches: Vec<RecordBatch> = self.images_table
+        let batches: Vec<RecordBatch> = self
+            .images_table
             .query()
             .select(lancedb::query::Select::columns(&["skeet_id"]))
             .execute()
@@ -577,488 +517,5 @@ impl SkeetStore {
     }
 }
 
-pub struct StoredImage {
-    pub summary: StoredImageSummary,
-    pub image: DynamicImage,
-    pub annotated_image: DynamicImage,
-}
-
-impl StoredImage {
-    pub fn content_matches(&self, other: &Self) -> Result<bool, StoreError> {
-        let self_bytes = encode_image_as_png(&self.image)?;
-        let other_bytes = encode_image_as_png(&other.image)?;
-        Ok(self_bytes == other_bytes)
-    }
-}
-
-impl From<StoredImage> for ImageRecord {
-    fn from(stored: StoredImage) -> Self {
-        Self {
-            image_id: stored.summary.image_id,
-            skeet_id: stored.summary.skeet_id,
-            image: stored.image,
-            discovered_at: stored.summary.discovered_at,
-            original_at: stored.summary.original_at,
-            zone: stored.summary.zone,
-            annotated_image: stored.annotated_image,
-            config_version: stored.summary.config_version,
-            detected_text: stored.summary.detected_text,
-        }
-    }
-}
-
-pub struct StoredImageSummary {
-    pub image_id: ImageId,
-    pub skeet_id: SkeetId,
-    pub discovered_at: DiscoveredAt,
-    pub original_at: OriginalAt,
-    pub zone: Zone,
-    pub config_version: ConfigVersion,
-    pub detected_text: String,
-}
-
-pub struct SkeetStoreSummary {
-    pub image_count: usize,
-    pub score_count: usize,
-    pub scored_image_count: usize,
-    pub discovered_at_range: Option<(DiscoveredAt, DiscoveredAt)>,
-    pub original_at_range: Option<(OriginalAt, OriginalAt)>,
-}
-
-impl fmt::Display for SkeetStoreSummary {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Images:        {}", self.image_count)?;
-        writeln!(f, "Scores:        {}", self.score_count)?;
-        writeln!(f, "Scored images: {}", self.scored_image_count)?;
-        if let Some((min, max)) = &self.discovered_at_range {
-            writeln!(f, "Discovered at: {min} .. {max}")?;
-        } else {
-            writeln!(f, "Discovered at: (none)")?;
-        }
-        if let Some((min, max)) = &self.original_at_range {
-            write!(f, "Original at:   {min} .. {max}")?;
-        } else {
-            write!(f, "Original at:   (none)")?;
-        }
-        Ok(())
-    }
-}
-
-struct SummaryColumns<'a> {
-    image_ids: &'a StringArray,
-    skeet_ids: &'a StringArray,
-    discovered_ats: &'a TimestampMicrosecondArray,
-    original_ats: &'a TimestampMicrosecondArray,
-    archetypes: &'a StringArray,
-    config_versions: &'a StringArray,
-    detected_texts: &'a StringArray,
-}
-
-impl<'a> SummaryColumns<'a> {
-    #[instrument(skip(batch))]
-    fn extract(batch: &'a RecordBatch) -> Result<Self, StoreError> {
-        Ok(Self {
-            image_ids: typed_column::<StringArray>(batch, "image_id")?,
-            skeet_ids: typed_column::<StringArray>(batch, "skeet_id")?,
-            discovered_ats: typed_column::<TimestampMicrosecondArray>(batch, "discovered_at")?,
-            original_ats: typed_column::<TimestampMicrosecondArray>(batch, "original_at")?,
-            archetypes: typed_column::<StringArray>(batch, "archetype")?,
-            config_versions: typed_column::<StringArray>(batch, "config_version")?,
-            detected_texts: typed_column::<StringArray>(batch, "detected_text")?,
-        })
-    }
-
-    #[instrument(skip(self))]
-    fn to_summary(&self, i: usize) -> Result<StoredImageSummary, StoreError> {
-        let zone: Zone = self
-            .archetypes
-            .value(i)
-            .parse()
-            .map_err(|_| StoreError::InvalidArchetype(self.archetypes.value(i).to_string()))?;
-        let config_version: ConfigVersion = self
-            .config_versions
-            .value(i)
-            .parse()
-            .expect("ConfigVersion parse is infallible");
-        Ok(StoredImageSummary {
-            image_id: self.image_ids.value(i).parse()?,
-            skeet_id: SkeetId::new(self.skeet_ids.value(i))?,
-            discovered_at: DiscoveredAt::new(micros_to_datetime(self.discovered_ats.value(i))),
-            original_at: OriginalAt::new(micros_to_datetime(self.original_ats.value(i))),
-            zone,
-            config_version,
-            detected_text: self.detected_texts.value(i).to_string(),
-        })
-    }
-}
-
-#[instrument(skip(batches))]
-fn batches_to_summaries(batches: &[RecordBatch]) -> Result<Vec<StoredImageSummary>, StoreError> {
-    let mut results = Vec::new();
-    for batch in batches {
-        let cols = SummaryColumns::extract(batch)?;
-        for i in 0..batch.num_rows() {
-            results.push(cols.to_summary(i)?);
-        }
-    }
-    Ok(results)
-}
-
-#[instrument(skip(batches))]
-fn batches_to_stored_images(batches: &[RecordBatch]) -> Result<Vec<StoredImage>, StoreError> {
-    let mut results = Vec::new();
-    for batch in batches {
-        let cols = SummaryColumns::extract(batch)?;
-        let images = typed_column::<LargeBinaryArray>(batch, "image")?;
-        let annotated_images = typed_column::<LargeBinaryArray>(batch, "annotated_image")?;
-
-        for i in 0..batch.num_rows() {
-            let summary = cols.to_summary(i)?;
-            let image = image::load_from_memory(images.value(i))?;
-            let annotated_image = image::load_from_memory(annotated_images.value(i))?;
-            results.push(StoredImage {
-                summary,
-                image,
-                annotated_image,
-            });
-        }
-    }
-    Ok(results)
-}
-
-#[instrument(skip(batch))]
-fn typed_column<'a, T: Array + 'static>(
-    batch: &'a RecordBatch,
-    name: &str,
-) -> Result<&'a T, StoreError> {
-    batch
-        .column_by_name(name)
-        .and_then(|col| col.as_any().downcast_ref::<T>())
-        .ok_or_else(|| StoreError::ColumnTypeMismatch {
-            column: name.to_string(),
-        })
-}
-
-#[instrument(skip(img))]
-fn encode_image_as_png(img: &DynamicImage) -> Result<Vec<u8>, image::ImageError> {
-    let mut buf = Cursor::new(Vec::new());
-    img.write_to(&mut buf, image::ImageFormat::Png)?;
-    Ok(buf.into_inner())
-}
-
-fn micros_to_datetime(micros: i64) -> DateTime<Utc> {
-    Utc.timestamp_micros(micros)
-        .single()
-        .expect("valid timestamp from store")
-}
-
-fn min_max_timestamp(
-    batches: &[RecordBatch],
-    column: &str,
-) -> Result<Option<(DateTime<Utc>, DateTime<Utc>)>, StoreError> {
-    let mut overall_min: Option<i64> = None;
-    let mut overall_max: Option<i64> = None;
-    for batch in batches {
-        let col = typed_column::<TimestampMicrosecondArray>(batch, column)?;
-        if let Some(batch_min) = arrow_arith::aggregate::min(col) {
-            overall_min = Some(match overall_min {
-                Some(prev) if prev <= batch_min => prev,
-                _ => batch_min,
-            });
-        }
-        if let Some(batch_max) = arrow_arith::aggregate::max(col) {
-            overall_max = Some(match overall_max {
-                Some(prev) if prev >= batch_max => prev,
-                _ => batch_max,
-            });
-        }
-    }
-    Ok(overall_min
-        .zip(overall_max)
-        .map(|(min, max)| (micros_to_datetime(min), micros_to_datetime(max))))
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use image::{ImageBuffer, Rgba};
-    use shared::ConfigVersion;
-
-    fn test_image() -> DynamicImage {
-        test_image_with_color(255, 0, 0)
-    }
-
-    fn test_image_with_color(r: u8, g: u8, b: u8) -> DynamicImage {
-        DynamicImage::ImageRgba8(ImageBuffer::from_pixel(2, 2, Rgba([r, g, b, 255])))
-    }
-
-    async fn open_temp_store(dir: &tempfile::TempDir) -> SkeetStore {
-        SkeetStore::open(dir.path().to_str().expect("valid path"), vec![], None)
-            .await
-            .expect("open store")
-    }
-
-    #[tokio::test]
-    async fn roundtrip_store_and_retrieve() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = open_temp_store(&dir).await;
-
-        assert_eq!(store.count().await.unwrap(), 0);
-
-        let record = ImageRecord {
-            image_id: ImageId::from_image(&test_image()),
-            skeet_id: "at://did:plc:abc/app.bsky.feed.post/123"
-                .parse()
-                .expect("valid test AT URI"),
-            image: test_image(),
-            discovered_at: DiscoveredAt::now(),
-            original_at: OriginalAt::new(Utc::now()),
-            zone: Zone::TopRight,
-            annotated_image: test_image(),
-            config_version: ConfigVersion::from("test"),
-            detected_text: String::new(),
-        };
-
-        store.add(&record).await.unwrap();
-        assert_eq!(store.count().await.unwrap(), 1);
-
-        let images = store.list_all().await.unwrap();
-        assert_eq!(images.len(), 1);
-        assert_eq!(images[0].summary.image_id, record.image_id);
-        assert_eq!(images[0].summary.skeet_id, record.skeet_id);
-        assert_eq!(images[0].image.width(), 2);
-        assert_eq!(images[0].image.height(), 2);
-        assert_eq!(images[0].summary.zone, Zone::TopRight);
-    }
-
-    #[tokio::test]
-    async fn multiple_images_per_skeet() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = open_temp_store(&dir).await;
-
-        let skeet_id: SkeetId = "at://did:plc:abc/app.bsky.feed.post/456"
-            .parse()
-            .expect("valid test AT URI");
-
-        for i in 0..3 {
-            let img = test_image_with_color(i * 80, 0, 0);
-            let record = ImageRecord {
-                image_id: ImageId::from_image(&img),
-                skeet_id: skeet_id.clone(),
-                image: img,
-                discovered_at: DiscoveredAt::now(),
-                original_at: OriginalAt::new(Utc::now()),
-                zone: Zone::BottomLeft,
-                annotated_image: test_image(),
-                config_version: ConfigVersion::from("test"),
-                detected_text: String::new(),
-            };
-            store.add(&record).await.unwrap();
-        }
-
-        assert_eq!(store.count().await.unwrap(), 3);
-
-        let unique_skeets = store.unique_skeet_ids().await.unwrap();
-        assert_eq!(unique_skeets.len(), 1);
-        assert_eq!(unique_skeets[0], skeet_id);
-    }
-
-    #[tokio::test]
-    async fn list_all_summaries() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = open_temp_store(&dir).await;
-
-        let record = ImageRecord {
-            image_id: ImageId::from_image(&test_image()),
-            skeet_id: "at://did:plc:abc/app.bsky.feed.post/summ"
-                .parse()
-                .expect("valid test AT URI"),
-            image: test_image(),
-            discovered_at: DiscoveredAt::now(),
-            original_at: OriginalAt::new(Utc::now()),
-            zone: Zone::BottomRight,
-            annotated_image: test_image(),
-            config_version: ConfigVersion::from("test"),
-            detected_text: String::new(),
-        };
-
-        store.add(&record).await.unwrap();
-
-        let summaries = store.list_all_summaries().await.unwrap();
-        assert_eq!(summaries.len(), 1);
-        assert_eq!(summaries[0].image_id, record.image_id);
-        assert_eq!(summaries[0].skeet_id, record.skeet_id);
-        assert_eq!(summaries[0].zone, Zone::BottomRight);
-    }
-
-    #[tokio::test]
-    async fn reopening_store_preserves_data() {
-        let dir = tempfile::tempdir().unwrap();
-
-        let record = ImageRecord {
-            image_id: ImageId::from_image(&test_image()),
-            skeet_id: "at://did:plc:abc/app.bsky.feed.post/789"
-                .parse()
-                .expect("valid test AT URI"),
-            image: test_image(),
-            discovered_at: DiscoveredAt::now(),
-            original_at: OriginalAt::new(Utc::now()),
-            zone: Zone::TopLeft,
-            annotated_image: test_image(),
-            config_version: ConfigVersion::from("test"),
-            detected_text: String::new(),
-        };
-
-        {
-            let store = open_temp_store(&dir).await;
-            store.add(&record).await.unwrap();
-        }
-
-        let store = open_temp_store(&dir).await;
-        assert_eq!(store.count().await.unwrap(), 1);
-    }
-
-    fn make_record(skeet_suffix: &str) -> ImageRecord {
-        let img = test_image_with_color(rand::random(), rand::random(), rand::random());
-        ImageRecord {
-            image_id: ImageId::from_image(&img),
-            skeet_id: format!("at://did:plc:abc/app.bsky.feed.post/{skeet_suffix}")
-                .parse()
-                .expect("valid test AT URI"),
-            image: img,
-            discovered_at: DiscoveredAt::now(),
-            original_at: OriginalAt::new(Utc::now()),
-            zone: Zone::TopRight,
-            annotated_image: test_image(),
-            config_version: ConfigVersion::from("test"),
-            detected_text: String::new(),
-        }
-    }
-
-    fn test_model_version() -> ModelVersion {
-        ModelVersion::from("test_v1")
-    }
-
-    #[tokio::test]
-    async fn upsert_and_read_score() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = open_temp_store(&dir).await;
-        let record = make_record("score1");
-        store.add(&record).await.unwrap();
-
-        assert_eq!(store.get_score(&record.image_id).await.unwrap(), None);
-
-        let score = Score::new(0.75).expect("valid score");
-        let mv = test_model_version();
-        store
-            .upsert_score(&record.image_id, &score, &mv)
-            .await
-            .unwrap();
-        let result = store.get_score(&record.image_id).await.unwrap();
-        assert_eq!(result, Some((score, mv)));
-    }
-
-    #[tokio::test]
-    async fn upsert_overwrites_existing_score() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = open_temp_store(&dir).await;
-        let record = make_record("score2");
-        store.add(&record).await.unwrap();
-
-        let mv = test_model_version();
-        store
-            .upsert_score(&record.image_id, &Score::new(0.5).expect("valid"), &mv)
-            .await
-            .unwrap();
-        let new_score = Score::new(0.9).expect("valid");
-        store
-            .upsert_score(&record.image_id, &new_score, &mv)
-            .await
-            .unwrap();
-
-        let result = store.get_score(&record.image_id).await.unwrap();
-        assert_eq!(result, Some((new_score, mv)));
-    }
-
-    #[tokio::test]
-    async fn list_unscored_returns_images_without_scores() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = open_temp_store(&dir).await;
-
-        let r1 = make_record("unscored1");
-        let r2 = make_record("unscored2");
-        let r3 = make_record("unscored3");
-        store.add(&r1).await.unwrap();
-        store.add(&r2).await.unwrap();
-        store.add(&r3).await.unwrap();
-
-        let mv = test_model_version();
-        store
-            .upsert_score(&r1.image_id, &Score::new(0.8).expect("valid"), &mv)
-            .await
-            .unwrap();
-
-        let unscored = store
-            .list_unscored_image_ids_for_version(&mv)
-            .await
-            .unwrap();
-        assert_eq!(unscored.len(), 2);
-        assert!(unscored.contains(&r2.image_id));
-        assert!(unscored.contains(&r3.image_id));
-        assert!(!unscored.contains(&r1.image_id));
-    }
-
-    #[tokio::test]
-    async fn list_unscored_includes_images_scored_with_different_version() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = open_temp_store(&dir).await;
-
-        let r1 = make_record("ver1");
-        store.add(&r1).await.unwrap();
-
-        let old_mv = ModelVersion::from("old_v1");
-        let new_mv = ModelVersion::from("new_v2");
-        store
-            .upsert_score(&r1.image_id, &Score::new(0.8).expect("valid"), &old_mv)
-            .await
-            .unwrap();
-
-        let unscored = store
-            .list_unscored_image_ids_for_version(&new_mv)
-            .await
-            .unwrap();
-        assert_eq!(unscored.len(), 1);
-        assert!(unscored.contains(&r1.image_id));
-    }
-
-    #[tokio::test]
-    async fn list_scored_summaries_ordered_by_score() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = open_temp_store(&dir).await;
-
-        let r1 = make_record("scored1");
-        let r2 = make_record("scored2");
-        let r3 = make_record("scored3");
-        store.add(&r1).await.unwrap();
-        store.add(&r2).await.unwrap();
-        store.add(&r3).await.unwrap();
-
-        let mv = test_model_version();
-        store
-            .upsert_score(&r1.image_id, &Score::new(0.3).expect("valid"), &mv)
-            .await
-            .unwrap();
-        store
-            .upsert_score(&r2.image_id, &Score::new(0.9).expect("valid"), &mv)
-            .await
-            .unwrap();
-        // r3 not scored
-
-        let scored = store.list_scored_summaries_by_score().await.unwrap();
-        assert_eq!(scored.len(), 2);
-        assert_eq!(scored[0].0.image_id, r2.image_id);
-        assert_eq!(scored[0].1, Score::new(0.9).expect("valid"));
-        assert_eq!(scored[1].0.image_id, r1.image_id);
-        assert_eq!(scored[1].1, Score::new(0.3).expect("valid"));
-    }
-}
+mod store_tests;
