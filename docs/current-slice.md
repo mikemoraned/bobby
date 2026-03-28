@@ -72,6 +72,11 @@ Now that we have a small (sub 1%) amount coming through, we can apply some more 
                     * Table lifecycle (open once, reuse), index choice (BTREE via Auto for high-cardinality string), `OptimizeAction::All` (Compact + Prune + Index) are all aligned with guidance.
                     * Concurrent writers on S3/R2 are safe: `object_store` defaults to `S3ConditionalPut::ETagMatch` which uses `If-None-Match: *` on puts — R2 supports this natively. A racing commit fails with `412 Precondition Failed` and Lance retries at the next version. DynamoDB commit store is deprecated in favour of this. Only relevant concern is efficiency under high contention (retry storms), not correctness — and we have a single writer.
                 * [x] raise `client_max_retries` from 0 to 3 to handle transient S3/R2 errors without blocking the pipeline
+    * [x] the lance Table usage may be leading to updates not being seen:
+        * what I am seeing happen is that `skeet-find` is finding and saving images that are then not visible in a parallel run of `skeet-feed`. maybe something is being cached?
+        * [x] write a failing integ test to demonstrate this that opens up two SkeetStore instances sharing the same backing directory. do an update via store1 and then check it visible via store2.
+        * [x] if tests fails, work out why and fix, referring to the Lancedb docs as needed.
+        * **Root cause**: LanceDB's default `read_consistency_interval` is `None`, meaning a `Table` handle only sees the version it was opened at and never refreshes. When `skeet-find` writes new images and `skeet-feed` reads concurrently, the feed's table handle was stale. Fix: set `read_consistency_interval(Duration::ZERO)` on `lancedb::connect()` for strong consistency — every read now checks for the latest committed version.
 
 * [x] correctness:
     * [x] write a SKILL which is invocable by `/add-to-blocklist` which:
@@ -104,7 +109,7 @@ Now that we have a small (sub 1%) amount coming through, we can apply some more 
         * See https://cot.rs and related docs (https://docs.rs/axum/latest/axum/) for recommendations on how to do this.
             * For example it is typical in Axum apps (which cot uses) to hold global things like DB's in AppState; see https://docs.rs/axum/latest/axum/extract/struct.State.html
 
-* [ ] minimal `skeet-scorer`
+* [x] minimal `skeet-scorer`
     * add a new table `images_score` which contains:
         * an `ImageId` as a key which is a foreign key to the `images` table for that image
         * an f32 score
@@ -118,11 +123,19 @@ Now that we have a small (sub 1%) amount coming through, we can apply some more 
             * reads `model.toml`
         * [x] `live-score` : every minute, finds all images that have been added in past minute and which do not have a score, and assigns one
             * reads `model.toml`
-    * [ ] add a config version to `model.toml`, and related structs (e.g. `ConfigVersion`), similar to what we have for `archetype.toml`:
-        * [ ] add something similar to `ConfigVersion` (maybe `ModelVersion`) which captures a hash of the config as with `archetype.toml`, and is kept up-to-date in a similar way
-        * [ ] update the scoring so that:
+    * [x] add a config version to `model.toml`, and related structs (e.g. `ConfigVersion`), similar to what we have for `archetype.toml`:
+        * [x] add something similar to `ConfigVersion` (maybe `ModelVersion`) which captures a hash of the config as with `archetype.toml`, and is kept up-to-date in a similar way
+        * [x] update the scoring so that:
             * it attaches the config version to the score; this will require an update to the table version and schema
             * `live-score` and `rescore` finds those which have not been scored by the latest `ModelVersion`
+
+
+
+* [ ] canopy/deep terminology refactor:
+    * canopy filtering is where we apply a fast filter at scale which 
+        * I've previously called this "envelope filtering" but canopy 
+I added a new example "v2:65ec937601ba69124a1a8bc8a9084de6.png" which is not an examplar
+    * this should 
 
 * [x] debugging helpers:
     * [x] add a small `summarise` cli within `skeet-store` which:
@@ -136,7 +149,8 @@ Now that we have a small (sub 1%) amount coming through, we can apply some more 
     * [x] add `summarise` and `summarise-r2` Justfile rules which run summarise against local and remote store
     * [x] this same functionality should also be added to the homepage of the `skeet-feed` so that it shows a `SkeetStoreSummary`
 
-* [x] updated `skeet-feed` to have two pages, which replace the homepage
+* [x] update `skeet-feed` to have more pages, which replace the homepage
     * [x] `latest` : this is the current page which shows the latest skeets received, regardless of whether they have been scored
-    * [ ] `best` : same as latest except only shows those scored, and orders from best to worst
+    * [x] `best` : same as latest except only shows those scored, and orders from best to worst
     * [x] homepage should have links to each of these
+    * [ ] `exemplars` this is just a list of the 

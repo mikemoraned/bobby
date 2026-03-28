@@ -254,6 +254,23 @@ async fn list_unscored_includes_images_scored_with_different_version() {
 }
 
 #[tokio::test]
+async fn writes_from_one_store_visible_to_another() {
+    let dir = tempfile::tempdir().unwrap();
+    let store1 = open_temp_store(&dir).await;
+    let store2 = open_temp_store(&dir).await;
+
+    let record = make_record("cross-store-visibility");
+    store1.add(&record).await.unwrap();
+
+    // store2 should see the record written by store1
+    assert!(
+        store2.exists(&record.image_id).await.unwrap(),
+        "store2 should see record written by store1"
+    );
+    assert_eq!(store2.count().await.unwrap(), 1);
+}
+
+#[tokio::test]
 async fn list_scored_summaries_ordered_by_score() {
     let dir = tempfile::tempdir().unwrap();
     let store = open_temp_store(&dir).await;

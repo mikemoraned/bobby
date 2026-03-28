@@ -16,6 +16,7 @@ pub use types::{DiscoveredAt, ImageId, ImageRecord, InvalidImageId, OriginalAt, 
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use arrow_array::{
     Float32Array, Int64Array, LargeBinaryArray, RecordBatch, RecordBatchIterator, StringArray,
@@ -52,6 +53,7 @@ impl SkeetStore {
     ) -> Result<Self, StoreError> {
         info!(uri, "opening store");
         let db = lancedb::connect(uri)
+            .read_consistency_interval(Duration::ZERO)
             .storage_options(storage_options)
             .execute()
             .await?;
