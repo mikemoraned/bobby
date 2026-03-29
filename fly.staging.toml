@@ -1,0 +1,29 @@
+[build]
+dockerfile = "Dockerfile.skeet-feed"
+
+app = "bobby-staging"
+primary_region = "lhr"
+
+[processes]
+app = "skeet-feed --store-path s3://hom-bobby/encrypted-store --hostname bobby-staging.houseofmoran.io"
+
+[env]
+RUST_LOG = "skeet_feed=info,skeet_store=info"
+
+[http_service]
+internal_port = 8080
+force_https = true
+auto_stop_machines = "suspend"
+auto_start_machines = true
+min_machines_running = 0
+
+[[http_service.checks]]
+grace_period = "10s"
+interval = "30s"
+method = "GET"
+timeout = "5s"
+path = "/.well-known/did.json"
+
+[[vm]]
+size = "shared-cpu-1x"
+memory = "512mb"

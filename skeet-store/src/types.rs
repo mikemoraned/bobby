@@ -70,6 +70,11 @@ impl DiscoveredAt {
     pub fn format_short(&self) -> String {
         self.0.format("%Y-%m-%d %H:%M").to_string()
     }
+
+    pub fn is_within_hours(&self, now: DateTime<Utc>, hours: u64) -> bool {
+        let cutoff = now - chrono::Duration::hours(hours as i64);
+        self.0 >= cutoff
+    }
 }
 
 impl fmt::Display for DiscoveredAt {

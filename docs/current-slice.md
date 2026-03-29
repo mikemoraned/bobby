@@ -23,7 +23,14 @@
             * [x] update live firehose pruner so that, alongside stats of how often each `Rejection` reason is used it also outputs:
                 * [x] how often `RejectionCategory` is used (in raw numbers and %-ages)
                 * [x] how often each `RejectionCategory` was the sole reason for rejection e.g. how often `RejectionCategory::Text` was the sole reason for a Skeet being pruned
-        * [ ] if we remove it we should remove all associated crates / enums / model config etc
+        * ok, from the stats (see below), it looks like `Text` is only the sole rejection category 1% of the time. So, we can afford to get rid of it entirely (we can always bring it back later if needed)
+        ```
+        2026-03-29T23:04:12.963692Z  INFO skeet_prune::status: skeets: 17426 (1.9/s) | images: 17274 | saved: 33 (0.2%) | rejected: 21425 (BlockedByMetadata: 4198 [18%], FaceNotInAcceptedZone: 213 [1%], FaceTooLarge: 36 [0%], FaceTooSmall: 1691 [7%], TooFewFrontalFaces: 12491 [54%], TooLittleFaceSkin: 603 [3%], TooManyFaces: 2092 [9%], TooMuchSkinOutsideFace: 917 [4%], TooMuchText: 929 [4%]) | categories: Face: 17072 [80%] (sole: 16298 [76%]), Text: 929 [4%] (sole: 155 [1%]), Metadata: 4198 [20%] (sole: 4198 [20%])
+        ```
+            * [ ] we should remove all associated crates / enums / model config etc. suggested strategy is to:
+                * [ ] remove downloaded models related to text, and the Justfile rules for them
+                * [ ] remove the `text-detection` crate from the workspace and fix all related compile error
+                * [ ] do a pass to ensure we don't mention it anywhere anymore
 
 * [ ] a new `skeet-feed` which is just for the Bluesky Custom Feed:
     * this will run on fly.io as a new `bobby-staging.houseofmoran.io` app (called `bobby-staging`)
