@@ -71,3 +71,15 @@ Moved storage to the cloud and added observability:
 - **OpenTelemetry**: optional OTLP exporter layer activated by `OTEL_EXPORTER_OTLP_ENDPOINT` env var; when absent, a warning is logged and OTEL is disabled. Configured for Honeycomb via Justfile `*-r2` rules with ingest key from 1Password.
 - **tokio-console**: opt-in via `--tokio-console-port` CLI arg on `finder` and `feed`. Uses `console_subscriber::ConsoleLayer::builder().init()` as a standalone subscriber — file and OTEL layers are disabled in this mode due to a known incompatibility between `ConsoleLayer` and `fmt::Layer` span tracking.
 - **Refactoring**: eliminated redundant face detection in `classify_image`, deduplicated excluded-labels constants, fixed `ImageId::as_str()` conventions, extracted shared tracing setup to `shared::tracing`, embedded `StoredImageSummary` inside `StoredImage`.
+
+## Slice 8: Minimal qualitative scoring on top of Envelope filtering
+
+Added scoring, robustness, and terminology refactoring across the pipeline:
+
+- **Store improvements**: content-addressable `ImageId` (MD5 hash), BTree scalar index on `image_id`, deduplication on save, and `read_consistency_interval(Duration::ZERO)` for strong cross-process consistency.
+- **Pipeline robustness**: split firehose into `filter` and `save` stages connected by a channel; added local fallback store (dead-letter queue) for failed remote saves with a `redrive-r2` CLI for reconciliation. Improved firehose connection reliability (random endpoint selection, connect/receive timeouts, thumbnail downloads). Tuned LanceDB with generous HTTP timeouts, auto-compaction every N writes, a `compact` CLI, and raised `client_max_retries` to 3.
+- **Secrets management**: moved secrets from CLI args to env vars via `op run --env-file bobby.env`.
+- **Content filtering fixes**: fixed status counter to track rejected images (not reasons); fixed adult content and author opt-out filtering by splitting `filter_stage` into `filter_meta_stage` and `filter_image_stage` with integration tests proving correctness on real firehose code paths. Added `/add-to-blocklist` skill.
+- **skeet-scorer → skeet-refine**: introduced LLM-based image scoring (via OpenAI, using generic Rust crates) with `train`, `rescore`, and `live-score` CLIs. Config-versioned `refine.toml` with `RefineModelConfig` ensures scores track which model version produced them.
+- **Terminology refactor**: renamed `skeet-finder` → `skeet-prune` and `skeet-scorer` → `skeet-refine` to follow prune-and-refine pattern; `archetype.toml` → `config/prune.toml`, `model.toml` → `config/refine.toml`. Documented pattern in `architecture.md`.
+- **Debugging & UX**: `summarise` CLI and `SkeetStoreSummary` on feed homepage; feed split into `latest` (all skeets) and `best` (scored, ordered by score) pages with homepage links.
