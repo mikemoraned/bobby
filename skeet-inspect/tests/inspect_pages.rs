@@ -3,8 +3,8 @@
 use chrono::Utc;
 use cot::test::Client;
 use image::{DynamicImage, ImageBuffer, Rgba};
-use skeet_feed::StoreLayer;
-use skeet_feed::project::FeedProject;
+use skeet_inspect::StoreLayer;
+use skeet_inspect::project::InspectProject;
 use skeet_store::{
     DiscoveredAt, ImageId, ImageRecord, ModelVersion, OriginalAt, Score, SkeetStore, Zone,
 };
@@ -37,7 +37,7 @@ async fn open_temp_store(dir: &tempfile::TempDir) -> SkeetStore {
 }
 
 async fn client_for(store: SkeetStore) -> Client {
-    let project = FeedProject {
+    let project = InspectProject {
         store_layer: StoreLayer::new(store),
     };
     Client::new(project).await
@@ -54,39 +54,39 @@ fn has_table_rows(body: &str) -> bool {
 }
 
 #[tokio::test]
-async fn latest_shows_entries_when_store_has_skeets() {
+async fn pruned_shows_entries_when_store_has_skeets() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let store = open_temp_store(&dir).await;
 
-    let record = make_record("latest1", 0, 255, 0);
+    let record = make_record("pruned1", 0, 255, 0);
     store.add(&record).await.expect("add record");
 
     let mut client = client_for(store).await;
-    let body = get_body(&mut client, "/latest").await;
+    let body = get_body(&mut client, "/pruned").await;
 
-    assert!(has_table_rows(&body), "expected table rows in latest feed");
+    assert!(has_table_rows(&body), "expected table rows in pruned page");
 }
 
 #[tokio::test]
-async fn latest_shows_no_entries_when_store_has_no_skeets() {
+async fn pruned_shows_no_entries_when_store_has_no_skeets() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let store = open_temp_store(&dir).await;
 
     let mut client = client_for(store).await;
-    let body = get_body(&mut client, "/latest").await;
+    let body = get_body(&mut client, "/pruned").await;
 
     assert!(
         !has_table_rows(&body),
-        "expected no table rows in empty latest feed"
+        "expected no table rows in empty pruned page"
     );
 }
 
 #[tokio::test]
-async fn best_shows_entries_when_store_has_scored_skeets() {
+async fn refined_shows_entries_when_store_has_scored_skeets() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let store = open_temp_store(&dir).await;
 
-    let record = make_record("best1", 0, 0, 255);
+    let record = make_record("refined1", 0, 0, 255);
     let image_id = record.image_id.clone();
     store.add(&record).await.expect("add record");
     store
@@ -99,27 +99,30 @@ async fn best_shows_entries_when_store_has_scored_skeets() {
         .expect("upsert score");
 
     let mut client = client_for(store).await;
-    let body = get_body(&mut client, "/best").await;
-
-    assert!(has_table_rows(&body), "expected table rows in best feed");
-}
-
-#[tokio::test]
-async fn best_shows_no_entries_when_store_has_no_skeets() {
-    let dir = tempfile::tempdir().expect("create temp dir");
-    let store = open_temp_store(&dir).await;
-
-    let mut client = client_for(store).await;
-    let body = get_body(&mut client, "/best").await;
+    let body = get_body(&mut client, "/refined").await;
 
     assert!(
-        !has_table_rows(&body),
-        "expected no table rows in empty best feed"
+        has_table_rows(&body),
+        "expected table rows in refined page"
     );
 }
 
 #[tokio::test]
-async fn best_shows_no_entries_when_store_has_skeets_but_none_scored() {
+async fn refined_shows_no_entries_when_store_has_no_skeets() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let store = open_temp_store(&dir).await;
+
+    let mut client = client_for(store).await;
+    let body = get_body(&mut client, "/refined").await;
+
+    assert!(
+        !has_table_rows(&body),
+        "expected no table rows in empty refined page"
+    );
+}
+
+#[tokio::test]
+async fn refined_shows_no_entries_when_store_has_skeets_but_none_scored() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let store = open_temp_store(&dir).await;
 
@@ -127,10 +130,10 @@ async fn best_shows_no_entries_when_store_has_skeets_but_none_scored() {
     store.add(&record).await.expect("add record");
 
     let mut client = client_for(store).await;
-    let body = get_body(&mut client, "/best").await;
+    let body = get_body(&mut client, "/refined").await;
 
     assert!(
         !has_table_rows(&body),
-        "expected no table rows in best feed when no skeets are scored"
+        "expected no table rows in refined page when no skeets are scored"
     );
 }

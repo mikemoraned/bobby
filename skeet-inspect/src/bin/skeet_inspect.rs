@@ -2,8 +2,8 @@
 
 use clap::Parser;
 use cot::project::Bootstrapper;
-use skeet_feed::StoreLayer;
-use skeet_feed::project::FeedProject;
+use skeet_inspect::StoreLayer;
+use skeet_inspect::project::InspectProject;
 use skeet_store::StoreArgs;
 use tracing::info;
 
@@ -25,16 +25,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         shared::tracing::TokioConsoleSupport::Disabled,
         |port| shared::tracing::TokioConsoleSupport::Enabled { port },
     );
-    let _guard = shared::tracing::init_with_file_and_stderr("skeet_feed=info,shared=info,skeet_store=info", "feed.log", console);
+    let _guard = shared::tracing::init_with_file_and_stderr("skeet_inspect=info,shared=info,skeet_store=info", "inspect.log", console);
     let store = args
         .store
         .open_store()
         .await
         .expect("failed to open store at startup");
 
-    info!("starting skeet-feed server on 127.0.0.1:8000");
+    info!("starting skeet-inspect server on 127.0.0.1:8000");
 
-    let project = FeedProject {
+    let project = InspectProject {
         store_layer: StoreLayer::new(store),
     };
     let bootstrapper = Bootstrapper::new(project)
@@ -48,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use image::DynamicImage;
-    use skeet_feed::handlers::to_feed_entry;
+    use skeet_inspect::handlers::to_feed_entry;
     use skeet_store::{DiscoveredAt, ImageId, SkeetId, Zone};
 
     #[test]

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::Cursor;
 
 use cot::html::Html;
@@ -42,6 +43,12 @@ pub fn to_feed_entry(
         at_uri: skeet_id.to_string(),
         web_url: format!("https://bsky.app/profile/{did}/post/{rkey}"),
     })
+}
+
+#[derive(Debug)]
+pub struct InspectEntry {
+    pub entry: FeedEntry,
+    pub score: String,
 }
 
 #[derive(Debug)]
@@ -97,41 +104,63 @@ pub async fn home(Store(store): Store) -> cot::Result<Html> {
 }
 
 #[derive(Debug, Template)]
-#[template(path = "feed.html")]
-pub struct FeedTemplate {
-    pub entries: Vec<FeedEntry>,
+#[template(path = "inspect.html")]
+pub struct InspectTemplate {
+    pub title: String,
+    pub empty_message: String,
+    pub entries: Vec<InspectEntry>,
 }
 
-pub const MAX_FEED_ENTRIES: usize = 50;
+pub const MAX_ENTRIES: usize = 50;
 
 #[instrument(skip_all)]
-pub async fn latest(Store(store): Store) -> cot::Result<Html> {
-    info!("serving latest feed");
+pub async fn pruned(Store(store): Store) -> cot::Result<Html> {
+    info!("serving pruned page");
 
     let mut summaries = store
         .list_all_summaries()
         .await
         .map_err(|e| cot::Error::internal(format!("failed to read store: {e}")))?;
 
+    let scored = store
+        .list_scored_summaries_by_score()
+        .await
+        .map_err(|e| cot::Error::internal(format!("failed to read scores: {e}")))?;
+
+    let score_map: HashMap<String, String> = scored
+        .into_iter()
+        .map(|(img, score)| (img.image_id.to_string(), format!("{score}")))
+        .collect();
+
     summaries.sort_by(|a, b| b.discovered_at.cmp(&a.discovered_at));
 
-    let entries: Vec<FeedEntry> = summaries
+    let entries: Vec<InspectEntry> = summaries
         .iter()
-        .take(MAX_FEED_ENTRIES)
+        .take(MAX_ENTRIES)
         .filter_map(|img| {
-            to_feed_entry(
+            let entry = to_feed_entry(
                 &img.discovered_at,
                 &img.image_id,
                 &img.skeet_id,
                 &img.zone,
                 img.config_version.as_str(),
                 &img.detected_text,
-            )
+            )?;
+            let score = score_map
+                .get(&img.image_id.to_string())
+                .cloned()
+                .unwrap_or_else(|| "None".to_string());
+            Some(InspectEntry { entry, score })
         })
         .collect();
 
-    info!(count = entries.len(), "serving latest feed entries");
-    let template = FeedTemplate { entries };
+    info!(count = entries.len(), "serving pruned entries");
+    let template = InspectTemplate {
+        title: "Pruned Skeets".to_string(),
+        empty_message: "No skeets found yet. Run <code>just prune</code> to start collecting."
+            .to_string(),
+        entries,
+    };
     let rendered = template.render()?;
     Ok(Html::new(rendered))
 }
@@ -171,30 +200,18 @@ pub async fn annotated_image(
     Ok(response)
 }
 
-#[derive(Debug)]
-pub struct BestFeedEntry {
-    pub entry: FeedEntry,
-    pub score: String,
-}
-
-#[derive(Debug, Template)]
-#[template(path = "best.html")]
-pub struct BestTemplate {
-    pub entries: Vec<BestFeedEntry>,
-}
-
 #[instrument(skip_all)]
-pub async fn best(Store(store): Store) -> cot::Result<Html> {
-    info!("serving best feed");
+pub async fn refined(Store(store): Store) -> cot::Result<Html> {
+    info!("serving refined page");
 
     let scored = store
         .list_scored_summaries_by_score()
         .await
         .map_err(|e| cot::Error::internal(format!("failed to read store: {e}")))?;
 
-    let entries: Vec<BestFeedEntry> = scored
+    let entries: Vec<InspectEntry> = scored
         .iter()
-        .take(MAX_FEED_ENTRIES)
+        .take(MAX_ENTRIES)
         .filter_map(|(img, score)| {
             let entry = to_feed_entry(
                 &img.discovered_at,
@@ -204,15 +221,19 @@ pub async fn best(Store(store): Store) -> cot::Result<Html> {
                 img.config_version.as_str(),
                 &img.detected_text,
             )?;
-            Some(BestFeedEntry {
+            Some(InspectEntry {
                 entry,
-                score: format!("{}", score),
+                score: format!("{score}"),
             })
         })
         .collect();
 
-    info!(count = entries.len(), "serving best feed entries");
-    let template = BestTemplate { entries };
+    info!(count = entries.len(), "serving refined entries");
+    let template = InspectTemplate {
+        title: "Refined Skeets".to_string(),
+        empty_message: "No scored skeets yet.".to_string(),
+        entries,
+    };
     let rendered = template.render()?;
     Ok(Html::new(rendered))
 }
