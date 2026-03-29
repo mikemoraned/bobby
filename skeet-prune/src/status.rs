@@ -96,7 +96,7 @@ impl Status {
         }
     }
 
-    pub fn log_summary(&self) {
+    fn log_summary(&self) {
         let hit_rate = if self.image_count > 0 {
             (self.saved_count as f64 / self.image_count as f64) * 100.0
         } else {

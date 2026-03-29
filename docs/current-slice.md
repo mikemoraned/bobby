@@ -23,10 +23,6 @@
             * [x] update live firehose pruner so that, alongside stats of how often each `Rejection` reason is used it also outputs:
                 * [x] how often `RejectionCategory` is used (in raw numbers and %-ages)
                 * [x] how often each `RejectionCategory` was the sole reason for rejection e.g. how often `RejectionCategory::Text` was the sole reason for a Skeet being pruned
-            * [x] a replay analysis:
-                * add a `replay` cli to `skeet-prune` which takes a local or remote store, and replays the images through the pruning pipeline
-                    * this can effectively be seen as replacing the firehose input after it has fetched images
-                    * we should re-use as much as possible from existing pipeline
         * [ ] if we remove it we should remove all associated crates / enums / model config etc
 
 * [ ] a new `skeet-feed` which is just for the Bluesky Custom Feed:
