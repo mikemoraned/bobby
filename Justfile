@@ -101,6 +101,12 @@ compact-fallback:
 compact-r2:
     op run --env-file bobby.env -- cargo run --quiet --release --bin compact -- --store-path {{ R2_STORE }}
 
+replay:
+    RUST_BACKTRACE=1 cargo run --quiet --release --bin replay -- --store-path {{ STORE }}
+
+replay-r2:
+    RUST_BACKTRACE=1 op run --env-file bobby.env -- cargo run --quiet --release --bin replay -- --store-path {{ R2_STORE }}
+
 add-to-blocklist at_uri reason="manual":
     cargo run --quiet --release --bin add-to-blocklist -- "{{ at_uri }}" --reason "{{ reason }}"
 

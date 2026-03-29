@@ -1,9 +1,15 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
-use shared::Rejection;
+use shared::{Rejection, RejectionCategory};
 use tracing::info;
+
+const ALL_CATEGORIES: [RejectionCategory; 3] = [
+    RejectionCategory::Face,
+    RejectionCategory::Text,
+    RejectionCategory::Metadata,
+];
 
 pub struct Status {
     post_count: u64,
@@ -13,6 +19,8 @@ pub struct Status {
     saved_fallback: u64,
     rejected_count: u64,
     rejection_counts: HashMap<Rejection, u64>,
+    category_counts: HashMap<RejectionCategory, u64>,
+    sole_category_counts: HashMap<RejectionCategory, u64>,
     last_log: Instant,
     log_interval: Duration,
     log_every_n: u64,
@@ -29,6 +37,8 @@ impl Status {
             saved_fallback: 0,
             rejected_count: 0,
             rejection_counts: HashMap::new(),
+            category_counts: HashMap::new(),
+            sole_category_counts: HashMap::new(),
             last_log: Instant::now(),
             log_interval,
             log_every_n,
@@ -58,8 +68,17 @@ impl Status {
 
     pub fn record_rejected(&mut self, reasons: &[Rejection]) {
         self.rejected_count += 1;
+        let mut categories_seen: HashSet<RejectionCategory> = HashSet::new();
         for reason in reasons {
             *self.rejection_counts.entry(*reason).or_default() += 1;
+            categories_seen.insert(reason.category());
+        }
+        for &cat in &categories_seen {
+            *self.category_counts.entry(cat).or_default() += 1;
+        }
+        if categories_seen.len() == 1 {
+            let sole = categories_seen.into_iter().next().expect("just checked len == 1");
+            *self.sole_category_counts.entry(sole).or_default() += 1;
         }
     }
 
@@ -77,7 +96,7 @@ impl Status {
         }
     }
 
-    fn log_summary(&self) {
+    pub fn log_summary(&self) {
         let hit_rate = if self.image_count > 0 {
             (self.saved_count as f64 / self.image_count as f64) * 100.0
         } else {
@@ -123,6 +142,28 @@ impl Status {
                 write!(msg, "{reason}: {count} [{pct:.0}%]").expect("write to String");
             }
             write!(msg, ")").expect("write to String");
+        }
+
+        if !self.category_counts.is_empty() {
+            write!(msg, " | categories: ").expect("write to String");
+            for (i, cat) in ALL_CATEGORIES.iter().enumerate() {
+                let count = self.category_counts.get(cat).copied().unwrap_or(0);
+                let pct = if rejected > 0 {
+                    (count as f64 / rejected as f64) * 100.0
+                } else {
+                    0.0
+                };
+                let sole = self.sole_category_counts.get(cat).copied().unwrap_or(0);
+                let sole_pct = if rejected > 0 {
+                    (sole as f64 / rejected as f64) * 100.0
+                } else {
+                    0.0
+                };
+                if i > 0 {
+                    write!(msg, ", ").expect("write to String");
+                }
+                write!(msg, "{cat}: {count} [{pct:.0}%] (sole: {sole} [{sole_pct:.0}%])").expect("write to String");
+            }
         }
 
         info!("{msg}");

@@ -48,6 +48,10 @@ path = "src/bin/at_metadata_dump.rs"
 name = "add-to-blocklist"
 path = "src/bin/add_to_blocklist.rs"
 
+[[bin]]
+name = "replay"
+path = "src/bin/replay.rs"
+
 [[test]]
 name = "examples"
 harness = false

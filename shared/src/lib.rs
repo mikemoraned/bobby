@@ -52,6 +52,23 @@ impl PartialOrd for Percentage {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RejectionCategory {
+    Face,
+    Text,
+    Metadata,
+}
+
+impl std::fmt::Display for RejectionCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Face => write!(f, "Face"),
+            Self::Text => write!(f, "Text"),
+            Self::Metadata => write!(f, "Metadata"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Rejection {
     FaceTooSmall,
     FaceTooLarge,
@@ -62,6 +79,22 @@ pub enum Rejection {
     TooMuchSkinOutsideFace,
     TooMuchText,
     BlockedByMetadata,
+}
+
+impl Rejection {
+    pub const fn category(self) -> RejectionCategory {
+        match self {
+            Self::FaceTooSmall
+            | Self::FaceTooLarge
+            | Self::FaceNotInAcceptedZone
+            | Self::TooManyFaces
+            | Self::TooFewFrontalFaces
+            | Self::TooLittleFaceSkin
+            | Self::TooMuchSkinOutsideFace => RejectionCategory::Face,
+            Self::TooMuchText => RejectionCategory::Text,
+            Self::BlockedByMetadata => RejectionCategory::Metadata,
+        }
+    }
 }
 
 impl std::fmt::Display for Rejection {
@@ -321,6 +354,13 @@ mod tests {
             let parsed: Rejection = s.parse().expect("should parse");
             assert_eq!(parsed, r);
         }
+    }
+
+    #[test]
+    fn rejection_categories() {
+        assert_eq!(Rejection::FaceTooSmall.category(), RejectionCategory::Face);
+        assert_eq!(Rejection::TooMuchText.category(), RejectionCategory::Text);
+        assert_eq!(Rejection::BlockedByMetadata.category(), RejectionCategory::Metadata);
     }
 
     #[test]

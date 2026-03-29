@@ -8,22 +8,22 @@
 
 ### Tasks
 
-* [ ] refactors / cleanups
-    * [ ] rename `skeet-feed` to `skeet-inspect` capturing it's role of allowing inspection of what's been found. It doesn't need to be the actually exposed feed, so rename so I can use that name again for the main feed.
+* [x] refactors / cleanups
+    * [x] rename `skeet-feed` to `skeet-inspect` capturing it's role of allowing inspection of what's been found. It doesn't need to be the actually exposed feed, so rename so I can use that name again for the main feed.
         * rename associated `Justfile` rules, and clis as well.
-    * [ ] `skeet-inspect` changes:
-        * [ ] rename `latest` -> `pruned` and `best` -> `refined` pages, but keep current functionality
-        * [ ] simplify `pruned` and `refined` to show the same page content format and entries, but keep current functionality
+    * [x] `skeet-inspect` changes:
+        * [x] rename `latest` -> `pruned` and `best` -> `refined` pages, but keep current functionality
+        * [x] simplify `pruned` and `refined` to show the same page content format and entries, but keep current functionality
             * the only difference in format is that the `Score` column on `pruned` is allowed to just show `None` for rows that haven't been scored yet
 
 * [ ] `skeet-prune` changes:
-    * I suspect think the text-detection is not adding much benefit really
-        * [ ] before we remove it, let's add some analysis:
-            * [ ] add a `RejectionCategory` to each `Rejection` enum which is one of Face, Text, Metadata
-            * [ ] update live firehose pruner so that, alongside stats of how often each `Rejection` reason is used it also outputs:
-                * [ ] how often `RejectionCategory` is used (in raw numbers and %-ages)
-                * [ ] how often each `RejectionCategory` was the sole reason for rejection e.g. how often `RejectionCategory::Text` was the sole reason for a Skeet being pruned
-            * [ ] a replay analysis:
+    * I suspect the text-detection is not adding much benefit really
+        * [x] before we remove it, let's add some analysis:
+            * [x] add a `RejectionCategory` to each `Rejection` enum which is one of Face, Text, Metadata
+            * [x] update live firehose pruner so that, alongside stats of how often each `Rejection` reason is used it also outputs:
+                * [x] how often `RejectionCategory` is used (in raw numbers and %-ages)
+                * [x] how often each `RejectionCategory` was the sole reason for rejection e.g. how often `RejectionCategory::Text` was the sole reason for a Skeet being pruned
+            * [x] a replay analysis:
                 * add a `replay` cli to `skeet-prune` which takes a local or remote store, and replays the images through the pruning pipeline
                     * this can effectively be seen as replacing the firehose input after it has fetched images
                     * we should re-use as much as possible from existing pipeline
