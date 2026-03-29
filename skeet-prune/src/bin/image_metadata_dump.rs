@@ -41,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(at_uri = %stored.summary.skeet_id, "fetching post thread");
 
     let http = reqwest::Client::new();
-    let json = skeet_finder::metadata::fetch_post_thread(&http, &stored.summary.skeet_id).await?;
+    let json = skeet_prune::metadata::fetch_post_thread(&http, &stored.summary.skeet_id).await?;
     println!("{}", serde_json::to_string_pretty(&json)?);
 
     Ok(())

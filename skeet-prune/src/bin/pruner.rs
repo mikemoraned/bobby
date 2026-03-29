@@ -2,9 +2,9 @@
 
 use clap::Parser;
 use face_detection::FaceDetector;
-use shared::ArchetypeConfig;
-use skeet_finder::firehose::SkeetCandidate;
-use skeet_finder::pipeline::{ImageResult, MetaResult};
+use shared::PruneConfig;
+use skeet_prune::firehose::SkeetCandidate;
+use skeet_prune::pipeline::{ImageResult, MetaResult};
 use skeet_store::{SkeetStore, StoreArgs};
 use tokio::sync::mpsc;
 use tracing::info;
@@ -33,8 +33,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             shared::tracing::TokioConsoleSupport::Enabled { port }
         });
     let _guard = shared::tracing::init_with_file_and_stderr(
-        "skeet_finder=info,shared=info,skeet_store=info,lance_io=warn,object_store=warn",
-        "finder.log",
+        "skeet_prune=info,shared=info,skeet_store=info,lance_io=warn,object_store=warn",
+        "pruner.log",
         console,
     );
 
@@ -42,10 +42,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let detector = FaceDetector::from_bundled_weights();
     let text_detector = text_detection::TextDetector::from_bundled_models();
 
-    let archetype_config = ArchetypeConfig::from_file(
-        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../shared/archetype.toml"),
+    let prune_config = PruneConfig::from_file(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../config/prune.toml"),
     )?;
-    let config_version = archetype_config.version();
+    let config_version = prune_config.version();
 
     info!(config_version = %config_version, "face detection model loaded");
 
@@ -62,7 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => None,
     };
 
-    // Pipeline: firehose → meta filter → image filter → save
+    // Pipeline: firehose → meta prune → image prune → save
     let (firehose_tx, mut firehose_rx) = mpsc::channel::<SkeetCandidate>(16);
     let (meta_tx, mut meta_rx) = mpsc::channel::<MetaResult>(16);
     let (image_tx, mut image_rx) = mpsc::channel::<ImageResult>(100);
@@ -70,27 +70,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let meta_http = http.clone();
 
     tokio::spawn(async move {
-        skeet_finder::firehose_stage::run(firehose_tx).await;
+        skeet_prune::firehose_stage::run(firehose_tx).await;
     });
 
     tokio::spawn(async move {
-        skeet_finder::filter_meta_stage::run(&mut firehose_rx, meta_tx, meta_http).await;
+        skeet_prune::prune_meta_stage::run(&mut firehose_rx, meta_tx, meta_http).await;
     });
 
     tokio::spawn(async move {
-        skeet_finder::filter_image_stage::run(
+        skeet_prune::prune_image_stage::run(
             &mut meta_rx,
             image_tx,
             http,
             detector,
             text_detector,
-            archetype_config,
+            prune_config,
             config_version,
         )
         .await;
     });
 
-    skeet_finder::save_stage::run(&mut image_rx, &store, fallback.as_ref()).await;
+    skeet_prune::save_stage::run(&mut image_rx, &store, fallback.as_ref()).await;
 
     Ok(())
 }

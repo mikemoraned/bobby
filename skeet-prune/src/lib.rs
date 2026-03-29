@@ -2,8 +2,8 @@
 
 mod classify;
 pub mod content_filter;
-pub mod filter_image_stage;
-pub mod filter_meta_stage;
+pub mod prune_image_stage;
+pub mod prune_meta_stage;
 pub mod firehose;
 pub mod firehose_stage;
 pub mod metadata;

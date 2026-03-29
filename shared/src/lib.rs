@@ -99,37 +99,7 @@ impl std::str::FromStr for Rejection {
     }
 }
 
-/// A short hash string identifying a particular set of config values.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ConfigVersion(String);
-
-impl ConfigVersion {
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::fmt::Display for ConfigVersion {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl std::str::FromStr for ConfigVersion {
-    type Err = std::convert::Infallible;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self(s.to_string()))
-    }
-}
-
-impl From<&str> for ConfigVersion {
-    fn from(s: &str) -> Self {
-        Self(s.to_string())
-    }
-}
-
-/// A short hash string identifying a particular scoring model configuration.
+/// A short hash string identifying a particular model or config version.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ModelVersion(String);
 
@@ -204,9 +174,9 @@ impl PartialOrd for Score {
     }
 }
 
-/// Configuration for archetype classification thresholds.
+/// Configuration for prune classification thresholds.
 #[derive(Debug, Clone, Copy, Deserialize)]
-pub struct ArchetypeConfig {
+pub struct PruneConfig {
     pub min_face_area_pct: Percentage,
     pub max_face_area_pct: Percentage,
     pub min_face_skin_pct: Percentage,
@@ -214,7 +184,7 @@ pub struct ArchetypeConfig {
     pub max_text_area_pct: Percentage,
 }
 
-impl ArchetypeConfig {
+impl PruneConfig {
     /// Load configuration from a TOML file at the given path.
     pub fn from_file(path: &std::path::Path) -> Result<Self, Box<dyn std::error::Error>> {
         let text = std::fs::read_to_string(path)?;
@@ -227,7 +197,7 @@ impl ArchetypeConfig {
     /// The version is a short hex string derived from sorting all config
     /// key-value pairs and hashing them. Changing any threshold value
     /// produces a different version.
-    pub fn version(&self) -> ConfigVersion {
+    pub fn version(&self) -> ModelVersion {
         let mut entries = vec![
             ("max_face_area_pct", self.max_face_area_pct.value().to_bits()),
             ("max_text_area_pct", self.max_text_area_pct.value().to_bits()),
@@ -248,7 +218,7 @@ impl ArchetypeConfig {
         // Take first 8 hex chars for a short but unique-enough string
         write!(version, "{hash:016x}").expect("write to String");
         version.truncate(8);
-        ConfigVersion(version)
+        ModelVersion(version)
     }
 }
 

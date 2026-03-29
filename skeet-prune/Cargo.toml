@@ -1,5 +1,5 @@
 [package]
-name = "skeet-finder"
+name = "skeet-prune"
 version = "0.1.0"
 edition = "2024"
 
@@ -29,8 +29,8 @@ serde = { workspace = true }
 toml = { workspace = true }
 
 [[bin]]
-name = "finder"
-path = "src/bin/finder.rs"
+name = "pruner"
+path = "src/bin/pruner.rs"
 
 [[bin]]
 name = "classify-examples"

@@ -23,7 +23,7 @@ Now that we have a small (sub 1%) amount coming through, we can apply some more 
         * i.e. when it is created it shouldn't just be a random unique uuid, but instead should be a hash (e.g. md5) of the byte contents of the image
     * [x] update `skeet-find`/`skeet-store` so that, when it wants to save an image it has found, it first checks to see it does not already exist, based on id
 
-* [ ] fixes / refactorings:
+* [x] fixes / refactorings:
     * [x] the status summary for `find` appears to be wrong. `rejected` appears to be a count of rejected reasons and not rejected images. It should always be a count of rejected images with the invariant that `images = saved + rejected`. See example below of this being broken:
     ```
     00:03:03 ⠸ skeets: 1483 | images: 183 | saved: 0 (0.0%) | rejected: 281 (FaceNotInAcceptedZone: 3 [1%], FaceTooLarge: 1 [0%], FaceTooSmall: 40 [14%], TooFewFrontalFaces: 169 [60%], TooLittleFaceSkin: 8 [3%], TooManyFaces: 25 [9%], TooMuchSkinOutsideFace: 14 [5%], TooMuchText: 21 [7%])
@@ -129,13 +129,15 @@ Now that we have a small (sub 1%) amount coming through, we can apply some more 
             * it attaches the config version to the score; this will require an update to the table version and schema
             * `live-score` and `rescore` finds those which have not been scored by the latest `ModelVersion`
 
-
-
-* [ ] canopy/deep terminology refactor:
-    * canopy filtering is where we apply a fast filter at scale which 
-        * I've previously called this "envelope filtering" but canopy 
-I added a new example "v2:65ec937601ba69124a1a8bc8a9084de6.png" which is not an examplar
-    * this should 
+* [x] terminology refactor:
+    * [x] In this codebase, `find` (e.g. `skeet-find`) is currently used to describe the `prune` part of a prune-and-refine pattern where a fast, approximate check discards candidates that can't possibly match before a more expensive precise comparison is applied. The standard term for this is pruning. Rename clis, modules, functions, variables, types, and comments accordingly, but leave any uses of find that refer to actual search or lookup operations unchanged.
+    * [x] similarly, the recently introduced `skeet-score` should be renamed `skeet-refine` as the second part of the `prune-and-refine` pattern, and related naming should be changed
+    * [x] rename model and related config, so, for example:
+        * `archetype.toml` -> `prune.toml`
+        * `model.toml` -> `refine.toml`
+        * `ModelConfig` -> `RefineModelConfig`
+        * these model config toml files should be also be moved to a top-level `config` folder of repo to be easier to find
+    * [x] add a section to `architecture.md` which captures the prune and refine pattern
 
 * [x] debugging helpers:
     * [x] add a small `summarise` cli within `skeet-store` which:
@@ -153,4 +155,3 @@ I added a new example "v2:65ec937601ba69124a1a8bc8a9084de6.png" which is not an 
     * [x] `latest` : this is the current page which shows the latest skeets received, regardless of whether they have been scored
     * [x] `best` : same as latest except only shows those scored, and orders from best to worst
     * [x] homepage should have links to each of these
-    * [ ] `exemplars` this is just a list of the 

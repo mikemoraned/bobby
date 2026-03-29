@@ -8,18 +8,32 @@ The original project scanned Twitter's firehose, applied face detection (via Ope
 
 ## Target Architecture
 
-- **skeet-finder** — continuously listens to the Bluesky firehose and detects skeets containing images showing the content we want, then stores them in the skeet-store
+- **skeet-prune** — continuously listens to the Bluesky firehose and applies fast, approximate checks to discard candidates that can't possibly match, then stores surviving images in the skeet-store
+- **skeet-refine** — applies more expensive LLM-based scoring to pruned candidates, assigning each a quality score
 - **skeet-store** — stores found skeets in an S3-compatible store, in tables, managed as [LanceDB](https://lancedb.com) tables
 - **skeet-feed** — HTTP service that reads from the store and surfaces all found skeets as a Bluesky Feed
 
 ## Constraints, Trade-offs and Technology Choices
 
 - **Rust first:** all code should be in Rust where possible
-  - Acceptable to use non-Rust for getting Bluesky firehose data including images; once an image is fetched, everything else must be Rust
-  - Non-Rust ML models are OK
 - **ML:** use existing models or Rust libraries for face-detection and landmark identification
+  - Non-Rust ML models are OK if really required
 - **Burn:** use [Burn](https://burn.dev) ([GitHub](https://github.com/tracel-ai/burn)) for running ML models
 - **Sampling:** processing at line-speed may not be possible — sampling is fine. Simple parts (e.g. checking if a message contains an image) should be inline with receiving a message.
+
+## Prune and Refine Pattern
+
+The pipeline follows a **prune-and-refine** pattern:
+
+1. **Prune** (`skeet-prune`): fast, approximate checks that discard the vast majority of candidates. This stage runs inline with the firehose and uses cheap operations — face detection, skin detection, text detection, and metadata filtering — to reduce the stream to a sub-1% hit rate. Biased towards recall: a small percentage of false positives are acceptable because they will be caught in the refine stage.
+
+2. **Refine** (`skeet-refine`): expensive, precise scoring applied only to the candidates that survive pruning. Uses an LLM to evaluate how well each image matches the target intent (selfie with a recognizable landmark). Produces a score between 0.0 and 1.0.
+
+Configuration for each stage lives in `config/`:
+- `config/prune.toml` — thresholds for face area, skin percentages, text area
+- `config/refine.toml` — LLM provider, model name, and scoring prompt
+
+Both configs produce a `ModelVersion` (a short hash of their contents) used to track which version of the config was active when an image was processed or scored.
 
 ## Testing
 

@@ -10206,7 +10206,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "skeet-finder"
+name = "skeet-prune"
 version = "0.1.0"
 dependencies = [
  "atrium-api",
@@ -10230,7 +10230,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "skeet-scorer"
+name = "skeet-refine"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",

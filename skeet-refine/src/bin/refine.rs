@@ -1,19 +1,19 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use skeet_scorer::model::load_model;
-use skeet_scorer::scoring::{build_agent, create_client, score_image};
+use skeet_refine::model::load_model;
+use skeet_refine::refining::{build_agent, create_client, refine_image};
 use skeet_store::StoreArgs;
 use tracing::{error, info};
 
 #[derive(Parser)]
-#[command(name = "rescore", about = "Score all images in the store using model.toml")]
+#[command(name = "refine", about = "Score all images in the store using refine.toml")]
 struct Args {
     #[command(flatten)]
     store: StoreArgs,
 
-    /// Path to model.toml
-    #[arg(long, default_value = "skeet-scorer/model.toml")]
+    /// Path to refine.toml
+    #[arg(long, default_value = "config/refine.toml")]
     model_path: PathBuf,
 
     /// OpenAI API key
@@ -41,11 +41,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let images = store.list_all().await?;
     let total = images.len();
-    info!(total, "scoring all images");
+    info!(total, "refining all images");
 
     for (i, stored) in images.iter().enumerate() {
         let image_id = &stored.summary.image_id;
-        match score_image(&agent, &stored.image).await {
+        match refine_image(&agent, &stored.image).await {
             Ok(score) => {
                 store
                     .upsert_score(image_id, &score, &model_version)
@@ -54,15 +54,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     progress = format!("{}/{}", i + 1, total),
                     image_id = %image_id,
                     %score,
-                    "scored"
+                    "refined"
                 );
             }
             Err(e) => {
-                error!(image_id = %image_id, error = %e, "failed to score");
+                error!(image_id = %image_id, error = %e, "failed to refine");
             }
         }
     }
 
-    info!(total, "rescoring complete");
+    info!(total, "refining complete");
     Ok(())
 }

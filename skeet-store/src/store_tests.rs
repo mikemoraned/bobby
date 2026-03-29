@@ -1,6 +1,5 @@
 use chrono::Utc;
 use image::{DynamicImage, ImageBuffer, Rgba};
-use shared::ConfigVersion;
 
 use crate::{
     DiscoveredAt, ImageId, ImageRecord, ModelVersion, OriginalAt, Score, SkeetId, SkeetStore, Zone,
@@ -37,7 +36,7 @@ async fn roundtrip_store_and_retrieve() {
         original_at: OriginalAt::new(Utc::now()),
         zone: Zone::TopRight,
         annotated_image: test_image(),
-        config_version: ConfigVersion::from("test"),
+        config_version: ModelVersion::from("test"),
         detected_text: String::new(),
     };
 
@@ -72,7 +71,7 @@ async fn multiple_images_per_skeet() {
             original_at: OriginalAt::new(Utc::now()),
             zone: Zone::BottomLeft,
             annotated_image: test_image(),
-            config_version: ConfigVersion::from("test"),
+            config_version: ModelVersion::from("test"),
             detected_text: String::new(),
         };
         store.add(&record).await.unwrap();
@@ -100,7 +99,7 @@ async fn list_all_summaries() {
         original_at: OriginalAt::new(Utc::now()),
         zone: Zone::BottomRight,
         annotated_image: test_image(),
-        config_version: ConfigVersion::from("test"),
+        config_version: ModelVersion::from("test"),
         detected_text: String::new(),
     };
 
@@ -127,7 +126,7 @@ async fn reopening_store_preserves_data() {
         original_at: OriginalAt::new(Utc::now()),
         zone: Zone::TopLeft,
         annotated_image: test_image(),
-        config_version: ConfigVersion::from("test"),
+        config_version: ModelVersion::from("test"),
         detected_text: String::new(),
     };
 
@@ -152,7 +151,7 @@ fn make_record(skeet_suffix: &str) -> ImageRecord {
         original_at: OriginalAt::new(Utc::now()),
         zone: Zone::TopRight,
         annotated_image: test_image(),
-        config_version: ConfigVersion::from("test"),
+        config_version: ModelVersion::from("test"),
         detected_text: String::new(),
     }
 }

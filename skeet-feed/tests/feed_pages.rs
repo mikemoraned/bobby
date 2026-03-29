@@ -6,8 +6,7 @@ use image::{DynamicImage, ImageBuffer, Rgba};
 use skeet_feed::StoreLayer;
 use skeet_feed::project::FeedProject;
 use skeet_store::{
-    ConfigVersion, DiscoveredAt, ImageId, ImageRecord, ModelVersion, OriginalAt, Score, SkeetStore,
-    Zone,
+    DiscoveredAt, ImageId, ImageRecord, ModelVersion, OriginalAt, Score, SkeetStore, Zone,
 };
 
 fn test_image() -> DynamicImage {
@@ -26,7 +25,7 @@ fn make_record(suffix: &str, r: u8, g: u8, b: u8) -> ImageRecord {
         original_at: OriginalAt::new(Utc::now()),
         zone: Zone::TopRight,
         annotated_image: test_image(),
-        config_version: ConfigVersion::from("test"),
+        config_version: ModelVersion::from("test"),
         detected_text: String::new(),
     }
 }

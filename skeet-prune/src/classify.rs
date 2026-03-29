@@ -1,7 +1,7 @@
 use face_detection::{Face, FaceDetector, TextRegion, annotate_image};
 use image::{DynamicImage, GrayImage};
 use shared::{
-    ArchetypeConfig, Classification, ConfigVersion, Percentage, Rejection,
+    Classification, ModelVersion, Percentage, PruneConfig, Rejection,
     SkeetImage, Zone,
 };
 use skeet_store::{DiscoveredAt, ImageId, ImageRecord, OriginalAt};
@@ -13,7 +13,7 @@ pub fn classify(
     image: &DynamicImage,
     skin_mask: &GrayImage,
     text_area_pct: Percentage,
-    config: &ArchetypeConfig,
+    config: &PruneConfig,
 ) -> Classification {
 
     if faces.len() > 1 {
@@ -89,8 +89,8 @@ pub fn classify_image(
     skeet_image: SkeetImage,
     detector: &FaceDetector,
     text_detector: &text_detection::TextDetector,
-    archetype_config: &ArchetypeConfig,
-    config_version: &ConfigVersion,
+    prune_config: &PruneConfig,
+    config_version: &ModelVersion,
 ) -> Result<ImageRecord, Vec<Rejection>> {
     let skin_mask = skin_detection::detect_skin(&skeet_image.image);
     let text_result = text_detector.detect(&skeet_image.image);
@@ -103,7 +103,7 @@ pub fn classify_image(
         &skeet_image.image,
         &skin_mask,
         text_area_pct,
-        archetype_config,
+        prune_config,
     );
 
     let zone = match classification {

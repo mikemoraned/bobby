@@ -1,22 +1,22 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use skeet_scorer::model::load_model;
-use skeet_scorer::scoring::{build_agent, create_client, score_image};
+use skeet_refine::model::load_model;
+use skeet_refine::refining::{build_agent, create_client, refine_image};
 use skeet_store::StoreArgs;
 use tracing::{error, info};
 
 #[derive(Parser)]
 #[command(
-    name = "live-score",
-    about = "Continuously score new unscored images in the store"
+    name = "live-refine",
+    about = "Continuously refine new unscored images in the store"
 )]
 struct Args {
     #[command(flatten)]
     store: StoreArgs,
 
-    /// Path to model.toml
-    #[arg(long, default_value = "skeet-scorer/model.toml")]
+    /// Path to refine.toml
+    #[arg(long, default_value = "config/refine.toml")]
     model_path: PathBuf,
 
     /// OpenAI API key
@@ -70,15 +70,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             };
 
-            match score_image(&agent, &stored.image).await {
+            match refine_image(&agent, &stored.image).await {
                 Ok(score) => {
                     store
                         .upsert_score(image_id, &score, &model_version)
                         .await?;
-                    info!(image_id = %image_id, %score, "scored");
+                    info!(image_id = %image_id, %score, "refined");
                 }
                 Err(e) => {
-                    error!(image_id = %image_id, error = %e, "failed to score");
+                    error!(image_id = %image_id, error = %e, "failed to refine");
                 }
             }
         }

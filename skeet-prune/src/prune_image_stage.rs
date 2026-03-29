@@ -1,5 +1,5 @@
 use face_detection::FaceDetector;
-use shared::{ArchetypeConfig, ConfigVersion};
+use shared::{ModelVersion, PruneConfig};
 use tokio::sync::mpsc;
 use tracing::warn;
 
@@ -11,8 +11,8 @@ pub async fn run(
     http: reqwest::Client,
     detector: FaceDetector,
     text_detector: text_detection::TextDetector,
-    archetype_config: ArchetypeConfig,
-    config_version: ConfigVersion,
+    prune_config: PruneConfig,
+    config_version: ModelVersion,
 ) {
     while let Some(result) = rx.recv().await {
         match result {
@@ -25,7 +25,7 @@ pub async fn run(
                         skeet_image,
                         &detector,
                         &text_detector,
-                        &archetype_config,
+                        &prune_config,
                         &config_version,
                     ) {
                         Ok(record) => ImageResult::Classified(Box::new(record)),

@@ -1,6 +1,6 @@
 use arrow_array::{LargeBinaryArray, RecordBatch, StringArray, TimestampMicrosecondArray};
 use image::DynamicImage;
-use shared::ConfigVersion;
+use shared::ModelVersion;
 use tracing::instrument;
 
 use crate::arrow_utils::{encode_image_as_png, micros_to_datetime, typed_column};
@@ -43,7 +43,7 @@ pub struct StoredImageSummary {
     pub discovered_at: DiscoveredAt,
     pub original_at: OriginalAt,
     pub zone: Zone,
-    pub config_version: ConfigVersion,
+    pub config_version: ModelVersion,
     pub detected_text: String,
 }
 
@@ -77,12 +77,13 @@ impl<'a> SummaryColumns<'a> {
             .archetypes
             .value(i)
             .parse()
-            .map_err(|_| StoreError::InvalidArchetype(self.archetypes.value(i).to_string()))?;
-        let config_version: ConfigVersion = self
+            .map_err(|_| StoreError::InvalidZone(self.archetypes.value(i).to_string()))?;
+        let config_version: ModelVersion = self
             .config_versions
             .value(i)
             .parse()
-            .expect("ConfigVersion parse is infallible");
+            .expect("ModelVersion parse is infallible");
+
         Ok(StoredImageSummary {
             image_id: self.image_ids.value(i).parse()?,
             skeet_id: SkeetId::new(self.skeet_ids.value(i))?,

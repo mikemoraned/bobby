@@ -1,5 +1,5 @@
 [package]
-name = "skeet-scorer"
+name = "skeet-refine"
 version = "0.1.0"
 edition = "2024"
 
@@ -30,9 +30,9 @@ name = "train"
 path = "src/bin/train.rs"
 
 [[bin]]
-name = "rescore"
-path = "src/bin/rescore.rs"
+name = "refine"
+path = "src/bin/refine.rs"
 
 [[bin]]
-name = "live-score"
-path = "src/bin/live_score.rs"
+name = "live-refine"
+path = "src/bin/live_refine.rs"

@@ -3,14 +3,14 @@
 use std::path::Path;
 
 use face_detection::FaceDetector;
-use shared::{ArchetypeConfig, Classification, Percentage};
+use shared::{Classification, Percentage, PruneConfig};
 
 fn main() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let examples_dir = root.join("examples");
 
-    let config = ArchetypeConfig::from_file(&root.join("shared/archetype.toml"))
-        .expect("load archetype.toml");
+    let config = PruneConfig::from_file(&root.join("config/prune.toml"))
+        .expect("load prune.toml");
 
     let detector = FaceDetector::from_bundled_weights();
     let text_detector = text_detection::TextDetector::from_bundled_models();
@@ -79,7 +79,7 @@ fn main() {
         }
 
         let text_area = Percentage::new(text_area_pct);
-        let classification = skeet_finder::classify(&faces, &img, &skin_mask, text_area, &config);
+        let classification = skeet_prune::classify(&faces, &img, &skin_mask, text_area, &config);
         match &classification {
             Classification::Accepted(zone) => println!("  classification: Accepted({zone})"),
             Classification::Rejected(reasons) if reasons.is_empty() => {

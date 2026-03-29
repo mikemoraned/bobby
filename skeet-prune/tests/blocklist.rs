@@ -26,7 +26,7 @@ fn main() {
             move || {
                 let json_text = std::fs::read_to_string(&json_path).map_err(|e| {
                     format!(
-                        "missing JSON for {at_uri} at {}: {e}. Run: cargo run -p skeet-finder --bin add-to-blocklist -- \"{at_uri}\"",
+                        "missing JSON for {at_uri} at {}: {e}. Run: cargo run -p skeet-prune --bin add-to-blocklist -- \"{at_uri}\"",
                         json_path.display()
                     )
                 })?;
@@ -34,7 +34,7 @@ fn main() {
                 let json: serde_json::Value =
                     serde_json::from_str(&json_text).map_err(|e| format!("invalid JSON: {e}"))?;
 
-                let blocked = skeet_finder::content_filter::blocked_labels(&json);
+                let blocked = skeet_prune::content_filter::blocked_labels(&json);
 
                 if blocked.is_empty() {
                     return Err(format!(

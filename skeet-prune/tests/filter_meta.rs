@@ -10,7 +10,7 @@ use std::path::Path;
 
 use libtest_mimic::{Arguments, Trial};
 use shared::BlocklistConfig;
-use skeet_finder::filter_meta_stage::{MetaFilterOutcome, check_metadata};
+use skeet_prune::prune_meta_stage::{MetaFilterOutcome, check_metadata};
 
 fn main() {
     let args = Arguments::from_args();

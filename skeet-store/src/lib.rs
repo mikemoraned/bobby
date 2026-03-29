@@ -9,7 +9,7 @@ mod types;
 
 pub use args::StoreArgs;
 pub use error::StoreError;
-pub use shared::{ConfigVersion, ModelVersion, Score};
+pub use shared::{ModelVersion, Score};
 pub use stored::{StoredImage, StoredImageSummary};
 pub use summary::SkeetStoreSummary;
 pub use types::{DiscoveredAt, ImageId, ImageRecord, InvalidImageId, OriginalAt, SkeetId, Zone};

@@ -2,7 +2,7 @@ use std::fmt;
 
 use chrono::{DateTime, Utc};
 use image::DynamicImage;
-use shared::ConfigVersion;
+use shared::ModelVersion;
 pub use shared::Zone;
 pub use shared::skeet_id::SkeetId;
 use uuid::Uuid;
@@ -110,7 +110,7 @@ pub struct ImageRecord {
     pub original_at: OriginalAt,
     pub zone: Zone,
     pub annotated_image: DynamicImage,
-    pub config_version: ConfigVersion,
+    pub config_version: ModelVersion,
     pub detected_text: String,
 }
 

@@ -45,9 +45,9 @@ impl fmt::Display for ModelName {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ScoringPrompt(String);
+pub struct RefinePrompt(String);
 
-impl ScoringPrompt {
+impl RefinePrompt {
     pub fn new(prompt: impl Into<String>) -> Self {
         Self(prompt.into())
     }
@@ -57,20 +57,20 @@ impl ScoringPrompt {
     }
 }
 
-impl fmt::Display for ScoringPrompt {
+impl fmt::Display for RefinePrompt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ScoringModel {
+pub struct RefineModel {
     pub model_provider: ModelProvider,
     pub model_name: ModelName,
-    pub prompt: ScoringPrompt,
+    pub prompt: RefinePrompt,
 }
 
-impl ScoringModel {
+impl RefineModel {
     pub fn version(&self) -> ModelVersion {
         let mut entries: Vec<(&str, &str)> = vec![
             ("model_name", self.model_name.as_str()),
@@ -93,13 +93,13 @@ impl ScoringModel {
     }
 }
 
-pub fn load_model(path: &Path) -> Result<ScoringModel, Box<dyn std::error::Error>> {
+pub fn load_model(path: &Path) -> Result<RefineModel, Box<dyn std::error::Error>> {
     let content = std::fs::read_to_string(path)?;
-    let model: ScoringModel = toml::from_str(&content)?;
+    let model: RefineModel = toml::from_str(&content)?;
     Ok(model)
 }
 
-pub fn save_model(path: &Path, model: &ScoringModel) -> Result<(), Box<dyn std::error::Error>> {
+pub fn save_model(path: &Path, model: &RefineModel) -> Result<(), Box<dyn std::error::Error>> {
     let content = toml::to_string_pretty(model)?;
     std::fs::write(path, content)?;
     Ok(())
@@ -111,25 +111,25 @@ mod tests {
 
     #[test]
     fn version_is_deterministic() {
-        let model = ScoringModel {
+        let model = RefineModel {
             model_provider: ModelProvider::openai(),
             model_name: ModelName::gpt_4o(),
-            prompt: ScoringPrompt::new("Rate this image"),
+            prompt: RefinePrompt::new("Rate this image"),
         };
         assert_eq!(model.version(), model.version());
     }
 
     #[test]
     fn version_changes_with_prompt() {
-        let m1 = ScoringModel {
+        let m1 = RefineModel {
             model_provider: ModelProvider::openai(),
             model_name: ModelName::gpt_4o(),
-            prompt: ScoringPrompt::new("Rate this image"),
+            prompt: RefinePrompt::new("Rate this image"),
         };
-        let m2 = ScoringModel {
+        let m2 = RefineModel {
             model_provider: ModelProvider::openai(),
             model_name: ModelName::gpt_4o(),
-            prompt: ScoringPrompt::new("Different prompt"),
+            prompt: RefinePrompt::new("Different prompt"),
         };
         assert_ne!(m1.version(), m2.version());
     }
@@ -139,16 +139,16 @@ mod tests {
         let dir = tempfile::tempdir().expect("create temp dir");
         let path = dir.path().join("model.toml");
 
-        let model = ScoringModel {
+        let model = RefineModel {
             model_provider: ModelProvider::openai(),
             model_name: ModelName::gpt_4o(),
-            prompt: ScoringPrompt::new("Rate this image"),
+            prompt: RefinePrompt::new("Rate this image"),
         };
 
         save_model(&path, &model).expect("save");
         let loaded = load_model(&path).expect("load");
         assert_eq!(loaded.model_provider, ModelProvider::openai());
         assert_eq!(loaded.model_name, ModelName::gpt_4o());
-        assert_eq!(loaded.prompt, ScoringPrompt::new("Rate this image"));
+        assert_eq!(loaded.prompt, RefinePrompt::new("Rate this image"));
     }
 }

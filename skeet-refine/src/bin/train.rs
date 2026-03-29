@@ -4,9 +4,9 @@ use clap::Parser;
 use rig::agent::AgentBuilder;
 use rig::client::CompletionClient;
 use rig::completion::request::Prompt;
-use skeet_scorer::examples::{Example, load_examples};
-use skeet_scorer::model::{ModelName, ModelProvider, ScoringModel, ScoringPrompt, save_model};
-use skeet_scorer::scoring::{SEED_PROMPT, build_agent, create_client, score_image};
+use skeet_refine::examples::{Example, load_examples};
+use skeet_refine::model::{ModelName, ModelProvider, RefineModel, RefinePrompt, save_model};
+use skeet_refine::refining::{SEED_PROMPT, build_agent, create_client, refine_image};
 use tracing::{error, info, warn};
 
 #[derive(Parser)]
@@ -20,8 +20,8 @@ struct Args {
     #[arg(long, default_value = "examples")]
     examples_dir: PathBuf,
 
-    /// Path to write the resulting model.toml
-    #[arg(long, default_value = "skeet-scorer/model.toml")]
+    /// Path to write the resulting refine.toml
+    #[arg(long, default_value = "config/refine.toml")]
     model_output: PathBuf,
 
     /// OpenAI API key
@@ -65,7 +65,7 @@ async fn score_examples(
             }
         };
 
-        match score_image(agent, &image).await {
+        match refine_image(agent, &image).await {
             Ok(score) => {
                 let score_f32: f32 = score.into();
                 let correct = is_correct(example.exemplar, score_f32);
@@ -191,10 +191,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let model = ScoringModel {
+    let model = RefineModel {
         model_provider: ModelProvider::openai(),
         model_name: ModelName::gpt_4o(),
-        prompt: ScoringPrompt::new(best_prompt),
+        prompt: RefinePrompt::new(best_prompt),
     };
     save_model(&args.model_output, &model)?;
     info!(

@@ -6,7 +6,7 @@ use std::path::Path;
 use face_detection::FaceDetector;
 use libtest_mimic::{Arguments, Trial};
 use serde::Deserialize;
-use shared::{ArchetypeConfig, Classification, Rejection, Zone};
+use shared::{Classification, PruneConfig, Rejection, Zone};
 
 #[derive(Deserialize)]
 struct ExpectedConfig {
@@ -68,8 +68,8 @@ fn main() {
 
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
 
-    let config = ArchetypeConfig::from_file(&root.join("shared/archetype.toml"))
-        .unwrap_or_else(|e| panic!("failed to load archetype.toml: {e}"));
+    let config = PruneConfig::from_file(&root.join("config/prune.toml"))
+        .unwrap_or_else(|e| panic!("failed to load prune.toml: {e}"));
 
     let expected_text = std::fs::read_to_string(root.join("examples/expected.toml"))
         .unwrap_or_else(|e| panic!("failed to read expected.toml: {e}"));
@@ -98,7 +98,7 @@ fn main() {
                 shared::Percentage::new(result.text_area_pct(img.width(), img.height()))
             });
             let faces = with_detector(|d| d.detect(&img));
-            let actual = skeet_finder::classify(&faces, &img, &skin_mask, text_area_pct, &config);
+            let actual = skeet_prune::classify(&faces, &img, &skin_mask, text_area_pct, &config);
             if actual != expected {
                 return Err(format!("expected {expected:?}, got {actual:?}").into());
             }

@@ -13,7 +13,7 @@ use shared::Score;
 use tracing::{info, instrument};
 
 #[derive(Debug, thiserror::Error)]
-pub enum ScoringError {
+pub enum RefineError {
     #[error("image encoding error: {0}")]
     ImageEncoding(#[from] image::ImageError),
 
@@ -24,13 +24,13 @@ pub enum ScoringError {
     ParseScore(String),
 }
 
-fn encode_image_base64(image: &DynamicImage) -> Result<String, ScoringError> {
+fn encode_image_base64(image: &DynamicImage) -> Result<String, RefineError> {
     let mut buf = Cursor::new(Vec::new());
     image.write_to(&mut buf, image::ImageFormat::Png)?;
     Ok(BASE64.encode(buf.into_inner()))
 }
 
-fn build_image_message(image: &DynamicImage) -> Result<Message, ScoringError> {
+fn build_image_message(image: &DynamicImage) -> Result<Message, RefineError> {
     let b64 = encode_image_base64(image)?;
     Ok(Message::User {
         content: OneOrMany::many(vec![
@@ -49,34 +49,34 @@ fn extract_json(text: &str) -> &str {
     &text[start..end]
 }
 
-fn parse_score(response: &str) -> Result<Score, ScoringError> {
+fn parse_score(response: &str) -> Result<Score, RefineError> {
     let trimmed = response.trim();
     let json_str = extract_json(trimmed);
 
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(json_str)
         && let Some(score) = v.get("score").and_then(|s| s.as_f64())
     {
-        return Score::new(score as f32).map_err(|e| ScoringError::ParseScore(e.to_string()));
+        return Score::new(score as f32).map_err(|e| RefineError::ParseScore(e.to_string()));
     }
 
-    Err(ScoringError::ParseScore(format!(
+    Err(RefineError::ParseScore(format!(
         "could not extract score from: {trimmed}"
     )))
 }
 
-pub type ScoringAgent = Agent<openai::completion::CompletionModel>;
+pub type RefineAgent = Agent<openai::completion::CompletionModel>;
 
 #[instrument(skip(agent, image))]
-pub async fn score_image(
-    agent: &ScoringAgent,
+pub async fn refine_image(
+    agent: &RefineAgent,
     image: &DynamicImage,
-) -> Result<Score, ScoringError> {
+) -> Result<Score, RefineError> {
     let msg = build_image_message(image)?;
 
     let response = agent
         .prompt(msg)
         .await
-        .map_err(|e| ScoringError::Completion(e.to_string()))?;
+        .map_err(|e| RefineError::Completion(e.to_string()))?;
 
     info!(response = %response, "LLM response");
     parse_score(&response)
@@ -85,11 +85,11 @@ pub async fn score_image(
 pub fn build_agent(
     client: &openai::client::CompletionsClient,
     model_name: &str,
-    scoring_prompt: &str,
-) -> ScoringAgent {
+    refine_prompt: &str,
+) -> RefineAgent {
     let model = client.completion_model(model_name);
     AgentBuilder::new(model)
-        .preamble(scoring_prompt)
+        .preamble(refine_prompt)
         .build()
 }
 

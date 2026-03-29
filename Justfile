@@ -44,11 +44,11 @@ validate-storage:
 validate-storage-r2:
     op run --env-file bobby.env -- cargo run --quiet --release --bin validate-storage -- --store-path {{ R2_STORE }}
 
-find:
-    RUST_BACKTRACE=1 cargo run --quiet --release --bin finder -- --store-path {{ STORE }}
+prune:
+    RUST_BACKTRACE=1 cargo run --quiet --release --bin pruner -- --store-path {{ STORE }}
 
-find-r2:
-    RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_SERVICE_NAME=skeet-finder op run --env-file bobby.env -- cargo run --quiet --release --bin finder -- --store-path {{ R2_STORE }} --fallback-local-store {{ FALLBACK_STORE }}
+prune-r2:
+    RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_SERVICE_NAME=skeet-prune op run --env-file bobby.env -- cargo run --quiet --release --bin pruner -- --store-path {{ R2_STORE }} --fallback-local-store {{ FALLBACK_STORE }}
 
 feed:
     RUST_BACKTRACE=1 cargo run --quiet --release --bin skeet-feed -- --store-path {{ STORE }}
@@ -107,14 +107,14 @@ add-to-blocklist at_uri reason="manual":
 train:
     op run --env-file bobby.env -- cargo run --quiet --release --bin train
 
-rescore:
-    op run --env-file bobby.env -- cargo run --quiet --release --bin rescore -- --store-path {{ STORE }}
+refine:
+    op run --env-file bobby.env -- cargo run --quiet --release --bin refine -- --store-path {{ STORE }}
 
-rescore-r2:
-    op run --env-file bobby.env -- cargo run --quiet --release --bin rescore -- --store-path {{ R2_STORE }}
+refine-r2:
+    op run --env-file bobby.env -- cargo run --quiet --release --bin refine -- --store-path {{ R2_STORE }}
 
-live-score:
-    op run --env-file bobby.env -- cargo run --quiet --release --bin live-score -- --store-path {{ STORE }}
+live-refine:
+    op run --env-file bobby.env -- cargo run --quiet --release --bin live-refine -- --store-path {{ STORE }}
 
-live-score-r2:
-    op run --env-file bobby.env -- cargo run --quiet --release --bin live-score -- --store-path {{ R2_STORE }}
+live-refine-r2:
+    op run --env-file bobby.env -- cargo run --quiet --release --bin live-refine -- --store-path {{ R2_STORE }}
