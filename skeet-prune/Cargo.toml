@@ -19,7 +19,6 @@ serde_json = "1"
 shared = { workspace = true }
 skin-detection = { path = "../skin-detection" }
 skeet-store = { path = "../skeet-store" }
-text-detection = { path = "../text-detection" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 

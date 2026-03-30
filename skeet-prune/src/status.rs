@@ -5,9 +5,8 @@ use std::time::{Duration, Instant};
 use shared::{Rejection, RejectionCategory};
 use tracing::info;
 
-const ALL_CATEGORIES: [RejectionCategory; 3] = [
+const ALL_CATEGORIES: [RejectionCategory; 2] = [
     RejectionCategory::Face,
-    RejectionCategory::Text,
     RejectionCategory::Metadata,
 ];
 

@@ -44,21 +44,6 @@ rejected = ["TooMuchSkinOutsideFace"]
 exemplar = false
 
 [[example]]
-path = "5c228b9a-8115-498b-854d-08f2fad5f7f1.png"
-rejected = ["TooMuchText"]
-exemplar = false
-
-[[example]]
-path = "09a57394-66aa-4745-b16c-523c02e6bf0d.png"
-rejected = ["TooMuchText"]
-exemplar = false
-
-[[example]]
-path = "0f206499-82f4-48a0-bb22-0acded0982f9.png"
-rejected = ["TooMuchText"]
-exemplar = false
-
-[[example]]
 # TODO: change this to be filtered out in deep pass
 path = "v2:65ec937601ba69124a1a8bc8a9084de6.png"
 archetype = "CENTER_LEFT"

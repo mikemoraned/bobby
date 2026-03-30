@@ -5,22 +5,12 @@ use imageproc::rect::Rect;
 use crate::Face;
 
 const RED: Rgba<u8> = Rgba([255, 0, 0, 255]);
-const BLUE: Rgba<u8> = Rgba([80, 80, 255, 255]);
 const SKIN_OVERLAY: Rgba<u8> = Rgba([0, 200, 100, 128]);
-
-/// A bounding box for a region of detected text.
-pub struct TextRegion {
-    pub x: i32,
-    pub y: i32,
-    pub width: i32,
-    pub height: i32,
-}
 
 pub fn annotate_image(
     image: &DynamicImage,
     face: &Face,
     skin_mask: &GrayImage,
-    text_regions: &[TextRegion],
 ) -> DynamicImage {
     let mut canvas: RgbaImage = image.to_rgba8();
     let (img_w, img_h) = (canvas.width() as i32, canvas.height() as i32);
@@ -60,17 +50,6 @@ pub fn annotate_image(
     draw_line_segment_mut(&mut canvas, (box_right, cy), (img_w as f32, cy), RED);
     draw_line_segment_mut(&mut canvas, (cx, 0.0), (cx, box_top), RED);
     draw_line_segment_mut(&mut canvas, (cx, box_bottom), (cx, img_h as f32), RED);
-
-    // Text region bounding boxes
-    for region in text_regions {
-        if region.width > 0 && region.height > 0 {
-            draw_hollow_rect_mut(
-                &mut canvas,
-                Rect::at(region.x, region.y).of_size(region.width as u32, region.height as u32),
-                BLUE,
-            );
-        }
-    }
 
     DynamicImage::ImageRgba8(canvas)
 }

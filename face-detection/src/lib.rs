@@ -4,7 +4,7 @@ mod annotate;
 mod postprocess;
 mod preprocess;
 
-pub use annotate::{TextRegion, annotate_image};
+pub use annotate::annotate_image;
 
 pub mod model {
     #![allow(clippy::type_complexity)]

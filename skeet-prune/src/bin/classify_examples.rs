@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use face_detection::FaceDetector;
-use shared::{Classification, Percentage, PruneConfig};
+use shared::{Classification, PruneConfig};
 
 fn main() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
@@ -13,7 +13,6 @@ fn main() {
         .expect("load prune.toml");
 
     let detector = FaceDetector::from_bundled_weights();
-    let text_detector = text_detection::TextDetector::from_bundled_models();
 
     let mut entries: Vec<_> = std::fs::read_dir(&examples_dir)
         .expect("read examples dir")
@@ -44,9 +43,6 @@ fn main() {
         }
 
         let skin_mask = skin_detection::detect_skin(&img);
-        let text_result = text_detector.detect(&img);
-        let char_count = text_result.character_count();
-        let text_area_pct = text_result.text_area_pct(img.width(), img.height());
 
         for (i, face) in faces.iter().enumerate() {
             let pct = face.area_pct(img.width(), img.height());
@@ -73,13 +69,7 @@ fn main() {
             );
         }
 
-        println!("  characters: {char_count}, text_area: {text_area_pct:.1}%");
-        if !text_result.lines.is_empty() {
-            println!("  detected text: {:?}", text_result.full_text());
-        }
-
-        let text_area = Percentage::new(text_area_pct);
-        let classification = skeet_prune::classify(&faces, &img, &skin_mask, text_area, &config);
+        let classification = skeet_prune::classify(&faces, &img, &skin_mask, &config);
         match &classification {
             Classification::Accepted(zone) => println!("  classification: Accepted({zone})"),
             Classification::Rejected(reasons) if reasons.is_empty() => {

@@ -10,7 +10,6 @@ pub async fn run(
     tx: mpsc::Sender<ImageResult>,
     http: reqwest::Client,
     detector: FaceDetector,
-    text_detector: text_detection::TextDetector,
     prune_config: PruneConfig,
     config_version: ModelVersion,
 ) {
@@ -24,7 +23,6 @@ pub async fn run(
                     let result = match crate::classify_image(
                         skeet_image,
                         &detector,
-                        &text_detector,
                         &prune_config,
                         &config_version,
                     ) {

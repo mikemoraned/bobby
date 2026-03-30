@@ -16,7 +16,7 @@
         * [x] simplify `pruned` and `refined` to show the same page content format and entries, but keep current functionality
             * the only difference in format is that the `Score` column on `pruned` is allowed to just show `None` for rows that haven't been scored yet
 
-* [ ] `skeet-prune` changes:
+* [x] `skeet-prune` changes:
     * I suspect the text-detection is not adding much benefit really
         * [x] before we remove it, let's add some analysis:
             * [x] add a `RejectionCategory` to each `Rejection` enum which is one of Face, Text, Metadata
@@ -27,10 +27,10 @@
         ```
         2026-03-29T23:04:12.963692Z  INFO skeet_prune::status: skeets: 17426 (1.9/s) | images: 17274 | saved: 33 (0.2%) | rejected: 21425 (BlockedByMetadata: 4198 [18%], FaceNotInAcceptedZone: 213 [1%], FaceTooLarge: 36 [0%], FaceTooSmall: 1691 [7%], TooFewFrontalFaces: 12491 [54%], TooLittleFaceSkin: 603 [3%], TooManyFaces: 2092 [9%], TooMuchSkinOutsideFace: 917 [4%], TooMuchText: 929 [4%]) | categories: Face: 17072 [80%] (sole: 16298 [76%]), Text: 929 [4%] (sole: 155 [1%]), Metadata: 4198 [20%] (sole: 4198 [20%])
         ```
-            * [ ] we should remove all associated crates / enums / model config etc. suggested strategy is to:
-                * [ ] remove downloaded models related to text, and the Justfile rules for them
-                * [ ] remove the `text-detection` crate from the workspace and fix all related compile error
-                * [ ] do a pass to ensure we don't mention it anywhere anymore
+            * [x] we should remove all associated crates / enums / model config etc. suggested strategy is to:
+                * [x] remove downloaded models related to text, and the Justfile rules for them
+                * [x] remove the `text-detection` crate from the workspace and fix all related compile errors
+                * [x] do a pass to ensure we don't mention it anywhere anymore
 
 * [ ] a new `skeet-feed` which is just for the Bluesky Custom Feed:
     * this will run on fly.io as a new `bobby-staging.houseofmoran.io` app (called `bobby-staging`)

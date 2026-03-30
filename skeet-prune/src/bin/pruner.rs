@@ -40,7 +40,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let http = reqwest::Client::new();
     let detector = FaceDetector::from_bundled_weights();
-    let text_detector = text_detection::TextDetector::from_bundled_models();
 
     let prune_config = PruneConfig::from_file(
         &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../config/prune.toml"),
@@ -83,7 +82,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             image_tx,
             http,
             detector,
-            text_detector,
             prune_config,
             config_version,
         )

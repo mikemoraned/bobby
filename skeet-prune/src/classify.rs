@@ -1,4 +1,4 @@
-use face_detection::{Face, FaceDetector, TextRegion, annotate_image};
+use face_detection::{Face, FaceDetector, annotate_image};
 use image::{DynamicImage, GrayImage};
 use shared::{
     Classification, ModelVersion, Percentage, PruneConfig, Rejection,
@@ -6,13 +6,12 @@ use shared::{
 };
 use skeet_store::{DiscoveredAt, ImageId, ImageRecord, OriginalAt};
 
-/// Classify an image: given pre-detected faces, check area, skin, and text thresholds,
+/// Classify an image: given pre-detected faces, check area and skin thresholds,
 /// return quadrant or rejection.
 pub fn classify(
     faces: &[Face],
     image: &DynamicImage,
     skin_mask: &GrayImage,
-    text_area_pct: Percentage,
     config: &PruneConfig,
 ) -> Classification {
 
@@ -57,10 +56,6 @@ pub fn classify(
         reasons.push(Rejection::TooMuchSkinOutsideFace);
     }
 
-    if text_area_pct > config.max_text_area_pct {
-        reasons.push(Rejection::TooMuchText);
-    }
-
     if !reasons.is_empty() {
         return Classification::Rejected(reasons);
     }
@@ -88,21 +83,15 @@ const fn is_accepted_zone(zone: Zone) -> bool {
 pub fn classify_image(
     skeet_image: SkeetImage,
     detector: &FaceDetector,
-    text_detector: &text_detection::TextDetector,
     prune_config: &PruneConfig,
     config_version: &ModelVersion,
 ) -> Result<ImageRecord, Vec<Rejection>> {
     let skin_mask = skin_detection::detect_skin(&skeet_image.image);
-    let text_result = text_detector.detect(&skeet_image.image);
-    let text_area_pct = Percentage::new(
-        text_result.text_area_pct(skeet_image.image.width(), skeet_image.image.height()),
-    );
     let faces = detector.detect(&skeet_image.image);
     let classification = classify(
         &faces,
         &skeet_image.image,
         &skin_mask,
-        text_area_pct,
         prune_config,
     );
 
@@ -116,18 +105,7 @@ pub fn classify_image(
         .find(|f| f.is_frontal())
         .expect("classify accepted, so a frontal face exists");
 
-    let text_regions: Vec<TextRegion> = text_result
-        .lines
-        .iter()
-        .map(|line| TextRegion {
-            x: line.x,
-            y: line.y,
-            width: line.width,
-            height: line.height,
-        })
-        .collect();
-    let annotated = annotate_image(&skeet_image.image, face, &skin_mask, &text_regions);
-    let detected_text = text_result.full_text();
+    let annotated = annotate_image(&skeet_image.image, face, &skin_mask);
 
     Ok(ImageRecord {
         image_id: ImageId::from_image(&skeet_image.image),
@@ -138,6 +116,6 @@ pub fn classify_image(
         zone,
         annotated_image: annotated,
         config_version: config_version.clone(),
-        detected_text,
+        detected_text: String::new(),
     })
 }

@@ -54,7 +54,6 @@ impl PartialOrd for Percentage {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RejectionCategory {
     Face,
-    Text,
     Metadata,
 }
 
@@ -62,7 +61,6 @@ impl std::fmt::Display for RejectionCategory {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Face => write!(f, "Face"),
-            Self::Text => write!(f, "Text"),
             Self::Metadata => write!(f, "Metadata"),
         }
     }
@@ -77,7 +75,6 @@ pub enum Rejection {
     TooFewFrontalFaces,
     TooLittleFaceSkin,
     TooMuchSkinOutsideFace,
-    TooMuchText,
     BlockedByMetadata,
 }
 
@@ -91,7 +88,6 @@ impl Rejection {
             | Self::TooFewFrontalFaces
             | Self::TooLittleFaceSkin
             | Self::TooMuchSkinOutsideFace => RejectionCategory::Face,
-            Self::TooMuchText => RejectionCategory::Text,
             Self::BlockedByMetadata => RejectionCategory::Metadata,
         }
     }
@@ -107,7 +103,6 @@ impl std::fmt::Display for Rejection {
             Self::TooFewFrontalFaces => write!(f, "TooFewFrontalFaces"),
             Self::TooLittleFaceSkin => write!(f, "TooLittleFaceSkin"),
             Self::TooMuchSkinOutsideFace => write!(f, "TooMuchSkinOutsideFace"),
-            Self::TooMuchText => write!(f, "TooMuchText"),
             Self::BlockedByMetadata => write!(f, "BlockedByMetadata"),
         }
     }
@@ -125,7 +120,6 @@ impl std::str::FromStr for Rejection {
             "TooFewFrontalFaces" => Ok(Self::TooFewFrontalFaces),
             "TooLittleFaceSkin" => Ok(Self::TooLittleFaceSkin),
             "TooMuchSkinOutsideFace" => Ok(Self::TooMuchSkinOutsideFace),
-            "TooMuchText" => Ok(Self::TooMuchText),
             "BlockedByMetadata" => Ok(Self::BlockedByMetadata),
             other => Err(format!("unknown rejection: {other}")),
         }
@@ -214,7 +208,6 @@ pub struct PruneConfig {
     pub max_face_area_pct: Percentage,
     pub min_face_skin_pct: Percentage,
     pub max_outside_face_skin_pct: Percentage,
-    pub max_text_area_pct: Percentage,
 }
 
 impl PruneConfig {
@@ -233,7 +226,6 @@ impl PruneConfig {
     pub fn version(&self) -> ModelVersion {
         let mut entries = vec![
             ("max_face_area_pct", self.max_face_area_pct.value().to_bits()),
-            ("max_text_area_pct", self.max_text_area_pct.value().to_bits()),
             ("max_outside_face_skin_pct", self.max_outside_face_skin_pct.value().to_bits()),
             ("min_face_area_pct", self.min_face_area_pct.value().to_bits()),
             ("min_face_skin_pct", self.min_face_skin_pct.value().to_bits()),
@@ -359,7 +351,6 @@ mod tests {
     #[test]
     fn rejection_categories() {
         assert_eq!(Rejection::FaceTooSmall.category(), RejectionCategory::Face);
-        assert_eq!(Rejection::TooMuchText.category(), RejectionCategory::Text);
         assert_eq!(Rejection::BlockedByMetadata.category(), RejectionCategory::Metadata);
     }
 
