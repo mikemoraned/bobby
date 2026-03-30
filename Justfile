@@ -134,7 +134,7 @@ test_feed:
 deploy_staging: deploy_staging_secrets deploy_staging_app test_staging
 
 deploy_staging_secrets:
-    op run --env-file bobby.env -- sh -c 'env | grep "^BOBBY_"' | fly secrets import --config fly.staging.toml
+    op inject -i bobby.env | grep "^BOBBY_" | fly secrets import --config fly.staging.toml
 
 deploy_staging_app:
     fly deploy --config fly.staging.toml
