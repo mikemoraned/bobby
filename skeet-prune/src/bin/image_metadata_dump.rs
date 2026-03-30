@@ -33,7 +33,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config_version = %stored.summary.config_version,
         discovered_at = %stored.summary.discovered_at,
         original_at = %stored.summary.original_at,
-        detected_text = ?stored.summary.detected_text,
         image_size = %format_args!("{}x{}", stored.image.width(), stored.image.height()),
         "image metadata"
     );

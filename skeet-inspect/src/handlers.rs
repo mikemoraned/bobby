@@ -16,7 +16,6 @@ pub struct FeedEntry {
     pub image_id: String,
     pub zone: String,
     pub config_version: String,
-    pub detected_text: String,
     pub at_uri: String,
     pub web_url: String,
 }
@@ -27,7 +26,6 @@ pub fn to_feed_entry(
     skeet_id: &SkeetId,
     zone: &Zone,
     config_version: &str,
-    detected_text: &str,
 ) -> Option<FeedEntry> {
     if skeet_id.collection() != "app.bsky.feed.post" {
         return None;
@@ -39,7 +37,6 @@ pub fn to_feed_entry(
         image_id: image_id.to_string(),
         zone: zone.to_string(),
         config_version: config_version.to_string(),
-        detected_text: detected_text.to_string(),
         at_uri: skeet_id.to_string(),
         web_url: format!("https://bsky.app/profile/{did}/post/{rkey}"),
     })
@@ -144,7 +141,6 @@ pub async fn pruned(Store(store): Store) -> cot::Result<Html> {
                 &img.skeet_id,
                 &img.zone,
                 img.config_version.as_str(),
-                &img.detected_text,
             )?;
             let score = score_map
                 .get(&img.image_id.to_string())
@@ -219,7 +215,6 @@ pub async fn refined(Store(store): Store) -> cot::Result<Html> {
                 &img.skeet_id,
                 &img.zone,
                 img.config_version.as_str(),
-                &img.detected_text,
             )?;
             Some(InspectEntry {
                 entry,

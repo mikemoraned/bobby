@@ -59,7 +59,7 @@ mod tests {
             .parse()
             .expect("valid AT URI");
         let zone = Zone::TopRight;
-        let entry = to_feed_entry(&discovered_at, &image_id, &skeet_id, &zone, "v1", "hello")
+        let entry = to_feed_entry(&discovered_at, &image_id, &skeet_id, &zone, "v1")
             .expect("should produce entry");
         assert_eq!(entry.at_uri, "at://did:plc:abc123/app.bsky.feed.post/xyz789");
         assert_eq!(
@@ -81,6 +81,6 @@ mod tests {
             .parse()
             .expect("valid AT URI");
         let zone = Zone::TopRight;
-        assert!(to_feed_entry(&discovered_at, &image_id, &skeet_id, &zone, "v1", "").is_none());
+        assert!(to_feed_entry(&discovered_at, &image_id, &skeet_id, &zone, "v1").is_none());
     }
 }

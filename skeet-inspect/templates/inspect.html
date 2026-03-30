@@ -20,7 +20,6 @@
             td.id { font-family: monospace; font-size: 0.85rem; white-space: nowrap; }
             td.annotated img { max-width: 300px; max-height: 300px; }
             td.version { font-family: monospace; font-size: 0.85rem; }
-            td.text { font-size: 0.85rem; max-width: 200px; white-space: pre-wrap; word-break: break-word; }
             td.score { font-family: monospace; font-size: 0.85rem; text-align: right; }
         </style>
     </head>
@@ -39,7 +38,6 @@
                         <th>Zone</th>
                         <th>Config</th>
                         <th>Annotated Image</th>
-                        <th>Detected Text</th>
                         <th>Skeet</th>
                     </tr>
                 </thead>
@@ -54,7 +52,6 @@
                             <td class="annotated">
                                 <img src="/skeet/{{ entry.entry.image_id }}/annotated.png" loading="lazy" alt="annotated face detection">
                             </td>
-                            <td class="text">{{ entry.entry.detected_text }}</td>
                             <td>
                                 <blockquote class="bluesky-embed" data-bluesky-uri="{{ entry.entry.at_uri }}">
                                     <a href="{{ entry.entry.web_url }}">Loading skeet...</a>
