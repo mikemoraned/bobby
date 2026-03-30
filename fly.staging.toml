@@ -1,7 +1,7 @@
+app = "bobby-staging"
+
 [build]
 dockerfile = "Dockerfile.skeet-feed"
-
-app = "bobby-staging"
 primary_region = "lhr"
 
 [processes]
@@ -11,6 +11,7 @@ app = "skeet-feed --store-path s3://hom-bobby/encrypted-store --hostname bobby-s
 RUST_LOG = "skeet_feed=info,skeet_store=info"
 
 [http_service]
+processes = ["app"]
 internal_port = 8080
 force_https = true
 auto_stop_machines = "suspend"

@@ -143,4 +143,4 @@ test_staging:
     TEST_BASE_URL=https://bobby-staging.fly.dev cargo test --quiet --release -p skeet-feed --features test
 
 register-feed:
-    op run --env-file bobby.env -- cargo run --quiet --release --bin register-feed -- --hostname {{ STAGING_HOSTNAME }} --handle $(op read "op://Dev/hom-bobby-bsky-handle/password") --app-password $(op read "op://Dev/hom-bobby-bsky-app-password/password")
+    op run --env-file register.env -- cargo run --quiet --release --bin register-feed -- --hostname {{ STAGING_HOSTNAME }}
