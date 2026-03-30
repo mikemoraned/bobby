@@ -5,11 +5,11 @@ use clap::Parser;
 #[derive(Parser)]
 struct Args {
     /// Bluesky handle (e.g. yourname.bsky.social)
-    #[arg(long)]
+    #[arg(long, env = "BOBBY_BSKY_APP_REGISTER_HANDLE")]
     handle: String,
 
     /// Bluesky app password
-    #[arg(long, env = "BOBBY_BSKY_APP_PASSWORD")]
+    #[arg(long, env = "BOBBY_BSKY_APP_REGISTER_PASSWORD")]
     app_password: String,
 
     /// Hostname of the feed generator (e.g. bobby-staging.houseofmoran.io)
@@ -34,10 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let did = format!("did:web:{}", args.hostname);
-    let feed_uri = format!(
-        "at://{did}/app.bsky.feed.generator/{}",
-        args.feed_name
-    );
+    let feed_uri = format!("at://{did}/app.bsky.feed.generator/{}", args.feed_name);
 
     println!("Registering feed:");
     println!("  DID: {did}");
