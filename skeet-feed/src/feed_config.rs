@@ -8,6 +8,7 @@ use tower::{Layer, Service};
 #[derive(Debug, Clone)]
 pub struct FeedParams {
     pub hostname: String,
+    pub publisher_did: String,
     pub feed_name: String,
     pub max_entries: usize,
     pub min_score: f32,
@@ -22,8 +23,7 @@ impl FeedParams {
     pub fn feed_uri(&self) -> String {
         format!(
             "at://{}/app.bsky.feed.generator/{}",
-            self.did(),
-            self.feed_name
+            self.publisher_did, self.feed_name
         )
     }
 

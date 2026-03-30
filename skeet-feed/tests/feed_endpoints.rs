@@ -17,6 +17,7 @@ fn test_image() -> DynamicImage {
 fn test_params() -> FeedParams {
     FeedParams {
         hostname: "test.example.com".to_string(),
+        publisher_did: "did:web:test.example.com".to_string(),
         feed_name: "bobby-dev".to_string(),
         max_entries: 10,
         min_score: 0.5,

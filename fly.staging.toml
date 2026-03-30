@@ -5,7 +5,7 @@ dockerfile = "Dockerfile.skeet-feed"
 primary_region = "lhr"
 
 [processes]
-app = "skeet-feed --store-path s3://hom-bobby/encrypted-store --hostname bobby-staging.houseofmoran.io"
+app = "skeet-feed --store-path s3://hom-bobby/encrypted-store --hostname bobby-staging.houseofmoran.io --publisher-did did:plc:cjvdzmk4iapi5p5orrasehxp"
 
 [env]
 RUST_LOG = "skeet_feed=info,skeet_store=info"

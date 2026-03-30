@@ -17,6 +17,10 @@ struct Args {
     #[arg(long)]
     hostname: String,
 
+    /// DID of the Bluesky account that published the feed
+    #[arg(long)]
+    publisher_did: String,
+
     /// Feed name identifier (used in the feed AT-URI)
     #[arg(long, default_value = "bobby-dev")]
     feed_name: String,
@@ -56,6 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let feed_params = FeedParams {
         hostname: args.hostname.clone(),
+        publisher_did: args.publisher_did,
         feed_name: args.feed_name,
         max_entries: args.max_entries,
         min_score: args.min_score,
