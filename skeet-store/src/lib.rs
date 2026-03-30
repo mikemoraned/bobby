@@ -373,24 +373,30 @@ impl SkeetStore {
     }
 
     #[instrument(skip(self))]
-    pub async fn list_all_image_ids(&self) -> Result<Vec<ImageId>, StoreError> {
+    pub async fn list_all_image_ids_by_most_recent(&self) -> Result<Vec<ImageId>, StoreError> {
         let batches: Vec<RecordBatch> = self
             .images_table
             .query()
-            .select(lancedb::query::Select::columns(&["image_id"]))
+            .select(lancedb::query::Select::columns(&[
+                "image_id",
+                "discovered_at",
+            ]))
             .execute()
             .await?
             .try_collect()
             .await?;
 
-        let mut ids = Vec::new();
+        let mut id_times = Vec::new();
         for batch in &batches {
             let image_ids = typed_column::<StringArray>(batch, "image_id")?;
+            let discovered_ats =
+                typed_column::<TimestampMicrosecondArray>(batch, "discovered_at")?;
             for i in 0..batch.num_rows() {
-                ids.push(image_ids.value(i).parse()?);
+                id_times.push((image_ids.value(i).parse::<ImageId>()?, discovered_ats.value(i)));
             }
         }
-        Ok(ids)
+        id_times.sort_by(|a, b| b.1.cmp(&a.1));
+        Ok(id_times.into_iter().map(|(id, _)| id).collect())
     }
 
     #[instrument(skip(self))]
@@ -398,7 +404,7 @@ impl SkeetStore {
         &self,
         model_version: &ModelVersion,
     ) -> Result<Vec<ImageId>, StoreError> {
-        let all_ids = self.list_all_image_ids().await?;
+        let all_ids = self.list_all_image_ids_by_most_recent().await?;
 
         let scored_batches: Vec<RecordBatch> = self
             .scores_table

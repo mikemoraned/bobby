@@ -51,4 +51,5 @@
 
 
 * [ ] `skeet-refine` changes:
+    * [x] update refine step so that when it finds images needing scored, it orders them by most recently discovered (so that more recently added images get assigned a score first)
     * ...
