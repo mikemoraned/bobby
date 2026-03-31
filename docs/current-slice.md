@@ -32,7 +32,7 @@
                 * [x] remove the `text-detection` crate from the workspace and fix all related compile errors
                 * [x] do a pass to ensure we don't mention it anywhere anymore
 
-* [ ] a new `skeet-feed` which is just for the Bluesky Custom Feed:
+* [x] a new `skeet-feed` which is just for the Bluesky Custom Feed:
     * this will run on fly.io as a new `bobby-staging.houseofmoran.io` app (called `bobby-staging`)
         * on fly.io this will be called `https://bobby-staging.fly.dev` and I will point `bobby-staging.houseofmoran.io` at that
     * should be built using a `Dockerfile` called `Dockerfile.skeet-feed` and follow current best practices for building and deploying Rust apps via Docker
@@ -41,13 +41,14 @@
     * see Bluesky docs:
         * https://docs.bsky.app/docs/api/app-bsky-feed-get-feed-skeleton
         * https://docs.bsky.app/docs/starter-templates/custom-feeds
-    * [ ] write a helper that takes the `bobby.env` and syncs it with fly.io secrets
-    * [ ] this should use a deploy approach which is similar, but not same, as https://github.com/mikemoraned/fosdem/blob/main/Justfile i.e.
+    * [x] write a helper that takes the `bobby.env` and syncs it with fly.io secrets
+    * [x] this should use a deploy approach which is similar, but not same, as https://github.com/mikemoraned/fosdem/blob/main/Justfile i.e.
         * deploy_staging
         * test_webapp (which uses `cot.rs` integ tests)
         * test_staging (which runs same `cot.rs` integ tests against staging, after `deploy_staging` completes)
-    * [ ] write a helper rust cli that allows a Custom Feed be registered with bluesky
+    * [x] write a helper rust cli that allows a Custom Feed be registered with bluesky
         * see `scripts/publishFeedGen.ts` mentioned in [docs](https://docs.bsky.app/docs/starter-templates/custom-feeds) and https://crates.io/crates/skyfeed for inspiration
+    * [x] register feed
 
 
 * [ ] `skeet-refine` changes:
