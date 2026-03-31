@@ -172,6 +172,13 @@ impl SkeetStore {
     }
 
     #[instrument(skip(self))]
+    pub async fn list_all_by_most_recent(&self) -> Result<Vec<StoredImage>, StoreError> {
+        let mut images = self.list_all().await?;
+        images.sort_by(|a, b| b.summary.discovered_at.cmp(&a.summary.discovered_at));
+        Ok(images)
+    }
+
+    #[instrument(skip(self))]
     pub async fn list_all_summaries(&self) -> Result<Vec<StoredImageSummary>, StoreError> {
         let batches: Vec<RecordBatch> = self
             .images_table
