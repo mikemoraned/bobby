@@ -83,3 +83,13 @@ Added scoring, robustness, and terminology refactoring across the pipeline:
 - **skeet-scorer → skeet-refine**: introduced LLM-based image scoring (via OpenAI, using generic Rust crates) with `train`, `rescore`, and `live-score` CLIs. Config-versioned `refine.toml` with `RefineModelConfig` ensures scores track which model version produced them.
 - **Terminology refactor**: renamed `skeet-finder` → `skeet-prune` and `skeet-scorer` → `skeet-refine` to follow prune-and-refine pattern; `archetype.toml` → `config/prune.toml`, `model.toml` → `config/refine.toml`. Documented pattern in `architecture.md`.
 - **Debugging & UX**: `summarise` CLI and `SkeetStoreSummary` on feed homepage; feed split into `latest` (all skeets) and `best` (scored, ordered by score) pages with homepage links.
+
+## Slice 9: "Bobby Dev" Custom Feed in Bluesky
+
+Built a live Bluesky Custom Feed for dev testing, with supporting refactors:
+
+- **Refactors**: renamed `skeet-feed` → `skeet-inspect` (inspection UI) and renamed pages (`latest` → `pruned`, `best` → `refined`) with unified page format. Freed up the `skeet-feed` name for the actual feed.
+- **Text detection removal**: added `RejectionCategory` analysis showing text-based rejection was sole cause only 1% of the time. Removed the `text-detection` crate, associated models, and all references entirely.
+- **New `skeet-feed`**: a cot.rs web app deployed to Fly.io (`bobby-staging.fly.dev` / `bobby-staging.houseofmoran.io`) serving the Bluesky feed skeleton API. Connects to the remote R2 store and surfaces the top 10 skeets scored above 0.5 from the last 48 hours. Includes `deploy_staging`, `test_webapp`, and `test_staging` Justfile recipes, plus a helper to sync `bobby.env` secrets with Fly.io.
+- **Feed registration**: wrote a Rust CLI to register the Custom Feed with Bluesky (inspired by `skyfeed` crate and official docs).
+- **Refine improvements**: live-refine now prioritises most recently discovered images, scores within a time budget (matching the polling interval) before re-checking for newer arrivals, and uses a `model_version` scalar index on the scores table for efficient unscored-image queries.
