@@ -7,8 +7,11 @@ We use `hetzner-k3s` for cluster provisioning, the 1Password Kubernetes Operator
 ### Tasks
 
 #### Pre-requisites (make pruner container-friendly)
-- [ ] Add `--config-path` CLI arg to pruner so `config/prune.toml` path isn't hardcoded via `CARGO_MANIFEST_DIR`; consistent with the "all config via named CLI params" invariant
-- [ ] Update `just prune` / `just prune-r2` recipes to pass `--config-path`
+- [x] Add `--config-path` CLI arg to pruner so `config/prune.toml` path isn't hardcoded via `CARGO_MANIFEST_DIR`; consistent with the "all config via named CLI params" invariant
+- [x] Update `just prune` / `just prune-r2` recipes to pass `--config-path`
+
+#### Cluster provisioning
+- [ ] Create `hetzner-k3s` cluster config (`infra/bobby-cluster.yaml`) for a single CAX21 master node in `fsn1` with `schedule_workloads_on_masters: true` and no worker pools; document in `docs/`
 
 #### Dockerfile & registry
 - [ ] Create a multi-platform Dockerfile for `pruner` that builds the Rust binary targeting `linux/arm64` (and local mac arm for local testing); document in `docs/`
@@ -17,8 +20,6 @@ We use `hetzner-k3s` for cluster provisioning, the 1Password Kubernetes Operator
   - Copy `config/prune.toml` into the image (used as default `--config-path`)
 - [ ] Set up GitHub Container Registry publishing (manual `docker push` is fine initially; CI can come later)
 
-#### Cluster provisioning
-- [ ] Create `hetzner-k3s` cluster config (`infra/bobby-cluster.yaml`) for a single CAX21 master node in `fsn1` with `schedule_workloads_on_masters: true` and no worker pools; document in `docs/`
 
 #### Secrets
 - [ ] Install 1Password Connect + Operator via Helm on the cluster; create `OnePasswordItem` resources that map the existing `bobby.env` 1Password items to k8s Secrets

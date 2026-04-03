@@ -44,10 +44,10 @@ validate-storage-r2:
     op run --env-file bobby.env -- cargo run --quiet --release --bin validate-storage -- --store-path {{ R2_STORE }}
 
 prune:
-    RUST_BACKTRACE=1 cargo run --quiet --release --bin pruner -- --store-path {{ STORE }}
+    RUST_BACKTRACE=1 cargo run --quiet --release --bin pruner -- --config-path config/prune.toml --store-path {{ STORE }}
 
 prune-r2:
-    RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_SERVICE_NAME=skeet-prune op run --env-file bobby.env -- cargo run --quiet --release --bin pruner -- --store-path {{ R2_STORE }} --fallback-local-store {{ FALLBACK_STORE }}
+    RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_SERVICE_NAME=skeet-prune op run --env-file bobby.env -- cargo run --quiet --release --bin pruner -- --config-path config/prune.toml --store-path {{ R2_STORE }} --fallback-local-store {{ FALLBACK_STORE }}
 
 inspect:
     RUST_BACKTRACE=1 cargo run --quiet --release --bin skeet-inspect -- --store-path {{ STORE }}

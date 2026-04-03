@@ -1,5 +1,7 @@
 #![warn(clippy::all, clippy::nursery)]
 
+use std::path::PathBuf;
+
 use clap::Parser;
 use face_detection::FaceDetector;
 use shared::PruneConfig;
@@ -13,6 +15,10 @@ use tracing::info;
 struct Args {
     #[command(flatten)]
     store: StoreArgs,
+
+    /// Path to prune.toml config file
+    #[arg(long)]
+    config_path: PathBuf,
 
     /// Local fallback store path for when remote saves fail
     #[arg(long)]
@@ -41,9 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let http = reqwest::Client::new();
     let detector = FaceDetector::from_bundled_weights();
 
-    let prune_config = PruneConfig::from_file(
-        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../config/prune.toml"),
-    )?;
+    let prune_config = PruneConfig::from_file(&args.config_path)?;
     let config_version = prune_config.version();
 
     info!(config_version = %config_version, "face detection model loaded");
