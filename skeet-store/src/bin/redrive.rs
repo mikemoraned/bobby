@@ -96,20 +96,25 @@ async fn redrive_image(
 ) -> RedriveOutcome {
     let image_id = image.summary.image_id.clone();
 
-    let exists = match target.exists(&image_id).await {
-        Ok(exists) => exists,
-        Err(e) => {
-            error!(image_id = %image_id, error = %e, "failed to check existence");
-            return RedriveOutcome::Failed;
+    match mode {
+        Mode::Upload => {
+            let exists = match target.exists(&image_id).await {
+                Ok(exists) => exists,
+                Err(e) => {
+                    error!(image_id = %image_id, error = %e, "failed to check existence");
+                    return RedriveOutcome::Failed;
+                }
+            };
+            if exists {
+                info!(image_id = %image_id, "already exists in target, skipping");
+                RedriveOutcome::AlreadyExists
+            } else if upload(image, &image_id, target).await {
+                RedriveOutcome::Uploaded
+            } else {
+                RedriveOutcome::Failed
+            }
         }
-    };
-
-    match (exists, mode) {
-        (true, Mode::Upload) => {
-            info!(image_id = %image_id, "already exists in target, skipping");
-            RedriveOutcome::AlreadyExists
-        }
-        (true, Mode::UploadAndDelete) => match verify(&image, &image_id, target).await {
+        Mode::UploadAndDelete => match verify(&image, &image_id, target).await {
             VerifyResult::Match => {
                 if delete(&image_id, source).await {
                     RedriveOutcome::VerifiedAndDeleted
@@ -117,27 +122,20 @@ async fn redrive_image(
                     RedriveOutcome::Failed
                 }
             }
-            VerifyResult::Mismatch => RedriveOutcome::ContentMismatch,
-            VerifyResult::Failed => RedriveOutcome::Failed,
-        },
-        (false, Mode::Upload) => {
-            if upload(image, &image_id, target).await {
-                RedriveOutcome::Uploaded
-            } else {
-                RedriveOutcome::Failed
-            }
-        }
-        (false, Mode::UploadAndDelete) => {
-            if upload(image, &image_id, target).await {
-                if delete(&image_id, source).await {
-                    RedriveOutcome::Uploaded
+            VerifyResult::NotFound => {
+                if upload(image, &image_id, target).await {
+                    if delete(&image_id, source).await {
+                        RedriveOutcome::Uploaded
+                    } else {
+                        RedriveOutcome::Failed
+                    }
                 } else {
                     RedriveOutcome::Failed
                 }
-            } else {
-                RedriveOutcome::Failed
             }
-        }
+            VerifyResult::Mismatch => RedriveOutcome::ContentMismatch,
+            VerifyResult::Failed => RedriveOutcome::Failed,
+        },
     }
 }
 
@@ -170,6 +168,7 @@ async fn delete(image_id: &ImageId, source: &SkeetStore) -> bool {
 
 enum VerifyResult {
     Match,
+    NotFound,
     Mismatch,
     Failed,
 }
@@ -182,8 +181,7 @@ async fn verify(
     let remote_image = match target.get_by_id(image_id).await {
         Ok(Some(img)) => img,
         Ok(None) => {
-            warn!(image_id = %image_id, "exists check passed but get_by_id returned nothing");
-            return VerifyResult::Failed;
+            return VerifyResult::NotFound;
         }
         Err(e) => {
             error!(image_id = %image_id, error = %e, "failed to fetch remote image for comparison");

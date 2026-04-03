@@ -6,7 +6,6 @@ target
 **/mutants.out*/
 
 # Runtime data (same as .gitignore)
-store/
 store*/
 fallback-store/
 models/
