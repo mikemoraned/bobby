@@ -32,12 +32,6 @@ struct Args {
     most_recent_first: bool,
 }
 
-#[derive(Debug, thiserror::Error)]
-enum RedriveError {
-    #[error("store operation failed: {0}")]
-    Store(#[from] StoreError),
-}
-
 enum VerifyResult {
     Match,
     NotFound,
@@ -108,7 +102,7 @@ async fn redrive_image(
 ) -> RedriveOutcome {
     let image_id = image.summary.image_id.clone();
 
-    let result: Result<RedriveOutcome, RedriveError> = async {
+    let result: Result<RedriveOutcome, StoreError> = async {
         match mode {
             Mode::Upload => {
                 if target.exists(&image_id).await? {
@@ -148,14 +142,14 @@ async fn upload(
     image: StoredImage,
     image_id: &ImageId,
     target: &SkeetStore,
-) -> Result<(), RedriveError> {
+) -> Result<(), StoreError> {
     let record: ImageRecord = image.into();
     target.add(&record).await?;
     info!(image_id = %image_id, "uploaded to target");
     Ok(())
 }
 
-async fn delete(image_id: &ImageId, source: &SkeetStore) -> Result<(), RedriveError> {
+async fn delete(image_id: &ImageId, source: &SkeetStore) -> Result<(), StoreError> {
     source.delete_by_id(image_id).await?;
     info!(image_id = %image_id, "deleted from source");
     Ok(())
@@ -165,7 +159,7 @@ async fn verify(
     local_image: &StoredImage,
     image_id: &ImageId,
     target: &SkeetStore,
-) -> Result<VerifyResult, RedriveError> {
+) -> Result<VerifyResult, StoreError> {
     let remote_image = match target.get_by_id(image_id).await? {
         Some(img) => img,
         None => return Ok(VerifyResult::NotFound),
