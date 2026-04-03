@@ -53,4 +53,7 @@
 
 * [ ] `skeet-refine` changes:
     * [x] update refine step so that when it finds images needing scored, it orders them by most recently discovered (so that more recently added images get assigned a score first)
+    * [x] update live-refine so that it runs once every minute (as now) but once it finds a list of images to score, it only runs for one minute before looping back to check for more recently-added images that don't have a score. 
+        * the intent is that it is always trying to score the latest images, but still allows itself to score older images when it's done the latest
+        * to find images that don't have a score, it may be more efficient to add an index; see lancedb.com docs for advice
     * ...

@@ -95,6 +95,15 @@ impl SkeetStore {
                 .execute()
                 .await?;
         }
+        if !score_indices
+            .iter()
+            .any(|idx| idx.columns == vec!["model_version"])
+        {
+            scores_table
+                .create_index(&["model_version"], Index::Auto)
+                .execute()
+                .await?;
+        }
 
         let validate_table = db.open_table(VALIDATE_TABLE_NAME).execute().await?;
 
@@ -413,27 +422,22 @@ impl SkeetStore {
     ) -> Result<Vec<ImageId>, StoreError> {
         let all_ids = self.list_all_image_ids_by_most_recent().await?;
 
+        let version_str = model_version.to_string();
         let scored_batches: Vec<RecordBatch> = self
             .scores_table
             .query()
-            .select(lancedb::query::Select::columns(&[
-                "image_id",
-                "model_version",
-            ]))
+            .select(lancedb::query::Select::columns(&["image_id"]))
+            .only_if(format!("model_version = '{version_str}'"))
             .execute()
             .await?
             .try_collect()
             .await?;
 
         let mut scored_with_current_version = std::collections::HashSet::new();
-        let version_str = model_version.to_string();
         for batch in &scored_batches {
             let image_ids = typed_column::<StringArray>(batch, "image_id")?;
-            let versions = typed_column::<StringArray>(batch, "model_version")?;
             for i in 0..batch.num_rows() {
-                if versions.value(i) == version_str {
-                    scored_with_current_version.insert(image_ids.value(i).to_string());
-                }
+                scored_with_current_version.insert(image_ids.value(i).to_string());
             }
         }
 

@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::Instant;
 
 use clap::Parser;
 use skeet_refine::model::load_model;
@@ -61,6 +62,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         info!(count = unscored_ids.len(), "found unscored images");
 
+        let budget = std::time::Duration::from_secs(args.interval_secs);
+        let started = Instant::now();
+        let mut scored = 0u64;
+
         for image_id in &unscored_ids {
             let stored = match store.get_by_id(image_id).await? {
                 Some(s) => s,
@@ -75,11 +80,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     store
                         .upsert_score(image_id, &score, &model_version)
                         .await?;
+                    scored += 1;
                     info!(image_id = %image_id, %score, "refined");
                 }
                 Err(e) => {
                     error!(image_id = %image_id, error = %e, "failed to refine");
                 }
+            }
+
+            if started.elapsed() >= budget {
+                let remaining = unscored_ids.len() as u64 - scored;
+                info!(scored, remaining, "scoring budget elapsed, re-checking for newer images");
+                break;
             }
         }
     }
