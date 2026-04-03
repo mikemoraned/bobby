@@ -3,7 +3,7 @@
 ### Target
 
 * a "Bobby Dev" [Custom Feed](https://docs.bsky.app/docs/starter-templates/custom-feeds) in Bluesky which I can use for live dev testing
-    * this should surface the top N scored skeets, ordered by score, where score threshold > T, and have been in last H hours
+    * this should surface the top N scored skeets, ordered by score, where score threshold > T, and have been seen in last H hours
         * initially, N = 10, T = 0.5, H = 48
 
 ### Tasks
@@ -51,9 +51,8 @@
     * [x] register feed
 
 
-* [ ] `skeet-refine` changes:
+* [x] `skeet-refine` changes:
     * [x] update refine step so that when it finds images needing scored, it orders them by most recently discovered (so that more recently added images get assigned a score first)
     * [x] update live-refine so that it runs once every minute (as now) but once it finds a list of images to score, it only runs for one minute before looping back to check for more recently-added images that don't have a score. 
         * the intent is that it is always trying to score the latest images, but still allows itself to score older images when it's done the latest
         * to find images that don't have a score, it may be more efficient to add an index; see lancedb.com docs for advice
-    * ...
