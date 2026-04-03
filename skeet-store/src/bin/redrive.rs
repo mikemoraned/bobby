@@ -1,7 +1,7 @@
 #![warn(clippy::all, clippy::nursery)]
 
 use clap::{Parser, ValueEnum};
-use skeet_store::{ImageId, ImageRecord, SkeetStore, StoreArgs, StoredImage};
+use skeet_store::{ImageId, ImageRecord, SkeetStore, StoreArgs, StoreError, StoredImage};
 use tracing::{error, info, warn};
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -30,6 +30,18 @@ struct Args {
     /// Upload most recently discovered images first
     #[arg(long, default_value_t = false)]
     most_recent_first: bool,
+}
+
+#[derive(Debug, thiserror::Error)]
+enum RedriveError {
+    #[error("store operation failed: {0}")]
+    Store(#[from] StoreError),
+}
+
+enum VerifyResult {
+    Match,
+    NotFound,
+    Mismatch,
 }
 
 enum RedriveOutcome {
@@ -96,111 +108,77 @@ async fn redrive_image(
 ) -> RedriveOutcome {
     let image_id = image.summary.image_id.clone();
 
-    match mode {
-        Mode::Upload => {
-            let exists = match target.exists(&image_id).await {
-                Ok(exists) => exists,
-                Err(e) => {
-                    error!(image_id = %image_id, error = %e, "failed to check existence");
-                    return RedriveOutcome::Failed;
+    let result: Result<RedriveOutcome, RedriveError> = async {
+        match mode {
+            Mode::Upload => {
+                if target.exists(&image_id).await? {
+                    info!(image_id = %image_id, "already exists in target, skipping");
+                    Ok(RedriveOutcome::AlreadyExists)
+                } else {
+                    upload(image, &image_id, target).await?;
+                    Ok(RedriveOutcome::Uploaded)
                 }
-            };
-            if exists {
-                info!(image_id = %image_id, "already exists in target, skipping");
-                RedriveOutcome::AlreadyExists
-            } else if upload(image, &image_id, target).await {
-                RedriveOutcome::Uploaded
-            } else {
-                RedriveOutcome::Failed
             }
+            Mode::UploadAndDelete => match verify(&image, &image_id, target).await? {
+                VerifyResult::Match => {
+                    delete(&image_id, source).await?;
+                    Ok(RedriveOutcome::VerifiedAndDeleted)
+                }
+                VerifyResult::NotFound => {
+                    upload(image, &image_id, target).await?;
+                    delete(&image_id, source).await?;
+                    Ok(RedriveOutcome::Uploaded)
+                }
+                VerifyResult::Mismatch => Ok(RedriveOutcome::ContentMismatch),
+            },
         }
-        Mode::UploadAndDelete => match verify(&image, &image_id, target).await {
-            VerifyResult::Match => {
-                if delete(&image_id, source).await {
-                    RedriveOutcome::VerifiedAndDeleted
-                } else {
-                    RedriveOutcome::Failed
-                }
-            }
-            VerifyResult::NotFound => {
-                if upload(image, &image_id, target).await {
-                    if delete(&image_id, source).await {
-                        RedriveOutcome::Uploaded
-                    } else {
-                        RedriveOutcome::Failed
-                    }
-                } else {
-                    RedriveOutcome::Failed
-                }
-            }
-            VerifyResult::Mismatch => RedriveOutcome::ContentMismatch,
-            VerifyResult::Failed => RedriveOutcome::Failed,
-        },
+    }
+    .await;
+
+    match result {
+        Ok(outcome) => outcome,
+        Err(e) => {
+            error!(image_id = %image_id, error = %e, "redrive failed");
+            RedriveOutcome::Failed
+        }
     }
 }
 
-async fn upload(image: StoredImage, image_id: &ImageId, target: &SkeetStore) -> bool {
+async fn upload(
+    image: StoredImage,
+    image_id: &ImageId,
+    target: &SkeetStore,
+) -> Result<(), RedriveError> {
     let record: ImageRecord = image.into();
-    match target.add(&record).await {
-        Ok(()) => {
-            info!(image_id = %image_id, "uploaded to target");
-            true
-        }
-        Err(e) => {
-            error!(image_id = %image_id, error = %e, "failed to upload");
-            false
-        }
-    }
+    target.add(&record).await?;
+    info!(image_id = %image_id, "uploaded to target");
+    Ok(())
 }
 
-async fn delete(image_id: &ImageId, source: &SkeetStore) -> bool {
-    match source.delete_by_id(image_id).await {
-        Ok(()) => {
-            info!(image_id = %image_id, "deleted from source");
-            true
-        }
-        Err(e) => {
-            error!(image_id = %image_id, error = %e, "failed to delete from source");
-            false
-        }
-    }
-}
-
-enum VerifyResult {
-    Match,
-    NotFound,
-    Mismatch,
-    Failed,
+async fn delete(image_id: &ImageId, source: &SkeetStore) -> Result<(), RedriveError> {
+    source.delete_by_id(image_id).await?;
+    info!(image_id = %image_id, "deleted from source");
+    Ok(())
 }
 
 async fn verify(
     local_image: &StoredImage,
     image_id: &ImageId,
     target: &SkeetStore,
-) -> VerifyResult {
-    let remote_image = match target.get_by_id(image_id).await {
-        Ok(Some(img)) => img,
-        Ok(None) => {
-            return VerifyResult::NotFound;
-        }
-        Err(e) => {
-            error!(image_id = %image_id, error = %e, "failed to fetch remote image for comparison");
-            return VerifyResult::Failed;
-        }
+) -> Result<VerifyResult, RedriveError> {
+    let remote_image = match target.get_by_id(image_id).await? {
+        Some(img) => img,
+        None => return Ok(VerifyResult::NotFound),
     };
 
-    match local_image.content_matches(&remote_image) {
-        Ok(true) => {
+    match local_image.content_matches(&remote_image)? {
+        true => {
             info!(image_id = %image_id, "content matches remote");
-            VerifyResult::Match
+            Ok(VerifyResult::Match)
         }
-        Ok(false) => {
+        false => {
             warn!(image_id = %image_id, "content MISMATCH with remote");
-            VerifyResult::Mismatch
-        }
-        Err(e) => {
-            error!(image_id = %image_id, error = %e, "failed to compare content");
-            VerifyResult::Failed
+            Ok(VerifyResult::Mismatch)
         }
     }
 }

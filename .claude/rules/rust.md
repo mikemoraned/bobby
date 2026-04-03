@@ -22,6 +22,8 @@ paths:
 - Use typed representations instead of untyped arrays (e.g. `DynamicImage` not `Vec<u8>` for images)
 - Use `Option::None` when missing data is expected/valid; use `Result::Err` when it represents an invalid state (caller should use `?`)
 - Errors: use structured enums with [thiserror](https://docs.rs/thiserror/latest/thiserror/)
+  - Functions that can fail must return `Result<T, E>`, never `bool` for success/failure
+  - Enums used as return types must only contain success variants; failure cases belong in the `Err` side of a `Result`. For example, a `verify()` function should return `Result<VerifyResult, E>` where `VerifyResult` has `Match`/`NotFound`/`Mismatch` (all valid outcomes) — not a `Failed` variant baked into the enum
 - Module structure: different kinds of things (schemas, layers) belong in their own module with their own tests
 - Cross-crate models go in a `shared` crate's `lib.rs`
 - Keep shared/library types as pure data types — don't add policy or business-logic methods to them. Policy logic belongs in the crate that owns the decision. Only inherent behaviour (formatting, parsing, construction) belongs on the type itself.
