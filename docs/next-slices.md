@@ -71,7 +71,14 @@ Protect the `/admin` area behind GitHub OAuth login. Users authenticate via GitH
 3. the read of the feed itself takes several seconds
     * this could be caused by the same or similar problems as 2 i.e. long scans
 
+### Optimisation ideas
+
+* live-refine: when we find a new set of images to score:
+    * we can dispatch multiple calls in parallel to openai as we're largely waiting on them to respond (it's i/o bound)
+    * once we have some scores, we can batch-save them to lancedb (lancedb recommends batch-saving to reduce fragmentation)
+
 ### Tasks
 
 * [ ] for each of the smells break out possible causes and options for fixes. this may also include adding more visibility through opentelemetry or other tracing
+* [ ] similarly, for each of the ideas
 * [ ] ...
