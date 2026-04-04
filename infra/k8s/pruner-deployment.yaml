@@ -57,5 +57,7 @@ spec:
               value: "x-honeycomb-team=$(HONEYCOMB_API_KEY)"
             - name: OTEL_SERVICE_NAME
               value: "skeet-prune"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "deployment.environment=hetzner"
             - name: RUST_LOG
               value: "info"
