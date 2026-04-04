@@ -1,1 +1,27 @@
 # Next Slices
+
+## Slice 11: Improve Rust compile times, both locally and remotely
+
+Reduce compile times by removing unused dependencies, disabling unnecessary default features, and unifying feature resolution across the workspace.
+
+### Tasks
+
+#### Unused dependency audit
+- [ ] Install `cargo-machete` (`cargo install cargo-machete`) and run `cargo machete --with-metadata` across the workspace; remove confirmed unused deps
+- [ ] Add false-positive ignores to root `Cargo.toml` for deps only used via macros or `build.rs` (e.g. proc-macro crates, codegen deps)
+
+#### Feature pruning
+- [ ] Run `cargo tree --edges features` on the workspace to see which features are activated for heavy deps (e.g. `tokio`, `serde`, `reqwest`)
+- [ ] Install `cargo-features-manager` (`cargo install cargo-features-manager`) and run `cargo features prune`; review suggestions per crate
+- [ ] For high-impact deps, switch to `default-features = false` and explicitly enable only needed features; verify with `cargo check --all-targets`
+- [ ] Centralise shared dependency versions and feature selections in `[workspace.dependencies]` if not already done
+
+#### cargo-chef dependency caching
+- [ ] Restructure both Dockerfiles into three stages: `planner` (runs `cargo chef prepare`), `builder` (runs `cargo chef cook --release` then `cargo build --release`), and `runner` (copies the binary); use `lukemathwalker/cargo-chef:latest-rust-1` as the base and install `protobuf-compiler` in a shared `chef` stage
+- [ ] For `Dockerfile.pruner`, ensure the `models/` directory is only `COPY`'d into the `builder` stage (after `cargo chef cook`), not the `planner` stage — cargo-chef only needs `Cargo.toml`/`Cargo.lock` files, not build-time assets
+- [ ] Test that a source-only change (no new deps) results in a cache hit on the `cargo chef cook` layer by building twice and checking for `CACHED` in the build output
+
+#### BuildKit cache mounts
+- [ ] Ensure BuildKit is enabled: set `DOCKER_BUILDKIT=1` in the environment or use `docker buildx build` instead of `docker build`
+- [ ] Add `--mount=type=cache,target=/usr/local/cargo/registry,sharing=locked` and `--mount=type=cache,target=/usr/local/cargo/git,sharing=locked` to the `RUN` steps for both `cargo chef cook` and `cargo build --release`
+- [ ] For GitHub Actions, add `cache-from: type=gha` and `cache-to: type=gha,mode=max` to the `docker/build-push-action` step so the BuildKit layer cache persists between CI runs

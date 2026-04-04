@@ -34,3 +34,4 @@ logs/
 # Cluster credentials
 infra/kubeconfig
 infra/ssh/
+infra/1password-credentials.json
