@@ -1,5 +1,5 @@
 HETZNER_SSH_DIR := "infra/ssh"
-KUBECONFIG := "infra/kubeconfig"
+export KUBECONFIG := "infra/kubeconfig"
 
 cluster-prerequisites:
     brew install vitobotta/tap/hetzner_k3s helm kubectl
@@ -27,44 +27,44 @@ cluster-secrets-install:
     helm repo add 1password https://1password.github.io/connect-helm-charts
     helm repo update
     op document get "bobby-connect-credentials" --vault Dev --out-file infra/1password-credentials.json --force
-    KUBECONFIG={{ KUBECONFIG }} helm install connect 1password/connect \
+    helm install connect 1password/connect \
         --set-file connect.credentials=infra/1password-credentials.json \
         --set operator.create=true \
         --set "operator.token.value=$(op read 'op://Dev/bobby-connect-token/credential')"
     rm infra/1password-credentials.json
-    KUBECONFIG={{ KUBECONFIG }} kubectl apply -f infra/k8s/onepassword-items.yaml
+    kubectl apply -f infra/k8s/onepassword-items.yaml
 
 cluster-secrets-status:
-    KUBECONFIG={{ KUBECONFIG }} kubectl get onepassworditems
-    KUBECONFIG={{ KUBECONFIG }} kubectl get secrets
+    kubectl get onepassworditems
+    kubectl get secrets
 
 # --- Deployments ---
 
 cluster-ghcr-pull-secret:
-    KUBECONFIG={{ KUBECONFIG }} kubectl create secret docker-registry ghcr-pull-secret \
+    kubectl create secret docker-registry ghcr-pull-secret \
         --docker-server=ghcr.io \
         --docker-username=mikemoraned \
         "--docker-password=$(op read 'op://Dev/bobby-ghcr-pat-1/password')"
 
 cluster-deploy-pruner:
-    KUBECONFIG={{ KUBECONFIG }} kubectl apply -f infra/k8s/pruner-deployment.yaml
+    kubectl apply -f infra/k8s/pruner-deployment.yaml
 
 cluster-deploy-live-refine:
-    KUBECONFIG={{ KUBECONFIG }} kubectl apply -f infra/k8s/live-refine-deployment.yaml
+    kubectl apply -f infra/k8s/live-refine-deployment.yaml
 
 cluster-deploy: cluster-deploy-pruner cluster-deploy-live-refine
 
 cluster-logs-pruner:
-    KUBECONFIG={{ KUBECONFIG }} kubectl logs -l app=pruner --tail=100 -f
+    kubectl logs -l app=pruner --tail=100 -f
 
 cluster-logs-live-refine:
-    KUBECONFIG={{ KUBECONFIG }} kubectl logs -l app=live-refine --tail=100 -f
+    kubectl logs -l app=live-refine --tail=100 -f
 
 cluster-restart-pruner:
-    KUBECONFIG={{ KUBECONFIG }} kubectl rollout restart deployment pruner
+    kubectl rollout restart deployment pruner
 
 cluster-restart-live-refine:
-    KUBECONFIG={{ KUBECONFIG }} kubectl rollout restart deployment live-refine
+    kubectl rollout restart deployment live-refine
 
 cluster-status:
-    KUBECONFIG={{ KUBECONFIG }} kubectl get pods
+    kubectl get pods

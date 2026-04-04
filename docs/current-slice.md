@@ -51,4 +51,4 @@ We use `hetzner-k3s` for cluster provisioning, the 1Password Kubernetes Operator
 
 #### Refactors
 - [x] the `Justfile` is getting pretty big. Can we decompose it into multiple smaller files (focussed on logical clusters of actions)?
-- [ ] apply `/simplify` in claude
+- [x] apply `/simplify` in claude
