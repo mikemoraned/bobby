@@ -46,9 +46,9 @@ We use `hetzner-k3s` for cluster provisioning, the 1Password Kubernetes Operator
 - [x] update `live-refine` to send telemetry like `pruner`
 
 #### Operations & docs
-- [ ] Add `just` recipes for common remote operations (e.g. `just deploy`, `just logs`); `just cluster-create` and `just cluster-delete` already added
+- [x] Add `just` recipes for common remote operations (e.g. `just deploy`, `just logs`); `just cluster-create` and `just cluster-delete` already added
 - [x] Document the full setup and teardown process in `docs/remote-setup.md`
 
 #### Refactors
-- [ ] the `Justfile` is getting pretty big. Can we decompose it into multiple smaller files (focussed on logical clusters of actions)?
+- [x] the `Justfile` is getting pretty big. Can we decompose it into multiple smaller files (focussed on logical clusters of actions)?
 - [ ] apply `/simplify` in claude
