@@ -31,12 +31,11 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .init();
+    let _guard = shared::tracing::init_with_file_and_stderr(
+        "skeet_refine=info,shared=info,skeet_store=info,lance_io=warn,object_store=warn",
+        "live-refine.log",
+        shared::tracing::TokioConsoleSupport::Disabled,
+    );
 
     let args = Args::parse();
     let model = load_model(&args.model_path)?;

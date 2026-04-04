@@ -39,12 +39,16 @@ We use `hetzner-k3s` for cluster provisioning, the 1Password Kubernetes Operator
 - [x] **Manual**: Push pruner image: `just push-pruner`
 - [x] **Manual**: Deploy pruner: `just cluster-deploy-pruner`
 - [x] **Manual**: Verify pruner runs: `just cluster-logs-pruner` (should show firehose connection, image classification, store writes)
-- [ ] Create k8s deployment manifest for `live-refine` (after pruner is verified working)
-- [ ] Add a PersistentVolume for `--fallback-local-store` on the pruner deployment
+- [x] Create Dockerfile and k8s deployment manifest for `live-refine`
+- [x] **Manual**: Build and push live-refine image: `just push-live-refine`
+- [x] **Manual**: Deploy live-refine: `just cluster-deploy-live-refine`
+- [x] **Manual**: Verify live-refine runs: `just cluster-logs-live-refine`
+- [x] update `live-refine` to send telemetry like `pruner`
 
 #### Operations & docs
 - [ ] Add `just` recipes for common remote operations (e.g. `just deploy`, `just logs`); `just cluster-create` and `just cluster-delete` already added
 - [x] Document the full setup and teardown process in `docs/remote-setup.md`
 
 #### Refactors
-- [ ] the `Justfile` is getting pretty big. Can we decompose it into smaller files (focussed on logical clusters of actions)?
+- [ ] the `Justfile` is getting pretty big. Can we decompose it into multiple smaller files (focussed on logical clusters of actions)?
+- [ ] apply `/simplify` in claude
