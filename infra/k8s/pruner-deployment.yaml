@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pruner
+  labels:
+    app: pruner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pruner
+  template:
+    metadata:
+      labels:
+        app: pruner
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      containers:
+        - name: pruner
+          image: ghcr.io/mikemoraned/bobby/pruner:latest
+          command: ["pruner"]
+          args:
+            - "--config-path"
+            - "/etc/bobby/prune.toml"
+            - "--store-path"
+            - "s3://hom-bobby/encrypted-store"
+          env:
+            - name: BOBBY_S3_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: bobby-r2-endpoint
+                  key: password
+            - name: BOBBY_S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: bobby-r2-access-key-id
+                  key: password
+            - name: BOBBY_S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: bobby-r2-secret-access-key
+                  key: password
+            - name: BOBBY_SSE_C_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: bobby-sse-c-key
+                  key: password
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "https://api.honeycomb.io"
+            - name: HONEYCOMB_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: bobby-otel-headers
+                  key: password
+            - name: OTEL_EXPORTER_OTLP_HEADERS
+              value: "x-honeycomb-team=$(HONEYCOMB_API_KEY)"
+            - name: OTEL_SERVICE_NAME
+              value: "skeet-prune"
+            - name: RUST_LOG
+              value: "info"

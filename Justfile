@@ -204,3 +204,20 @@ cluster-secrets-install:
 cluster-secrets-status:
     KUBECONFIG={{ KUBECONFIG }} kubectl get onepassworditems
     KUBECONFIG={{ KUBECONFIG }} kubectl get secrets
+
+# --- Deployments ---
+
+cluster-ghcr-pull-secret:
+    KUBECONFIG={{ KUBECONFIG }} kubectl create secret docker-registry ghcr-pull-secret \
+        --docker-server=ghcr.io \
+        --docker-username=mikemoraned \
+        "--docker-password=$(op read 'op://Dev/bobby-ghcr-pat-1/password')"
+
+cluster-deploy-pruner:
+    KUBECONFIG={{ KUBECONFIG }} kubectl apply -f infra/k8s/pruner-deployment.yaml
+
+cluster-logs-pruner:
+    KUBECONFIG={{ KUBECONFIG }} kubectl logs -l app=pruner --tail=100 -f
+
+cluster-status:
+    KUBECONFIG={{ KUBECONFIG }} kubectl get pods

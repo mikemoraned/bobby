@@ -14,7 +14,7 @@ RUN cargo build --release --bin pruner
 
 # The build.rs bakes an absolute path to the .bpk weights file into the binary.
 # Copy it to a stable path so we can place it predictably in the runtime image.
-RUN BPK_PATH=$(find target/release/build -name "face_detection_yunet_2023mar_opset16.bpk" -print -quit) && \
+RUN BPK_PATH=$(find /build/target/release/build -name "face_detection_yunet_2023mar_opset16.bpk" -print -quit) && \
     cp "$BPK_PATH" /tmp/weights.bpk && \
     echo "$BPK_PATH" > /tmp/bpk_original_path
 

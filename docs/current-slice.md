@@ -35,8 +35,10 @@ We use `hetzner-k3s` for cluster provisioning, the 1Password Kubernetes Operator
 - [x] **Manual**: Verify secrets synced: `just cluster-secrets-status`
 
 #### Deployments
-- [ ] Create k8s deployment manifest for `pruner` that pulls the ARM image from GHCR, injects secrets as env vars via `envFrom`, and sets OTEL env vars (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME`)
-- [ ] Verify `pruner` runs on the cluster, connects to Bluesky firehose, classifies images, and writes to the store
+- [x] Create k8s deployment manifest for `pruner` (`infra/k8s/pruner-deployment.yaml`)
+- [x] **Manual**: Push pruner image: `just push-pruner`
+- [x] **Manual**: Deploy pruner: `just cluster-deploy-pruner`
+- [x] **Manual**: Verify pruner runs: `just cluster-logs-pruner` (should show firehose connection, image classification, store writes)
 - [ ] Create k8s deployment manifest for `live-refine` (after pruner is verified working)
 - [ ] Add a PersistentVolume for `--fallback-local-store` on the pruner deployment
 
