@@ -148,3 +148,40 @@ test_staging:
 
 register-feed:
     op run --env-file register.env -- cargo run --quiet --release --bin register-feed -- --hostname {{ STAGING_HOSTNAME }}
+
+# --- Container ---
+
+GHCR_REPO := "ghcr.io/mikemoraned/bobby"
+
+ghcr-login:
+    op read "op://Dev/bobby-ghcr-pat-1/password" | docker login ghcr.io -u mikemoraned --password-stdin
+
+build-pruner:
+    docker buildx build --platform linux/arm64 -f Dockerfile.pruner -t {{ GHCR_REPO }}/pruner:latest .
+
+push-pruner: build-pruner
+    docker push {{ GHCR_REPO }}/pruner:latest
+
+# --- Cluster ---
+
+cluster-prerequisites:
+    brew install vitobotta/tap/hetzner_k3s helm kubectl
+
+HETZNER_SSH_DIR := "infra/ssh"
+
+_cluster-ssh-keys:
+    mkdir -p {{ HETZNER_SSH_DIR }}
+    op read "op://Dev/bobby-hetzner-ssh/private key?ssh-format=openssh" > {{ HETZNER_SSH_DIR }}/id_ed25519
+    chmod 600 {{ HETZNER_SSH_DIR }}/id_ed25519
+    op read "op://Dev/bobby-hetzner-ssh/public key" > {{ HETZNER_SSH_DIR }}/id_ed25519.pub
+
+_cluster-ssh-keys-cleanup:
+    rm -rf {{ HETZNER_SSH_DIR }}
+
+cluster-create: _cluster-ssh-keys
+    HCLOUD_TOKEN=$(op read "op://Dev/bobby-hetzner-api-token/password") hetzner-k3s create --config infra/bobby-cluster.yaml
+    just _cluster-ssh-keys-cleanup
+
+cluster-delete: _cluster-ssh-keys
+    HCLOUD_TOKEN=$(op read "op://Dev/bobby-hetzner-api-token/password") hetzner-k3s delete --config infra/bobby-cluster.yaml
+    just _cluster-ssh-keys-cleanup

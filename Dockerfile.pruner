@@ -1,0 +1,36 @@
+FROM rust:1.94-bookworm AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+COPY . .
+COPY models/ models/
+
+# Target Neoverse N1 (Ampere Altra on Hetzner CAX) — avoids fullfp16 instructions
+# that gemm-common emits for generic aarch64 but aren't supported in this build env
+ENV RUSTFLAGS="-C target-cpu=neoverse-n1"
+RUN cargo build --release --bin pruner
+
+# The build.rs bakes an absolute path to the .bpk weights file into the binary.
+# Copy it to a stable path so we can place it predictably in the runtime image.
+RUN BPK_PATH=$(find target/release/build -name "face_detection_yunet_2023mar_opset16.bpk" -print -quit) && \
+    cp "$BPK_PATH" /tmp/weights.bpk && \
+    echo "$BPK_PATH" > /tmp/bpk_original_path
+
+FROM debian:bookworm-slim AS runner
+
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /build/target/release/pruner /usr/local/bin/pruner
+
+# Restore the .bpk weights file to the exact path the binary expects
+COPY --from=builder /tmp/weights.bpk /tmp/weights.bpk
+COPY --from=builder /tmp/bpk_original_path /tmp/bpk_original_path
+RUN mkdir -p "$(dirname "$(cat /tmp/bpk_original_path)")" && \
+    cp /tmp/weights.bpk "$(cat /tmp/bpk_original_path)" && \
+    rm /tmp/weights.bpk /tmp/bpk_original_path
+
+COPY config/prune.toml /etc/bobby/prune.toml
+
+CMD ["pruner", "--config-path", "/etc/bobby/prune.toml"]

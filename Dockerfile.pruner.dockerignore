@@ -1,0 +1,25 @@
+# Build artifacts
+debug
+target
+**/*.rs.bk
+*.pdb
+**/mutants.out*/
+
+# Runtime data
+store*/
+fallback-store/
+logs/
+
+# Docker/deploy config
+fly*.toml
+Dockerfile*
+.dockerignore
+
+# Dev/project files not needed for build
+.git
+docs/
+Justfile
+CLAUDE.md
+*.env
+
+# Note: models/ is NOT excluded — needed by face-detection build.rs

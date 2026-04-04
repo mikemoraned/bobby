@@ -30,3 +30,7 @@ models/
 
 # Runtime log files
 logs/
+
+# Cluster credentials
+infra/kubeconfig
+infra/ssh/
