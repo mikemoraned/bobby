@@ -28,8 +28,11 @@ We use `hetzner-k3s` for cluster provisioning, the 1Password Kubernetes Operator
 - [x] **Manual**: Verify build works: `just build-pruner`
 
 #### Secrets
-- [ ] Install 1Password Connect + Operator via Helm on the cluster; create `OnePasswordItem` resources that map the existing `bobby.env` 1Password items to k8s Secrets
-  - Secrets needed: `BOBBY_S3_ENDPOINT`, `BOBBY_S3_ACCESS_KEY_ID`, `BOBBY_S3_SECRET_ACCESS_KEY`, `BOBBY_SSE_C_KEY`, `BOBBY_OPENAI_API_KEY` (for live-refine), `OTEL_EXPORTER_OTLP_HEADERS` (for Honeycomb)
+- [x] Create 1Password Connect server and access token (stored in `Dev/bobby-connect-credentials` and `Dev/bobby-connect-token`)
+- [x] Create `OnePasswordItem` manifests (`infra/k8s/onepassword-items.yaml`) for all bobby secrets
+- [x] Add `just cluster-secrets-install` and `just cluster-secrets-status` recipes
+- [x] **Manual**: Install secrets on cluster: `just cluster-secrets-install`
+- [x] **Manual**: Verify secrets synced: `just cluster-secrets-status`
 
 #### Deployments
 - [ ] Create k8s deployment manifest for `pruner` that pulls the ARM image from GHCR, injects secrets as env vars via `envFrom`, and sets OTEL env vars (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME`)
@@ -42,4 +45,4 @@ We use `hetzner-k3s` for cluster provisioning, the 1Password Kubernetes Operator
 - [x] Document the full setup and teardown process in `docs/remote-setup.md`
 
 #### Refactors
-- [ ] the `Justfile` is getting pretty big. Can we decompose it into smaller files?
+- [ ] the `Justfile` is getting pretty big. Can we decompose it into smaller files (focussed on logical clusters of actions)?

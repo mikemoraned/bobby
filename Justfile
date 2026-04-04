@@ -185,3 +185,22 @@ cluster-create: _cluster-ssh-keys
 cluster-delete: _cluster-ssh-keys
     HCLOUD_TOKEN=$(op read "op://Dev/bobby-hetzner-api-token/password") hetzner-k3s delete --config infra/bobby-cluster.yaml
     just _cluster-ssh-keys-cleanup
+
+KUBECONFIG := "infra/kubeconfig"
+
+# --- Secrets ---
+
+cluster-secrets-install:
+    helm repo add 1password https://1password.github.io/connect-helm-charts
+    helm repo update
+    op document get "bobby-connect-credentials" --vault Dev --out-file infra/1password-credentials.json --force
+    KUBECONFIG={{ KUBECONFIG }} helm install connect 1password/connect \
+        --set-file connect.credentials=infra/1password-credentials.json \
+        --set operator.create=true \
+        --set "operator.token.value=$(op read 'op://Dev/bobby-connect-token/credential')"
+    rm infra/1password-credentials.json
+    KUBECONFIG={{ KUBECONFIG }} kubectl apply -f infra/k8s/onepassword-items.yaml
+
+cluster-secrets-status:
+    KUBECONFIG={{ KUBECONFIG }} kubectl get onepassworditems
+    KUBECONFIG={{ KUBECONFIG }} kubectl get secrets
