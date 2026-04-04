@@ -1,54 +1,25 @@
-# Current Slice: Slice 10 — Running pruning/refining remotely on Hetzner
+# Current Slice: Slice 11 — Improve Rust compile times, both locally and remotely
 
-Currently everything runs locally. We want to run pruning and refining on a remote single-node k3s cluster on Hetzner Cloud ARM, so it can run continuously without tying up a local machine, and so it is closer, in network latency/bandwidth, to what it depends on. Persistent state (e.g. the skeet store) is kept external to the cluster so we can destroy and recreate it freely.
-
-We use `hetzner-k3s` for cluster provisioning, the 1Password Kubernetes Operator for secret injection (replacing local `op run --env-file`), and GitHub Container Registry for images.
+Reduce compile times by removing unused dependencies, disabling unnecessary default features, and unifying feature resolution across the workspace.
 
 ### Tasks
 
-#### Pre-requisites (make pruner container-friendly)
-- [x] Add `--config-path` CLI arg to pruner so `config/prune.toml` path isn't hardcoded via `CARGO_MANIFEST_DIR`; consistent with the "all config via named CLI params" invariant
-- [x] Update `just prune` / `just prune-r2` recipes to pass `--config-path`
+#### Unused dependency audit
+- [ ] Install `cargo-machete` (`cargo install cargo-machete`) and run `cargo machete --with-metadata` across the workspace; remove confirmed unused deps
+- [ ] Add false-positive ignores to root `Cargo.toml` for deps only used via macros or `build.rs` (e.g. proc-macro crates, codegen deps)
 
-#### Cluster provisioning
-- [x] Create `hetzner-k3s` cluster config (`infra/bobby-cluster.yaml`) for a single CAX21 master node in `fsn1` with `schedule_workloads_on_masters: true` and no worker pools; document in `docs/`
-- [x] **Manual**: Install cluster prerequisites (`just cluster-prerequisites`)
-- [x] **Manual**: Create Hetzner Cloud API token (Read & Write) at console.hetzner.cloud → Security → API Tokens; store in 1Password at `Dev/bobby-hetzner-api-token`
-- [x] **Manual**: Ensure SSH key pair is in 1Password at `Dev/bobby-hetzner-ssh` (just recipes export it automatically)
-- [x] **Manual**: Create cluster: `just cluster-create` (pulls API token and SSH keys from 1Password; takes several minutes after instance is running while k3s is installed and configured)
+#### Feature pruning
+- [ ] Run `cargo tree --edges features` on the workspace to see which features are activated for heavy deps (e.g. `tokio`, `serde`, `reqwest`)
+- [ ] Install `cargo-features-manager` (`cargo install cargo-features-manager`) and run `cargo features prune`; review suggestions per crate
+- [ ] For high-impact deps, switch to `default-features = false` and explicitly enable only needed features; verify with `cargo check --all-targets`
+- [ ] Centralise shared dependency versions and feature selections in `[workspace.dependencies]` if not already done
 
+#### cargo-chef dependency caching
+- [ ] Restructure both Dockerfiles into three stages: `planner` (runs `cargo chef prepare`), `builder` (runs `cargo chef cook --release` then `cargo build --release`), and `runner` (copies the binary); use `lukemathwalker/cargo-chef:latest-rust-1` as the base and install `protobuf-compiler` in a shared `chef` stage
+- [ ] For `Dockerfile.pruner`, ensure the `models/` directory is only `COPY`'d into the `builder` stage (after `cargo chef cook`), not the `planner` stage — cargo-chef only needs `Cargo.toml`/`Cargo.lock` files, not build-time assets
+- [ ] Test that a source-only change (no new deps) results in a cache hit on the `cargo chef cook` layer by building twice and checking for `CACHED` in the build output
 
-#### Dockerfile & registry
-- [x] Create a multi-platform Dockerfile for `pruner` (`Dockerfile.pruner`) targeting `linux/arm64`
-  - `models/*.onnx` included in build context via `Dockerfile.pruner.dockerignore`
-  - `.bpk` weights file located after build and copied to the path baked into the binary
-  - `config/prune.toml` copied to `/etc/bobby/prune.toml` as default `--config-path`
-- [x] Set up GitHub Container Registry publishing: `just build-pruner` and `just push-pruner`
-- [x] **Manual**: Authenticate to GHCR: `just ghcr-login` (classic PAT stored in 1Password `Dev/bobby-ghcr-pat-1`)
-- [x] **Manual**: Verify build works: `just build-pruner`
-
-#### Secrets
-- [x] Create 1Password Connect server and access token (stored in `Dev/bobby-connect-credentials` and `Dev/bobby-connect-token`)
-- [x] Create `OnePasswordItem` manifests (`infra/k8s/onepassword-items.yaml`) for all bobby secrets
-- [x] Add `just cluster-secrets-install` and `just cluster-secrets-status` recipes
-- [x] **Manual**: Install secrets on cluster: `just cluster-secrets-install`
-- [x] **Manual**: Verify secrets synced: `just cluster-secrets-status`
-
-#### Deployments
-- [x] Create k8s deployment manifest for `pruner` (`infra/k8s/pruner-deployment.yaml`)
-- [x] **Manual**: Push pruner image: `just push-pruner`
-- [x] **Manual**: Deploy pruner: `just cluster-deploy-pruner`
-- [x] **Manual**: Verify pruner runs: `just cluster-logs-pruner` (should show firehose connection, image classification, store writes)
-- [x] Create Dockerfile and k8s deployment manifest for `live-refine`
-- [x] **Manual**: Build and push live-refine image: `just push-live-refine`
-- [x] **Manual**: Deploy live-refine: `just cluster-deploy-live-refine`
-- [x] **Manual**: Verify live-refine runs: `just cluster-logs-live-refine`
-- [x] update `live-refine` to send telemetry like `pruner`
-
-#### Operations & docs
-- [x] Add `just` recipes for common remote operations (e.g. `just deploy`, `just logs`); `just cluster-create` and `just cluster-delete` already added
-- [x] Document the full setup and teardown process in `docs/remote-setup.md`
-
-#### Refactors
-- [x] the `Justfile` is getting pretty big. Can we decompose it into multiple smaller files (focussed on logical clusters of actions)?
-- [x] apply `/simplify` in claude
+#### BuildKit cache mounts
+- [ ] Ensure BuildKit is enabled: set `DOCKER_BUILDKIT=1` in the environment or use `docker buildx build` instead of `docker build`
+- [ ] Add `--mount=type=cache,target=/usr/local/cargo/registry,sharing=locked` and `--mount=type=cache,target=/usr/local/cargo/git,sharing=locked` to the `RUN` steps for both `cargo chef cook` and `cargo build --release`
+- [ ] For GitHub Actions, add `cache-from: type=gha` and `cache-to: type=gha,mode=max` to the `docker/build-push-action` step so the BuildKit layer cache persists between CI runs

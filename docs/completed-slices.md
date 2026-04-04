@@ -93,3 +93,14 @@ Built a live Bluesky Custom Feed for dev testing, with supporting refactors:
 - **New `skeet-feed`**: a cot.rs web app deployed to Fly.io (`bobby-staging.fly.dev` / `bobby-staging.houseofmoran.io`) serving the Bluesky feed skeleton API. Connects to the remote R2 store and surfaces the top 10 skeets scored above 0.5 from the last 48 hours. Includes `deploy_staging`, `test_webapp`, and `test_staging` Justfile recipes, plus a helper to sync `bobby.env` secrets with Fly.io.
 - **Feed registration**: wrote a Rust CLI to register the Custom Feed with Bluesky (inspired by `skyfeed` crate and official docs).
 - **Refine improvements**: live-refine now prioritises most recently discovered images, scores within a time budget (matching the polling interval) before re-checking for newer arrivals, and uses a `model_version` scalar index on the scores table for efficient unscored-image queries.
+
+## Slice 10: Running pruning/refining remotely on Hetzner
+
+Moved the pruner and live-refine workloads from local machines to a single-node k3s cluster on Hetzner Cloud ARM (CAX21 in fsn1), provisioned via `hetzner-k3s`:
+
+- **Cluster provisioning**: cluster config at `infra/bobby-cluster.yaml` with SSH keys and API token stored in 1Password. Just recipes handle key export/cleanup automatically. Added `just cluster-create`, `just cluster-delete`, and `just cluster-prerequisites`.
+- **Container images**: multi-stage Dockerfiles for both `pruner` (includes ONNX models and BPK weights with path baked into the binary) and `live-refine`. Built for `linux/arm64` with `RUSTFLAGS="-C target-cpu=neoverse-n1"` to avoid fp16 assembly errors. Published to GitHub Container Registry via classic PAT.
+- **Secret injection**: replaced local `op run --env-file` with the 1Password Kubernetes Operator. Six `OnePasswordItem` CRDs sync R2 credentials, SSE-C key, OpenAI API key, and Honeycomb API key to k8s Secrets. Honeycomb headers constructed via k8s env var interpolation.
+- **Deployments**: k8s deployment manifests for both services with `imagePullSecrets` for GHCR, OTEL telemetry to Honeycomb with `deployment.environment=hetzner` resource attribute, and `OTEL_SERVICE_NAME` per service.
+- **Operations**: umbrella recipes (`cluster-deploy`, `cluster-restart-*`, `cluster-logs-*`, `cluster-status`) for common remote operations. Full setup/teardown documented in `docs/remote-setup.md`.
+- **Justfile decomposition**: split the 244-line monolithic Justfile into `just/store.just`, `just/feed.just`, `just/container.just`, and `just/cluster.just` using just's `import` feature. Exported `KUBECONFIG` as an environment variable to eliminate 11 manual prefixes.
