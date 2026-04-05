@@ -1,14 +1,23 @@
-ARG BOBBY_CHEF=bobby-chef:amd64
-ARG BOBBY_RUNNER=ghcr.io/mikemoraned/bobby/bobby-runner:latest
+FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm AS planner
+WORKDIR /build
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
 
-FROM ${BOBBY_CHEF} AS builder
+FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm AS builder
+WORKDIR /build
+RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev && rm -rf /var/lib/apt/lists/*
+COPY --from=planner /build/recipe.json recipe.json
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    cargo chef cook --release --recipe-path recipe.json
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     cargo build --release --bin skeet-feed
 
-FROM ${BOBBY_RUNNER} AS runner
+FROM debian:bookworm-slim AS runner
 LABEL org.opencontainers.image.source=https://github.com/mikemoraned/bobby
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /build/target/release/skeet-feed /usr/local/bin/skeet-feed
 

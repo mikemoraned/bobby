@@ -52,7 +52,7 @@ cluster-deploy-pruner:
 cluster-deploy-live-refine:
     kubectl apply -f infra/k8s/live-refine-deployment.yaml
 
-cluster-deploy-all: push-base push-pruner push-live-refine cluster-deploy-pruner cluster-deploy-live-refine
+cluster-deploy-all: push-pruner push-live-refine cluster-deploy-pruner cluster-deploy-live-refine
 
 cluster-restart-all: cluster-restart-pruner cluster-restart-live-refine
 

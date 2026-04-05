@@ -48,7 +48,7 @@ Authenticate to GHCR first (one-time): `just ghcr-login` (reads classic PAT from
 
 ### How the pruner image works
 
-- `Dockerfile.pruner` inherits from `bobby-chef` (local build base with pre-compiled deps) and `bobby-runner` (runtime base from ghcr)
+- `Dockerfile.pruner` is self-contained with inline cargo-chef stages (planner/builder/runner), based on `lukemathwalker/cargo-chef:latest-rust-1-bookworm` and `debian:bookworm-slim`
 - `models/*.onnx` are included in the build context (not excluded by `.dockerignore`)
 - The `face-detection` crate's `build.rs` converts ONNX to `.bpk` weights and bakes the path into the binary; the Dockerfile locates and copies this file to the runtime image at the same path
 - `config/prune.toml` is copied to `/etc/bobby/prune.toml`
