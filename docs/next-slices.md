@@ -26,7 +26,8 @@
 ### Benchmarking
 
 * we should be able to measure the maximum possible speed the pruner can run by taking the jetstream stage only and running that on it's own
-    * we should be able to run a minimal cluster which just runs this step
+    * we should be able to run a minimal cli instance and associated k8s deployment which just runs this step and summarises speeds
+    * probably should just run for 5 minutes and collate some statistics before dumping them out at the end
 
 ### Tasks
 
