@@ -104,3 +104,15 @@ Moved the pruner and live-refine workloads from local machines to a single-node 
 - **Deployments**: k8s deployment manifests for both services with `imagePullSecrets` for GHCR, OTEL telemetry to Honeycomb with `deployment.environment=hetzner` resource attribute, and `OTEL_SERVICE_NAME` per service.
 - **Operations**: umbrella recipes (`cluster-deploy`, `cluster-restart-*`, `cluster-logs-*`, `cluster-status`) for common remote operations. Full setup/teardown documented in `docs/remote-setup.md`.
 - **Justfile decomposition**: split the 244-line monolithic Justfile into `just/store.just`, `just/feed.just`, `just/container.just`, and `just/cluster.just` using just's `import` feature. Exported `KUBECONFIG` as an environment variable to eliminate 11 manual prefixes.
+
+## Slice 11: Improve Rust compile times, both locally and remotely
+
+Reduced compile times and streamlined the Docker build pipeline:
+
+- **Dependency audit**: used `cargo-machete` to remove unused deps (`tracing-subscriber` from skeet-store, `tokio` from shared, `reqwest` from skeet-refine). Added false-positive ignores for `face-detection` build-time deps.
+- **Feature pruning**: ran `cargo-features-manager` across the workspace; switched high-impact deps (`reqwest`, `tokio`, `serde`) to `default-features = false` with explicit feature selection. Centralised shared dependency versions in `[workspace.dependencies]`.
+- **cargo-chef caching**: restructured all service Dockerfiles into three-stage builds (planner/builder/runner) using `lukemathwalker/cargo-chef:latest-rust-1-bookworm`. Source-only changes now get a cache hit on the dependency compilation layer.
+- **BuildKit cache mounts**: added `--mount=type=cache` for cargo registry and git dirs on both `cargo chef cook` and `cargo build` steps.
+- **Shared base image (attempted and reverted)**: tried extracting common Docker stages into `bobby-chef` and `bobby-runner` base images. Reverted due to multiarch builder complexity, 5GB chef image too large for GHCR, and builder driver incompatibilities. Kept self-contained Dockerfiles with the good parts inline.
+- **fly.io pre-built images**: switched `fly.staging.toml` from building on fly.io to pulling pre-built amd64 images from GHCR. GHCR packages made public for unauthenticated pulls.
+- **Build config**: moved architecture-specific RUSTFLAGS (`-C target-cpu=neoverse-n1` for ARM) into `.cargo/config.toml` per-target sections. Added `.dockerignore` excluding `target/`, `store/`, `logs/`, and other large dirs.

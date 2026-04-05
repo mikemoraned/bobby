@@ -1,37 +1,35 @@
-# Current Slice: Slice 11 — Improve Rust compile times, both locally and remotely
+# Current Slice: Slice 12 — Optimisations of pruning, refining, and feeding
 
-Reduce compile times by removing unused dependencies, disabling unnecessary default features, and unifying feature resolution across the workspace.
+### Smells to be investigated / addressed
+
+1. looking at cpu and network usage in hetzner:
+    * we can see it going up and down:
+        * cpu goes from 100% to 200% over a period of about 30 secs
+        * network bandwidth goes from 0 to 80Mbps over similar time-scale
+    * this feels a bit like a bottleneck being encountered periodically like a buffer being filled and meeting a limit
+    * we also log every 30 seconds, so it's possible this is somehow blocking things (as it sits at end of pipeline)
+2. looking at traces for operations like `get_by_id` these take about 10 seconds and make multiple `read_fragment` calls in `lance::io::exec::filtered_read`
+    * this kinda looks like a table scan; couldn't this be an index lookup instead?
+    * also, could we add a dump of the plan to the trace (in `plan_scan`) so we can see what it is doing?
+    * I see similar traces for things like `exists`
+3. the read of the feed itself takes several seconds
+    * this could be caused by the same or similar problems as 2 i.e. long scans
+
+### Optimisation ideas
+
+* live-refine: when we find a new set of images to score:
+    * we can dispatch multiple calls in parallel to openai as we're largely waiting on them to respond (it's i/o bound)
+    * once we have some scores, we can batch-save them to lancedb (lancedb recommends batch-saving to reduce fragmentation)
+
+### Benchmarking
+
+* we should be able to measure the maximum possible speed the pruner can run by taking the jetstream stage only and running that on it's own
+    * we should be able to run a minimal cli instance and associated k8s deployment which just runs this step and summarises speeds
+    * probably should just run for 5 minutes and collate some statistics before dumping them out at the end
 
 ### Tasks
 
-#### Unused dependency audit
-- [x] Install `cargo-machete` (`cargo install cargo-machete`) and run `cargo machete --with-metadata` across the workspace; remove confirmed unused deps
-- [x] Add false-positive ignores to root `Cargo.toml` for deps only used via macros or `build.rs` (e.g. proc-macro crates, codegen deps)
-
-#### Feature pruning
-- [x] Run `cargo tree --edges features` on the workspace to see which features are activated for heavy deps (e.g. `tokio`, `serde`, `reqwest`)
-- [x] Install `cargo-features-manager` (`cargo install cargo-features-manager`) and run `cargo features prune`; review suggestions per crate
-- [x] For high-impact deps, switch to `default-features = false` and explicitly enable only needed features; verify with `cargo check --all-targets`
-- [x] Centralise shared dependency versions and feature selections in `[workspace.dependencies]` if not already done
-
-#### cargo-chef dependency caching
-- [x] Restructure both Dockerfiles into three stages: `planner` (runs `cargo chef prepare`), `builder` (runs `cargo chef cook --release` then `cargo build --release`), and `runner` (copies the binary); use `lukemathwalker/cargo-chef:latest-rust-1` as the base and install `protobuf-compiler` in a shared `chef` stage
-- [x] For `Dockerfile.pruner`, ensure the `models/` directory is only `COPY`'d into the `builder` stage (after `cargo chef cook`), not the `planner` stage — cargo-chef only needs `Cargo.toml`/`Cargo.lock` files, not build-time assets
-- [x] Test that a source-only change (no new deps) results in a cache hit on the `cargo chef cook` layer by building twice and checking for `CACHED` in the build output
-
-#### BuildKit cache mounts
-- [x] Ensure BuildKit is enabled: set `DOCKER_BUILDKIT=1` in the environment or use `docker buildx build` instead of `docker build`
-- [x] Add `--mount=type=cache,target=/usr/local/cargo/registry,sharing=locked` and `--mount=type=cache,target=/usr/local/cargo/git,sharing=locked` to the `RUN` steps for both `cargo chef cook` and `cargo build --release`
-
-#### Shared base docker image
-
-We are getting good cache usage across *different* Dockerfiles by accident, as the `cargo chef` recipies are identical. This is fragile. Also, a lot of our other instructions are also very similar.
-
-- [x] try creating a base `bobby` base image (`Dockerfile.bobby`) which the various other `Dockerfile`s can inherit from by sharing the same base image. This base image can/should be published explicitly to ghcr. This should allow us a to centralise all shared setup.
-- [x] Reverted: shared base images added too much complexity (multiarch builders, local-only 5GB chef image, builder driver incompatibilities). Went back to self-contained Dockerfiles with inline cargo-chef stages. Kept the good parts: bookworm pinning, cargo-chef caching, BuildKit cache mounts, `.cargo/config.toml` RUSTFLAGS, `.dockerignore`, OCI labels.
-
-#### Make fly.io deploy consistent
-
-* [x] we should update the fly.io deployment so that it uses the same setup and we don't get fly.io to rebuild anything i.e. we use ghcr for fly.io as well
-
-
+* [ ] for each of the smells break out possible causes and options for fixes. this may also include adding more visibility through opentelemetry or other tracing
+* [ ] similarly, for each of the ideas
+* [ ] similarly, for each of the benchmarks
+* [ ] ...
