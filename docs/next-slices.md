@@ -77,8 +77,14 @@ Protect the `/admin` area behind GitHub OAuth login. Users authenticate via GitH
     * we can dispatch multiple calls in parallel to openai as we're largely waiting on them to respond (it's i/o bound)
     * once we have some scores, we can batch-save them to lancedb (lancedb recommends batch-saving to reduce fragmentation)
 
+### Benchmarking
+
+* we should be able to measure the maximum possible speed the pruner can run by taking the jetstream stage only and running that on it's own
+    * we should be able to run a minimal cluster which just runs this step
+
 ### Tasks
 
 * [ ] for each of the smells break out possible causes and options for fixes. this may also include adding more visibility through opentelemetry or other tracing
 * [ ] similarly, for each of the ideas
+* [ ] similarly, for each of the benchmarks
 * [ ] ...
