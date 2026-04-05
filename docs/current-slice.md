@@ -29,7 +29,20 @@
 
 ### Tasks
 
-* [ ] for each of the smells break out possible causes and options for fixes. this may also include adding more visibility through opentelemetry or other tracing
-* [ ] similarly, for each of the ideas
-* [ ] similarly, for each of the benchmarks
-* [ ] ...
+#### Smells (investigate first — #2 likely explains #3 and may contribute to #1)
+
+* [ ] #2: add query plan logging (`explain_plan`) to `get_by_id` and `exists`; verify `.only_if()` actually uses the scalar index
+* [ ] #2: log table row counts and fragment counts at startup to assess fragmentation
+* [ ] #3: log row counts in `list_scored_summaries_by_score` to see if the full-table reads are the bottleneck (likely same root cause as #2)
+* [ ] #1: add channel depth and per-stage throughput logging to the pruner pipeline
+* [ ] #1: make the 30s status logging interval configurable; check if it blocks the save stage
+
+#### Benchmarking
+
+* [ ] create a minimal `bench-firehose` binary that runs the jetstream stage only for 5 mins and reports messages/sec stats
+* [ ] add `just bench-firehose` target and k8s deployment for running on Hetzner
+
+#### Optimisations (act on information from above first)
+
+* [ ] live-refine: dispatch OpenAI calls in parallel (currently sequential)
+* [ ] live-refine: batch-save scores to lancedb to reduce fragmentation
