@@ -32,6 +32,6 @@ We are getting good cache usage across *different* Dockerfiles by accident, as t
 
 #### Make fly.io deploy consistent
 
-* [ ] we should update the fly.io deployment so that it uses the same setup and we don't get fly.io to rebuild anything i.e. we use ghcr for fly.io as well
+* [x] we should update the fly.io deployment so that it uses the same setup and we don't get fly.io to rebuild anything i.e. we use ghcr for fly.io as well
 
 
