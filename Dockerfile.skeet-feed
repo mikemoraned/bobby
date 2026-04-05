@@ -1,4 +1,4 @@
-ARG BOBBY_CHEF=ghcr.io/mikemoraned/bobby/bobby-chef:latest
+ARG BOBBY_CHEF=bobby-chef:latest
 ARG BOBBY_RUNNER=ghcr.io/mikemoraned/bobby/bobby-runner:latest
 
 FROM ${BOBBY_CHEF} AS builder

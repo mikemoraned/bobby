@@ -1,5 +1,5 @@
 GHCR_REPO := "ghcr.io/mikemoraned/bobby"
-BOBBY_CHEF := GHCR_REPO / "bobby-chef:latest"
+BOBBY_CHEF := "bobby-chef:latest"
 BOBBY_RUNNER := GHCR_REPO / "bobby-runner:latest"
 
 _ensure-multiarch-builder:
@@ -18,7 +18,6 @@ build-base-runner: _ensure-multiarch-builder
 build-base: build-base-chef build-base-runner
 
 push-base: _ensure-multiarch-builder
-    docker buildx build --platform linux/arm64,linux/amd64 -f Dockerfile.bobby-chef -t {{ BOBBY_CHEF }} --push .
     docker buildx build --platform linux/arm64,linux/amd64 -f Dockerfile.bobby-runner -t {{ BOBBY_RUNNER }} --push .
 
 build-pruner:
