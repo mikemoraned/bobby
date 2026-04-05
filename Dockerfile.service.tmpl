@@ -5,11 +5,11 @@ FROM ${BOBBY_CHEF} AS builder
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
-    cargo build --release --bin skeet-feed
+    cargo build --release --bin <BIN_NAME>
 
 FROM ${BOBBY_RUNNER} AS runner
 LABEL org.opencontainers.image.source=https://github.com/mikemoraned/bobby
 
-COPY --from=builder /build/target/release/skeet-feed /usr/local/bin/skeet-feed
+COPY --from=builder /build/target/release/<BIN_NAME> /usr/local/bin/<BIN_NAME>
 
-CMD ["skeet-feed"]
+CMD ["<BIN_NAME>"]

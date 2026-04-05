@@ -8,6 +8,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo build --release --bin live-refine
 
 FROM ${BOBBY_RUNNER} AS runner
+LABEL org.opencontainers.image.source=https://github.com/mikemoraned/bobby
 
 COPY --from=builder /build/target/release/live-refine /usr/local/bin/live-refine
 COPY config/refine.toml /etc/bobby/refine.toml

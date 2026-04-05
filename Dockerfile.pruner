@@ -15,6 +15,7 @@ RUN BPK_PATH=$(find /build/target/release/build -name "face_detection_yunet_2023
     echo "$BPK_PATH" > /tmp/bpk_original_path
 
 FROM ${BOBBY_RUNNER} AS runner
+LABEL org.opencontainers.image.source=https://github.com/mikemoraned/bobby
 
 COPY --from=builder /build/target/release/pruner /usr/local/bin/pruner
 

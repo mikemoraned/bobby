@@ -28,3 +28,16 @@ Reduce compile times by removing unused dependencies, disabling unnecessary defa
 We are getting good cache usage across *different* Dockerfiles by accident, as the `cargo chef` recipies are identical. This is fragile. Also, a lot of our other instructions are also very similar.
 
 - [x] try creating a base `bobby` base image (`Dockerfile.bobby`) which the various other `Dockerfile`s can inherit from by sharing the same base image. This base image can/should be published explicitly to ghcr. This should allow us a to centralise all shared setup.
+
+#### Make fly.io deploy consistent
+
+* [x] we should update the fly.io deployment so that it uses the same setup and we don't get fly.io to rebuild anything i.e. we use ghcr for fly.io as well
+
+Summary of changes:
+- `fly.staging.toml`: switched from `[build] dockerfile` to `[build] image` pointing at pre-built ghcr image. Fly.io shared tier doesn't support ARM, so skeet-feed stays on `shared-cpu-1x` (amd64).
+- Base images (`Dockerfile.bobby-chef`, `Dockerfile.bobby-runner`) now build as multi-arch (`linux/arm64,linux/amd64`) so the same base serves both Hetzner (arm64) and fly.io (amd64).
+- Moved architecture-specific RUSTFLAGS (`-C target-cpu=neoverse-n1`) from Dockerfiles into `.cargo/config.toml` under `[target.aarch64-unknown-linux-gnu]` — applies automatically per platform.
+- `deploy_staging_app` now depends on `push-skeet-feed` so the image is always fresh before `fly deploy`.
+- Multi-arch buildx builder (`bobby-multiarch`) auto-created via `_ensure-multiarch-builder` just target.
+- Added OCI source labels to all Dockerfiles for GitHub package linking.
+- ghcr packages set to public so fly.io can pull without registry auth.

@@ -1,7 +1,7 @@
 app = "bobby-staging"
 
 [build]
-dockerfile = "Dockerfile.skeet-feed"
+image = "ghcr.io/mikemoraned/bobby/skeet-feed:latest"
 primary_region = "lhr"
 
 [processes]
