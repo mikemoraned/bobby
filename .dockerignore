@@ -1,0 +1,15 @@
+target/
+store/
+store.old1/
+fallback-store/
+logs/
+.git/
+.claude/
+docs/
+infra/
+just/
+model-conversion/
+examples/
+blocklist/
+*.md
+*.env

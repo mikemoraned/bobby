@@ -1,0 +1,15 @@
+FROM lukemathwalker/cargo-chef:latest-rust-1 AS planner
+WORKDIR /build
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM lukemathwalker/cargo-chef:latest-rust-1
+WORKDIR /build
+RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev && rm -rf /var/lib/apt/lists/*
+# Target Neoverse N1 (Ampere Altra on Hetzner CAX) — avoids fullfp16 instructions
+# that gemm-common emits for generic aarch64 but aren't supported in this build env
+ENV RUSTFLAGS="-C target-cpu=neoverse-n1"
+COPY --from=planner /build/recipe.json recipe.json
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    cargo chef cook --release --recipe-path recipe.json

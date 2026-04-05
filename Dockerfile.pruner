@@ -1,21 +1,7 @@
-FROM lukemathwalker/cargo-chef:latest-rust-1 AS chef
-WORKDIR /build
-RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev && rm -rf /var/lib/apt/lists/*
+ARG BOBBY_CHEF=ghcr.io/mikemoraned/bobby/bobby-chef:latest
+ARG BOBBY_RUNNER=ghcr.io/mikemoraned/bobby/bobby-runner:latest
 
-FROM chef AS planner
-COPY . .
-RUN cargo chef prepare --recipe-path recipe.json
-
-FROM chef AS builder
-COPY --from=planner /build/recipe.json recipe.json
-
-# Target Neoverse N1 (Ampere Altra on Hetzner CAX) — avoids fullfp16 instructions
-# that gemm-common emits for generic aarch64 but aren't supported in this build env
-ENV RUSTFLAGS="-C target-cpu=neoverse-n1"
-RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
-    cargo chef cook --release --recipe-path recipe.json
-
+FROM ${BOBBY_CHEF} AS builder
 COPY . .
 COPY models/ models/
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
@@ -28,9 +14,7 @@ RUN BPK_PATH=$(find /build/target/release/build -name "face_detection_yunet_2023
     cp "$BPK_PATH" /tmp/weights.bpk && \
     echo "$BPK_PATH" > /tmp/bpk_original_path
 
-FROM debian:bookworm-slim AS runner
-
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+FROM ${BOBBY_RUNNER} AS runner
 
 COPY --from=builder /build/target/release/pruner /usr/local/bin/pruner
 

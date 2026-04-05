@@ -23,3 +23,8 @@ Reduce compile times by removing unused dependencies, disabling unnecessary defa
 - [x] Ensure BuildKit is enabled: set `DOCKER_BUILDKIT=1` in the environment or use `docker buildx build` instead of `docker build`
 - [x] Add `--mount=type=cache,target=/usr/local/cargo/registry,sharing=locked` and `--mount=type=cache,target=/usr/local/cargo/git,sharing=locked` to the `RUN` steps for both `cargo chef cook` and `cargo build --release`
 
+#### Shared base docker image
+
+We are getting good cache usage across *different* Dockerfiles by accident, as the `cargo chef` recipies are identical. This is fragile. Also, a lot of our other instructions are also very similar.
+
+- [x] try creating a base `bobby` base image (`Dockerfile.bobby`) which the various other `Dockerfile`s can inherit from by sharing the same base image. This base image can/should be published explicitly to ghcr. This should allow us a to centralise all shared setup.
