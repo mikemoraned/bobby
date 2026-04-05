@@ -6,7 +6,7 @@
 
 A home page (`/`) to show what is currently visible in the feed i.e. what you would see on the feed right now.
 
-An `/admin` area where we show what is currently appearing in the feed (as above) + any that have been blocked. Each the items should be able to be blocked, which makes them disappear from the feed.
+An `/admin` area where we show what is currently appearing in the feed (as above) + any that have been blocked. Each of the items should be able to be blocked, which makes them disappear from the feed.
 
 Protect the `/admin` area behind GitHub OAuth login. Users authenticate via GitHub; their username is checked against an allowlist stored in a fly.io secret. No credentials are stored in the app — only an ephemeral session records that the user has the admin role.
 
