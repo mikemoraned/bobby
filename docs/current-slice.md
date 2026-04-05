@@ -10,8 +10,8 @@ Reduce compile times by removing unused dependencies, disabling unnecessary defa
 
 #### Feature pruning
 - [x] Run `cargo tree --edges features` on the workspace to see which features are activated for heavy deps (e.g. `tokio`, `serde`, `reqwest`)
-- [ ] Install `cargo-features-manager` (`cargo install cargo-features-manager`) and run `cargo features prune`; review suggestions per crate
-- [ ] For high-impact deps, switch to `default-features = false` and explicitly enable only needed features; verify with `cargo check --all-targets`
+- [x] Install `cargo-features-manager` (`cargo install cargo-features-manager`) and run `cargo features prune`; review suggestions per crate
+- [x] For high-impact deps, switch to `default-features = false` and explicitly enable only needed features; verify with `cargo check --all-targets`
 - [x] Centralise shared dependency versions and feature selections in `[workspace.dependencies]` if not already done
 
 #### cargo-chef dependency caching
