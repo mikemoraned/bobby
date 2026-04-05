@@ -48,8 +48,8 @@ Authenticate to GHCR first (one-time): `just ghcr-login` (reads classic PAT from
 
 ### How the pruner image works
 
-- `Dockerfile.pruner` is a multi-stage build: Rust builder + Debian slim runtime
-- `models/*.onnx` are included in the build context (excluded from the default `.dockerignore` but included via `Dockerfile.pruner.dockerignore`)
+- `Dockerfile.pruner` inherits from `bobby-chef` (local build base with pre-compiled deps) and `bobby-runner` (runtime base from ghcr)
+- `models/*.onnx` are included in the build context (not excluded by `.dockerignore`)
 - The `face-detection` crate's `build.rs` converts ONNX to `.bpk` weights and bakes the path into the binary; the Dockerfile locates and copies this file to the runtime image at the same path
 - `config/prune.toml` is copied to `/etc/bobby/prune.toml`
 
