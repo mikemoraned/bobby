@@ -1,9 +1,9 @@
-FROM lukemathwalker/cargo-chef:latest-rust-1 AS planner
+FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm AS planner
 WORKDIR /build
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
-FROM lukemathwalker/cargo-chef:latest-rust-1
+FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm
 WORKDIR /build
 RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev && rm -rf /var/lib/apt/lists/*
 # Target Neoverse N1 (Ampere Altra on Hetzner CAX) — avoids fullfp16 instructions
