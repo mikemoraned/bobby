@@ -35,9 +35,10 @@ We are getting good cache usage across *different* Dockerfiles by accident, as t
 
 Summary of changes:
 - `fly.staging.toml`: switched from `[build] dockerfile` to `[build] image` pointing at pre-built ghcr image. Fly.io shared tier doesn't support ARM, so skeet-feed stays on `shared-cpu-1x` (amd64).
-- Base images (`Dockerfile.bobby-chef`, `Dockerfile.bobby-runner`) now build as multi-arch (`linux/arm64,linux/amd64`) so the same base serves both Hetzner (arm64) and fly.io (amd64).
+- `bobby-chef` is local-only (5GB, too large for ghcr) — built per-platform with arch tags (`bobby-chef:arm64`, `bobby-chef:amd64`). Service builds depend on the correct arch variant automatically.
+- `bobby-runner` (~106MB) pushed to ghcr as multi-arch (`linux/arm64,linux/amd64`) via `bobby-multiarch` buildx builder.
 - Moved architecture-specific RUSTFLAGS (`-C target-cpu=neoverse-n1`) from Dockerfiles into `.cargo/config.toml` under `[target.aarch64-unknown-linux-gnu]` — applies automatically per platform.
 - `deploy_staging_app` now depends on `push-skeet-feed` so the image is always fresh before `fly deploy`.
-- Multi-arch buildx builder (`bobby-multiarch`) auto-created via `_ensure-multiarch-builder` just target.
 - Added OCI source labels to all Dockerfiles for GitHub package linking.
 - ghcr packages set to public so fly.io can pull without registry auth.
+- Pinned cargo-chef base to `bookworm` to match runner's glibc.
