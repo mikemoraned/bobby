@@ -1,16 +1,26 @@
-FROM rust:1.94-bookworm AS builder
-
+FROM lukemathwalker/cargo-chef:latest-rust-1 AS chef
+WORKDIR /build
 RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /build
-
+FROM chef AS planner
 COPY . .
-COPY models/ models/
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder
+COPY --from=planner /build/recipe.json recipe.json
 
 # Target Neoverse N1 (Ampere Altra on Hetzner CAX) — avoids fullfp16 instructions
 # that gemm-common emits for generic aarch64 but aren't supported in this build env
 ENV RUSTFLAGS="-C target-cpu=neoverse-n1"
-RUN cargo build --release --bin pruner
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    cargo chef cook --release --recipe-path recipe.json
+
+COPY . .
+COPY models/ models/
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    cargo build --release --bin pruner
 
 # The build.rs bakes an absolute path to the .bpk weights file into the binary.
 # Copy it to a stable path so we can place it predictably in the runtime image.

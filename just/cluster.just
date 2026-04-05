@@ -2,7 +2,7 @@ HETZNER_SSH_DIR := "infra/ssh"
 export KUBECONFIG := "infra/kubeconfig"
 
 cluster-prerequisites:
-    brew install vitobotta/tap/hetzner_k3s helm kubectl
+    brew install vitobotta/tap/hetzner_k3s helm kubectl lnav
 
 _cluster-ssh-keys:
     mkdir -p {{ HETZNER_SSH_DIR }}
@@ -55,10 +55,10 @@ cluster-deploy-live-refine:
 cluster-deploy: cluster-deploy-pruner cluster-deploy-live-refine
 
 cluster-logs-pruner:
-    kubectl logs -l app=pruner --tail=100 -f
+    kubectl logs -l app=pruner --tail=100 -f | lnav
 
 cluster-logs-live-refine:
-    kubectl logs -l app=live-refine --tail=100 -f
+    kubectl logs -l app=live-refine --tail=100 -f | lnav
 
 cluster-restart-pruner:
     kubectl rollout restart deployment pruner

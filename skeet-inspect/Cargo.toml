@@ -8,18 +8,18 @@ workspace = true
 
 [dependencies]
 clap = { workspace = true }
-cot = "0.5"
+cot = { workspace = true }
 image = { workspace = true }
 shared = { workspace = true }
 skeet-store = { path = "../skeet-store" }
 tokio = { workspace = true }
-tower = "0.5"
+tower = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
 chrono = { workspace = true }
 image = { workspace = true }
-tempfile = "3"
+tempfile = { workspace = true }
 tokio = { workspace = true }
 
 [features]

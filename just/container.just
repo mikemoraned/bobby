@@ -14,3 +14,9 @@ build-live-refine:
 
 push-live-refine: build-live-refine
     docker push {{ GHCR_REPO }}/live-refine:latest
+
+build-skeet-feed:
+    docker buildx build --platform linux/arm64 -f Dockerfile.skeet-feed -t {{ GHCR_REPO }}/skeet-feed:latest .
+
+push-skeet-feed: build-skeet-feed
+    docker push {{ GHCR_REPO }}/skeet-feed:latest

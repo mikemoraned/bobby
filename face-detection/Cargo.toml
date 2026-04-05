@@ -6,6 +6,9 @@ edition = "2024"
 [lints]
 workspace = true
 
+[package.metadata.cargo-machete]
+ignored = ["burn-import", "burn-store", "candle-core", "lzma-rust2"]
+
 [dependencies]
 burn = { version = "~0.20", default-features = false, features = ["ndarray"] }
 burn-store = { version = "~0.20", features = ["burnpack"] }
