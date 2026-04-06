@@ -130,6 +130,11 @@ Optimisations to consider:
 * could pipeline across candidates: start fetching the next candidate's images while classifying the current one
 * image classification (face/skin detection) is CPU-bound and probably fast compared to the network fetch, so the fetch is the bottleneck to target first
 
+#### Visibility
+
+* [ ] extend `skeet-feed` on fly.io to send opentelemetry data to honeycomb, so that we can examine runtimes there
+* [ ] add any missing instrumentation to the main flows of `skeet-feed`
+
 #### Optimisations (act on information from above first)
 
 * [ ] live-refine: dispatch OpenAI calls in parallel (currently sequential)
