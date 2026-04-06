@@ -70,8 +70,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 info!("firehose channel closed unexpectedly");
                 break;
             }
-            Err(_) if started_at.elapsed() >= run_duration => {
-                break;
+            Err(_) if logged_first => {
+                // Transient gap after events were flowing — keep waiting for duration
             }
             Err(_) => {
                 info!("no event received in {recv_timeout:?}, exiting");
@@ -113,18 +113,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "phase 2: fetching images sequentially"
     );
 
-    let http = reqwest::Client::new();
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()?;
     let mut results_by_status: HashMap<u16, StatusStats> = HashMap::new();
 
     for (i, url) in image_urls.iter().enumerate() {
         let start = Instant::now();
         let outcome = http.get(url).send().await;
-        let latency = start.elapsed();
 
         match outcome {
             Ok(resp) => {
                 let status = resp.status().as_u16();
                 let bytes = resp.bytes().await.map_or(0, |b| b.len() as u64);
+                let latency = start.elapsed();
                 let stats = results_by_status.entry(status).or_default();
                 stats.count += 1;
                 stats.total_bytes += bytes;
@@ -137,6 +139,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             Err(_) => {
+                let latency = start.elapsed();
                 let stats = results_by_status.entry(0).or_default();
                 stats.count += 1;
                 stats.total_latency += latency;
@@ -152,7 +155,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut statuses: Vec<_> = results_by_status.iter().collect();
     statuses.sort_by_key(|(s, _)| *s);
     for &(status, stats) in &statuses {
-        let avg_latency_ms = stats.total_latency.as_millis() as f64 / stats.count as f64;
+        let avg_latency_ms = stats.total_latency.as_secs_f64() * 1000.0 / stats.count as f64;
         let avg_bytes = if stats.total_bytes > 0 {
             stats.total_bytes as f64 / stats.count as f64
         } else {
@@ -163,8 +166,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             status = label,
             count = stats.count,
             avg_latency_ms = format_args!("{avg_latency_ms:.1}"),
-            min_latency_ms = format_args!("{:.1}", stats.min_latency.as_millis()),
-            max_latency_ms = format_args!("{:.1}", stats.max_latency.as_millis()),
+            min_latency_ms = format_args!("{:.1}", stats.min_latency.as_secs_f64() * 1000.0),
+            max_latency_ms = format_args!("{:.1}", stats.max_latency.as_secs_f64() * 1000.0),
             avg_bytes = format_args!("{avg_bytes:.0}"),
             total_bytes = stats.total_bytes,
             "by status"
