@@ -52,6 +52,10 @@ cluster-deploy-pruner:
 cluster-deploy-live-refine:
     kubectl apply -f infra/k8s/live-refine-deployment.yaml
 
+cluster-run-bench-firehose:
+    -kubectl delete job bench-firehose
+    kubectl apply -f infra/k8s/bench-firehose-job.yaml
+
 cluster-deploy-all: push-pruner push-live-refine cluster-deploy-pruner cluster-deploy-live-refine
 
 cluster-restart-all: cluster-restart-pruner cluster-restart-live-refine
@@ -61,6 +65,9 @@ cluster-logs-pruner:
 
 cluster-logs-live-refine:
     kubectl logs -l app=live-refine --tail=100 -f | lnav
+
+cluster-logs-bench-firehose:
+    kubectl logs -l app=bench-firehose
 
 cluster-restart-pruner:
     kubectl rollout restart deployment pruner

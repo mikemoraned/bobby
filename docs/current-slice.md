@@ -39,8 +39,31 @@
 
 #### Benchmarking
 
-* [ ] create a minimal `bench-firehose` binary that runs the jetstream stage only for 5 mins and reports messages/sec stats
-* [ ] add `just bench-firehose` target and k8s deployment for running on Hetzner
+* [x] create a minimal `bench-firehose` binary that runs the jetstream stage only for 5 mins and reports messages/sec stats
+* [x] add `just bench-firehose` target and k8s deployment for running on Hetzner
+
+Results:
+* locally (running on laptop):
+```
+2026-04-06T00:28:50.798585Z  INFO bench_firehose: === firehose benchmark results ===
+2026-04-06T00:28:50.798684Z  INFO bench_firehose: totals elapsed_secs=300.0 total_candidates=1643 total_images=2139
+2026-04-06T00:28:50.798704Z  INFO bench_firehose: throughput candidates_per_sec=5.5 images_per_sec=7.1
+```
+* hetzner cluster (running shared with everything else):
+```
+2026-04-06T01:32:45.906157+0100  INFO bench_firehose: === firehose benchmark results ===
+2026-04-06T01:32:45.906180+0100  INFO bench_firehose: totals elapsed_secs=300.0 total_candidates=1802 total_images=2358
+2026-04-06T01:32:45.906192+0100  INFO bench_firehose: throughput candidates_per_sec=6.0 images_per_sec=7.9
+2026-04-06T01:37:48.232015+0100  INFO bench_firehose: === firehose benchmark results ===
+2026-04-06T01:37:48.232047+0100  INFO bench_firehose: totals elapsed_secs=300.0 total_candidates=1677 total_images=2249
+2026-04-06T01:37:48.232058+0100  INFO bench_firehose: throughput candidates_per_sec=5.6 images_per_sec=7.5
+```
+
+Conclusions:
+* firehose delivers ~5.5–6.0 candidates/sec (~7–8 images/sec) consistently across laptop and Hetzner
+* since results are nearly identical regardless of location, the bottleneck is the firehose itself (rate of image-bearing posts on Bluesky), not our compute or network
+* ~1.3 images per candidate on average
+* this sets the input ceiling for the pruner pipeline: each candidate must be processed in under ~170ms on average to keep up
 
 #### Optimisations (act on information from above first)
 

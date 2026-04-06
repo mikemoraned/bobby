@@ -88,3 +88,6 @@ live-refine-r2:
 
 classify-examples:
     cargo run --quiet --release --bin classify-examples
+
+bench-firehose:
+    cargo run --quiet --release --bin bench-firehose

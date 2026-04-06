@@ -15,6 +15,12 @@ build-live-refine:
 push-live-refine:
     docker buildx build --platform linux/arm64 -f Dockerfile.live-refine -t {{ GHCR_REPO }}/live-refine:latest --push .
 
+build-bench-firehose:
+    docker buildx build --platform linux/arm64 -f Dockerfile.bench-firehose -t {{ GHCR_REPO }}/bench-firehose:latest .
+
+push-bench-firehose:
+    docker buildx build --platform linux/arm64 -f Dockerfile.bench-firehose -t {{ GHCR_REPO }}/bench-firehose:latest --push .
+
 build-skeet-feed:
     docker buildx build --platform linux/amd64 -f Dockerfile.skeet-feed -t {{ GHCR_REPO }}/skeet-feed:latest .
 

@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bench-firehose
+  labels:
+    app: bench-firehose
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: bench-firehose
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      containers:
+        - name: bench-firehose
+          image: ghcr.io/mikemoraned/bobby/bench-firehose:latest
+          command: ["bench-firehose"]
+          args:
+            - "--duration-secs"
+            - "300"
+          env:
+            - name: RUST_LOG
+              value: "info"
