@@ -41,7 +41,7 @@
 
 * [x] create a minimal `bench-firehose` binary that runs the jetstream stage only for 5 mins and reports messages/sec stats
 * [x] add `just bench-firehose` target and k8s deployment for running on Hetzner
-* [ ] extend the benchmark to have an image fetch stage i.e.
+* [x] extend the benchmark to have an image fetch stage i.e.
     * run for 5 minutes, collecting candidates and images (stay as-is)
       * however extend this stage so that it remembers (but doesn't fetch the images)
     * add a new stage that goes through these images one at a time, grouped by status code, measures:
@@ -51,22 +51,39 @@
 Results:
 * locally (running on laptop):
 ```
-2026-04-06T01:01:44.307964Z  INFO bench_firehose: === firehose benchmark results ===
-2026-04-06T01:01:44.307990Z  INFO bench_firehose: totals elapsed_secs=300.0 total_events=12160 total_candidates=1867 total_images=2424 candidate_pct=15.4%
-2026-04-06T01:01:44.308003Z  INFO bench_firehose: throughput events_per_sec=40.5 candidates_per_sec=6.2 images_per_sec=8.1
+2026-04-06T01:25:06.349145Z  INFO bench_firehose: === phase 1: firehose results ===
+2026-04-06T01:25:06.349173Z  INFO bench_firehose: totals elapsed_secs=300.0 total_events=11123 total_candidates=1571 total_images=2034 candidate_pct=14.1%
+2026-04-06T01:25:06.349186Z  INFO bench_firehose: throughput events_per_sec=37.1 candidates_per_sec=5.2 images_per_sec=6.8
+...
+2026-04-06T01:27:38.589308Z  INFO bench_firehose: === phase 2: image fetch results ===
+2026-04-06T01:27:38.589371Z  INFO bench_firehose: by status status="200" count=2034 avg_latency_ms=48.2 min_latency_ms=24 max_latency_ms=3975 avg_bytes=90581 total_bytes=184240877
 ```
 * hetzner cluster (running shared with everything else):
 ```
-2026-04-06T01:05:33.767409Z  INFO bench_firehose: === firehose benchmark results ===
-2026-04-06T01:05:33.767443Z  INFO bench_firehose: totals elapsed_secs=300.0 total_events=12161 total_candidates=1767 total_images=2318 candidate_pct=14.5%
-2026-04-06T01:05:33.767472Z  INFO bench_firehose: throughput events_per_sec=40.5 candidates_per_sec=5.9 images_per_sec=7.7
+2026-04-06T01:27:08.123435Z  INFO bench_firehose: === phase 1: firehose results ===
+2026-04-06T01:27:08.123469Z  INFO bench_firehose: totals elapsed_secs=300.0 total_events=10979 total_candidates=1594 total_images=2055 candidate_pct=14.5%
+2026-04-06T01:27:08.123487Z  INFO bench_firehose: throughput events_per_sec=36.6 candidates_per_sec=5.3 images_per_sec=6.8
+...
+2026-04-06T01:31:11.238232Z  INFO bench_firehose: === phase 2: image fetch results ===
+2026-04-06T01:31:11.238476Z  INFO bench_firehose: by status status="200" count=2055 avg_latency_ms=100.7 min_latency_ms=6 max_latency_ms=1427 avg_bytes=92362 total_bytes=189804780
 ```
 
 Conclusions:
-* jetstream delivers ~40 posts/sec (filtered to `app.bsky.feed.post` at connection level)
-* ~15% of posts have images, giving ~6 candidates/sec (~8 images/sec, ~1.3 images per candidate)
+* jetstream delivers ~37 posts/sec (filtered to `app.bsky.feed.post` at connection level)
+* ~15% of posts have images, giving ~5–6 candidates/sec (~7 images/sec, ~1.3 images per candidate)
 * results are nearly identical across laptop and Hetzner, confirming the rate is set by Bluesky's post volume, not our compute or network
 * this sets the input ceiling for the pruner pipeline: at ~6 candidates/sec, each candidate must be processed in under 1/6s ≈ 170ms on average to keep up
+* image fetches: all 200s (no errors), ~90KB average per image
+    * laptop: avg 48ms, min 24ms, max 4s — fetched ~2k images in ~2.5 mins
+    * hetzner: avg 101ms, min 6ms, max 1.4s — fetched ~2k images in ~4 mins
+    * surprisingly, laptop has lower avg latency than Hetzner (possibly CDN edge proximity)
+    * at ~50–100ms per image sequentially, fetching 7 images/sec would require parallelism (sequential can only do 10–20/sec)
+
+Optimisations to consider:
+* pruner image stage currently downloads + classifies images sequentially per candidate — at 100ms/image on Hetzner, a 2-image candidate takes ~200ms, already over the 170ms budget before classification even runs
+* could overlap image downloads within a candidate (fetch all images concurrently, classify as they arrive)
+* could pipeline across candidates: start fetching the next candidate's images while classifying the current one
+* image classification (face/skin detection) is CPU-bound and probably fast compared to the network fetch, so the fetch is the bottleneck to target first
 
 #### Optimisations (act on information from above first)
 
