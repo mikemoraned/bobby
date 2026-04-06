@@ -58,7 +58,7 @@
 **Background:** Each `add()` call in `skeet-store/src/lib.rs` (line ~151) writes a single-row `RecordBatch`, creating a new fragment each time. `compact_every_n_writes` mitigates this for `images_table`, but `scores_table` has NO compaction at all — only `images_table` is compacted in `compact()` (line ~158). Additionally, `upsert_score` (line ~334) does a `delete` then `add` on `scores_table`, each of which creates version churn. With hundreds/thousands of writes, fragment counts could be very high, causing every query to scan many small files. LanceDB recommends keeping fragment counts low (under ~100) until ~1 billion rows.
 
 **How to prove/disprove:**
-* [ ] Log table statistics at startup using `table.stats()` on both `images_table` and `scores_table`
+* [x] Log table statistics at startup using `table.stats()` on both `images_table` and `scores_table`
     * lancedb 0.26.2 has `Table::stats() -> Result<TableStatistics>` which returns:
         * `num_rows: usize`
         * `num_indices: usize`

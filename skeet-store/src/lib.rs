@@ -107,10 +107,19 @@ impl SkeetStore {
 
         let validate_table = db.open_table(VALIDATE_TABLE_NAME).execute().await?;
 
-        let images_index_stats = images_table.index_stats("image_id").await?;
-        let scores_index_stats = scores_table.index_stats("image_id").await?;
-        info!(?images_index_stats, "images_table image_id index stats");
-        info!(?scores_index_stats, "scores_table image_id index stats");
+        let images_stats = images_table.stats().await?;
+        let scores_stats = scores_table.stats().await?;
+        info!(?indices, ?images_stats, "images_table stats");
+        info!(?score_indices, ?scores_stats, "scores_table stats");
+
+        for idx in &indices {
+            let stats = images_table.index_stats(&idx.name).await?;
+            info!(index_name = %idx.name, ?stats, "images_table index stats");
+        }
+        for idx in &score_indices {
+            let stats = scores_table.index_stats(&idx.name).await?;
+            info!(index_name = %idx.name, ?stats, "scores_table index stats");
+        }
 
         info!(uri, ?compact_every_n_writes, "store opened");
         Ok(Self {
