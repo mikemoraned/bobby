@@ -76,6 +76,21 @@
 * `scores_table` has no compaction at all. `images_table` compaction runs but doesn't call `OptimizeAction::All` frequently enough to keep the index current.
 * Root causes: (a) every `add()` creates a single-row fragment, (b) `upsert_score` does delete+add creating churn, (c) `compact()` only optimizes `images_table`, not `scores_table`, (d) `OptimizeAction::All` rebuilds indices but the compaction threshold (100 writes) means long periods of stale indices.
 
+**Fixes:**
+
+1. Extend `compact` CLI + `SkeetStore::compact()` to cover all tables and optimisation actions:
+    * [ ] `compact()` must optimize both `images_table` and `scores_table` (currently only `images_table`)
+    * [ ] `compact()` must run `OptimizeAction::All` which includes both fragment compaction and index rebuild
+    * [ ] Log before/after stats so we can see the effect of compaction
+
+2. Add a `compact` CronJob on k8s that runs the `compact` CLI against R2 every 30 minutes:
+    * [ ] Create a Dockerfile for the `compact` binary (similar to existing Dockerfiles)
+    * [ ] Add `build-compact` / `push-compact` just targets (similar to other container targets)
+    * [ ] Create `infra/k8s/compact-cronjob.yaml` as a k8s CronJob (schedule: `*/30 * * * *`, using R2 store path and secrets from pruner-deployment)
+
+3. Reduce fragmentation at write time:
+    * [ ] `compact_if_needed()` should also compact `scores_table`, not just `images_table`
+
 ##### Hypothesis C: `list_scored_summaries_by_score` does two full table scans per call
 
 **Background:** `list_scored_summaries_by_score` (line ~451) reads ALL rows from `scores_table` (no filter), then calls `list_all_summaries` which reads ALL rows from `images_table` (selecting 7 columns but no filter), then joins in memory. This runs on every request to the feed endpoint (`skeet-feed/src/handlers.rs`, line ~117) and inspect endpoint (`skeet-inspect/src/handlers.rs`, lines ~123 and ~204). Combined with fragmentation (Hypothesis B), this could be very slow.
