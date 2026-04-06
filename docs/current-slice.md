@@ -132,8 +132,8 @@ Optimisations to consider:
 
 #### Visibility
 
-* [ ] extend `skeet-feed` on fly.io to send opentelemetry data to honeycomb, so that we can examine runtimes there
-* [ ] add any missing instrumentation to the main flows of `skeet-feed`
+* [x] extend `skeet-feed` on fly.io to send opentelemetry data to honeycomb, so that we can examine runtimes there
+* [x] add any missing instrumentation to the main flows of `skeet-feed`
 
 #### Optimisations (act on information from above first)
 
