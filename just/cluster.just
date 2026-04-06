@@ -56,7 +56,25 @@ cluster-run-bench-firehose:
     -kubectl delete job bench-firehose
     kubectl apply -f infra/k8s/bench-firehose-job.yaml
 
-cluster-deploy-all: push-pruner push-live-refine cluster-deploy-pruner cluster-deploy-live-refine
+cluster-deploy-compact:
+    kubectl apply -f infra/k8s/compact-cronjob.yaml
+
+cluster-logs-compact:
+    kubectl logs -l app=compact --tail=100 -f | lnav
+
+cluster-run-compact name="compact-manual":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    kubectl delete job {{ name }} 2>/dev/null || true
+    kubectl create job {{ name }} --from=cronjob/compact
+    echo "Waiting for pod to start..."
+    kubectl wait --for=condition=Ready pod -l job-name={{ name }} --timeout=120s
+    POD=$(kubectl get pod -l job-name={{ name }} -o jsonpath='{.items[0].metadata.name}')
+    echo "Pod: $POD"
+    echo "Tailing memory peak (bytes) — exits when pod dies:"
+    while kubectl exec "$POD" -- cat /sys/fs/cgroup/memory.peak 2>/dev/null; do sleep 1; done
+
+cluster-deploy-all: push-pruner push-live-refine push-compact cluster-deploy-pruner cluster-deploy-live-refine cluster-deploy-compact
 
 cluster-restart-all: cluster-restart-pruner cluster-restart-live-refine
 
@@ -76,4 +94,4 @@ cluster-restart-live-refine:
     kubectl rollout restart deployment live-refine
 
 cluster-status:
-    kubectl get pods
+    kubectl get deployments,cronjobs,jobs,pods

@@ -59,14 +59,20 @@ summarise:
 summarise-r2:
     op run --env-file bobby.env -- cargo run --quiet --release --bin summarise -- --store-path {{ R2_STORE }}
 
-compact:
-    cargo run --quiet --release --bin compact -- --store-path {{ STORE }}
+compact table="all":
+    cargo run --quiet --release --bin compact -- --store-path {{ STORE }} --table {{ table }}
 
-compact-fallback:
-    cargo run --quiet --release --bin compact -- --store-path {{ FALLBACK_STORE }}
+compact-check:
+    cargo run --quiet --release --bin compact -- --store-path {{ STORE }} --check-only
 
-compact-r2:
-    op run --env-file bobby.env -- cargo run --quiet --release --bin compact -- --store-path {{ R2_STORE }}
+compact-fallback table="all":
+    cargo run --quiet --release --bin compact -- --store-path {{ FALLBACK_STORE }} --table {{ table }}
+
+compact-r2 table="all":
+    op run --env-file bobby.env -- cargo run --quiet --release --bin compact -- --store-path {{ R2_STORE }} --table {{ table }}
+
+compact-r2-check:
+    op run --env-file bobby.env -- cargo run --quiet --release --bin compact -- --store-path {{ R2_STORE }} --check-only
 
 add-to-blocklist at_uri reason="manual":
     cargo run --quiet --release --bin add-to-blocklist -- "{{ at_uri }}" --reason "{{ reason }}"

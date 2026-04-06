@@ -21,6 +21,12 @@ build-bench-firehose:
 push-bench-firehose:
     docker buildx build --platform linux/arm64 -f Dockerfile.bench-firehose -t {{ GHCR_REPO }}/bench-firehose:latest --push .
 
+build-compact:
+    docker buildx build --platform linux/arm64 -f Dockerfile.compact -t {{ GHCR_REPO }}/compact:latest .
+
+push-compact:
+    docker buildx build --platform linux/arm64 -f Dockerfile.compact -t {{ GHCR_REPO }}/compact:latest --push .
+
 build-skeet-feed:
     docker buildx build --platform linux/amd64 -f Dockerfile.skeet-feed -t {{ GHCR_REPO }}/skeet-feed:latest .
 

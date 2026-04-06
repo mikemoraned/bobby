@@ -79,17 +79,33 @@
 **Fixes:**
 
 1. Extend `compact` CLI + `SkeetStore::compact()` to cover all tables and optimisation actions:
-    * [ ] `compact()` must optimize both `images_table` and `scores_table` (currently only `images_table`)
-    * [ ] `compact()` must run `OptimizeAction::All` which includes both fragment compaction and index rebuild
-    * [ ] Log before/after stats so we can see the effect of compaction
+    * [x] `compact()` must optimize both `images_table` and `scores_table` (currently only `images_table`)
+    * [x] `compact()` must run `OptimizeAction::All` which includes both fragment compaction and index rebuild
+    * [x] Log before/after stats so we can see the effect of compaction
 
 2. Add a `compact` CronJob on k8s that runs the `compact` CLI against R2 every 30 minutes:
-    * [ ] Create a Dockerfile for the `compact` binary (similar to existing Dockerfiles)
-    * [ ] Add `build-compact` / `push-compact` just targets (similar to other container targets)
-    * [ ] Create `infra/k8s/compact-cronjob.yaml` as a k8s CronJob (schedule: `*/30 * * * *`, using R2 store path and secrets from pruner-deployment)
+    * [x] Create a Dockerfile for the `compact` binary (similar to existing Dockerfiles)
+    * [x] Add `build-compact` / `push-compact` just targets (similar to other container targets)
+    * [x] Create `infra/k8s/compact-cronjob.yaml` as a k8s CronJob (schedule: `*/30 * * * *`, using R2 store path and secrets from pruner-deployment)
 
 3. Reduce fragmentation at write time:
-    * [ ] `compact_if_needed()` should also compact `scores_table`, not just `images_table`
+    * [x] `compact_if_needed()` should also compact `scores_table`, not just `images_table`
+
+4. Make images_table compaction memory-safe on constrained nodes (8GB Hetzner):
+    * [x] Set `target_rows_per_fragment: 500` for images_table — lance's compaction planner
+      only considers fragments with `physical_rows < target_rows_per_fragment` as candidates
+      ([candidacy check in plan_compaction()](https://github.com/lancedb/lance/blob/v0.20.0/rust/lance/src/dataset/optimize.rs#L693)).
+      With the default 1M, all existing fragments (858 + 2022 rows) were candidates, causing
+      lance to read ~5.7GB of image data into memory at once. At 500, those fragments are left
+      alone while single-row fragments from `add()` are merged into ~500-row groups (~1GB).
+    * [x] Set `num_threads: 1` — limits compaction to one parallel task at a time
+    * [x] Set `batch_size: 64` — limits the scanner read batch size during compaction
+    * [x] Run `OptimizeAction::Compact` and `OptimizeAction::Index` as separate steps (not
+      `OptimizeAction::All`) to avoid index rebuild competing for memory during compaction
+    * All `CompactionOptions` fields: [docs.rs/lancedb CompactionOptions](https://docs.rs/lancedb/0.26.2/lancedb/table/struct.CompactionOptions.html)
+    * scores_table uses default `target_rows_per_fragment` (1M) since rows are small (~100 bytes)
+    * CronJob currently suspended pending verification that the fix works; unsuspend after a
+      successful manual run
 
 ##### Hypothesis C: `list_scored_summaries_by_score` does two full table scans per call
 

@@ -1,0 +1,57 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: compact
+  labels:
+    app: compact
+spec:
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: compact
+        spec:
+          restartPolicy: Never
+          imagePullSecrets:
+            - name: ghcr-pull-secret
+          containers:
+            - name: compact
+              image: ghcr.io/mikemoraned/bobby/compact:latest
+              command: ["compact"]
+              args:
+                - "--store-path"
+                - "s3://hom-bobby/encrypted-store"
+              resources:
+                requests:
+                  memory: "1Gi"
+                limits:
+                  memory: "2Gi"
+              env:
+                - name: BOBBY_S3_ENDPOINT
+                  valueFrom:
+                    secretKeyRef:
+                      name: bobby-r2-endpoint
+                      key: password
+                - name: BOBBY_S3_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: bobby-r2-access-key-id
+                      key: password
+                - name: BOBBY_S3_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: bobby-r2-secret-access-key
+                      key: password
+                - name: BOBBY_SSE_C_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: bobby-sse-c-key
+                      key: password
+                - name: RUST_LOG
+                  value: "info"
