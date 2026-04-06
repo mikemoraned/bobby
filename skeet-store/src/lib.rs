@@ -27,7 +27,7 @@ use futures::TryStreamExt;
 use lancedb::index::Index;
 use lancedb::query::{ExecutableQuery, QueryBase};
 use lancedb::table::OptimizeAction;
-use tracing::{info, instrument};
+use tracing::{debug, info, instrument};
 
 use arrow_utils::{encode_image_as_png, min_max_timestamp, typed_column};
 use schema::{
@@ -106,6 +106,11 @@ impl SkeetStore {
         }
 
         let validate_table = db.open_table(VALIDATE_TABLE_NAME).execute().await?;
+
+        let images_index_stats = images_table.index_stats("image_id").await?;
+        let scores_index_stats = scores_table.index_stats("image_id").await?;
+        info!(?images_index_stats, "images_table image_id index stats");
+        info!(?scores_index_stats, "scores_table image_id index stats");
 
         info!(uri, ?compact_every_n_writes, "store opened");
         Ok(Self {
@@ -210,30 +215,28 @@ impl SkeetStore {
 
     #[instrument(skip(self))]
     pub async fn get_by_id(&self, image_id: &ImageId) -> Result<Option<StoredImage>, StoreError> {
-        let batches: Vec<RecordBatch> = self
+        let query = self
             .images_table
             .query()
             .only_if(format!("image_id = '{image_id}'"))
-            .limit(1)
-            .execute()
-            .await?
-            .try_collect()
-            .await?;
+            .limit(1);
+        let plan = query.explain_plan(true).await?;
+        debug!(plan, "get_by_id query plan");
+        let batches: Vec<RecordBatch> = query.execute().await?.try_collect().await?;
         Ok(batches_to_stored_images(&batches)?.into_iter().next())
     }
 
     #[instrument(skip(self))]
     pub async fn exists(&self, image_id: &ImageId) -> Result<bool, StoreError> {
-        let batches: Vec<RecordBatch> = self
+        let query = self
             .images_table
             .query()
             .only_if(format!("image_id = '{image_id}'"))
             .select(lancedb::query::Select::columns(&["image_id"]))
-            .limit(1)
-            .execute()
-            .await?
-            .try_collect()
-            .await?;
+            .limit(1);
+        let plan = query.explain_plan(true).await?;
+        debug!(plan, "exists query plan");
+        let batches: Vec<RecordBatch> = query.execute().await?.try_collect().await?;
         Ok(batches.iter().any(|b| b.num_rows() > 0))
     }
 

@@ -86,6 +86,9 @@ live-refine:
 live-refine-r2:
     op run --env-file bobby.env -- cargo run --quiet --release --bin live-refine -- --store-path {{ R2_STORE }}
 
+live-refine-r2-debug:
+    RUST_LOG=skeet_store=debug op run --env-file bobby.env -- cargo run --quiet --release --bin live-refine -- --store-path {{ R2_STORE }}
+
 classify-examples:
     cargo run --quiet --release --bin classify-examples
 

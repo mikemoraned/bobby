@@ -31,21 +31,27 @@
 
 #### Smells (investigate first — #2 likely explains #3 and may contribute to #1)
 
-##### Hypothesis A: Scalar index not being used by `get_by_id` / `exists`
+##### Hypothesis A: Scalar index not being used by `get_by_id` / `exists` — DISPROVED
 
 **Background:** `get_by_id` and `exists` (in `skeet-store/src/lib.rs`, lines ~212 and ~226) use `.only_if(format!("image_id = '{image_id}'"))` with `.limit(1)`. A scalar index on `image_id` is created at startup via `Index::Auto` (line ~82). However, traces show `get_by_id` taking ~10 seconds with multiple `read_fragment` calls in `lance::io::exec::filtered_read`, which looks like a full table scan rather than an index lookup.
 
 **How to prove/disprove:**
-* [ ] Add `explain_plan(true)` logging to `get_by_id` and `exists` queries
+* [x] Add `explain_plan(true)` logging to `get_by_id` and `exists` queries
     * lancedb 0.26.2 has `ExecutableQuery::explain_plan(&self, verbose: bool) -> Result<String>` — available on `Query`
     * Both `.explain_plan()` and `.execute()` take `&self`, so call both on the same built query object
     * Log at `debug!` level (visible with `RUST_LOG=skeet_store=debug`) to avoid noise in production
     * **What to look for:** plan should show `ScalarIndexExec` if index is used; if it shows `FilterExec` over a full `LanceScan`, the index is not being engaged
     * If index isn't used: possible causes are (a) `Index::Auto` doesn't create a BTree for `Utf8` columns, (b) the index exists but the query planner doesn't select it, (c) the index is stale (see below)
-* [ ] Also log `table.index_stats("image_id")` at startup for both `images_table` and `scores_table`
+* [x] Also log `table.index_stats("image_id")` at startup for both `images_table` and `scores_table`
     * lancedb 0.26.2 has `Table::index_stats(index_name) -> Result<Option<IndexStatistics>>` returning `num_indexed_rows`, `num_unindexed_rows`, `index_type`
     * **Critical lancedb behaviour:** new data added after index creation is NOT covered by the index. Queries still return correct results, but the unindexed portion requires a flat scan. Only `optimize(OptimizeAction::All)` (or `OptimizeAction::Index`) updates indices to cover new data.
     * **What to look for:** `num_unindexed_rows > 0` means the index is stale and queries are partly scanning unindexed fragments. If `num_unindexed_rows` is close to `num_rows`, the index is effectively useless.
+
+**Result (2026-04-06):** Disproved. All `get_by_id` query plans show `ScalarIndexQuery: query=[image_id = ...]@image_id_idx` — the scalar index is being used, not a full table scan. No `exists` calls appeared in the log (live-refine doesn't call `exists`; that's the pruner path), but the same index is used so it's expected to behave identically.
+
+**Observations:**
+* `index_stats("image_id")` returned `None` for both tables — the internal index name is `image_id_idx`, not `image_id`. Not blocking (index works), but stats call should use the correct name if we want to monitor staleness.
+* Fragment count grew from 151 → 298 over ~1.5 hours (each `add()` creates a new fragment). This strongly supports Hypothesis B.
 
 ##### Hypothesis B: High fragmentation degrading all reads
 
