@@ -53,7 +53,7 @@
 * `index_stats("image_id")` returned `None` for both tables — the internal index name is `image_id_idx`, not `image_id`. Not blocking (index works), but stats call should use the correct name if we want to monitor staleness.
 * Fragment count grew from 151 → 298 over ~1.5 hours (each `add()` creates a new fragment). This strongly supports Hypothesis B.
 
-##### Hypothesis B: High fragmentation degrading all reads
+##### Hypothesis B: High fragmentation degrading all reads — CONFIRMED
 
 **Background:** Each `add()` call in `skeet-store/src/lib.rs` (line ~151) writes a single-row `RecordBatch`, creating a new fragment each time. `compact_every_n_writes` mitigates this for `images_table`, but `scores_table` has NO compaction at all — only `images_table` is compacted in `compact()` (line ~158). Additionally, `upsert_score` (line ~334) does a `delete` then `add` on `scores_table`, each of which creates version churn. With hundreds/thousands of writes, fragment counts could be very high, causing every query to scan many small files. LanceDB recommends keeping fragment counts low (under ~100) until ~1 billion rows.
 
@@ -68,6 +68,13 @@
     * Also log the indices found from `list_indices()` (already called at startup for index creation check — just log the result)
     * **What to look for:** `num_small_fragments` close to `num_fragments` means severe fragmentation; `lengths.mean` of 1 means every fragment is a single row
     * If fragmented: compaction of `scores_table` is missing entirely, and `images_table` compaction threshold may be too high
+
+**Result (2026-04-06):** Confirmed. Both tables are severely fragmented, and indices are stale.
+
+* `images_table`: 2,617 rows across 597 fragments (all small, mean length 4, p75=1). Index: 2,022 indexed, 602 unindexed (~23% flat scan).
+* `scores_table`: 2,620 rows across 2,620 fragments — every row is its own fragment (mean=max=1). `image_id_idx`: 0 indexed rows, 2,627 unindexed (100% flat scan, index completely useless). `model_version_idx`: 366 indexed, 2,261 unindexed (~86% flat scan).
+* `scores_table` has no compaction at all. `images_table` compaction runs but doesn't call `OptimizeAction::All` frequently enough to keep the index current.
+* Root causes: (a) every `add()` creates a single-row fragment, (b) `upsert_score` does delete+add creating churn, (c) `compact()` only optimizes `images_table`, not `scores_table`, (d) `OptimizeAction::All` rebuilds indices but the compaction threshold (100 writes) means long periods of stale indices.
 
 ##### Hypothesis C: `list_scored_summaries_by_score` does two full table scans per call
 
