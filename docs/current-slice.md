@@ -31,9 +31,48 @@
 
 #### Smells (investigate first — #2 likely explains #3 and may contribute to #1)
 
-* [ ] #2: add query plan logging (`explain_plan`) to `get_by_id` and `exists`; verify `.only_if()` actually uses the scalar index
-* [ ] #2: log table row counts and fragment counts at startup to assess fragmentation
-* [ ] #3: log row counts in `list_scored_summaries_by_score` to see if the full-table reads are the bottleneck (likely same root cause as #2)
+##### Hypothesis A: Scalar index not being used by `get_by_id` / `exists`
+
+**Background:** `get_by_id` and `exists` (in `skeet-store/src/lib.rs`, lines ~212 and ~226) use `.only_if(format!("image_id = '{image_id}'"))` with `.limit(1)`. A scalar index on `image_id` is created at startup via `Index::Auto` (line ~82). However, traces show `get_by_id` taking ~10 seconds with multiple `read_fragment` calls in `lance::io::exec::filtered_read`, which looks like a full table scan rather than an index lookup.
+
+**How to prove/disprove:**
+* [ ] Add `explain_plan(true)` logging to `get_by_id` and `exists` queries
+    * lancedb 0.26.2 has `ExecutableQuery::explain_plan(&self, verbose: bool) -> Result<String>` — available on `Query`
+    * Both `.explain_plan()` and `.execute()` take `&self`, so call both on the same built query object
+    * Log at `debug!` level (visible with `RUST_LOG=skeet_store=debug`) to avoid noise in production
+    * **What to look for:** plan should show `ScalarIndexExec` if index is used; if it shows `FilterExec` over a full `LanceScan`, the index is not being engaged
+    * If index isn't used: possible causes are (a) `Index::Auto` doesn't create a BTree for `Utf8` columns, (b) the index exists but the query planner doesn't select it, (c) the index is stale (see below)
+* [ ] Also log `table.index_stats("image_id")` at startup for both `images_table` and `scores_table`
+    * lancedb 0.26.2 has `Table::index_stats(index_name) -> Result<Option<IndexStatistics>>` returning `num_indexed_rows`, `num_unindexed_rows`, `index_type`
+    * **Critical lancedb behaviour:** new data added after index creation is NOT covered by the index. Queries still return correct results, but the unindexed portion requires a flat scan. Only `optimize(OptimizeAction::All)` (or `OptimizeAction::Index`) updates indices to cover new data.
+    * **What to look for:** `num_unindexed_rows > 0` means the index is stale and queries are partly scanning unindexed fragments. If `num_unindexed_rows` is close to `num_rows`, the index is effectively useless.
+
+##### Hypothesis B: High fragmentation degrading all reads
+
+**Background:** Each `add()` call in `skeet-store/src/lib.rs` (line ~151) writes a single-row `RecordBatch`, creating a new fragment each time. `compact_every_n_writes` mitigates this for `images_table`, but `scores_table` has NO compaction at all — only `images_table` is compacted in `compact()` (line ~158). Additionally, `upsert_score` (line ~334) does a `delete` then `add` on `scores_table`, each of which creates version churn. With hundreds/thousands of writes, fragment counts could be very high, causing every query to scan many small files. LanceDB recommends keeping fragment counts low (under ~100) until ~1 billion rows.
+
+**How to prove/disprove:**
+* [ ] Log table statistics at startup using `table.stats()` on both `images_table` and `scores_table`
+    * lancedb 0.26.2 has `Table::stats() -> Result<TableStatistics>` which returns:
+        * `num_rows: usize`
+        * `num_indices: usize`
+        * `fragment_stats.num_fragments: usize`
+        * `fragment_stats.num_small_fragments: usize`
+        * `fragment_stats.lengths: FragmentSummaryStats { min, max, mean, p25, p50, p75, p99 }`
+    * Also log the indices found from `list_indices()` (already called at startup for index creation check — just log the result)
+    * **What to look for:** `num_small_fragments` close to `num_fragments` means severe fragmentation; `lengths.mean` of 1 means every fragment is a single row
+    * If fragmented: compaction of `scores_table` is missing entirely, and `images_table` compaction threshold may be too high
+
+##### Hypothesis C: `list_scored_summaries_by_score` does two full table scans per call
+
+**Background:** `list_scored_summaries_by_score` (line ~451) reads ALL rows from `scores_table` (no filter), then calls `list_all_summaries` which reads ALL rows from `images_table` (selecting 7 columns but no filter), then joins in memory. This runs on every request to the feed endpoint (`skeet-feed/src/handlers.rs`, line ~117) and inspect endpoint (`skeet-inspect/src/handlers.rs`, lines ~123 and ~204). Combined with fragmentation (Hypothesis B), this could be very slow.
+
+**How to prove/disprove:**
+* [ ] Add row count logging inside `list_scored_summaries_by_score` after each read
+    * Log `score_map.len()` (number of score rows), `summaries.len()` (number of image summary rows), and `scored.len()` (number of matched/joined rows)
+    * Use `info!` level since this method is called infrequently (on web requests, not in the hot pipeline path)
+    * **What to look for:** if row counts are in the hundreds and the method takes seconds, the cost is in scanning fragmented storage, not in the in-memory join; if row counts are in the thousands, the sheer volume is also a factor
+    * If confirmed: potential fixes include (a) adding a server-side join or filter, (b) caching the result with a TTL, (c) compacting both tables regularly
 * [ ] #1: add channel depth and per-stage throughput logging to the pruner pipeline
 * [ ] #1: make the 30s status logging interval configurable; check if it blocks the save stage
 
