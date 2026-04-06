@@ -51,21 +51,21 @@
 Results:
 * locally (running on laptop):
 ```
-2026-04-06T01:25:06.349145Z  INFO bench_firehose: === phase 1: firehose results ===
-2026-04-06T01:25:06.349173Z  INFO bench_firehose: totals elapsed_secs=300.0 total_events=11123 total_candidates=1571 total_images=2034 candidate_pct=14.1%
-2026-04-06T01:25:06.349186Z  INFO bench_firehose: throughput events_per_sec=37.1 candidates_per_sec=5.2 images_per_sec=6.8
+2026-04-06T01:46:51.031976Z  INFO bench_firehose: === phase 1: firehose results ===
+2026-04-06T01:46:51.032042Z  INFO bench_firehose: totals elapsed_secs=300.0 total_events=11218 total_candidates=1580 total_images=2057 candidate_pct=14.1%
+2026-04-06T01:46:51.032069Z  INFO bench_firehose: throughput events_per_sec=37.4 candidates_per_sec=5.3 images_per_sec=6.9
 ...
-2026-04-06T01:27:38.589308Z  INFO bench_firehose: === phase 2: image fetch results ===
-2026-04-06T01:27:38.589371Z  INFO bench_firehose: by status status="200" count=2034 avg_latency_ms=48.2 min_latency_ms=24 max_latency_ms=3975 avg_bytes=90581 total_bytes=184240877
+2026-04-06T01:49:25.693371Z  INFO bench_firehose: === phase 2: image fetch results ===
+2026-04-06T01:49:25.693424Z  INFO bench_firehose: by status status="200" count=2057 avg_latency_ms=75.1 min_latency_ms=27.2 max_latency_ms=1121.5 avg_bytes=89007 total_bytes=183087438
 ```
 * hetzner cluster (running shared with everything else):
 ```
-2026-04-06T01:27:08.123435Z  INFO bench_firehose: === phase 1: firehose results ===
-2026-04-06T01:27:08.123469Z  INFO bench_firehose: totals elapsed_secs=300.0 total_events=10979 total_candidates=1594 total_images=2055 candidate_pct=14.5%
-2026-04-06T01:27:08.123487Z  INFO bench_firehose: throughput events_per_sec=36.6 candidates_per_sec=5.3 images_per_sec=6.8
+2026-04-06T01:49:03.285757Z  INFO bench_firehose: === phase 1: firehose results ===
+2026-04-06T01:49:03.285790Z  INFO bench_firehose: totals elapsed_secs=300.0 total_events=11128 total_candidates=1574 total_images=2071 candidate_pct=14.1%
+2026-04-06T01:49:03.285804Z  INFO bench_firehose: throughput events_per_sec=37.1 candidates_per_sec=5.2 images_per_sec=6.9
 ...
-2026-04-06T01:31:11.238232Z  INFO bench_firehose: === phase 2: image fetch results ===
-2026-04-06T01:31:11.238476Z  INFO bench_firehose: by status status="200" count=2055 avg_latency_ms=100.7 min_latency_ms=6 max_latency_ms=1427 avg_bytes=92362 total_bytes=189804780
+2026-04-06T01:53:11.084885Z  INFO bench_firehose: === phase 2: image fetch results ===
+2026-04-06T01:53:11.084916Z  INFO bench_firehose: by status status="200" count=2071 avg_latency_ms=119.6 min_latency_ms=6.4 max_latency_ms=5800.7 avg_bytes=88752 total_bytes=183806003
 ```
 
 Conclusions:
@@ -73,14 +73,14 @@ Conclusions:
 * ~15% of posts have images, giving ~5–6 candidates/sec (~7 images/sec, ~1.3 images per candidate)
 * results are nearly identical across laptop and Hetzner, confirming the rate is set by Bluesky's post volume, not our compute or network
 * this sets the input ceiling for the pruner pipeline: at ~6 candidates/sec, each candidate must be processed in under 1/6s ≈ 170ms on average to keep up
-* image fetches: all 200s (no errors), ~90KB average per image
-    * laptop: avg 48ms, min 24ms, max 4s — fetched ~2k images in ~2.5 mins
-    * hetzner: avg 101ms, min 6ms, max 1.4s — fetched ~2k images in ~4 mins
-    * surprisingly, laptop has lower avg latency than Hetzner (possibly CDN edge proximity)
-    * at ~50–100ms per image sequentially, fetching 7 images/sec would require parallelism (sequential can only do 10–20/sec)
+* image fetches (full download, not just TTFB): all 200s (no errors), ~89KB average per image
+    * laptop: avg 75ms, min 27ms, max 1.1s — fetched ~2k images in ~2.5 mins
+    * hetzner: avg 120ms, min 6ms, max 5.8s — fetched ~2k images in ~4 mins
+    * laptop has lower avg latency than Hetzner (possibly CDN edge proximity)
+    * at ~75–120ms per image sequentially, fetching 7 images/sec would require parallelism (sequential can only do 8–13/sec)
 
 Optimisations to consider:
-* pruner image stage currently downloads + classifies images sequentially per candidate — at 100ms/image on Hetzner, a 2-image candidate takes ~200ms, already over the 170ms budget before classification even runs
+* pruner image stage currently downloads + classifies images sequentially per candidate — at 120ms/image on Hetzner, a 2-image candidate takes ~240ms, already over the 170ms budget before classification even runs
 * could overlap image downloads within a candidate (fetch all images concurrently, classify as they arrive)
 * could pipeline across candidates: start fetching the next candidate's images while classifying the current one
 * image classification (face/skin detection) is CPU-bound and probably fast compared to the network fetch, so the fetch is the bottleneck to target first
