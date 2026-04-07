@@ -1,16 +1,21 @@
+use std::sync::Arc;
+
 use skeet_store::SkeetStore;
 use tokio::sync::mpsc;
 use tracing::warn;
 
-use crate::pipeline::ImageResult;
+use crate::pipeline::{ChannelMonitors, ImageResult, PipelineCounters};
 use crate::{persistence, status};
 
 pub async fn run(
     rx: &mut mpsc::Receiver<ImageResult>,
     store: &SkeetStore,
     fallback: Option<&SkeetStore>,
+    counters: Arc<PipelineCounters>,
+    channels: ChannelMonitors,
+    log_interval: std::time::Duration,
 ) {
-    let mut status = status::Status::new(std::time::Duration::from_secs(30), 100);
+    let mut status = status::Status::new(log_interval, 100, counters, channels);
 
     while let Some(result) = rx.recv().await {
         match result {

@@ -10,7 +10,10 @@ feed-r2:
 test_feed:
     cargo test --quiet --release -p skeet-feed --features test
 
-deploy_staging: deploy_staging_secrets deploy_staging_app test_staging
+integ_test_feed:
+    TEST_BASE_URL=http://127.0.0.1:8080 cargo test --quiet --release -p skeet-feed --features integ --test feed_integration
+
+deploy_staging: deploy_staging_secrets deploy_staging_app integ_test_staging
 
 deploy_staging_secrets:
     op inject -i bobby.env | grep "^BOBBY_\|^OTEL_" | fly secrets import --config fly.staging.toml
@@ -18,8 +21,8 @@ deploy_staging_secrets:
 deploy_staging_app: push-skeet-feed
     fly deploy --config fly.staging.toml
 
-test_staging:
-    TEST_BASE_URL=https://bobby-staging.fly.dev cargo test --quiet --release -p skeet-feed --features test
+integ_test_staging:
+    TEST_BASE_URL=https://bobby-staging.fly.dev cargo test --quiet --release -p skeet-feed --features integ --test feed_integration
 
 register-feed:
     op run --env-file register.env -- cargo run --quiet --release --bin register-feed -- --hostname {{ STAGING_HOSTNAME }}

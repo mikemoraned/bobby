@@ -27,6 +27,7 @@ tokio = { workspace = true }
 
 [features]
 test = ["cot/test"]
+integ = []
 
 [[bin]]
 name = "skeet-feed"

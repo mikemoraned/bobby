@@ -1,3 +1,6 @@
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+
 use serde_json::Value;
 use shared::Rejection;
 use tokio::sync::mpsc;
@@ -5,7 +8,7 @@ use tracing::{trace, warn};
 
 use crate::content_filter;
 use crate::firehose::SkeetCandidate;
-use crate::pipeline::MetaResult;
+use crate::pipeline::{MetaResult, PipelineCounters};
 
 pub enum MetaFilterOutcome {
     Pass,
@@ -31,8 +34,10 @@ pub async fn run(
     rx: &mut mpsc::Receiver<SkeetCandidate>,
     tx: mpsc::Sender<MetaResult>,
     http: reqwest::Client,
+    counters: Arc<PipelineCounters>,
 ) {
     while let Some(candidate) = rx.recv().await {
+        counters.meta.fetch_add(1, Ordering::Relaxed);
         let image_count = candidate.image_urls.len() as u64;
 
         let (result, passed) =

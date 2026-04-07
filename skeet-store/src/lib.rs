@@ -591,8 +591,11 @@ impl SkeetStore {
                 score_map.insert(image_ids.value(i).to_string(), score);
             }
         }
+        info!(score_rows = score_map.len(), "read all scores");
 
         let summaries = self.list_all_summaries().await?;
+        info!(summary_rows = summaries.len(), "read all summaries");
+
         let mut scored: Vec<(StoredImageSummary, Score)> = summaries
             .into_iter()
             .filter_map(|s| {
@@ -600,6 +603,8 @@ impl SkeetStore {
                 score.map(|sc| (s, sc))
             })
             .collect();
+
+        info!(matched_rows = scored.len(), "joined scores with summaries");
 
         scored.sort_by(|a, b| {
             b.1.partial_cmp(&a.1)

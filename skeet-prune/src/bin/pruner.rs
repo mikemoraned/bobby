@@ -1,12 +1,13 @@
 #![warn(clippy::all, clippy::nursery)]
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use clap::Parser;
 use face_detection::FaceDetector;
 use shared::PruneConfig;
 use skeet_prune::firehose::SkeetCandidate;
-use skeet_prune::pipeline::{ImageResult, MetaResult};
+use skeet_prune::pipeline::{ChannelMonitors, ImageResult, MetaResult, PipelineCounters};
 use skeet_store::{SkeetStore, StoreArgs};
 use tokio::sync::mpsc;
 use tracing::info;
@@ -27,6 +28,10 @@ struct Args {
     /// Enable tokio-console on this port
     #[arg(long)]
     tokio_console_port: Option<u16>,
+
+    /// Status log interval in seconds (default: 30)
+    #[arg(long, default_value = "30")]
+    status_interval_secs: u64,
 }
 
 #[tokio::main]
@@ -70,14 +75,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (meta_tx, mut meta_rx) = mpsc::channel::<MetaResult>(16);
     let (image_tx, mut image_rx) = mpsc::channel::<ImageResult>(100);
 
+    let counters = Arc::new(PipelineCounters::default());
+    let channels =
+        ChannelMonitors::new(firehose_tx.clone(), meta_tx.clone(), image_tx.clone());
+
     let meta_http = http.clone();
+    let firehose_counters = Arc::clone(&counters);
+    let meta_counters = Arc::clone(&counters);
+    let image_counters = Arc::clone(&counters);
 
     tokio::spawn(async move {
-        skeet_prune::firehose_stage::run(firehose_tx).await;
+        skeet_prune::firehose_stage::run(firehose_tx, firehose_counters).await;
     });
 
     tokio::spawn(async move {
-        skeet_prune::prune_meta_stage::run(&mut firehose_rx, meta_tx, meta_http).await;
+        skeet_prune::prune_meta_stage::run(&mut firehose_rx, meta_tx, meta_http, meta_counters)
+            .await;
     });
 
     tokio::spawn(async move {
@@ -88,11 +101,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             detector,
             prune_config,
             config_version,
+            image_counters,
         )
         .await;
     });
 
-    skeet_prune::save_stage::run(&mut image_rx, &store, fallback.as_ref()).await;
+    let log_interval = std::time::Duration::from_secs(args.status_interval_secs);
+    skeet_prune::save_stage::run(
+        &mut image_rx,
+        &store,
+        fallback.as_ref(),
+        counters,
+        channels,
+        log_interval,
+    )
+    .await;
 
     Ok(())
 }

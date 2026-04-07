@@ -107,18 +107,45 @@
     * CronJob currently suspended pending verification that the fix works; unsuspend after a
       successful manual run
 
-##### Hypothesis C: `list_scored_summaries_by_score` does two full table scans per call
+##### Hypothesis C: `list_scored_summaries_by_score` does two full table scans per call — CONFIRMED
 
 **Background:** `list_scored_summaries_by_score` (line ~451) reads ALL rows from `scores_table` (no filter), then calls `list_all_summaries` which reads ALL rows from `images_table` (selecting 7 columns but no filter), then joins in memory. This runs on every request to the feed endpoint (`skeet-feed/src/handlers.rs`, line ~117) and inspect endpoint (`skeet-inspect/src/handlers.rs`, lines ~123 and ~204). Combined with fragmentation (Hypothesis B), this could be very slow.
 
 **How to prove/disprove:**
-* [ ] Add row count logging inside `list_scored_summaries_by_score` after each read
+* [x] Add row count logging inside `list_scored_summaries_by_score` after each read
     * Log `score_map.len()` (number of score rows), `summaries.len()` (number of image summary rows), and `scored.len()` (number of matched/joined rows)
     * Use `info!` level since this method is called infrequently (on web requests, not in the hot pipeline path)
     * **What to look for:** if row counts are in the hundreds and the method takes seconds, the cost is in scanning fragmented storage, not in the in-memory join; if row counts are in the thousands, the sheer volume is also a factor
     * If confirmed: potential fixes include (a) adding a server-side join or filter, (b) caching the result with a TTL, (c) compacting both tables regularly
-* [ ] #1: add channel depth and per-stage throughput logging to the pruner pipeline
-* [ ] #1: make the 30s status logging interval configurable; check if it blocks the save stage
+* [x] Add integration tests for skeet-feed (`just integ_test_feed`) to exercise the feed endpoint against a running server
+
+**Result (2026-04-07):** Confirmed. Each feed request takes ~3.6s, dominated by two full table scans over S3:
+
+* `scores_table`: 3,657 rows read in ~1s
+* `images_table`: 3,659 summary rows (7 columns) read in ~2.6s
+* In-memory join: 3,657 matched rows in ~2ms — negligible
+* Total: ~3.6s per feed request
+
+Fragmentation is already much improved from Hypothesis B fixes (22 fragments for images, 18 for scores), so the remaining cost is simply reading all ~3.7k rows per table over S3 on every request. The feed only returns 10 results, but scans everything to find them.
+
+**Fixes:**
+
+LanceDB does not support cross-table JOINs ([no multi-table query API](https://docs.rs/lancedb/latest/lancedb/query/struct.Query.html)). However, it does support `IN` filtering via `only_if()`. The fix is to avoid full table scans by querying in two targeted steps:
+
+1. [ ] Query `scores_table` for top-N scores only, not all rows
+    * LanceDB `Query` does not support `ORDER BY`; read scores (small rows, ~100 bytes each), sort in memory, and take top-N
+    * This gives us a small set of `image_id`s (e.g. 10–50) instead of all ~3.7k
+2. [ ] Query `images_table` with `only_if("image_id IN ('id1', 'id2', ...)")` using only those top-N image IDs
+    * This leverages the existing `image_id_idx` scalar index for an indexed lookup instead of a full scan
+    * The images_table scan (currently ~2.6s) should drop to milliseconds for 10–50 rows
+    * The result is already the joined set — no separate join step needed
+
+
+##### Hypothesis D: logging every 30 seconds: it's possible this is somehow blocking things (as it sits at end of pipeline) - ASSUMED DISPROVED (see below)
+
+* [x] #1: make the 30s status logging interval configurable; check if it blocks the save stage
+    * Added `--status-interval-secs` CLI arg (default: 30) passed through to save stage
+    * **Does not block:** `maybe_log()` only calls `tracing::info!()` which is non-blocking
 
 #### Benchmarking
 
@@ -172,6 +199,9 @@ Optimisations to consider:
 
 * [x] extend `skeet-feed` on fly.io to send opentelemetry data to honeycomb, so that we can examine runtimes there
 * [x] add any missing instrumentation to the main flows of `skeet-feed`
+* [x] #1: add channel depth and per-stage throughput logging to the pruner pipeline
+    * Added `PipelineCounters` (atomic counters per stage) and `ChannelMonitors` (sender clones for depth via `max_capacity - capacity`) in `pipeline.rs`
+    * Each stage increments its counter; save stage logs throughput rates and channel depths alongside existing status every 30s
 
 #### Optimisations (act on information from above first)
 

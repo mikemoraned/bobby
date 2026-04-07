@@ -1,9 +1,12 @@
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+
 use face_detection::FaceDetector;
 use shared::{ModelVersion, PruneConfig};
 use tokio::sync::mpsc;
 use tracing::warn;
 
-use crate::pipeline::{ImageResult, MetaResult};
+use crate::pipeline::{ImageResult, MetaResult, PipelineCounters};
 
 pub async fn run(
     rx: &mut mpsc::Receiver<MetaResult>,
@@ -12,10 +15,12 @@ pub async fn run(
     detector: FaceDetector,
     prune_config: PruneConfig,
     config_version: ModelVersion,
+    counters: Arc<PipelineCounters>,
 ) {
     while let Some(result) = rx.recv().await {
         match result {
             MetaResult::Candidate(candidate) => {
+                counters.image.fetch_add(1, Ordering::Relaxed);
                 let skeet_images =
                     crate::firehose::download_candidate_images(&candidate, &http).await;
 

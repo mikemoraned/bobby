@@ -1,9 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use shared::{Rejection, RejectionCategory};
 use tracing::info;
+
+use crate::pipeline::{ChannelMonitors, PipelineCounters};
 
 const ALL_CATEGORIES: [RejectionCategory; 2] = [
     RejectionCategory::Face,
@@ -24,10 +27,17 @@ pub struct Status {
     log_interval: Duration,
     log_every_n: u64,
     started_at: Instant,
+    counters: Arc<PipelineCounters>,
+    channels: ChannelMonitors,
 }
 
 impl Status {
-    pub fn new(log_interval: Duration, log_every_n: u64) -> Self {
+    pub fn new(
+        log_interval: Duration,
+        log_every_n: u64,
+        counters: Arc<PipelineCounters>,
+        channels: ChannelMonitors,
+    ) -> Self {
         Self {
             post_count: 0,
             image_count: 0,
@@ -42,6 +52,8 @@ impl Status {
             log_interval,
             log_every_n,
             started_at: Instant::now(),
+            counters,
+            channels,
         }
     }
 
@@ -166,5 +178,34 @@ impl Status {
         }
 
         info!("{msg}");
+
+        let firehose = self.counters.firehose_count();
+        let meta = self.counters.meta_count();
+        let image = self.counters.image_count();
+
+        let firehose_per_sec = if elapsed > 0.0 {
+            firehose as f64 / elapsed
+        } else {
+            0.0
+        };
+        let meta_per_sec = if elapsed > 0.0 {
+            meta as f64 / elapsed
+        } else {
+            0.0
+        };
+        let image_per_sec = if elapsed > 0.0 {
+            image as f64 / elapsed
+        } else {
+            0.0
+        };
+
+        info!(
+            "pipeline | throughput: firehose={firehose} ({firehose_per_sec:.1}/s), \
+             meta={meta} ({meta_per_sec:.1}/s), image={image} ({image_per_sec:.1}/s) \
+             | depth: firehose={}, meta={}, image={}",
+            self.channels.firehose_depth(),
+            self.channels.meta_depth(),
+            self.channels.image_depth(),
+        );
     }
 }

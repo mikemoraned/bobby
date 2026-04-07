@@ -37,4 +37,5 @@ paths:
   - Modules used by binaries live under `src/` and are exposed through `lib.rs`, not placed alongside binaries in `src/bin/`
 - Use `Option<T>` (with `None`) to represent "not set" / "disabled" — never use sentinel values like `0`, `-1`, or empty strings to encode absence
 - CLI apps: all config via named CLI params (`--long-form VALUE`); no env vars except `RUST_LOG`
+- Prefer functions over macros — only use `macro_rules!` when you genuinely need syntax or control flow that a function can't express
 - We should aim to keep `lib.rs` files below 300 lines (found via a command like `find . -name "lib.rs" | grep -v "target" | xargs wc -l`). Any `lib.rs` file going above this limit should trigger us to apply other rules, for example related to extracting modules, that will allow us to split into into logical chunks.
