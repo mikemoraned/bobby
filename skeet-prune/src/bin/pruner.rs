@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::Parser;
-use face_detection::FaceDetector;
 use shared::PruneConfig;
 use skeet_prune::firehose::SkeetCandidate;
 use skeet_prune::pipeline::{ChannelMonitors, ImageResult, MetaResult, PipelineCounters};
@@ -32,6 +31,10 @@ struct Args {
     /// Status log interval in seconds (default: 30)
     #[arg(long, default_value = "30")]
     status_interval_secs: u64,
+
+    /// Number of parallel image stage workers (default: 2)
+    #[arg(long, default_value = "2")]
+    image_workers: usize,
 }
 
 #[tokio::main]
@@ -50,12 +53,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let http = reqwest::Client::new();
-    let detector = FaceDetector::from_bundled_weights();
 
     let prune_config = PruneConfig::from_file(&args.config_path)?;
     let config_version = prune_config.version();
 
-    info!(config_version = %config_version, "face detection model loaded");
+    info!(config_version = %config_version, "prune config loaded");
 
     let store = args.store.open_store().await?;
     store.validate().await?;
@@ -72,7 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Pipeline: firehose → meta prune → image prune → save
     let (firehose_tx, mut firehose_rx) = mpsc::channel::<SkeetCandidate>(16);
-    let (meta_tx, mut meta_rx) = mpsc::channel::<MetaResult>(16);
+    let (meta_tx, meta_rx) = mpsc::channel::<MetaResult>(16);
     let (image_tx, mut image_rx) = mpsc::channel::<ImageResult>(100);
 
     let counters = Arc::new(PipelineCounters::default());
@@ -93,15 +95,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await;
     });
 
+    let image_workers = args.image_workers;
     tokio::spawn(async move {
-        skeet_prune::prune_image_stage::run(
-            &mut meta_rx,
+        skeet_prune::prune_image_stage::run_workers(
+            meta_rx,
             image_tx,
             http,
-            detector,
             prune_config,
             config_version,
             image_counters,
+            image_workers,
         )
         .await;
     });

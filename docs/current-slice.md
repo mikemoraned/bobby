@@ -245,8 +245,19 @@ The whole pipeline is faster (less backpressure), but image stage (3.2/s) still 
 Split: download 48%, classify 52%. Avg total 217ms/candidate vs 170ms budget (~28% over). Classification is ~85ms/image and scales linearly (4-image candidate = 336ms). Download has high variance but fast median (62ms).
 
 **Next fixes — both are complementary:**
-* [ ] `spawn_blocking` for `classify_image` — moves CPU-bound face/skin detection off the async runtime so it doesn't block concurrent download tasks
-* [ ] Multiple image stage workers — process candidates in parallel so one candidate's classify doesn't stall the next candidate's download. Spawn N worker tasks reading from the same `rx` channel (N = number of available CPUs or a CLI flag)
+* `spawn_blocking` for `classify_image` — not feasible: `FaceDetector` wraps burn's `NdArray` backend which is `Send` but not `Sync`, so it can't be shared via `Arc` (required by `spawn_blocking`)
+* [x] Multiple image stage workers — each worker owns its own `FaceDetector`, shares the input channel via `Arc<Mutex<Receiver>>`. Added `--image-workers` CLI arg (default: 2).
+
+**Worker scaling result (2026-04-07, local, 5 min runs):**
+
+| Workers | firehose/s | meta/s | image/s | meta depth |
+|---------|-----------|--------|---------|------------|
+| 1 | 4.6 | 4.5 | 3.5 | 0–9 |
+| 2 | 4.9 | 4.8 | 3.7 | 0 |
+| 4 | 4.9 | 4.8 | 3.8 | 0 |
+| 8 | 4.8 | 4.8 | 3.8 | 0 |
+
+With 2+ workers, meta depth drops to 0 — the image stage is no longer the bottleneck. The image/s rate (~78% of meta/s) reflects that not all meta outputs are candidates (some are `Post`/`Rejected`). Going from 1→2 workers relieved backpressure (meta/s 4.5→4.8), but beyond 2 there's no further gain because the image stage is already waiting for work. The pipeline is now limited by the firehose→meta rate, not image classification. 2 workers is the sweet spot.
 
 ##### possible list_scored_summaries_by_score speedups
 
