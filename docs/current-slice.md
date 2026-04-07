@@ -207,5 +207,17 @@ Optimisations to consider:
 
 #### Optimisations (act on information from above first)
 
+##### Hypothesis A: Parallel image downloads within a candidate will remove the image stage bottleneck
+
+**Background:** Benchmarking shows the firehose delivers ~7 images/sec (~5-6 candidates/sec, ~1.3 images/candidate). Each candidate must be processed in <170ms to keep up. However, `download_candidate_images` (`skeet-prune/src/firehose.rs`, line 127) downloads images sequentially — at 120ms/image on Hetzner, a 2-image candidate takes ~240ms for downloads alone, already over the 170ms budget before classification runs. The image stage is a single task processing one candidate at a time. Classification (`classify_image` in `classify.rs`) is CPU-bound but likely fast relative to the network fetch.
+
+**How to prove/disprove:**
+* [ ] Capture baseline: run the pruner on Hetzner for ~10 mins and record the 30s status logs (channel depths and per-stage throughput rates from `PipelineCounters`)
+    * **What to look for (baseline):** meta channel depth consistently > 0 (image stage can't drain it fast enough), image stage throughput < firehose candidate rate (~5-6/sec)
+* [ ] Change `download_candidate_images` to download all images for a candidate concurrently (e.g. `futures::future::join_all` or `tokio::JoinSet`)
+    * A 2-image candidate should drop from ~240ms to ~120ms (limited by the slowest image, not the sum)
+* [ ] Deploy to Hetzner and capture the same stats for ~10 mins
+    * **What to look for (after):** meta channel depth should drop (image stage drains it faster), image stage throughput should increase to match or exceed the firehose candidate rate
+    * **If no improvement:** the bottleneck is elsewhere — check whether save stage backpressure (image channel depth near 100) is the limiting factor instead
 * [ ] live-refine: dispatch OpenAI calls in parallel (currently sequential)
 * [ ] live-refine: batch-save scores to lancedb to reduce fragmentation
