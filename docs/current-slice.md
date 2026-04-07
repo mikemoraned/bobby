@@ -219,5 +219,32 @@ Optimisations to consider:
 * [ ] Deploy to Hetzner and capture the same stats for ~10 mins
     * **What to look for (after):** meta channel depth should drop (image stage drains it faster), image stage throughput should increase to match or exceed the firehose candidate rate
     * **If no improvement:** the bottleneck is elsewhere — check whether save stage backpressure (image channel depth near 100) is the limiting factor instead
+
+##### possible list_scored_summaries_by_score speedups
+
+Looking at an example trace, and each section:
+* "Step 1": takes around 2.7 seconds
+* "Step 2": takes around 2.8 seconds
+* "Step 3": takes around 3 seconds
+
+* [ ] make it easier to see times for each section by putting each of them in a span
+  * note that it may be easier/clearer to do this by breaking out separate functions for each method
+* [ ] "Step 1": add an index on `discovered_at` so that `>=` check in "find image_ids within the age window" can be faster
+* [ ] "Step 2": make `scored_batches` cache-able within `SkeetStore`:
+  * note that this needs a covering set of units before we add caching
+  * steps to implement:
+    1. add an `updated_at` column to the scores table which is the time it was last updated
+      * this needs updated when `live-refine` creates or updates scores via `SkeetStore`
+    2. add an index on `updated_at`
+    3. when reading with no cache: 
+      1. read all entries we need into an in-memory cache keyed on ImageId
+      2. remember max (newest) updated_at value as max_updated_at
+    4. when reading with a cache:
+      1. find all entries updated since previous cache saved (>= max_updated_at)
+      2. update cache (ensuring that values with same ImageId are overwritten)
+      3. remember new max_updated_at
+
+##### Live-refine tweaks
+
 * [ ] live-refine: dispatch OpenAI calls in parallel (currently sequential)
 * [ ] live-refine: batch-save scores to lancedb to reduce fragmentation
