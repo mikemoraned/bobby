@@ -114,18 +114,16 @@ pub async fn get_feed_skeleton(
     let limit = query.limit.unwrap_or(config.max_entries).min(config.max_entries);
 
     let scored = store
-        .list_scored_summaries_by_score()
+        .list_scored_summaries_by_score(limit, Some(config.max_age_hours))
         .await
         .map_err(|e| cot::Error::internal(format!("failed to read store: {e}")))?;
 
-    let now = chrono::Utc::now();
     let posts: Vec<SkeletonFeedPost> = scored
         .into_iter()
         .filter(|(summary, score)| {
             let above_threshold = f32::from(*score) >= config.min_score;
-            let within_window = summary.discovered_at.is_within_hours(now, config.max_age_hours);
             let is_post = summary.skeet_id.collection() == "app.bsky.feed.post";
-            above_threshold && within_window && is_post
+            above_threshold && is_post
         })
         .take(limit)
         .map(|(summary, _score)| SkeletonFeedPost {

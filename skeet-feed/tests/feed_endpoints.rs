@@ -26,6 +26,16 @@ fn test_params() -> FeedParams {
 }
 
 fn make_record(suffix: &str, r: u8, g: u8, b: u8) -> ImageRecord {
+    make_record_at(suffix, r, g, b, DiscoveredAt::now())
+}
+
+fn make_record_at(
+    suffix: &str,
+    r: u8,
+    g: u8,
+    b: u8,
+    discovered_at: DiscoveredAt,
+) -> ImageRecord {
     let img = DynamicImage::ImageRgba8(ImageBuffer::from_pixel(2, 2, Rgba([r, g, b, 255])));
     ImageRecord {
         image_id: ImageId::from_image(&img),
@@ -33,7 +43,7 @@ fn make_record(suffix: &str, r: u8, g: u8, b: u8) -> ImageRecord {
             .parse()
             .expect("valid AT URI"),
         image: img,
-        discovered_at: DiscoveredAt::now(),
+        discovered_at,
         original_at: OriginalAt::new(Utc::now()),
         zone: Zone::TopRight,
         annotated_image: test_image(),
@@ -104,7 +114,7 @@ async fn describe_returns_feed_list() {
 }
 
 #[tokio::test]
-async fn skeleton_returns_empty_feed_when_no_skeets() {
+async fn returns_empty_feed_when_no_skeets() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let store = open_temp_store(&dir).await;
     let params = test_params();
@@ -123,7 +133,7 @@ async fn skeleton_returns_empty_feed_when_no_skeets() {
 }
 
 #[tokio::test]
-async fn skeleton_returns_scored_posts_above_threshold() {
+async fn returns_scored_posts_above_threshold() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let store = open_temp_store(&dir).await;
 
@@ -160,7 +170,7 @@ async fn skeleton_returns_scored_posts_above_threshold() {
 }
 
 #[tokio::test]
-async fn skeleton_excludes_posts_below_threshold() {
+async fn excludes_posts_below_threshold() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let store = open_temp_store(&dir).await;
 
@@ -192,7 +202,7 @@ async fn skeleton_excludes_posts_below_threshold() {
 }
 
 #[tokio::test]
-async fn skeleton_rejects_unknown_feed() {
+async fn rejects_unknown_feed() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let store = open_temp_store(&dir).await;
     let mut client = client_for(store, test_params()).await;
@@ -206,4 +216,65 @@ async fn skeleton_rejects_unknown_feed() {
 
     let resp: serde_json::Value = serde_json::from_str(&body).expect("valid JSON");
     assert_eq!(resp["error"], "UnknownFeed");
+}
+
+/// Recent posts with moderate scores should appear in the feed even when older
+/// posts have higher scores. The feed must filter by max_age_hours first, then
+/// rank by score — not take the global top-N by score and then filter by age.
+#[tokio::test]
+async fn prefers_recent_posts_over_old_high_scores() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let store = open_temp_store(&dir).await;
+    let mv = ModelVersion::from("test");
+
+    let mut params = test_params();
+    params.max_entries = 2;
+    params.min_score = 0.5;
+    params.max_age_hours = 24;
+
+    // Create 3 old posts (outside max_age_hours) with very high scores
+    let three_days_ago = Utc::now() - chrono::Duration::hours(72);
+    for i in 0..3 {
+        let record = make_record_at(
+            &format!("old{i}"),
+            (100 + i) as u8,
+            0,
+            0,
+            DiscoveredAt::new(three_days_ago),
+        );
+        let image_id = record.image_id.clone();
+        store.add(&record).await.expect("add record");
+        store
+            .upsert_score(&image_id, &Score::new(0.99).expect("valid"), &mv)
+            .await
+            .expect("upsert score");
+    }
+
+    // Create 1 recent post with a moderate score (above threshold)
+    let recent = make_record("recent1", 0, 200, 0);
+    let recent_id = recent.image_id.clone();
+    store.add(&recent).await.expect("add record");
+    store
+        .upsert_score(&recent_id, &Score::new(0.7).expect("valid"), &mv)
+        .await
+        .expect("upsert score");
+
+    let feed_uri = params.feed_uri();
+    let mut client = client_for(store, params).await;
+
+    let (status, body) = get_body(
+        &mut client,
+        &format!("/xrpc/app.bsky.feed.getFeedSkeleton?feed={feed_uri}"),
+    )
+    .await;
+    assert_eq!(status, 200);
+
+    let resp: serde_json::Value = serde_json::from_str(&body).expect("valid JSON");
+    let feed = resp["feed"].as_array().expect("feed is array");
+    assert_eq!(
+        feed.len(),
+        1,
+        "the recent post should appear; old posts should be filtered out"
+    );
+    assert_eq!(feed[0]["post"], "at://did:plc:abc/app.bsky.feed.post/recent1");
 }

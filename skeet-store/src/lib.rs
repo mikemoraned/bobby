@@ -569,37 +569,127 @@ impl SkeetStore {
             .collect())
     }
 
+    const MAX_SCORED_SUMMARIES: usize = 100;
+
     #[instrument(skip(self))]
     pub async fn list_scored_summaries_by_score(
         &self,
+        limit: usize,
+        max_age_hours: Option<u64>,
     ) -> Result<Vec<(StoredImageSummary, Score)>, StoreError> {
+        if limit > Self::MAX_SCORED_SUMMARIES {
+            return Err(StoreError::LimitExceeded {
+                requested: limit,
+                maximum: Self::MAX_SCORED_SUMMARIES,
+            });
+        }
+
+        // Step 1 (optional): find image_ids within the age window
+        let recent_ids: Option<std::collections::HashSet<ImageId>> =
+            if let Some(hours) = max_age_hours {
+                let cutoff = Utc::now() - chrono::Duration::hours(hours as i64);
+                let cutoff_us = cutoff.timestamp_micros();
+                let filter = format!(
+                    "discovered_at >= arrow_cast({cutoff_us}, 'Timestamp(Microsecond, Some(\"UTC\"))')"
+                );
+                let batches: Vec<RecordBatch> = self
+                    .images_table
+                    .query()
+                    .select(lancedb::query::Select::columns(&["image_id"]))
+                    .only_if(filter)
+                    .execute()
+                    .await?
+                    .try_collect()
+                    .await?;
+                let mut ids = std::collections::HashSet::new();
+                for batch in &batches {
+                    let image_ids = typed_column::<StringArray>(batch, "image_id")?;
+                    for i in 0..batch.num_rows() {
+                        let image_id: ImageId = image_ids.value(i).parse()?;
+                        ids.insert(image_id);
+                    }
+                }
+                info!(recent_image_ids = ids.len(), "filtered images by age");
+                Some(ids)
+            } else {
+                None
+            };
+
+        // Step 2: read all scores (small rows, ~100 bytes each), filter to recent, sort, take top-N
         let scored_batches: Vec<RecordBatch> = self
             .scores_table
             .query()
+            .select(lancedb::query::Select::columns(&["image_id", "score"]))
             .execute()
             .await?
             .try_collect()
             .await?;
 
-        let mut score_map = std::collections::HashMap::new();
+        let mut all_scores: Vec<(Score, ImageId)> = Vec::new();
         for batch in &scored_batches {
             let image_ids = typed_column::<StringArray>(batch, "image_id")?;
             let scores = typed_column::<Float32Array>(batch, "score")?;
             for i in 0..batch.num_rows() {
+                let image_id: ImageId = image_ids.value(i).parse()?;
+                if let Some(ref recent) = recent_ids
+                    && !recent.contains(&image_id)
+                {
+                    continue;
+                }
                 let score = Score::new(scores.value(i))
                     .map_err(|e| StoreError::ValidationFailed(e.to_string()))?;
-                score_map.insert(image_ids.value(i).to_string(), score);
+                all_scores.push((score, image_id));
             }
         }
-        info!(score_rows = score_map.len(), "read all scores");
+        info!(score_rows = all_scores.len(), "read scores (after age filter)");
 
-        let summaries = self.list_all_summaries().await?;
-        info!(summary_rows = summaries.len(), "read all summaries");
+        all_scores.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        all_scores.truncate(limit);
+
+        if all_scores.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Step 3: query images_table for only the top-N image_ids using scalar index
+        let score_map: std::collections::HashMap<&ImageId, Score> = all_scores
+            .iter()
+            .map(|(s, id)| (id, *s))
+            .collect();
+
+        let in_list = all_scores
+            .iter()
+            .map(|(_, id)| format!("'{id}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let filter = format!("image_id IN ({in_list})");
+
+        let batches: Vec<RecordBatch> = self
+            .images_table
+            .query()
+            .select(lancedb::query::Select::columns(&[
+                "image_id",
+                "skeet_id",
+                "discovered_at",
+                "original_at",
+                "archetype",
+                "config_version",
+                "detected_text",
+            ]))
+            .only_if(filter)
+            .execute()
+            .await?
+            .try_collect()
+            .await?;
+        let summaries = batches_to_summaries(&batches)?;
+        info!(summary_rows = summaries.len(), "read summaries for top scores");
 
         let mut scored: Vec<(StoredImageSummary, Score)> = summaries
             .into_iter()
             .filter_map(|s| {
-                let score = score_map.remove(&s.image_id.to_string());
+                let score = score_map.get(&s.image_id).copied();
                 score.map(|sc| (s, sc))
             })
             .collect();
@@ -611,6 +701,46 @@ impl SkeetStore {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         Ok(scored)
+    }
+
+    #[instrument(skip(self))]
+    pub async fn list_scores_for_ids(
+        &self,
+        image_ids: &[&str],
+    ) -> Result<std::collections::HashMap<ImageId, Score>, StoreError> {
+        if image_ids.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+
+        let in_list = image_ids
+            .iter()
+            .map(|id| format!("'{id}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let filter = format!("image_id IN ({in_list})");
+
+        let batches: Vec<RecordBatch> = self
+            .scores_table
+            .query()
+            .select(lancedb::query::Select::columns(&["image_id", "score"]))
+            .only_if(filter)
+            .execute()
+            .await?
+            .try_collect()
+            .await?;
+
+        let mut score_map = std::collections::HashMap::new();
+        for batch in &batches {
+            let ids = typed_column::<StringArray>(batch, "image_id")?;
+            let scores = typed_column::<Float32Array>(batch, "score")?;
+            for i in 0..batch.num_rows() {
+                let score = Score::new(scores.value(i))
+                    .map_err(|e| StoreError::ValidationFailed(e.to_string()))?;
+                let image_id: ImageId = ids.value(i).parse()?;
+                score_map.insert(image_id, score);
+            }
+        }
+        Ok(score_map)
     }
 
     #[instrument(skip(self))]

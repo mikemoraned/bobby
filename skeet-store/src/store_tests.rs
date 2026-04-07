@@ -292,7 +292,7 @@ async fn list_scored_summaries_ordered_by_score() {
         .unwrap();
     // r3 not scored
 
-    let scored = store.list_scored_summaries_by_score().await.unwrap();
+    let scored = store.list_scored_summaries_by_score(10, None).await.unwrap();
     assert_eq!(scored.len(), 2);
     assert_eq!(scored[0].0.image_id, r2.image_id);
     assert_eq!(scored[0].1, Score::new(0.9).expect("valid"));

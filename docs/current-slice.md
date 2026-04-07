@@ -132,10 +132,12 @@ Fragmentation is already much improved from Hypothesis B fixes (22 fragments for
 
 LanceDB does not support cross-table JOINs ([no multi-table query API](https://docs.rs/lancedb/latest/lancedb/query/struct.Query.html)). However, it does support `IN` filtering via `only_if()`. The fix is to avoid full table scans by querying in two targeted steps:
 
-1. [ ] Query `scores_table` for top-N scores only, not all rows
+1. [x] Query `scores_table` for top-N scores only, not all rows
+    * need to update `list_scored_summaries_by_score` to explicitly require a maximum number of scores, and fail with error if above a max value
+      * suggest `100` as a const max value for now
     * LanceDB `Query` does not support `ORDER BY`; read scores (small rows, ~100 bytes each), sort in memory, and take top-N
     * This gives us a small set of `image_id`s (e.g. 10–50) instead of all ~3.7k
-2. [ ] Query `images_table` with `only_if("image_id IN ('id1', 'id2', ...)")` using only those top-N image IDs
+2. [x] Query `images_table` with `only_if("image_id IN ('id1', 'id2', ...)")` using only those top-N image IDs
     * This leverages the existing `image_id_idx` scalar index for an indexed lookup instead of a full scan
     * The images_table scan (currently ~2.6s) should drop to milliseconds for 10–50 rows
     * The result is already the joined set — no separate join step needed

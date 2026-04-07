@@ -27,4 +27,7 @@ pub enum StoreError {
 
     #[error("storage validation failed: {0}")]
     ValidationFailed(String),
+
+    #[error("limit {requested} exceeds maximum {maximum}")]
+    LimitExceeded { requested: usize, maximum: usize },
 }

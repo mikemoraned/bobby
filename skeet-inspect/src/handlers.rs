@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::io::Cursor;
 
 use cot::html::Html;
@@ -119,21 +118,21 @@ pub async fn pruned(Store(store): Store) -> cot::Result<Html> {
         .await
         .map_err(|e| cot::Error::internal(format!("failed to read store: {e}")))?;
 
-    let scored = store
-        .list_scored_summaries_by_score()
+    summaries.sort_by(|a, b| b.discovered_at.cmp(&a.discovered_at));
+    summaries.truncate(MAX_ENTRIES);
+
+    let image_id_strings: Vec<String> = summaries
+        .iter()
+        .map(|s| s.image_id.to_string())
+        .collect();
+    let image_ids: Vec<&str> = image_id_strings.iter().map(|s| s.as_str()).collect();
+    let score_map = store
+        .list_scores_for_ids(&image_ids)
         .await
         .map_err(|e| cot::Error::internal(format!("failed to read scores: {e}")))?;
 
-    let score_map: HashMap<String, String> = scored
-        .into_iter()
-        .map(|(img, score)| (img.image_id.to_string(), format!("{score}")))
-        .collect();
-
-    summaries.sort_by(|a, b| b.discovered_at.cmp(&a.discovered_at));
-
     let entries: Vec<InspectEntry> = summaries
         .iter()
-        .take(MAX_ENTRIES)
         .filter_map(|img| {
             let entry = to_feed_entry(
                 &img.discovered_at,
@@ -143,8 +142,8 @@ pub async fn pruned(Store(store): Store) -> cot::Result<Html> {
                 img.config_version.as_str(),
             )?;
             let score = score_map
-                .get(&img.image_id.to_string())
-                .cloned()
+                .get(&img.image_id)
+                .map(|s| format!("{s}"))
                 .unwrap_or_else(|| "None".to_string());
             Some(InspectEntry { entry, score })
         })
@@ -201,9 +200,9 @@ pub async fn refined(Store(store): Store) -> cot::Result<Html> {
     info!("serving refined page");
 
     let scored = store
-        .list_scored_summaries_by_score()
+        .list_scored_summaries_by_score(MAX_ENTRIES, None)
         .await
-        .map_err(|e| cot::Error::internal(format!("failed to read store: {e}")))?;
+        .map_err(|e| cot::Error::internal(format!("failed to read scores: {e}")))?;
 
     let entries: Vec<InspectEntry> = scored
         .iter()
