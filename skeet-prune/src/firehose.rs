@@ -123,48 +123,63 @@ pub fn extract_skeet_candidate(event: &JetstreamEvent) -> Option<SkeetCandidate>
 }
 
 /// Download the images for a candidate, returning a `SkeetImage` for each
-/// that downloads and decodes successfully.
+/// that downloads and decodes successfully. Downloads all images concurrently.
 pub async fn download_candidate_images(
     candidate: &SkeetCandidate,
     http: &reqwest::Client,
 ) -> Vec<SkeetImage> {
-    let mut results = Vec::new();
+    let mut set = tokio::task::JoinSet::new();
 
     for url in &candidate.image_urls {
-        let bytes = match http.get(url).send().await {
-            Ok(resp) if resp.status().is_success() => match resp.bytes().await {
-                Ok(b) => b,
-                Err(e) => {
-                    warn!(error = %e, "failed to read image bytes");
-                    continue;
-                }
-            },
-            Ok(resp) => {
-                warn!(status = %resp.status(), url, "image download failed");
-                continue;
-            }
-            Err(e) => {
-                warn!(error = %e, "image download request failed");
-                continue;
-            }
-        };
-
-        let dynamic_image = match image::load_from_memory(&bytes) {
-            Ok(img) => img,
-            Err(e) => {
-                warn!(error = %e, "failed to decode downloaded image");
-                continue;
-            }
-        };
-
-        results.push(SkeetImage {
-            skeet_id: candidate.skeet_id.clone(),
-            original_at: candidate.original_at,
-            image: dynamic_image,
-        });
+        let http = http.clone();
+        let url = url.clone();
+        let skeet_id = candidate.skeet_id.clone();
+        let original_at = candidate.original_at;
+        set.spawn(async move { download_single_image(&http, &url, skeet_id, original_at).await });
     }
 
+    let mut results = Vec::new();
+    while let Some(Ok(Some(image))) = set.join_next().await {
+        results.push(image);
+    }
     results
+}
+
+async fn download_single_image(
+    http: &reqwest::Client,
+    url: &str,
+    skeet_id: SkeetId,
+    original_at: chrono::DateTime<chrono::Utc>,
+) -> Option<SkeetImage> {
+    let bytes = match http.get(url).send().await {
+        Ok(resp) if resp.status().is_success() => match resp.bytes().await {
+            Ok(b) => b,
+            Err(e) => {
+                warn!(error = %e, "failed to read image bytes");
+                return None;
+            }
+        },
+        Ok(resp) => {
+            warn!(status = %resp.status(), url, "image download failed");
+            return None;
+        }
+        Err(e) => {
+            warn!(error = %e, "image download request failed");
+            return None;
+        }
+    };
+
+    match image::load_from_memory(&bytes) {
+        Ok(img) => Some(SkeetImage {
+            skeet_id,
+            original_at,
+            image: img,
+        }),
+        Err(e) => {
+            warn!(error = %e, "failed to decode downloaded image");
+            None
+        }
+    }
 }
 
 fn has_excluded_label(labels: &Option<Union<RecordLabelsRefs>>) -> bool {
