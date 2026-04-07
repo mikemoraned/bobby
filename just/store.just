@@ -11,6 +11,9 @@ validate-storage-r2:
 prune:
     RUST_BACKTRACE=1 cargo run --quiet --release --bin pruner -- --config-path config/prune.toml --store-path {{ STORE }}
 
+prune-debug:
+    RUST_BACKTRACE=1 RUST_LOG=skeet_prune=debug cargo run --quiet --release --bin pruner -- --config-path config/prune.toml --store-path {{ STORE }}
+
 prune-r2:
     RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_SERVICE_NAME=skeet-prune op run --env-file bobby.env -- cargo run --quiet --release --bin pruner -- --config-path config/prune.toml --store-path {{ R2_STORE }} --fallback-local-store {{ FALLBACK_STORE }}
 

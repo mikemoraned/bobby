@@ -1,10 +1,11 @@
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::time::Instant;
 
 use face_detection::FaceDetector;
 use shared::{ModelVersion, PruneConfig};
 use tokio::sync::mpsc;
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::pipeline::{ImageResult, MetaResult, PipelineCounters};
 
@@ -21,9 +22,14 @@ pub async fn run(
         match result {
             MetaResult::Candidate(candidate) => {
                 counters.image.fetch_add(1, Ordering::Relaxed);
+
+                let download_start = Instant::now();
                 let skeet_images =
                     crate::firehose::download_candidate_images(&candidate, &http).await;
+                let download_ms = download_start.elapsed().as_millis();
 
+                let image_count = skeet_images.len();
+                let classify_start = Instant::now();
                 for skeet_image in skeet_images {
                     let result = match crate::classify_image(
                         skeet_image,
@@ -40,6 +46,14 @@ pub async fn run(
                         return;
                     }
                 }
+                let classify_ms = classify_start.elapsed().as_millis();
+
+                debug!(
+                    download_ms,
+                    classify_ms,
+                    image_count,
+                    "candidate processed"
+                );
             }
             MetaResult::Post { image_count } => {
                 if tx.send(ImageResult::Post { image_count }).await.is_err() {
