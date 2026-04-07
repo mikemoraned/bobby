@@ -481,6 +481,48 @@ impl SkeetStore {
     }
 
     #[instrument(skip(self))]
+    pub async fn batch_upsert_scores(
+        &self,
+        scores: &[(ImageId, Score, ModelVersion)],
+    ) -> Result<(), StoreError> {
+        if scores.is_empty() {
+            return Ok(());
+        }
+
+        for (image_id, _, _) in scores {
+            self.scores_table
+                .delete(&format!("image_id = '{image_id}'"))
+                .await?;
+        }
+
+        let schema = images_score_v2_schema();
+        let image_ids: Vec<String> = scores.iter().map(|(id, _, _)| id.to_string()).collect();
+        let score_vals: Vec<f32> = scores.iter().map(|(_, s, _)| f32::from(*s)).collect();
+        let model_versions: Vec<String> = scores.iter().map(|(_, _, mv)| mv.to_string()).collect();
+
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(StringArray::from(
+                    image_ids.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                )),
+                Arc::new(Float32Array::from(score_vals)),
+                Arc::new(StringArray::from(
+                    model_versions
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>(),
+                )),
+            ],
+        )?;
+
+        let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
+        self.scores_table.add(batches).execute().await?;
+        self.compact_if_needed().await?;
+        Ok(())
+    }
+
+    #[instrument(skip(self))]
     pub async fn get_score(
         &self,
         image_id: &ImageId,

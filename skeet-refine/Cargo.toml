@@ -9,6 +9,7 @@ workspace = true
 [dependencies]
 base64 = "0.22"
 clap = { workspace = true }
+futures = "0.3"
 image = { workspace = true }
 rig-core = "0.33"
 serde = { workspace = true }

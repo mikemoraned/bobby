@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use clap::Parser;
+use futures::stream::{self, StreamExt};
 use skeet_refine::model::load_model;
 use skeet_refine::refining::{build_agent, create_client, refine_image};
 use skeet_store::StoreArgs;
@@ -27,6 +28,10 @@ struct Args {
     /// Polling interval in seconds
     #[arg(long, default_value_t = 60)]
     interval_secs: u64,
+
+    /// Maximum concurrent OpenAI requests
+    #[arg(long, default_value_t = 4)]
+    concurrency: usize,
 }
 
 #[tokio::main]
@@ -63,35 +68,77 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let budget = std::time::Duration::from_secs(args.interval_secs);
         let started = Instant::now();
-        let mut scored = 0u64;
+
+        // Fetch images, then dispatch OpenAI calls in parallel batches
+        let mut pending_scores = Vec::new();
+        let mut batch_ids = Vec::new();
+        let mut batch_images = Vec::new();
 
         for image_id in &unscored_ids {
-            let stored = match store.get_by_id(image_id).await? {
-                Some(s) => s,
-                None => {
-                    error!(image_id = %image_id, "image not found in store");
-                    continue;
-                }
-            };
-
-            match refine_image(&agent, &stored.image).await {
-                Ok(score) => {
-                    store
-                        .upsert_score(image_id, &score, &model_version)
-                        .await?;
-                    scored += 1;
-                    info!(image_id = %image_id, %score, "refined");
-                }
-                Err(e) => {
-                    error!(image_id = %image_id, error = %e, "failed to refine");
-                }
-            }
-
             if started.elapsed() >= budget {
-                let remaining = unscored_ids.len() as u64 - scored;
-                info!(scored, remaining, "scoring budget elapsed, re-checking for newer images");
                 break;
             }
+
+            match store.get_by_id(image_id).await? {
+                Some(stored) => {
+                    batch_ids.push(image_id.clone());
+                    batch_images.push(stored.image);
+                }
+                None => {
+                    error!(image_id = %image_id, "image not found in store");
+                }
+            }
+
+            // When we have a full batch (or budget is about to expire), dispatch in parallel
+            if batch_ids.len() >= args.concurrency || started.elapsed() >= budget {
+                let results: Vec<_> = stream::iter(batch_images.iter())
+                    .map(|image| refine_image(&agent, image))
+                    .buffer_unordered(args.concurrency)
+                    .collect()
+                    .await;
+
+                for (id, result) in batch_ids.drain(..).zip(results) {
+                    match result {
+                        Ok(score) => {
+                            info!(image_id = %id, %score, "refined");
+                            pending_scores.push((id, score, model_version.clone()));
+                        }
+                        Err(e) => {
+                            error!(image_id = %id, error = %e, "failed to refine");
+                        }
+                    }
+                }
+                batch_images.clear();
+            }
+        }
+
+        // Dispatch any remaining images in the last partial batch
+        if !batch_ids.is_empty() {
+            let results: Vec<_> = stream::iter(batch_images.iter())
+                .map(|image| refine_image(&agent, image))
+                .buffer_unordered(args.concurrency)
+                .collect()
+                .await;
+
+            for (id, result) in batch_ids.drain(..).zip(results) {
+                match result {
+                    Ok(score) => {
+                        info!(image_id = %id, %score, "refined");
+                        pending_scores.push((id, score, model_version.clone()));
+                    }
+                    Err(e) => {
+                        error!(image_id = %id, error = %e, "failed to refine");
+                    }
+                }
+            }
+        }
+
+        // Batch-save all scores in one write
+        if !pending_scores.is_empty() {
+            let scored = pending_scores.len();
+            store.batch_upsert_scores(&pending_scores).await?;
+            let remaining = unscored_ids.len() - scored;
+            info!(scored, remaining, "batch-saved scores");
         }
     }
 }
