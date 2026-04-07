@@ -230,6 +230,24 @@ Optimisations to consider:
 
 The whole pipeline is faster (less backpressure), but image stage (3.2/s) still lags behind meta (4.3/s). Parallel downloads help multi-image candidates, but most candidates have only ~1.3 images, limiting the benefit. The remaining gap is likely CPU-bound classification (face/skin detection) which runs sequentially per image after download.
 
+* [x] Add per-candidate timing to `prune_image_stage::run` to identify the remaining bottleneck:
+    * Measure elapsed time for `download_candidate_images` (download + decode) and total elapsed time for all `classify_image` calls within that candidate
+    * Log both at `debug!` level per candidate (e.g. `download_ms=42, classify_ms=85, image_count=2`)
+    * After running for a few minutes, the ratio tells us what to optimise next: if classify dominates, consider `spawn_blocking` or multiple image stage workers; if download dominates, the parallel download change already did what it can
+
+**Timing result (2026-04-07, local, 515 candidates):**
+
+| | Avg | p25 | p50 | p75 | p95 | Max |
+|---|---|---|---|---|---|---|
+| download_ms | 105 | 46 | 62 | 136 | 266 | 4,356 |
+| classify_ms | 112 | 85 | 88 | 94 | 282 | 901 |
+
+Split: download 48%, classify 52%. Avg total 217ms/candidate vs 170ms budget (~28% over). Classification is ~85ms/image and scales linearly (4-image candidate = 336ms). Download has high variance but fast median (62ms).
+
+**Next fixes — both are complementary:**
+* [ ] `spawn_blocking` for `classify_image` — moves CPU-bound face/skin detection off the async runtime so it doesn't block concurrent download tasks
+* [ ] Multiple image stage workers — process candidates in parallel so one candidate's classify doesn't stall the next candidate's download. Spawn N worker tasks reading from the same `rx` channel (N = number of available CPUs or a CLI flag)
+
 ##### possible list_scored_summaries_by_score speedups
 
 Looking at an example trace, and each section:
