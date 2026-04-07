@@ -288,7 +288,7 @@ Looking at an example trace, and each section:
 * [x] live-refine: dispatch OpenAI calls in parallel (currently sequential)
     * Added `--concurrency` CLI arg (default: 4) controlling max concurrent OpenAI requests
     * Uses `futures::stream::buffer_unordered` to dispatch batches of requests in parallel
-    * Images are fetched sequentially (fast local/S3 reads), then OpenAI calls dispatched concurrently
+    * Images are fetched sequentially, then OpenAI calls dispatched concurrently
 * [x] live-refine: batch-save scores to lancedb to reduce fragmentation
     * Added `SkeetStore::batch_upsert_scores` that writes all scores as a single multi-row `RecordBatch`
     * Deletes existing scores individually (required by lancedb API), then inserts all new scores in one `add()` call
