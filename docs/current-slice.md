@@ -268,10 +268,11 @@ Looking at an example trace, and each section:
 
 * [x] make it easier to see times for each section by putting each of them in a span
   * Broke out `find_recent_image_ids` (Step 1), `read_top_scores` (Step 2), and `fetch_summaries_for_scores` (Step 3) as separate `#[instrument]`-annotated methods
-* [ ] find_recent_image_ids: add an index on `discovered_at` so that `>=` check in "find image_ids within the age window" can be faster
-  * verify it has been picked up by examine logs and/or adding debugging
+* [x] find_recent_image_ids: add an index on `discovered_at` so that `>=` check in "find image_ids within the age window" can be faster
+  * Added `Index::Auto` on `discovered_at` at startup (same pattern as `image_id`)
+  * Added `explain_plan` debug logging to verify the index is used (visible with `RUST_LOG=skeet_store=debug`)
 * [ ] read_top_scores: make `scored_batches` cache-able within `SkeetStore`:
-  * note that this needs a covering set of units before we add caching
+  * note that this needs a covering set of unit tests before we add caching
   * steps to implement:
     1. add an `updated_at` column to the scores table which is the time it was last updated
       * this needs updated when `live-refine` creates or updates scores via `SkeetStore`

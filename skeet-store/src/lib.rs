@@ -101,6 +101,15 @@ impl SkeetStore {
                 .execute()
                 .await?;
         }
+        if !indices
+            .iter()
+            .any(|idx| idx.columns == vec!["discovered_at"])
+        {
+            images_table
+                .create_index(&["discovered_at"], Index::Auto)
+                .execute()
+                .await?;
+        }
 
         let scores_table = db.open_table(SCORE_TABLE_NAME).execute().await?;
         let score_indices = scores_table.list_indices().await?;
@@ -649,15 +658,14 @@ impl SkeetStore {
         let filter = format!(
             "discovered_at >= arrow_cast({cutoff_us}, 'Timestamp(Microsecond, Some(\"UTC\"))')"
         );
-        let batches: Vec<RecordBatch> = self
+        let query = self
             .images_table
             .query()
             .select(lancedb::query::Select::columns(&["image_id"]))
-            .only_if(filter)
-            .execute()
-            .await?
-            .try_collect()
-            .await?;
+            .only_if(filter);
+        let plan = query.explain_plan(true).await?;
+        debug!(%plan, "find_recent_image_ids query plan");
+        let batches: Vec<RecordBatch> = query.execute().await?.try_collect().await?;
         let mut ids = std::collections::HashSet::new();
         for batch in &batches {
             let image_ids = typed_column::<StringArray>(batch, "image_id")?;
