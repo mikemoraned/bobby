@@ -626,38 +626,56 @@ impl SkeetStore {
             });
         }
 
-        // Step 1 (optional): find image_ids within the age window
-        let recent_ids: Option<std::collections::HashSet<ImageId>> =
-            if let Some(hours) = max_age_hours {
-                let cutoff = Utc::now() - chrono::Duration::hours(hours as i64);
-                let cutoff_us = cutoff.timestamp_micros();
-                let filter = format!(
-                    "discovered_at >= arrow_cast({cutoff_us}, 'Timestamp(Microsecond, Some(\"UTC\"))')"
-                );
-                let batches: Vec<RecordBatch> = self
-                    .images_table
-                    .query()
-                    .select(lancedb::query::Select::columns(&["image_id"]))
-                    .only_if(filter)
-                    .execute()
-                    .await?
-                    .try_collect()
-                    .await?;
-                let mut ids = std::collections::HashSet::new();
-                for batch in &batches {
-                    let image_ids = typed_column::<StringArray>(batch, "image_id")?;
-                    for i in 0..batch.num_rows() {
-                        let image_id: ImageId = image_ids.value(i).parse()?;
-                        ids.insert(image_id);
-                    }
-                }
-                info!(recent_image_ids = ids.len(), "filtered images by age");
-                Some(ids)
-            } else {
-                None
-            };
+        let recent_ids = self.find_recent_image_ids(max_age_hours).await?;
+        let top_scores = self.read_top_scores(limit, &recent_ids).await?;
 
-        // Step 2: read all scores (small rows, ~100 bytes each), filter to recent, sort, take top-N
+        if top_scores.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        self.fetch_summaries_for_scores(&top_scores).await
+    }
+
+    #[instrument(skip(self))]
+    async fn find_recent_image_ids(
+        &self,
+        max_age_hours: Option<u64>,
+    ) -> Result<Option<std::collections::HashSet<ImageId>>, StoreError> {
+        let Some(hours) = max_age_hours else {
+            return Ok(None);
+        };
+        let cutoff = Utc::now() - chrono::Duration::hours(hours as i64);
+        let cutoff_us = cutoff.timestamp_micros();
+        let filter = format!(
+            "discovered_at >= arrow_cast({cutoff_us}, 'Timestamp(Microsecond, Some(\"UTC\"))')"
+        );
+        let batches: Vec<RecordBatch> = self
+            .images_table
+            .query()
+            .select(lancedb::query::Select::columns(&["image_id"]))
+            .only_if(filter)
+            .execute()
+            .await?
+            .try_collect()
+            .await?;
+        let mut ids = std::collections::HashSet::new();
+        for batch in &batches {
+            let image_ids = typed_column::<StringArray>(batch, "image_id")?;
+            for i in 0..batch.num_rows() {
+                let image_id: ImageId = image_ids.value(i).parse()?;
+                ids.insert(image_id);
+            }
+        }
+        info!(recent_image_ids = ids.len(), "filtered images by age");
+        Ok(Some(ids))
+    }
+
+    #[instrument(skip(self, recent_ids))]
+    async fn read_top_scores(
+        &self,
+        limit: usize,
+        recent_ids: &Option<std::collections::HashSet<ImageId>>,
+    ) -> Result<Vec<(Score, ImageId)>, StoreError> {
         let scored_batches: Vec<RecordBatch> = self
             .scores_table
             .query()
@@ -673,7 +691,7 @@ impl SkeetStore {
             let scores = typed_column::<Float32Array>(batch, "score")?;
             for i in 0..batch.num_rows() {
                 let image_id: ImageId = image_ids.value(i).parse()?;
-                if let Some(ref recent) = recent_ids
+                if let Some(recent) = recent_ids
                     && !recent.contains(&image_id)
                 {
                     continue;
@@ -690,18 +708,20 @@ impl SkeetStore {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         all_scores.truncate(limit);
+        Ok(all_scores)
+    }
 
-        if all_scores.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        // Step 3: query images_table for only the top-N image_ids using scalar index
-        let score_map: std::collections::HashMap<&ImageId, Score> = all_scores
+    #[instrument(skip(self, top_scores))]
+    async fn fetch_summaries_for_scores(
+        &self,
+        top_scores: &[(Score, ImageId)],
+    ) -> Result<Vec<(StoredImageSummary, Score)>, StoreError> {
+        let score_map: std::collections::HashMap<&ImageId, Score> = top_scores
             .iter()
             .map(|(s, id)| (id, *s))
             .collect();
 
-        let in_list = all_scores
+        let in_list = top_scores
             .iter()
             .map(|(_, id)| format!("'{id}'"))
             .collect::<Vec<_>>()

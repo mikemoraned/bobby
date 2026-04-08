@@ -266,10 +266,11 @@ Looking at an example trace, and each section:
 * "Step 2": takes around 2.8 seconds
 * "Step 3": takes around 3 seconds
 
-* [ ] make it easier to see times for each section by putting each of them in a span
-  * note that it may be easier/clearer to do this by breaking out separate functions for each method
-* [ ] "Step 1": add an index on `discovered_at` so that `>=` check in "find image_ids within the age window" can be faster
-* [ ] "Step 2": make `scored_batches` cache-able within `SkeetStore`:
+* [x] make it easier to see times for each section by putting each of them in a span
+  * Broke out `find_recent_image_ids` (Step 1), `read_top_scores` (Step 2), and `fetch_summaries_for_scores` (Step 3) as separate `#[instrument]`-annotated methods
+* [ ] find_recent_image_ids: add an index on `discovered_at` so that `>=` check in "find image_ids within the age window" can be faster
+  * verify it has been picked up by examine logs and/or adding debugging
+* [ ] read_top_scores: make `scored_batches` cache-able within `SkeetStore`:
   * note that this needs a covering set of units before we add caching
   * steps to implement:
     1. add an `updated_at` column to the scores table which is the time it was last updated
