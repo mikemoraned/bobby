@@ -299,3 +299,96 @@ async fn list_scored_summaries_ordered_by_score() {
     assert_eq!(scored[1].0.image_id, r1.image_id);
     assert_eq!(scored[1].1, Score::new(0.3).expect("valid"));
 }
+
+struct CacheTestFixture {
+    store: SkeetStore,
+    r1: ImageRecord,
+    r2: ImageRecord,
+    _dir: tempfile::TempDir,
+}
+
+async fn setup_cache_test(prefix: &str) -> CacheTestFixture {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let r1 = make_record(&format!("{prefix}1"));
+    let r2 = make_record(&format!("{prefix}2"));
+    store.add(&r1).await.unwrap();
+    store.add(&r2).await.unwrap();
+
+    let mv = test_model_version();
+    store
+        .upsert_score(&r1.image_id, &Score::new(0.5).expect("valid"), &mv)
+        .await
+        .unwrap();
+
+    // Populate any internal cache
+    let scored = store.list_scored_summaries_by_score(10, None).await.unwrap();
+    assert_eq!(scored.len(), 1);
+    assert_eq!(scored[0].0.image_id, r1.image_id);
+
+    CacheTestFixture { store, r1, r2, _dir: dir }
+}
+
+async fn assert_scores_reflect_update(
+    store: &SkeetStore,
+    expected_first: &ImageId,
+    expected_first_score: Score,
+    expected_second: &ImageId,
+    expected_second_score: Score,
+) {
+    let scored = store.list_scored_summaries_by_score(10, None).await.unwrap();
+    assert_eq!(scored.len(), 2);
+    assert_eq!(scored[0].0.image_id, *expected_first, "wrong image in first position");
+    assert_eq!(scored[0].1, expected_first_score);
+    assert_eq!(scored[1].0.image_id, *expected_second, "wrong image in second position");
+    assert_eq!(scored[1].1, expected_second_score);
+}
+
+#[tokio::test]
+async fn scores_cache_invalidated_after_write() {
+    let f = setup_cache_test("cache").await;
+    let mv = test_model_version();
+
+    // Add a new score
+    f.store
+        .upsert_score(&f.r2.image_id, &Score::new(0.8).expect("valid"), &mv)
+        .await
+        .unwrap();
+    assert_scores_reflect_update(
+        &f.store,
+        &f.r2.image_id, Score::new(0.8).expect("valid"),
+        &f.r1.image_id, Score::new(0.5).expect("valid"),
+    ).await;
+
+    // Update an existing score
+    f.store
+        .upsert_score(&f.r1.image_id, &Score::new(0.95).expect("valid"), &mv)
+        .await
+        .unwrap();
+    assert_scores_reflect_update(
+        &f.store,
+        &f.r1.image_id, Score::new(0.95).expect("valid"),
+        &f.r2.image_id, Score::new(0.8).expect("valid"),
+    ).await;
+}
+
+#[tokio::test]
+async fn scores_cache_invalidated_after_batch_upsert() {
+    let f = setup_cache_test("batch_cache").await;
+    let mv = test_model_version();
+
+    // Batch write: updates r1 and adds r2 in one call
+    f.store
+        .batch_upsert_scores(&[
+            (f.r1.image_id.clone(), Score::new(0.6).expect("valid"), mv.clone()),
+            (f.r2.image_id.clone(), Score::new(0.9).expect("valid"), mv.clone()),
+        ])
+        .await
+        .unwrap();
+    assert_scores_reflect_update(
+        &f.store,
+        &f.r2.image_id, Score::new(0.9).expect("valid"),
+        &f.r1.image_id, Score::new(0.6).expect("valid"),
+    ).await;
+}

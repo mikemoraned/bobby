@@ -15,9 +15,12 @@ pub use stored::{StoredImage, StoredImageSummary};
 pub use summary::SkeetStoreSummary;
 pub use types::{DiscoveredAt, ImageId, ImageRecord, InvalidImageId, OriginalAt, SkeetId, Zone};
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+
+use tokio::sync::RwLock;
 
 use arrow_array::{
     Float32Array, Int64Array, LargeBinaryArray, RecordBatch, RecordBatchIterator, StringArray,
@@ -54,12 +57,18 @@ impl CompactTarget {
     }
 }
 
+struct ScoresCache {
+    version: u64,
+    scores: HashMap<ImageId, Score>,
+}
+
 pub struct SkeetStore {
     images_table: lancedb::Table,
     scores_table: lancedb::Table,
     validate_table: lancedb::Table,
     writes_since_compact: AtomicU64,
     compact_every_n_writes: Option<u64>,
+    scores_cache: RwLock<Option<ScoresCache>>,
 }
 
 impl SkeetStore {
@@ -155,6 +164,7 @@ impl SkeetStore {
             validate_table,
             writes_since_compact: AtomicU64::new(0),
             compact_every_n_writes,
+            scores_cache: RwLock::new(None),
         })
     }
 
@@ -684,6 +694,44 @@ impl SkeetStore {
         limit: usize,
         recent_ids: &Option<std::collections::HashSet<ImageId>>,
     ) -> Result<Vec<(Score, ImageId)>, StoreError> {
+        let all_scores_map = self.cached_scores().await?;
+
+        let mut all_scores: Vec<(Score, ImageId)> = all_scores_map
+            .iter()
+            .filter(|(id, _)| {
+                recent_ids
+                    .as_ref()
+                    .is_none_or(|recent| recent.contains(id))
+            })
+            .map(|(id, score)| (*score, id.clone()))
+            .collect();
+        info!(score_rows = all_scores.len(), "read scores (after age filter)");
+
+        all_scores.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        all_scores.truncate(limit);
+        Ok(all_scores)
+    }
+
+    #[instrument(skip(self))]
+    async fn cached_scores(&self) -> Result<HashMap<ImageId, Score>, StoreError> {
+        let current_version = self.scores_table.version().await?;
+
+        // Fast path: check if cache is still valid
+        {
+            let cache = self.scores_cache.read().await;
+            if let Some(ref cached) = *cache
+                && cached.version == current_version
+            {
+                debug!(version = current_version, "scores cache hit");
+                return Ok(cached.scores.clone());
+            }
+        }
+
+        // Slow path: full scan and cache update
+        debug!(version = current_version, "scores cache miss — full scan");
         let scored_batches: Vec<RecordBatch> = self
             .scores_table
             .query()
@@ -693,30 +741,25 @@ impl SkeetStore {
             .try_collect()
             .await?;
 
-        let mut all_scores: Vec<(Score, ImageId)> = Vec::new();
+        let mut scores = HashMap::new();
         for batch in &scored_batches {
             let image_ids = typed_column::<StringArray>(batch, "image_id")?;
-            let scores = typed_column::<Float32Array>(batch, "score")?;
+            let score_vals = typed_column::<Float32Array>(batch, "score")?;
             for i in 0..batch.num_rows() {
                 let image_id: ImageId = image_ids.value(i).parse()?;
-                if let Some(recent) = recent_ids
-                    && !recent.contains(&image_id)
-                {
-                    continue;
-                }
-                let score = Score::new(scores.value(i))
+                let score = Score::new(score_vals.value(i))
                     .map_err(|e| StoreError::ValidationFailed(e.to_string()))?;
-                all_scores.push((score, image_id));
+                scores.insert(image_id, score);
             }
         }
-        info!(score_rows = all_scores.len(), "read scores (after age filter)");
+        info!(score_rows = scores.len(), version = current_version, "scores cache refreshed");
 
-        all_scores.sort_by(|a, b| {
-            b.0.partial_cmp(&a.0)
-                .unwrap_or(std::cmp::Ordering::Equal)
+        let result = scores.clone();
+        *self.scores_cache.write().await = Some(ScoresCache {
+            version: current_version,
+            scores,
         });
-        all_scores.truncate(limit);
-        Ok(all_scores)
+        Ok(result)
     }
 
     #[instrument(skip(self, top_scores))]

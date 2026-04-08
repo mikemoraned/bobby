@@ -271,19 +271,20 @@ Looking at an example trace, and each section:
 * [x] find_recent_image_ids: add an index on `discovered_at` so that `>=` check in "find image_ids within the age window" can be faster
   * Added `Index::Auto` on `discovered_at` at startup (same pattern as `image_id`)
   * Added `explain_plan` debug logging to verify the index is used (visible with `RUST_LOG=skeet_store=debug`)
-* [ ] read_top_scores: make `scored_batches` cache-able within `SkeetStore`:
-  * note that this needs a covering set of unit tests before we add caching
-  * steps to implement:
-    1. add an `updated_at` column to the scores table which is the time it was last updated
-      * this needs updated when `live-refine` creates or updates scores via `SkeetStore`
-    2. add an index on `updated_at`
-    3. when reading with no cache: 
-      1. read all entries we need into an in-memory cache keyed on ImageId
-      2. remember max (newest) updated_at value as max_updated_at
-    4. when reading with a cache:
-      1. find all entries updated since previous cache saved (>= max_updated_at)
-      2. update cache (ensuring that values with same ImageId are overwritten)
-      3. remember new max_updated_at
+* [x] read_top_scores: make `scored_batches` cache-able within `SkeetStore`:
+  * approach: version-gated full cache using `scores_table.version()` (cheap metadata call)
+    * `updated_at` column approach rejected: deletes are invisible, schema migration needed, overkill for ~4k rows (~400KB)
+    * LanceDB `Table::version()` increments on every mutation (add, delete, compact, index rebuild)
+    * store already uses `read_consistency_interval(Duration::ZERO)` so `version()` always reflects latest state
+  * steps completed:
+    1. [x] added `scores_cache_invalidated_after_write` and `scores_cache_invalidated_after_batch_upsert` tests
+    2. [x] added `scores_cache: tokio::sync::RwLock<Option<ScoresCache>>` field to `SkeetStore`
+      * `ScoresCache { version: u64, scores: HashMap<ImageId, Score> }` — full unfiltered set
+      * caches raw `(ImageId, Score)` pairs before age filter / sort / truncate, so it works for any `limit` + `max_age_hours` combo
+    3. [x] `cached_scores()` method: checks `scores_table.version()` against cached version
+      * on match: returns cached data (cache hit logged at debug level)
+      * on miss: full scan, updates cache with new version + data
+    4. [x] no changes to write paths — version increments automatically on mutation
 
 ##### Live-refine tweaks
 
