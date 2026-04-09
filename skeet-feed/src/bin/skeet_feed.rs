@@ -1,8 +1,10 @@
 #![warn(clippy::all, clippy::nursery)]
 
+use std::sync::Arc;
+
 use clap::Parser;
 use cot::project::Bootstrapper;
-use skeet_feed::StoreLayer;
+use skeet_feed::feed_cache::{FeedCache, FeedCacheLayer};
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
 use skeet_store::StoreArgs;
@@ -74,8 +76,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "starting skeet-feed server"
     );
 
+    let cache = Arc::new(FeedCache::new(
+        Arc::new(store),
+        feed_params.max_entries,
+        feed_params.max_age_hours,
+    ));
+    cache.spawn_background_refresh();
+
     let project = FeedProject {
-        store_layer: StoreLayer::new(store),
+        cache_layer: FeedCacheLayer::new(cache),
         feed_config_layer: FeedConfigLayer::new(feed_params),
     };
     let bootstrapper = Bootstrapper::new(project)

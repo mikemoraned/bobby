@@ -1,9 +1,12 @@
 #![cfg(feature = "test")]
 
+use std::sync::Arc;
+
 use chrono::Utc;
 use cot::test::Client;
 use image::{DynamicImage, ImageBuffer, Rgba};
-use skeet_feed::StoreLayer;
+use skeet_feed::FeedCacheLayer;
+use skeet_feed::feed_cache::FeedCache;
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
 use skeet_store::{
@@ -59,8 +62,13 @@ async fn open_temp_store(dir: &tempfile::TempDir) -> SkeetStore {
 }
 
 async fn client_for(store: SkeetStore, params: FeedParams) -> Client {
+    let cache = Arc::new(FeedCache::new(
+        Arc::new(store),
+        params.max_entries,
+        params.max_age_hours,
+    ));
     let project = FeedProject {
-        store_layer: StoreLayer::new(store),
+        cache_layer: FeedCacheLayer::new(cache),
         feed_config_layer: FeedConfigLayer::new(params),
     };
     Client::new(project).await

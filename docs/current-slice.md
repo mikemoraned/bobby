@@ -303,3 +303,16 @@ Looking at an example trace, and each section:
     * Added `SkeetStore::batch_upsert_scores` that writes all scores as a single multi-row `RecordBatch`
     * Deletes existing scores individually (required by lancedb API), then inserts all new scores in one `add()` call
     * Triggers `compact_if_needed` once per batch instead of per score
+
+##### Background loading in `skeet-feed`
+
+From looking into some example traces, I'm still seeing loading a set of skeets take 8-ish seconds. This is too slow for usage within bluesky (should be about a second). However, I've spent a lot of time on optimisation, and things are better overall, so I want to put in a workaround for now.
+
+* [x] update skeet-feed so that `getFeedSkeleton` has a read-through cache which is also background updated. So:
+  * [x] change `getFeedSkeleton` so it uses the cache if is less than 5 minutes old, and if cache is missing then it populates the cache
+  * [x] add a background tokio worker which does the same thing in the background, once every minute
+  * [x] ensure all of this cache logic is covered by tests before making any changes
+  * [x] allowed cache staleness (the 5 minutes) and frequency of background fetch (once a minute) should be consts
+  * [x] we should emit a log which says how stale the surfaced result is when `getFeedSkeleton` is called
+
+The end-effect of this is that most calls of `getFeedSkeleton` should not see a non-cached value, and be at most one minute old.

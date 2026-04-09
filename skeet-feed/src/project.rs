@@ -3,7 +3,7 @@ use cot::project::{MiddlewareContext, RegisterAppsContext, RootHandler, RootHand
 use cot::router::{Route, Router};
 use cot::{App, AppBuilder, Project};
 
-use crate::StoreLayer;
+use crate::FeedCacheLayer;
 use crate::feed_config::FeedConfigLayer;
 use crate::handlers::{describe_feed_generator, did_document, get_feed_skeleton};
 
@@ -36,7 +36,7 @@ impl App for FeedApp {
 }
 
 pub struct FeedProject {
-    pub store_layer: StoreLayer,
+    pub cache_layer: FeedCacheLayer,
     pub feed_config_layer: FeedConfigLayer,
 }
 
@@ -55,7 +55,7 @@ impl Project for FeedProject {
         _context: &MiddlewareContext,
     ) -> RootHandler {
         handler
-            .middleware(self.store_layer.clone())
+            .middleware(self.cache_layer.clone())
             .middleware(self.feed_config_layer.clone())
             .build()
     }

@@ -37,6 +37,7 @@ impl From<StoredImage> for ImageRecord {
     }
 }
 
+#[derive(Clone)]
 pub struct StoredImageSummary {
     pub image_id: ImageId,
     pub skeet_id: SkeetId,

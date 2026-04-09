@@ -23,7 +23,7 @@ tracing = { workspace = true }
 chrono = { workspace = true }
 image = { workspace = true }
 tempfile = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 
 [features]
 test = ["cot/test"]

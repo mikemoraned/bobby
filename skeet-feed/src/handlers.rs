@@ -4,7 +4,7 @@ use cot::{Body, StatusCode};
 use serde::{Deserialize, Serialize};
 use tracing::{info, instrument, warn};
 
-use crate::Store;
+use crate::FeedCacheExtractor;
 use crate::feed_config::FeedConfig;
 
 fn json_response(body: &impl Serialize) -> cot::Result<Response> {
@@ -93,7 +93,7 @@ struct SkeletonFeedPost {
 
 #[instrument(skip_all, fields(feed = %query.feed))]
 pub async fn get_feed_skeleton(
-    Store(store): Store,
+    FeedCacheExtractor(cache): FeedCacheExtractor,
     FeedConfig(config): FeedConfig,
     UrlQuery(query): UrlQuery<FeedSkeletonQuery>,
 ) -> cot::Result<Response> {
@@ -113,8 +113,14 @@ pub async fn get_feed_skeleton(
 
     let limit = query.limit.unwrap_or(config.max_entries).min(config.max_entries);
 
-    let scored = store
-        .list_scored_summaries_by_score(limit, Some(config.max_age_hours))
+    let staleness = cache.staleness().await;
+    match staleness {
+        Some(d) => info!(staleness_secs = d.as_secs(), "cache staleness"),
+        None => info!("cache empty, will populate on first request"),
+    }
+
+    let scored = cache
+        .get()
         .await
         .map_err(|e| cot::Error::internal(format!("failed to read store: {e}")))?;
 
