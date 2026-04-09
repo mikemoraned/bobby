@@ -13,8 +13,8 @@ pub async fn execute_query(
     query: &(impl ExecutableQuery + Sync),
     label: &str,
 ) -> Result<Vec<RecordBatch>, StoreError> {
-    let plan = query.explain_plan(true).await?;
     let start = Instant::now();
+    let plan = query.explain_plan(true).await?;
     let batches: Vec<RecordBatch> = query.execute().await?.try_collect().await?;
     let elapsed = start.elapsed();
 
