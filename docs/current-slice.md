@@ -204,6 +204,13 @@ Optimisations to consider:
 * [x] #1: add channel depth and per-stage throughput logging to the pruner pipeline
     * Added `PipelineCounters` (atomic counters per stage) and `ChannelMonitors` (sender clones for depth via `max_capacity - capacity`) in `pipeline.rs`
     * Each stage increments its counter; save stage logs throughput rates and channel depths alongside existing status every 30s
+* [x] add "slow query" plan logging:
+  * wherever we are calling a lancedb query, wrap it in a method call which:
+    1. grabs the query plan (always)
+    2. executes the query, timing the duration
+    3. if duration > max_query_time (a shared const set to 100ms) then log out the query plan as a warn!
+    4. if duration <=> max_query_time, then still log, but at debug! level
+  * Implemented in `lancedb_utils::execute_query` — all query sites in `lib.rs` and `scores.rs` now use it
 
 #### Optimisations (act on information from above first)
 

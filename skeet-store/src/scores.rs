@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use arrow_array::{Float32Array, RecordBatch, RecordBatchIterator, StringArray};
-use futures::TryStreamExt;
-use lancedb::query::{ExecutableQuery, QueryBase};
+use lancedb::query::QueryBase;
 use tracing::{debug, info, instrument};
 
 use crate::arrow_utils::typed_column;
+use crate::lancedb_utils::execute_query;
 use crate::schema::images_score_v2_schema;
 use crate::stored::batches_to_summaries;
 use crate::types::ImageId;
@@ -95,15 +95,12 @@ impl SkeetStore {
         &self,
         image_id: &ImageId,
     ) -> Result<Option<(Score, ModelVersion)>, StoreError> {
-        let batches: Vec<RecordBatch> = self
+        let query = self
             .scores_table
             .query()
             .only_if(format!("image_id = '{image_id}'"))
-            .limit(1)
-            .execute()
-            .await?
-            .try_collect()
-            .await?;
+            .limit(1);
+        let batches = execute_query(&query, "get_score").await?;
 
         if batches.is_empty() || batches[0].num_rows() == 0 {
             return Ok(None);
@@ -128,15 +125,12 @@ impl SkeetStore {
         let all_ids = self.list_all_image_ids_by_most_recent().await?;
 
         let version_str = model_version.to_string();
-        let scored_batches: Vec<RecordBatch> = self
+        let scored_query = self
             .scores_table
             .query()
             .select(lancedb::query::Select::columns(&["image_id"]))
-            .only_if(format!("model_version = '{version_str}'"))
-            .execute()
-            .await?
-            .try_collect()
-            .await?;
+            .only_if(format!("model_version = '{version_str}'"));
+        let scored_batches = execute_query(&scored_query, "list_unscored:scored_ids").await?;
 
         let mut scored_with_current_version = std::collections::HashSet::new();
         for batch in &scored_batches {
@@ -193,9 +187,7 @@ impl SkeetStore {
             .query()
             .select(lancedb::query::Select::columns(&["image_id"]))
             .only_if(filter);
-        let plan = query.explain_plan(true).await?;
-        debug!(%plan, "find_recent_image_ids query plan");
-        let batches: Vec<RecordBatch> = query.execute().await?.try_collect().await?;
+        let batches = execute_query(&query, "find_recent_image_ids").await?;
         let mut ids = std::collections::HashSet::new();
         for batch in &batches {
             let image_ids = typed_column::<StringArray>(batch, "image_id")?;
@@ -252,14 +244,11 @@ impl SkeetStore {
 
         // Slow path: full scan and cache update
         debug!(version = current_version, "scores cache miss — full scan");
-        let scored_batches: Vec<RecordBatch> = self
+        let scored_query = self
             .scores_table
             .query()
-            .select(lancedb::query::Select::columns(&["image_id", "score"]))
-            .execute()
-            .await?
-            .try_collect()
-            .await?;
+            .select(lancedb::query::Select::columns(&["image_id", "score"]));
+        let scored_batches = execute_query(&scored_query, "cached_scores:full_scan").await?;
 
         let mut scores = HashMap::new();
         for batch in &scored_batches {
@@ -299,7 +288,7 @@ impl SkeetStore {
             .join(", ");
         let filter = format!("image_id IN ({in_list})");
 
-        let batches: Vec<RecordBatch> = self
+        let query = self
             .images_table
             .query()
             .select(lancedb::query::Select::columns(&[
@@ -311,11 +300,8 @@ impl SkeetStore {
                 "config_version",
                 "detected_text",
             ]))
-            .only_if(filter)
-            .execute()
-            .await?
-            .try_collect()
-            .await?;
+            .only_if(filter);
+        let batches = execute_query(&query, "fetch_summaries_for_scores").await?;
         let summaries = batches_to_summaries(&batches)?;
         info!(summary_rows = summaries.len(), "read summaries for top scores");
 
@@ -352,15 +338,12 @@ impl SkeetStore {
             .join(", ");
         let filter = format!("image_id IN ({in_list})");
 
-        let batches: Vec<RecordBatch> = self
+        let query = self
             .scores_table
             .query()
             .select(lancedb::query::Select::columns(&["image_id", "score"]))
-            .only_if(filter)
-            .execute()
-            .await?
-            .try_collect()
-            .await?;
+            .only_if(filter);
+        let batches = execute_query(&query, "list_scores_for_ids").await?;
 
         let mut score_map = HashMap::new();
         for batch in &batches {

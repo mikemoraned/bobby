@@ -4,6 +4,7 @@ mod arrow_utils;
 mod compact;
 mod error;
 pub mod health;
+mod lancedb_utils;
 mod schema;
 mod scores;
 mod stored;
@@ -29,12 +30,12 @@ use arrow_array::{
     TimestampMicrosecondArray,
 };
 use chrono::Utc;
-use futures::TryStreamExt;
 use lancedb::index::Index;
-use lancedb::query::{ExecutableQuery, QueryBase};
-use tracing::{debug, info, instrument};
+use lancedb::query::QueryBase;
+use tracing::{info, instrument};
 
 use arrow_utils::{encode_image_as_png, min_max_timestamp, typed_column};
+use lancedb_utils::execute_query;
 use schema::{
     SCORE_TABLE_NAME, TABLE_NAME, VALIDATE_TABLE_NAME, images_score_v2_schema, images_v6_schema,
     validate_v1_schema,
@@ -186,8 +187,7 @@ impl SkeetStore {
 
     #[instrument(skip(self))]
     pub async fn list_all(&self) -> Result<Vec<StoredImage>, StoreError> {
-        let batches: Vec<RecordBatch> =
-            self.images_table.query().execute().await?.try_collect().await?;
+        let batches = execute_query(&self.images_table.query(), "list_all").await?;
         batches_to_stored_images(&batches)
     }
 
@@ -200,7 +200,7 @@ impl SkeetStore {
 
     #[instrument(skip(self))]
     pub async fn list_all_summaries(&self) -> Result<Vec<StoredImageSummary>, StoreError> {
-        let batches: Vec<RecordBatch> = self
+        let query = self
             .images_table
             .query()
             .select(lancedb::query::Select::columns(&[
@@ -211,11 +211,8 @@ impl SkeetStore {
                 "archetype",
                 "config_version",
                 "detected_text",
-            ]))
-            .execute()
-            .await?
-            .try_collect()
-            .await?;
+            ]));
+        let batches = execute_query(&query, "list_all_summaries").await?;
         batches_to_summaries(&batches)
     }
 
@@ -226,9 +223,7 @@ impl SkeetStore {
             .query()
             .only_if(format!("image_id = '{image_id}'"))
             .limit(1);
-        let plan = query.explain_plan(true).await?;
-        debug!(plan, "get_by_id query plan");
-        let batches: Vec<RecordBatch> = query.execute().await?.try_collect().await?;
+        let batches = execute_query(&query, "get_by_id").await?;
         Ok(batches_to_stored_images(&batches)?.into_iter().next())
     }
 
@@ -240,9 +235,7 @@ impl SkeetStore {
             .only_if(format!("image_id = '{image_id}'"))
             .select(lancedb::query::Select::columns(&["image_id"]))
             .limit(1);
-        let plan = query.explain_plan(true).await?;
-        debug!(plan, "exists query plan");
-        let batches: Vec<RecordBatch> = query.execute().await?.try_collect().await?;
+        let batches = execute_query(&query, "exists").await?;
         Ok(batches.iter().any(|b| b.num_rows() > 0))
     }
 
@@ -280,14 +273,11 @@ impl SkeetStore {
         let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
         self.validate_table.add(batches).execute().await?;
 
-        let result_batches: Vec<RecordBatch> = self
+        let query = self
             .validate_table
             .query()
-            .only_if(format!("random_number = {random_number}"))
-            .execute()
-            .await?
-            .try_collect()
-            .await?;
+            .only_if(format!("random_number = {random_number}"));
+        let result_batches = execute_query(&query, "validate").await?;
 
         if result_batches.is_empty() {
             return Err(StoreError::ValidationFailed(
@@ -315,14 +305,11 @@ impl SkeetStore {
 
     #[instrument(skip(self))]
     pub async fn unique_skeet_ids(&self) -> Result<Vec<SkeetId>, StoreError> {
-        let batches: Vec<RecordBatch> = self
+        let query = self
             .images_table
             .query()
-            .select(lancedb::query::Select::columns(&["skeet_id"]))
-            .execute()
-            .await?
-            .try_collect()
-            .await?;
+            .select(lancedb::query::Select::columns(&["skeet_id"]));
+        let batches = execute_query(&query, "unique_skeet_ids").await?;
 
         let mut seen = std::collections::HashSet::new();
         let mut ids = Vec::new();
@@ -341,17 +328,14 @@ impl SkeetStore {
 
     #[instrument(skip(self))]
     pub async fn list_all_image_ids_by_most_recent(&self) -> Result<Vec<ImageId>, StoreError> {
-        let batches: Vec<RecordBatch> = self
+        let query = self
             .images_table
             .query()
             .select(lancedb::query::Select::columns(&[
                 "image_id",
                 "discovered_at",
-            ]))
-            .execute()
-            .await?
-            .try_collect()
-            .await?;
+            ]));
+        let batches = execute_query(&query, "list_all_image_ids_by_most_recent").await?;
 
         let mut id_times = Vec::new();
         for batch in &batches {
@@ -371,31 +355,25 @@ impl SkeetStore {
         let image_count = self.images_table.count_rows(None).await?;
         let score_count = self.scores_table.count_rows(None).await?;
 
-        let batches: Vec<RecordBatch> = self
+        let timestamps_query = self
             .images_table
             .query()
             .select(lancedb::query::Select::columns(&[
                 "discovered_at",
                 "original_at",
-            ]))
-            .execute()
-            .await?
-            .try_collect()
-            .await?;
+            ]));
+        let batches = execute_query(&timestamps_query, "summarise:timestamps").await?;
 
         let discovered_at_range = min_max_timestamp(&batches, "discovered_at")?
             .map(|(min, max)| (DiscoveredAt::new(min), DiscoveredAt::new(max)));
         let original_at_range = min_max_timestamp(&batches, "original_at")?
             .map(|(min, max)| (OriginalAt::new(min), OriginalAt::new(max)));
 
-        let scored_batches: Vec<RecordBatch> = self
+        let scored_query = self
             .scores_table
             .query()
-            .select(lancedb::query::Select::columns(&["image_id"]))
-            .execute()
-            .await?
-            .try_collect()
-            .await?;
+            .select(lancedb::query::Select::columns(&["image_id"]));
+        let scored_batches = execute_query(&scored_query, "summarise:scored_ids").await?;
 
         let mut scored_ids = std::collections::HashSet::new();
         for batch in &scored_batches {
