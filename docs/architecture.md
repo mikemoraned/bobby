@@ -21,6 +21,7 @@ The original project scanned Twitter's firehose, applied face detection (via Ope
   - Non-Rust ML models are OK if really required
 - **Burn:** use [Burn](https://burn.dev) ([GitHub](https://github.com/tracel-ai/burn)) for running ML models
 - **Sampling:** processing at line-speed may not be possible — sampling is fine. Simple parts (e.g. checking if a message contains an image) should be inline with receiving a message.
+- **Interactive UI:** prefer [htmx](https://htmx.org) for interactivity in HTML views (server-rendered templates returning HTML fragments). Avoid client-side JS frameworks unless htmx is genuinely insufficient.
 
 ## Prune and Refine Pattern
 
