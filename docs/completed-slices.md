@@ -116,3 +116,17 @@ Reduced compile times and streamlined the Docker build pipeline:
 - **Shared base image (attempted and reverted)**: tried extracting common Docker stages into `bobby-chef` and `bobby-runner` base images. Reverted due to multiarch builder complexity, 5GB chef image too large for GHCR, and builder driver incompatibilities. Kept self-contained Dockerfiles with the good parts inline.
 - **fly.io pre-built images**: switched `fly.staging.toml` from building on fly.io to pulling pre-built amd64 images from GHCR. GHCR packages made public for unauthenticated pulls.
 - **Build config**: moved architecture-specific RUSTFLAGS (`-C target-cpu=neoverse-n1` for ARM) into `.cargo/config.toml` per-target sections. Added `.dockerignore` excluding `target/`, `store/`, `logs/`, and other large dirs.
+
+## Slice 12: Optimisations of pruning, refining, and feeding
+
+Systematic investigation and resolution of performance bottlenecks across the pipeline:
+
+- **LanceDB fragmentation (Hypothesis confirmed)**: every `add()` created a single-row fragment; `scores_table` had zero compaction. Fixed by extending `compact()` to cover all tables, adding a k8s CronJob for periodic compaction, and tuning `CompactionOptions` (target 500 rows/fragment, single-threaded, batch size 64) to stay within 8GB Hetzner memory.
+- **Full table scans on feed requests (Hypothesis confirmed)**: `list_scored_summaries_by_score` scanned all rows from both tables (~3.6s per request). Replaced with a two-step query: fetch top-N scores, then indexed lookup of only those image IDs. Also added a version-gated scores cache in `SkeetStore`.
+- **Scalar index usage (Hypothesis disproved)**: `get_by_id` was already using the scalar index correctly; the slow queries were caused by fragmentation.
+- **Benchmarking**: built `bench-firehose` binary measuring firehose throughput (~37 posts/sec, ~7 images/sec) and image download latency (75–120ms avg). Established the 170ms/candidate processing budget.
+- **Pipeline throughput**: parallelised image downloads within candidates (+15–20%), added multi-worker image stage (`--image-workers`, default 2) eliminating the image classification bottleneck. Pipeline now keeps up with the firehose.
+- **Live-refine**: parallelised OpenAI calls (`--concurrency`, default 4) and batch-upserted scores to reduce fragmentation.
+- **Visibility**: added OpenTelemetry to skeet-feed on fly.io, per-stage pipeline counters with channel depth monitoring, slow-query plan logging (>100ms threshold).
+- **Feed caching**: added a read-through `FeedCache` in skeet-feed with 5-minute staleness window and 1-minute background refresh, reducing feed response times from ~8s to near-instant for cached results. Used tokio's `start_paused`/`advance` for deterministic time-based tests.
+- **Test infrastructure**: extracted shared test helpers (`make_record`, `open_temp_store`, etc.) into `skeet-store::test_utils` behind a `test-helpers` feature flag, deduplicating across four test files.
