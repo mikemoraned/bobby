@@ -27,5 +27,12 @@ aws-credential-types = "1.2.14"
 [lints]
 workspace = true
 
+[features]
+test-helpers = ["dep:tempfile"]
+
+[dependencies.tempfile]
+workspace = true
+optional = true
+
 [dev-dependencies]
 tempfile = { workspace = true }

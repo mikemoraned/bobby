@@ -1,40 +1,10 @@
 #![cfg(feature = "test")]
 
-use chrono::Utc;
 use cot::test::Client;
-use image::{DynamicImage, ImageBuffer, Rgba};
 use skeet_inspect::StoreLayer;
 use skeet_inspect::project::InspectProject;
-use skeet_store::{
-    DiscoveredAt, ImageId, ImageRecord, ModelVersion, OriginalAt, Score, SkeetStore, Zone,
-};
-
-fn test_image() -> DynamicImage {
-    DynamicImage::ImageRgba8(ImageBuffer::from_pixel(2, 2, Rgba([255, 0, 0, 255])))
-}
-
-fn make_record(suffix: &str, r: u8, g: u8, b: u8) -> ImageRecord {
-    let img = DynamicImage::ImageRgba8(ImageBuffer::from_pixel(2, 2, Rgba([r, g, b, 255])));
-    ImageRecord {
-        image_id: ImageId::from_image(&img),
-        skeet_id: format!("at://did:plc:abc/app.bsky.feed.post/{suffix}")
-            .parse()
-            .expect("valid AT URI"),
-        image: img,
-        discovered_at: DiscoveredAt::now(),
-        original_at: OriginalAt::new(Utc::now()),
-        zone: Zone::TopRight,
-        annotated_image: test_image(),
-        config_version: ModelVersion::from("test"),
-        detected_text: String::new(),
-    }
-}
-
-async fn open_temp_store(dir: &tempfile::TempDir) -> SkeetStore {
-    SkeetStore::open(dir.path().to_str().expect("valid path"), vec![], None)
-        .await
-        .expect("open store")
-}
+use skeet_store::test_utils::{make_record, open_temp_store};
+use skeet_store::{ModelVersion, Score, SkeetStore};
 
 async fn client_for(store: SkeetStore) -> Client {
     let project = InspectProject {

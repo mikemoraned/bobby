@@ -17,8 +17,8 @@ tower = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-chrono = { workspace = true }
 image = { workspace = true }
+skeet-store = { path = "../skeet-store", features = ["test-helpers"] }
 tempfile = { workspace = true }
 tokio = { workspace = true }
 

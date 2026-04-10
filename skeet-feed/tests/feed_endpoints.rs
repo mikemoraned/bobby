@@ -4,18 +4,12 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use cot::test::Client;
-use image::{DynamicImage, ImageBuffer, Rgba};
 use skeet_feed::FeedCacheLayer;
 use skeet_feed::feed_cache::FeedCache;
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
-use skeet_store::{
-    DiscoveredAt, ImageId, ImageRecord, ModelVersion, OriginalAt, Score, SkeetStore, Zone,
-};
-
-fn test_image() -> DynamicImage {
-    DynamicImage::ImageRgba8(ImageBuffer::from_pixel(2, 2, Rgba([255, 0, 0, 255])))
-}
+use skeet_store::test_utils::{make_record, make_record_at, open_temp_store};
+use skeet_store::{DiscoveredAt, ModelVersion, Score, SkeetStore};
 
 fn test_params() -> FeedParams {
     FeedParams {
@@ -26,39 +20,6 @@ fn test_params() -> FeedParams {
         min_score: 0.5,
         max_age_hours: 48,
     }
-}
-
-fn make_record(suffix: &str, r: u8, g: u8, b: u8) -> ImageRecord {
-    make_record_at(suffix, r, g, b, DiscoveredAt::now())
-}
-
-fn make_record_at(
-    suffix: &str,
-    r: u8,
-    g: u8,
-    b: u8,
-    discovered_at: DiscoveredAt,
-) -> ImageRecord {
-    let img = DynamicImage::ImageRgba8(ImageBuffer::from_pixel(2, 2, Rgba([r, g, b, 255])));
-    ImageRecord {
-        image_id: ImageId::from_image(&img),
-        skeet_id: format!("at://did:plc:abc/app.bsky.feed.post/{suffix}")
-            .parse()
-            .expect("valid AT URI"),
-        image: img,
-        discovered_at,
-        original_at: OriginalAt::new(Utc::now()),
-        zone: Zone::TopRight,
-        annotated_image: test_image(),
-        config_version: ModelVersion::from("test"),
-        detected_text: String::new(),
-    }
-}
-
-async fn open_temp_store(dir: &tempfile::TempDir) -> SkeetStore {
-    SkeetStore::open(dir.path().to_str().expect("valid path"), vec![], None)
-        .await
-        .expect("open store")
 }
 
 async fn client_for(store: SkeetStore, params: FeedParams) -> Client {

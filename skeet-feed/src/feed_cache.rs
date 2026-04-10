@@ -158,34 +158,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
-    use image::{DynamicImage, ImageBuffer, Rgba};
-    use skeet_store::{DiscoveredAt, ImageId, ImageRecord, ModelVersion, OriginalAt, Zone};
-
-    fn make_record(suffix: &str, r: u8, g: u8, b: u8) -> ImageRecord {
-        let img = DynamicImage::ImageRgba8(ImageBuffer::from_pixel(2, 2, Rgba([r, g, b, 255])));
-        let test_image =
-            DynamicImage::ImageRgba8(ImageBuffer::from_pixel(2, 2, Rgba([255, 0, 0, 255])));
-        ImageRecord {
-            image_id: ImageId::from_image(&img),
-            skeet_id: format!("at://did:plc:abc/app.bsky.feed.post/{suffix}")
-                .parse()
-                .expect("valid AT URI"),
-            image: img,
-            discovered_at: DiscoveredAt::now(),
-            original_at: OriginalAt::new(Utc::now()),
-            zone: Zone::TopRight,
-            annotated_image: test_image,
-            config_version: ModelVersion::from("test"),
-            detected_text: String::new(),
-        }
-    }
-
-    async fn temp_store(dir: &tempfile::TempDir) -> SkeetStore {
-        SkeetStore::open(dir.path().to_str().expect("valid path"), vec![], None)
-            .await
-            .expect("open store")
-    }
+    use skeet_store::test_utils::{make_record, open_temp_store};
+    use skeet_store::ModelVersion;
 
     async fn seed_store(store: &SkeetStore, suffix: &str, r: u8, score: f32) {
         let record = make_record(suffix, r, 0, 0);
@@ -204,7 +178,7 @@ mod tests {
     #[tokio::test]
     async fn cache_miss_populates_on_first_get() {
         let dir = tempfile::tempdir().expect("create temp dir");
-        let store = Arc::new(temp_store(&dir).await);
+        let store = Arc::new(open_temp_store(&dir).await);
         seed_store(&store, "a", 10, 0.9).await;
 
         let cache = FeedCache::new(Arc::clone(&store), 10, 48);
@@ -218,7 +192,7 @@ mod tests {
     /// the time advance.
     async fn cache_get_len_after_advance(advance_by: Duration) -> usize {
         let dir = tempfile::tempdir().expect("create temp dir");
-        let store = Arc::new(temp_store(&dir).await);
+        let store = Arc::new(open_temp_store(&dir).await);
         seed_store(&store, "a", 10, 0.9).await;
 
         let cache = FeedCache::new(Arc::clone(&store), 10, 48);
@@ -245,7 +219,7 @@ mod tests {
     #[tokio::test]
     async fn refresh_picks_up_new_data() {
         let dir = tempfile::tempdir().expect("create temp dir");
-        let store = Arc::new(temp_store(&dir).await);
+        let store = Arc::new(open_temp_store(&dir).await);
         seed_store(&store, "a", 10, 0.9).await;
 
         let cache = FeedCache::new(Arc::clone(&store), 10, 48);
@@ -264,7 +238,7 @@ mod tests {
     #[tokio::test]
     async fn empty_store_returns_empty_cache() {
         let dir = tempfile::tempdir().expect("create temp dir");
-        let store = Arc::new(temp_store(&dir).await);
+        let store = Arc::new(open_temp_store(&dir).await);
 
         let cache = FeedCache::new(Arc::clone(&store), 10, 48);
         let result = cache.get().await.expect("get");

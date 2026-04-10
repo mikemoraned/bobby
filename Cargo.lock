@@ -10053,7 +10053,6 @@ dependencies = [
 name = "skeet-inspect"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "clap",
  "cot",
  "image",

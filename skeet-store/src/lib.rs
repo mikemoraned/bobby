@@ -9,6 +9,8 @@ mod schema;
 mod scores;
 mod stored;
 mod summary;
+#[cfg(any(test, feature = "test-helpers"))]
+pub mod test_utils;
 mod types;
 
 pub use args::StoreArgs;

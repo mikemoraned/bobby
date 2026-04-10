@@ -1,23 +1,9 @@
 use chrono::Utc;
-use image::{DynamicImage, ImageBuffer, Rgba};
 
+use crate::test_utils::{open_temp_store, test_image, test_image_with_color};
 use crate::{
     DiscoveredAt, ImageId, ImageRecord, ModelVersion, OriginalAt, Score, SkeetId, SkeetStore, Zone,
 };
-
-fn test_image() -> DynamicImage {
-    test_image_with_color(255, 0, 0)
-}
-
-fn test_image_with_color(r: u8, g: u8, b: u8) -> DynamicImage {
-    DynamicImage::ImageRgba8(ImageBuffer::from_pixel(2, 2, Rgba([r, g, b, 255])))
-}
-
-async fn open_temp_store(dir: &tempfile::TempDir) -> SkeetStore {
-    SkeetStore::open(dir.path().to_str().expect("valid path"), vec![], None)
-        .await
-        .expect("open store")
-}
 
 #[tokio::test]
 async fn roundtrip_store_and_retrieve() {
@@ -140,20 +126,7 @@ async fn reopening_store_preserves_data() {
 }
 
 fn make_record(skeet_suffix: &str) -> ImageRecord {
-    let img = test_image_with_color(rand::random(), rand::random(), rand::random());
-    ImageRecord {
-        image_id: ImageId::from_image(&img),
-        skeet_id: format!("at://did:plc:abc/app.bsky.feed.post/{skeet_suffix}")
-            .parse()
-            .expect("valid test AT URI"),
-        image: img,
-        discovered_at: DiscoveredAt::now(),
-        original_at: OriginalAt::new(Utc::now()),
-        zone: Zone::TopRight,
-        annotated_image: test_image(),
-        config_version: ModelVersion::from("test"),
-        detected_text: String::new(),
-    }
+    crate::test_utils::make_record(skeet_suffix, rand::random(), rand::random(), rand::random())
 }
 
 fn test_model_version() -> ModelVersion {
