@@ -33,6 +33,9 @@ Protect the `/admin` area behind GitHub OAuth login. Users authenticate via GitH
 - [ ] `Band::from_score(Score)` using half-open intervals: `[0.0, 0.25)` Low, `[0.25, 0.5)` MediumLow, `[0.5, 0.75)` MediumHigh, `[0.75, 1.0]` HighQuality.
 - [ ] `Band::is_visible_in_feed(self)` — true for `MediumHigh` and `HighQuality` only.
 - [ ] Unit tests for boundary cases (0.0, 0.25, 0.5, 0.75, 1.0).
+- [ ] Add an `Appraiser` enum capturing identity + provider of whoever made an appraisal. Initial single variant: `GitHub { username: String }`. Designed so future providers (e.g. Bluesky) can be added as new variants without breaking existing data.
+- [ ] Implement `Display` / `FromStr` for `Appraiser` using a `provider:identifier` wire format (e.g. `github:mikemoraned`) — single string column in storage, forward-compatible with new providers.
+- [ ] Unit tests for `Appraiser` parse/display roundtrip and rejection of malformed strings.
 
 #### `skeet-web-shared` crate (new)
 - [ ] Create a new workspace member `skeet-web-shared` for parts that skeet-inspect and skeet-feed will share.
@@ -53,10 +56,10 @@ Protect the `/admin` area behind GitHub OAuth login. Users authenticate via GitH
 ### Tasks — Implementing Appraisal
 
 #### Storage: manual appraisal tables (`skeet-store`)
-- [ ] Add `manual_skeet_appraisal_v1` table: `skeet_id` (string, AT URI, key), `band` (string), `appraised_at` (timestamp). Presence of a row = manual appraisal exists; delete to revert to automatic.
-- [ ] Add `manual_image_appraisal_v1` table: `image_id` (string, key), `band`, `appraised_at`.
-- [ ] `SkeetStore` methods: `set_skeet_band`, `clear_skeet_band`, `get_skeet_band`, `list_all_skeet_appraisals` — and the four image equivalents.
-- [ ] Unit tests for set/get/clear/list round-trips on each table.
+- [ ] Add `manual_skeet_appraisal_v1` table: `skeet_id` (string, AT URI, key), `band` (string), `appraiser` (string, `Appraiser` wire format), `appraised_at` (timestamp). Presence of a row = manual appraisal exists; delete to revert to automatic.
+- [ ] Add `manual_image_appraisal_v1` table: `image_id` (string, key), `band`, `appraiser`, `appraised_at`.
+- [ ] `SkeetStore` methods: `set_skeet_band(&SkeetId, Band, &Appraiser)`, `clear_skeet_band`, `get_skeet_band`, `list_all_skeet_appraisals` — and the four image equivalents. `get`/`list` return the stored `Appraiser` alongside the band so the admin view can show who made each call.
+- [ ] Unit tests for set/get/clear/list round-trips on each table, including appraiser preservation.
 
 #### Effective band logic
 - [ ] Define a function (in `shared` or `skeet-web-shared`) that, given an image score + manual image band + manual skeet band + sibling-image bands, computes:
@@ -83,7 +86,7 @@ Protect the `/admin` area behind GitHub OAuth login. Users authenticate via GitH
 - [ ] Cursor-based paging using `list_summaries_page`, 10 items at a time.
 - [ ] htmx "load more": initial render shows the first 10 items + a sentinel `<div hx-get="/admin?cursor=..." hx-trigger="revealed" hx-swap="outerHTML">` that fetches the next 10 when scrolled into view. Server returns HTML fragments.
 - [ ] Per item: thumbnail, score, automatic band, manual band (if any), effective band, band selector (4 buttons + "clear manual").
-- [ ] htmx band-update: each band button does `hx-post="/admin/appraise/skeet/{id}"` (or `image/{id}`) and swaps the row in place via `hx-swap="outerHTML"`.
+- [ ] htmx band-update: each band button does `hx-post="/admin/appraise/skeet/{id}"` (or `image/{id}`) and swaps the row in place via `hx-swap="outerHTML"`. The handler reads the current `Appraiser` from the session and passes it to the `SkeetStore` set method.
 - [ ] Integ tests: paging returns expected items in expected order; setting a manual band updates the row and the underlying table; clearing reverts to automatic.
 
 #### Auth: cot session bootstrap
@@ -96,7 +99,7 @@ Protect the `/admin` area behind GitHub OAuth login. Users authenticate via GitH
 - [ ] Add `oauth2 = "5"` to workspace `[dependencies]`.
 - [ ] New module implementing routes `GET /auth/login`, `GET /auth/callback`, `GET /auth/logout`, registered under `/auth`.
 - [ ] `/auth/login`: build an OAuth2 authorize URL with scope `read:user`; store CSRF state in cot session; redirect to GitHub.
-- [ ] `/auth/callback`: verify CSRF state; exchange code for access token; call GitHub `GET /user`; check username against allowlist; on success, set `role=admin` in the session and redirect to `return_to` or `/admin`; on failure, return 403 with a clear message (no silent redirect loop).
+- [ ] `/auth/callback`: verify CSRF state; exchange code for access token; call GitHub `GET /user`; check username against allowlist; on success, set `role=admin` and store `Appraiser::GitHub { username }` in the session, then redirect to `return_to` or `/admin`; on failure, return 403 with a clear message (no silent redirect loop).
 - [ ] `/auth/logout`: clear the session; redirect to `/`.
 
 #### Admin guard
