@@ -4,7 +4,23 @@
 
 A home page (`/`) to show what is currently visible in the feed i.e. what you would see on the feed right now.
 
-An `/admin` area where we show what is currently appearing in the feed (as above) + any that have been blocked. Each of the items should be able to be blocked, which makes them disappear from the feed.
+An `/admin` area where we show what is currently appearing in the feed (as above) + any that have been blocked and band they are in based on automatic and manual appraisal. Each of the items should be able to be manually appraised into the bands below. By default, without manual action, all images are unappraised.
+
+There are four bands in order of worst -> best quality:
+* Low Quality:
+  * these don't match the general layout at all and should all be blocked earlier in the Prune stage
+  * scores: 0.0 -> 0.25
+* Medium Low Quality:
+  * these technically match the general layout we want but don't match the theme. Ideally we'd also block these at Prun 
+  * scores: 0.25 -> 0.5
+* Medium High Quality:
+  * these match general layout we want, and match the theme, but they are not great
+  * scores: 0.5 -> 0.75
+* High Quality:
+  * matches general layout, and also are great exemplars of original idea or are really interesting even if they don't match the original goal
+  * scores: 0.75 -> 1.0
+
+Anything in the Low or Medium Low Quality bands should not appear in the feed i.e. be filtered out. When sorting by quality, sort best to worst. A manual appraisal always supercedes an automatica appraisal.
 
 Protect the `/admin` area behind GitHub OAuth login. Users authenticate via GitHub; their username is checked against an allowlist stored in a fly.io secret. No credentials are stored in the app — only an ephemeral session records that the user has the admin role.
 
