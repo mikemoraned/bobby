@@ -1,4 +1,4 @@
-# Current Slice: Slice 13 — Add /admin area in skeet-feed that allows blocking of skeets
+# Current Slice: Slice 13 — Add /admin area in skeet-feed for manual quality appraisal of skeets and images
 
 ### Target
 
@@ -20,50 +20,99 @@ There are four bands in order of worst -> best quality:
   * matches general layout, and also are great exemplars of original idea or are really interesting even if they don't match the original goal
   * scores: 0.75 -> 1.0
 
-Anything in the Low or Medium Low Quality bands should not appear in the feed i.e. be filtered out. When sorting by quality, sort best to worst. A manual appraisal always supercedes an automatica appraisal.
+Note that we need to separate appraisal of the *skeet* from the image. The /admin area needs ability to do both i.e. appraise skeets and images into Bands. The default view for the admin area should be the skeet appraisal.
+
+Anything image or associated skeet in the Low or Medium Low Quality bands should cause the associated skeet to not appear in the feed i.e. be filtered out. When sorting by quality, sort best to worst. A manual appraisal always supercedes an automatic appraisal.
 
 Protect the `/admin` area behind GitHub OAuth login. Users authenticate via GitHub; their username is checked against an allowlist stored in a fly.io secret. No credentials are stored in the app — only an ephemeral session records that the user has the admin role.
 
-### Tasks
+### Tasks — Preparatory Refactors
 
-#### Home and Admin UI with blocking capability
-* [ ] produce a view which shows same data as in feed, with an additional block button and display of whether it is blocked, on `/admin`
-    * we should try to share if possible between views
-* [ ] a new `blocked_skeet_v1` table which holds which skeets have been marked as blocked. This is mostly expected to be empty.
-    * the key of the table is the at URI and the table should have a `blocked` boolean column
-    * this should be accessible via `SkeetStore`
-* [ ] needs a suite of both integ and unit tests which prove that skeets can be filtered out if blocked and also can be unblocked
+#### Domain types (`shared` crate)
+- [ ] Add a `Band` enum: `Low`, `MediumLow`, `MediumHigh`, `HighQuality`. Implement `Ord`, `Display`, `FromStr`.
+- [ ] `Band::from_score(Score)` using half-open intervals: `[0.0, 0.25)` Low, `[0.25, 0.5)` MediumLow, `[0.5, 0.75)` MediumHigh, `[0.75, 1.0]` HighQuality.
+- [ ] `Band::is_visible_in_feed(self)` — true for `MediumHigh` and `HighQuality` only.
+- [ ] Unit tests for boundary cases (0.0, 0.25, 0.5, 0.75, 1.0).
 
-#### GitHub OAuth App setup
-- [ ] Register a new OAuth App at GitHub → Settings → Developer settings → OAuth Apps; set the authorization callback URL to `https://<app-name>.fly.dev/auth/callback`
-- [ ] Store the client ID and secret as fly.io secrets: `fly secrets set GITHUB_CLIENT_ID=… GITHUB_CLIENT_SECRET=…`
-- [ ] Set the admin allowlist as a fly.io secret: `fly secrets set ADMIN_USERS=mikemoraned` (comma-separated GitHub usernames)
-- [ ] Generate a random session signing key and store it: `fly secrets set SESSION_SECRET=$(openssl rand -hex 32)`
+#### `skeet-web-shared` crate (new)
+- [ ] Create a new workspace member `skeet-web-shared` for parts that skeet-inspect and skeet-feed will share.
+- [ ] Move the `Store`/`StoreLayer` middleware out of skeet-inspect into skeet-web-shared.
+- [ ] Move shared view types and helpers (`FeedEntry`, `to_feed_entry`) into skeet-web-shared.
+- [ ] Vendor htmx (single `htmx.min.js`) as a static asset, served via cot's static-files support.
+- [ ] Add a base layout template (loads htmx) usable from both crates.
+- [ ] Update skeet-inspect to depend on skeet-web-shared and use the moved code; verify `just inspect` still works.
 
-#### Dependencies
-- [ ] Add `oauth2 = "5"` and `reqwest = { version = "0.12", features = ["json"] }` to the workspace `Cargo.toml`; these handle the OAuth2 flow and the GitHub API call to resolve the authenticated username
-- [ ] Confirm `tower-sessions` is already available via cot; if a session store beyond the default is needed (e.g. for multi-instance), add `tower-sessions-redis-store` or equivalent
+#### Storage: cursor-paged listing (`skeet-store`)
+- [ ] Add `SkeetStore::list_summaries_page(before: Option<DiscoveredAt>, limit: usize) -> (Vec<StoredImageSummary>, next_cursor)` — cursor-based paging by `discovered_at` desc.
+- [ ] Unit tests: first page; subsequent pages; end-of-data; concurrent insert during paging.
 
-#### Auth routes (new `AuthApp`)
-- [ ] Create `src/auth_app.rs` implementing `cot::App` with three routes: `GET /auth/login`, `GET /auth/callback`, `GET /auth/logout`
-- [ ] `/auth/login`: build an OAuth2 authorize URL (scope `read:user`), store the CSRF state token in the session, and redirect the user to GitHub
-- [ ] `/auth/callback`: verify the CSRF state, exchange the authorization code for an access token, call the GitHub `GET /user` API to retrieve the username, check the username against `ADMIN_USERS`, and — if matched — set `role=admin` in the session and redirect to the URL stored in `return_to` (or `/admin` by default)
-- [ ] `/auth/logout`: clear the session and redirect to `/`
-- [ ] Register `AuthApp` in the `Project::register_apps` with prefix `/auth`
+#### HTML infrastructure in `skeet-feed`
+- [ ] Add cot template support to skeet-feed (`#[derive(Template)]`, `templates/` directory).
+- [ ] Depend on `skeet-web-shared` for store middleware, vendored htmx static files, and shared view types.
 
-#### Admin guard middleware
-- [ ] Write an axum `middleware::from_fn` called `require_admin` that reads `role` from the session; if not `"admin"`, stash the current request URI in `return_to` and redirect to `/auth/login`
-- [ ] Apply this middleware as a `route_layer` on the `/admin` sub-router so it runs only for admin routes, not for public routes or `/auth/*`
-- [ ] Verify that cot's `SessionMiddleware` is ordered before the admin guard in the middleware stack so the session is available
+### Tasks — Implementing Appraisal
 
-#### Local development
-- [ ] Create a second GitHub OAuth App (or reuse with an additional callback URL) pointing at `http://localhost:8080/auth/callback` for local testing
-- [ ] Document the required environment variables in a `.env.example` file: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `ADMIN_USERS`, `SESSION_SECRET`
-- [ ] Add a note in the README on how to run locally with these env vars (e.g. via `cargo run` with `dotenv` or `export` commands)
+#### Storage: manual appraisal tables (`skeet-store`)
+- [ ] Add `manual_skeet_appraisal_v1` table: `skeet_id` (string, AT URI, key), `band` (string), `appraised_at` (timestamp). Presence of a row = manual appraisal exists; delete to revert to automatic.
+- [ ] Add `manual_image_appraisal_v1` table: `image_id` (string, key), `band`, `appraised_at`.
+- [ ] `SkeetStore` methods: `set_skeet_band`, `clear_skeet_band`, `get_skeet_band`, `list_all_skeet_appraisals` — and the four image equivalents.
+- [ ] Unit tests for set/get/clear/list round-trips on each table.
 
-#### Verification (by unit and integ tests)
-- [ ] Confirm that unauthenticated `GET /admin` redirects to GitHub login
-- [ ] Confirm that after GitHub login with an allowlisted username, the user lands on `/admin` with full access
-- [ ] Confirm that after GitHub login with a non-allowlisted username, the user sees a 403 or a "not authorized" message (not a silent redirect loop)
-- [ ] Confirm that `GET /auth/logout` clears the session and subsequent `/admin` requests redirect to login again
-- [ ] Confirm that the CSRF state parameter is validated on callback and a tampered `state` is rejected
+#### Effective band logic
+- [ ] Define a function (in `shared` or `skeet-web-shared`) that, given an image score + manual image band + manual skeet band + sibling-image bands, computes:
+  - per-image effective band: `manual_image.unwrap_or(Band::from_score(score))`
+  - per-skeet auto band: worst per-image effective band across the skeet's images
+  - per-skeet effective band: `manual_skeet.unwrap_or(auto_skeet)`
+  - skeet visible in feed: `effective_skeet_band.is_visible_in_feed() && every image effective band is visible`
+- [ ] Unit tests: no manual; manual demote skeet; manual promote skeet; one bad image taints the whole skeet; manual skeet override beats per-image overrides.
+
+#### Feed filter integration (`skeet-feed`)
+- [ ] Update `FeedCache::refresh()` to also load manual skeet + image appraisals (full-table scans — both tables are tiny).
+- [ ] Update `get_feed_skeleton` to use the effective-band visibility rule instead of `score >= config.min_score`.
+- [ ] Remove the `min_score` field from `FeedConfig` (and the corresponding CLI flag) — band thresholds replace it. Update `fly.staging.toml` and the Justfile feed targets accordingly.
+- [ ] Integ tests: skeet visible by default; manually demoting the skeet hides it; manually demoting one of its images hides it; manually promoting a Low-scored skeet shows it again.
+
+#### Home view (`/`)
+- [ ] New handler `home` rendering the currently-visible feed items as HTML.
+- [ ] Sort: best-to-worst by score (existing feed cache ordering).
+- [ ] Per item: thumbnail (annotated image), score, AT URI, link to bsky.app. No admin controls. No paging — bounded by feed size.
+
+#### Admin view (`/admin`)
+- [ ] New handler `admin` rendering all stored items, sorted by `discovered_at` desc.
+- [ ] Two sub-views: skeet appraisal (default) and image appraisal.
+- [ ] Cursor-based paging using `list_summaries_page`, 10 items at a time.
+- [ ] htmx "load more": initial render shows the first 10 items + a sentinel `<div hx-get="/admin?cursor=..." hx-trigger="revealed" hx-swap="outerHTML">` that fetches the next 10 when scrolled into view. Server returns HTML fragments.
+- [ ] Per item: thumbnail, score, automatic band, manual band (if any), effective band, band selector (4 buttons + "clear manual").
+- [ ] htmx band-update: each band button does `hx-post="/admin/appraise/skeet/{id}"` (or `image/{id}`) and swaps the row in place via `hx-swap="outerHTML"`.
+- [ ] Integ tests: paging returns expected items in expected order; setting a manual band updates the row and the underlying table; clearing reverts to automatic.
+
+#### Auth: cot session bootstrap
+- [ ] Wire `cot::middleware::SessionMiddleware` into `FeedProject::middlewares()`. Default in-memory store is fine (single-instance Fly machine; re-login after suspend is acceptable).
+- [ ] Load session signing key from `BOBBY_SESSION_SECRET` env var.
+- [ ] Load admin allowlist from `BOBBY_ADMIN_USERS` (comma-separated GitHub usernames).
+- [ ] Load GitHub OAuth client id/secret from `BOBBY_GITHUB_CLIENT_ID` / `BOBBY_GITHUB_CLIENT_SECRET`.
+
+#### Auth: GitHub OAuth routes
+- [ ] Add `oauth2 = "5"` to workspace `[dependencies]`.
+- [ ] New module implementing routes `GET /auth/login`, `GET /auth/callback`, `GET /auth/logout`, registered under `/auth`.
+- [ ] `/auth/login`: build an OAuth2 authorize URL with scope `read:user`; store CSRF state in cot session; redirect to GitHub.
+- [ ] `/auth/callback`: verify CSRF state; exchange code for access token; call GitHub `GET /user`; check username against allowlist; on success, set `role=admin` in the session and redirect to `return_to` or `/admin`; on failure, return 403 with a clear message (no silent redirect loop).
+- [ ] `/auth/logout`: clear the session; redirect to `/`.
+
+#### Admin guard
+- [ ] Implement a middleware (built on cot's session primitives) that checks for `role=admin` in the session; if absent, store the current request URI in `return_to` and redirect to `/auth/login`.
+- [ ] Apply only to `/admin/*` routes; ensure `SessionMiddleware` is ordered before it.
+
+#### Operational (manual, not code)
+- [ ] Register a GitHub OAuth App for production with callback `https://<app-name>.fly.dev/auth/callback`.
+- [ ] Register a second OAuth App (or add a second callback) for `http://localhost:8080/auth/callback`.
+- [ ] Set Fly secrets: `BOBBY_GITHUB_CLIENT_ID`, `BOBBY_GITHUB_CLIENT_SECRET`, `BOBBY_ADMIN_USERS`, `BOBBY_SESSION_SECRET=$(openssl rand -hex 32)`.
+- [ ] Add the new env vars to `bobby.env` for `op run --env-file bobby.env` local dev.
+
+#### Verification (unit + integ tests)
+- [ ] OAuth tests use a mocked GitHub `/user` response (no real round-trips).
+- [ ] Unauthenticated `GET /admin` redirects to `/auth/login`.
+- [ ] Allowlisted user lands on `/admin` after login.
+- [ ] Non-allowlisted user gets 403, not a silent redirect loop.
+- [ ] `/auth/logout` clears the session; subsequent `/admin` requests redirect to login again.
+- [ ] Tampered CSRF state on callback is rejected.
