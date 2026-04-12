@@ -80,6 +80,11 @@ Protect the `/admin` area behind GitHub OAuth login. Users authenticate via GitH
 - [ ] Sort: best-to-worst by score (existing feed cache ordering).
 - [ ] Per item: thumbnail (annotated image), score, AT URI, link to bsky.app. No admin controls. No paging — bounded by feed size.
 
+#### Add default local appraiser (local admin)
+- [ ] create new `Appraiser::LocalAdmin` enum value
+- [ ] when feed is run locally with a `--local-admin` flag then `Appraiser::LocalAdmin` is the default appraiser used. This flag is disabled by default
+  * the intent is that this local-admin is used only when running from local desktop
+
 #### Admin view (`/admin`)
 - [ ] New handler `admin` rendering all stored items, sorted by `discovered_at` desc.
 - [ ] Two sub-views: skeet appraisal (default) and image appraisal.
@@ -87,6 +92,8 @@ Protect the `/admin` area behind GitHub OAuth login. Users authenticate via GitH
 - [ ] htmx "load more": initial render shows the first 10 items + a sentinel `<div hx-get="/admin?cursor=..." hx-trigger="revealed" hx-swap="outerHTML">` that fetches the next 10 when scrolled into view. Server returns HTML fragments.
 - [ ] Per item: thumbnail, score, automatic band, manual band (if any), effective band, band selector (4 buttons + "clear manual").
 - [ ] htmx band-update: each band button does `hx-post="/admin/appraise/skeet/{id}"` (or `image/{id}`) and swaps the row in place via `hx-swap="outerHTML"`. The handler reads the current `Appraiser` from the session and passes it to the `SkeetStore` set method.
+  * this should fail, with an internal error, if no Appraiser has been set
+  * an Appraiser of `Appraiser::LocalAdmin` may be set when the server is started with `--local-admin` (see above)
 - [ ] Integ tests: paging returns expected items in expected order; setting a manual band updates the row and the underlying table; clearing reverts to automatic.
 
 #### Auth: cot session bootstrap
