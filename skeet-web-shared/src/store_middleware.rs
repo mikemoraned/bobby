@@ -33,6 +33,10 @@ impl StoreLayer {
             store: Arc::new(store),
         }
     }
+
+    pub const fn from_shared(store: Arc<SkeetStore>) -> Self {
+        Self { store }
+    }
 }
 
 impl<S> Layer<S> for StoreLayer {

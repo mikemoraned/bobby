@@ -1,11 +1,66 @@
-use cot::request::extractors::UrlQuery;
+use std::collections::{HashMap, HashSet};
+use std::io::Cursor;
+
+use cot::html::Html;
+use cot::request::extractors::{Path, UrlQuery};
 use cot::response::Response;
-use cot::{Body, StatusCode};
+use cot::{Body, StatusCode, Template};
 use serde::{Deserialize, Serialize};
+use shared::Band;
+use skeet_store::{ImageId, Score, SkeetId, StoredImageSummary};
+use skeet_web_shared::Store;
+use skeet_web_shared::effective_band::{
+    image_effective_band, skeet_auto_band, skeet_effective_band, skeet_visible_in_feed,
+};
 use tracing::{info, instrument, warn};
 
 use crate::FeedCacheExtractor;
+use crate::feed_cache::CachedFeed;
 use crate::feed_config::FeedConfig;
+
+/// Compute the set of skeet IDs whose effective band makes them visible in the feed.
+fn visible_skeet_ids(feed: &CachedFeed) -> HashSet<SkeetId> {
+    // Group images by skeet, computing each image's effective band.
+    let mut skeet_images: HashMap<&SkeetId, Vec<Band>> = HashMap::new();
+    for (summary, score) in &feed.entries {
+        let manual_image = feed.image_appraisals.get(&summary.image_id).map(|a| a.band);
+        let effective = image_effective_band(*score, manual_image);
+        skeet_images
+            .entry(&summary.skeet_id)
+            .or_default()
+            .push(effective);
+    }
+
+    skeet_images
+        .into_iter()
+        .filter(|(skeet_id, image_bands)| {
+            let Some(auto) = skeet_auto_band(image_bands) else {
+                return false;
+            };
+            let manual_skeet = feed.skeet_appraisals.get(skeet_id).map(|a| a.band);
+            let effective = skeet_effective_band(manual_skeet, auto);
+            skeet_visible_in_feed(effective, image_bands)
+        })
+        .map(|(skeet_id, _)| skeet_id.clone())
+        .collect()
+}
+
+/// Return scored entries filtered to only those from visible skeets,
+/// sorted best-to-worst by score, deduplicated by skeet_id.
+pub fn visible_entries(feed: &CachedFeed) -> Vec<(StoredImageSummary, Score)> {
+    let visible = visible_skeet_ids(feed);
+
+    let mut seen = HashSet::new();
+    feed.entries
+        .iter()
+        .filter(|(summary, _)| {
+            summary.skeet_id.collection() == "app.bsky.feed.post"
+                && visible.contains(&summary.skeet_id)
+        })
+        .filter(|(summary, _)| seen.insert(summary.skeet_id.clone()))
+        .cloned()
+        .collect()
+}
 
 fn json_response(body: &impl Serialize) -> cot::Result<Response> {
     let json = serde_json::to_string(body)
@@ -119,18 +174,13 @@ pub async fn get_feed_skeleton(
         None => info!("cache empty, will populate on first request"),
     }
 
-    let scored = cache
+    let feed = cache
         .get()
         .await
         .map_err(|e| cot::Error::internal(format!("failed to read store: {e}")))?;
 
-    let posts: Vec<SkeletonFeedPost> = scored
+    let posts: Vec<SkeletonFeedPost> = visible_entries(&feed)
         .into_iter()
-        .filter(|(summary, score)| {
-            let above_threshold = f32::from(*score) >= config.min_score;
-            let is_post = summary.skeet_id.collection() == "app.bsky.feed.post";
-            above_threshold && is_post
-        })
         .take(limit)
         .map(|(summary, _score)| SkeletonFeedPost {
             post: summary.skeet_id.to_string(),
@@ -144,4 +194,85 @@ pub async fn get_feed_skeleton(
         cursor: None,
     };
     json_response(&resp)
+}
+
+pub struct HomeEntry {
+    pub image_id: String,
+    pub score: String,
+    pub band: String,
+    pub web_url: String,
+}
+
+#[derive(Template)]
+#[template(path = "home.html")]
+struct HomeTemplate {
+    entries: Vec<HomeEntry>,
+}
+
+#[instrument(skip_all)]
+pub async fn home(FeedCacheExtractor(cache): FeedCacheExtractor) -> cot::Result<Html> {
+    info!("serving home");
+
+    let feed = cache
+        .get()
+        .await
+        .map_err(|e| cot::Error::internal(format!("failed to read store: {e}")))?;
+
+    let entries: Vec<HomeEntry> = visible_entries(&feed)
+        .into_iter()
+        .filter_map(|(summary, score)| {
+            if summary.skeet_id.collection() != "app.bsky.feed.post" {
+                return None;
+            }
+            let did = summary.skeet_id.did();
+            let rkey = summary.skeet_id.rkey();
+            let manual_image = feed.image_appraisals.get(&summary.image_id).map(|a| a.band);
+            let band = image_effective_band(score, manual_image);
+            Some(HomeEntry {
+                image_id: summary.image_id.to_string(),
+                score: format!("{score}"),
+                band: band.to_string(),
+                web_url: format!("https://bsky.app/profile/{did}/post/{rkey}"),
+            })
+        })
+        .collect();
+
+    info!(count = entries.len(), "serving home entries");
+    let rendered = HomeTemplate { entries }.render()?;
+    Ok(Html::new(rendered))
+}
+
+#[instrument(skip_all, fields(image_id = %image_id_str))]
+pub async fn annotated_image(
+    Store(store): Store,
+    Path(image_id_str): Path<String>,
+) -> cot::Result<Response> {
+    info!(image_id = %image_id_str, "serving annotated image");
+    let image_id: ImageId = image_id_str
+        .parse()
+        .map_err(|_| cot::Error::internal(format!("invalid image id: {image_id_str}")))?;
+
+    let stored = store
+        .get_by_id(&image_id)
+        .await
+        .map_err(|e| cot::Error::internal(format!("store error: {e}")))?;
+
+    let Some(stored) = stored else {
+        warn!(image_id = %image_id_str, "image not found");
+        let mut response = Response::new(Body::fixed("not found"));
+        *response.status_mut() = StatusCode::NOT_FOUND;
+        return Ok(response);
+    };
+
+    let mut buf = Cursor::new(Vec::new());
+    stored
+        .annotated_image
+        .write_to(&mut buf, image::ImageFormat::Png)
+        .map_err(|e| cot::Error::internal(format!("failed to encode image: {e}")))?;
+
+    let mut response = Response::new(Body::fixed(buf.into_inner()));
+    response
+        .headers_mut()
+        .insert("content-type", "image/png".parse().expect("valid header"));
+    Ok(response)
 }

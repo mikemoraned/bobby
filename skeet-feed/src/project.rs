@@ -3,9 +3,13 @@ use cot::project::{MiddlewareContext, RegisterAppsContext, RootHandler, RootHand
 use cot::router::{Route, Router};
 use cot::{App, AppBuilder, Project};
 
+use skeet_web_shared::{StoreLayer, web_static_files};
+
 use crate::FeedCacheLayer;
 use crate::feed_config::FeedConfigLayer;
-use crate::handlers::{describe_feed_generator, did_document, get_feed_skeleton};
+use crate::handlers::{
+    annotated_image, describe_feed_generator, did_document, get_feed_skeleton, home,
+};
 
 pub struct FeedApp;
 
@@ -14,8 +18,13 @@ impl App for FeedApp {
         env!("CARGO_PKG_NAME")
     }
 
+    fn static_files(&self) -> Vec<cot::static_files::StaticFile> {
+        web_static_files()
+    }
+
     fn router(&self) -> Router {
         Router::with_urls([
+            Route::with_handler_and_name("/", home, "home"),
             Route::with_handler_and_name(
                 "/.well-known/did.json",
                 did_document,
@@ -31,6 +40,11 @@ impl App for FeedApp {
                 get_feed_skeleton,
                 "get_feed_skeleton",
             ),
+            Route::with_handler_and_name(
+                "/skeet/{image_id}/annotated.png",
+                annotated_image,
+                "annotated_image",
+            ),
         ])
     }
 }
@@ -38,6 +52,7 @@ impl App for FeedApp {
 pub struct FeedProject {
     pub cache_layer: FeedCacheLayer,
     pub feed_config_layer: FeedConfigLayer,
+    pub store_layer: StoreLayer,
 }
 
 impl Project for FeedProject {
@@ -57,6 +72,7 @@ impl Project for FeedProject {
         handler
             .middleware(self.cache_layer.clone())
             .middleware(self.feed_config_layer.clone())
+            .middleware(self.store_layer.clone())
             .build()
     }
 }

@@ -1,10 +1,11 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
 use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::FromRequestHead;
-use skeet_store::{Score, SkeetStore, StoredImageSummary};
+use skeet_store::{Appraisal, ImageId, Score, SkeetId, SkeetStore, StoredImageSummary};
 use tokio::sync::RwLock;
 use tokio::time::Instant;
 use tower::{Layer, Service};
@@ -16,10 +17,16 @@ const MAX_CACHE_STALENESS: Duration = Duration::from_secs(5 * 60);
 /// How often the background worker refreshes the cache.
 const BACKGROUND_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 
-type FeedEntries = Vec<(StoredImageSummary, Score)>;
+/// Cached feed data including scored summaries and manual appraisals.
+#[derive(Clone)]
+pub struct CachedFeed {
+    pub entries: Vec<(StoredImageSummary, Score)>,
+    pub skeet_appraisals: HashMap<SkeetId, Appraisal>,
+    pub image_appraisals: HashMap<ImageId, Appraisal>,
+}
 
 struct CacheEntry {
-    entries: FeedEntries,
+    feed: CachedFeed,
     fetched_at: Instant,
 }
 
@@ -40,14 +47,14 @@ impl FeedCache {
         }
     }
 
-    pub async fn get(&self) -> Result<FeedEntries, skeet_store::StoreError> {
+    pub async fn get(&self) -> Result<CachedFeed, skeet_store::StoreError> {
         {
             let guard = self.inner.read().await;
             if let Some(entry) = guard.as_ref() {
                 let staleness = entry.fetched_at.elapsed();
                 if staleness < MAX_CACHE_STALENESS {
                     info!(staleness_secs = staleness.as_secs(), "serving from cache");
-                    return Ok(entry.entries.clone());
+                    return Ok(entry.feed.clone());
                 }
             }
         }
@@ -55,17 +62,43 @@ impl FeedCache {
         self.refresh().await
     }
 
-    pub async fn refresh(&self) -> Result<FeedEntries, skeet_store::StoreError> {
+    pub async fn refresh(&self) -> Result<CachedFeed, skeet_store::StoreError> {
         let entries = self
             .store
             .list_scored_summaries_by_score(self.limit, Some(self.max_age_hours))
             .await?;
 
-        let cloned = entries.clone();
+        let skeet_appraisals: HashMap<SkeetId, Appraisal> = self
+            .store
+            .list_all_skeet_appraisals()
+            .await?
+            .into_iter()
+            .collect();
+
+        let image_appraisals: HashMap<ImageId, Appraisal> = self
+            .store
+            .list_all_image_appraisals()
+            .await?
+            .into_iter()
+            .collect();
+
+        info!(
+            scored = entries.len(),
+            skeet_appraisals = skeet_appraisals.len(),
+            image_appraisals = image_appraisals.len(),
+            "cache refreshed"
+        );
+
+        let feed = CachedFeed {
+            entries,
+            skeet_appraisals,
+            image_appraisals,
+        };
+        let cloned = feed.clone();
         {
             let mut guard = self.inner.write().await;
             *guard = Some(CacheEntry {
-                entries,
+                feed,
                 fetched_at: Instant::now(),
             });
         }
@@ -79,8 +112,8 @@ impl FeedCache {
             loop {
                 tokio::time::sleep(BACKGROUND_REFRESH_INTERVAL).await;
                 match cache.refresh().await {
-                    Ok(entries) => {
-                        info!(count = entries.len(), "background cache refresh complete");
+                    Ok(feed) => {
+                        info!(count = feed.entries.len(), "background cache refresh complete");
                     }
                     Err(e) => {
                         warn!(error = %e, "background cache refresh failed");
@@ -183,7 +216,7 @@ mod tests {
 
         let cache = FeedCache::new(Arc::clone(&store), 10, 48);
         let result = cache.get().await.expect("get");
-        assert_eq!(result.len(), 1);
+        assert_eq!(result.entries.len(), 1);
         assert!(cache.staleness().await.is_some());
     }
 
@@ -201,7 +234,7 @@ mod tests {
         seed_store(&store, "b", 20, 0.8).await;
         tokio::time::advance(advance_by).await;
 
-        cache.get().await.expect("second get").len()
+        cache.get().await.expect("second get").entries.len()
     }
 
     #[tokio::test(start_paused = true)]
@@ -224,15 +257,15 @@ mod tests {
 
         let cache = FeedCache::new(Arc::clone(&store), 10, 48);
         let first = cache.get().await.expect("first get");
-        assert_eq!(first.len(), 1);
+        assert_eq!(first.entries.len(), 1);
 
         seed_store(&store, "b", 20, 0.8).await;
         let refreshed = cache.refresh().await.expect("refresh");
-        assert_eq!(refreshed.len(), 2);
+        assert_eq!(refreshed.entries.len(), 2);
 
         // subsequent get should return refreshed data
         let after = cache.get().await.expect("get after refresh");
-        assert_eq!(after.len(), 2);
+        assert_eq!(after.entries.len(), 2);
     }
 
     #[tokio::test]
@@ -242,6 +275,6 @@ mod tests {
 
         let cache = FeedCache::new(Arc::clone(&store), 10, 48);
         let result = cache.get().await.expect("get");
-        assert!(result.is_empty());
+        assert!(result.entries.is_empty());
     }
 }

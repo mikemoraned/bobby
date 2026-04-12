@@ -10,6 +10,7 @@ use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
 use skeet_store::test_utils::{make_record, make_record_at, open_temp_store};
 use skeet_store::{DiscoveredAt, ModelVersion, Score, SkeetStore};
+use skeet_web_shared::StoreLayer;
 
 fn test_params() -> FeedParams {
     FeedParams {
@@ -17,20 +18,21 @@ fn test_params() -> FeedParams {
         publisher_did: "did:web:test.example.com".to_string(),
         feed_name: "bobby-dev".to_string(),
         max_entries: 10,
-        min_score: 0.5,
         max_age_hours: 48,
     }
 }
 
 async fn client_for(store: SkeetStore, params: FeedParams) -> Client {
+    let store = Arc::new(store);
     let cache = Arc::new(FeedCache::new(
-        Arc::new(store),
+        Arc::clone(&store),
         params.max_entries,
         params.max_age_hours,
     ));
     let project = FeedProject {
         cache_layer: FeedCacheLayer::new(cache),
         feed_config_layer: FeedConfigLayer::new(params),
+        store_layer: StoreLayer::from_shared(store),
     };
     Client::new(project).await
 }
@@ -198,7 +200,6 @@ async fn prefers_recent_posts_over_old_high_scores() {
 
     let mut params = test_params();
     params.max_entries = 2;
-    params.min_score = 0.5;
     params.max_age_hours = 24;
 
     // Create 3 old posts (outside max_age_hours) with very high scores

@@ -8,6 +8,7 @@ use skeet_feed::feed_cache::{FeedCache, FeedCacheLayer};
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
 use skeet_store::StoreArgs;
+use skeet_web_shared::StoreLayer;
 use tracing::info;
 
 #[derive(Parser)]
@@ -35,10 +36,6 @@ struct Args {
     #[arg(long, default_value_t = 10)]
     max_entries: usize,
 
-    /// Minimum score threshold for inclusion in the feed
-    #[arg(long, default_value_t = 0.5)]
-    min_score: f32,
-
     /// Maximum age in hours for posts to be included
     #[arg(long, default_value_t = 48)]
     max_age_hours: u64,
@@ -54,18 +51,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         shared::tracing::TokioConsoleSupport::Disabled,
     );
 
-    let store = args
-        .store
-        .open_store()
-        .await
-        .expect("failed to open store at startup");
+    let store = Arc::new(
+        args.store
+            .open_store()
+            .await
+            .expect("failed to open store at startup"),
+    );
 
     let feed_params = FeedParams {
         hostname: args.hostname.clone(),
         publisher_did: args.publisher_did,
         feed_name: args.feed_name,
         max_entries: args.max_entries,
-        min_score: args.min_score,
         max_age_hours: args.max_age_hours,
     };
 
@@ -77,7 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let cache = Arc::new(FeedCache::new(
-        Arc::new(store),
+        Arc::clone(&store),
         feed_params.max_entries,
         feed_params.max_age_hours,
     ));
@@ -86,6 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let project = FeedProject {
         cache_layer: FeedCacheLayer::new(cache),
         feed_config_layer: FeedConfigLayer::new(feed_params),
+        store_layer: StoreLayer::from_shared(store),
     };
     let bootstrapper = Bootstrapper::new(project)
         .with_config_name("dev")?

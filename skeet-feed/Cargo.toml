@@ -10,6 +10,7 @@ workspace = true
 chrono = { workspace = true }
 clap = { workspace = true }
 cot = { workspace = true }
+image = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
