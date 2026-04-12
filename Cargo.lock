@@ -10043,6 +10043,7 @@ dependencies = [
  "serde_json",
  "shared",
  "skeet-store",
+ "skeet-web-shared",
  "tempfile",
  "tokio",
  "tower",
@@ -10058,6 +10059,7 @@ dependencies = [
  "image",
  "shared",
  "skeet-store",
+ "skeet-web-shared",
  "tempfile",
  "tokio",
  "tower",
@@ -10132,6 +10134,17 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "skeet-web-shared"
+version = "0.1.0"
+dependencies = [
+ "cot",
+ "image",
+ "shared",
+ "skeet-store",
+ "tower",
 ]
 
 [[package]]

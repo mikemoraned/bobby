@@ -5,11 +5,15 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 
 use chrono::{DateTime, Utc};
 use image::DynamicImage;
+pub mod appraiser;
+pub mod band;
 mod blocklist;
 pub mod labels;
 pub mod skeet_id;
 pub mod tracing;
 
+pub use appraiser::{Appraiser, ParseAppraiserError};
+pub use band::{Band, ParseBandError};
 pub use blocklist::{BlockedEntry, BlocklistConfig};
 use serde::Deserialize;
 use skeet_id::SkeetId;

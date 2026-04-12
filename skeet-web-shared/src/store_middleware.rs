@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use cot::request::extractors::FromRequestHead;
 use cot::http::request::Parts as RequestHead;
+use cot::request::extractors::FromRequestHead;
 use tower::{Layer, Service};
 
 use skeet_store::SkeetStore;

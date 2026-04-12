@@ -5,7 +5,8 @@ use cot::project::{
 use cot::router::{Route, Router};
 use cot::{App, AppBuilder, Project};
 
-use crate::StoreLayer;
+use skeet_web_shared::StoreLayer;
+
 use crate::handlers::{annotated_image, home, pruned, refined};
 
 pub struct InspectApp;

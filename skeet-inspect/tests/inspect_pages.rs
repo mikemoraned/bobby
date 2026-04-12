@@ -1,10 +1,10 @@
 #![cfg(feature = "test")]
 
 use cot::test::Client;
-use skeet_inspect::StoreLayer;
 use skeet_inspect::project::InspectProject;
 use skeet_store::test_utils::{make_record, open_temp_store};
 use skeet_store::{ModelVersion, Score, SkeetStore};
+use skeet_web_shared::StoreLayer;
 
 async fn client_for(store: SkeetStore) -> Client {
     let project = InspectProject {

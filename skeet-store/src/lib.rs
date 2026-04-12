@@ -5,6 +5,7 @@ mod compact;
 mod error;
 pub mod health;
 mod lancedb_utils;
+mod paging;
 mod schema;
 mod scores;
 mod stored;

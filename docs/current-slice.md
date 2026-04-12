@@ -29,29 +29,29 @@ Protect the `/admin` area behind GitHub OAuth login. Users authenticate via GitH
 ### Tasks — Preparatory Refactors
 
 #### Domain types (`shared` crate)
-- [ ] Add a `Band` enum: `Low`, `MediumLow`, `MediumHigh`, `HighQuality`. Implement `Ord`, `Display`, `FromStr`.
-- [ ] `Band::from_score(Score)` using half-open intervals: `[0.0, 0.25)` Low, `[0.25, 0.5)` MediumLow, `[0.5, 0.75)` MediumHigh, `[0.75, 1.0]` HighQuality.
-- [ ] `Band::is_visible_in_feed(self)` — true for `MediumHigh` and `HighQuality` only.
-- [ ] Unit tests for boundary cases (0.0, 0.25, 0.5, 0.75, 1.0).
-- [ ] Add an `Appraiser` enum capturing identity + provider of whoever made an appraisal. Initial single variant: `GitHub { username: String }`. Designed so future providers (e.g. Bluesky) can be added as new variants without breaking existing data.
-- [ ] Implement `Display` / `FromStr` for `Appraiser` using a `provider:identifier` wire format (e.g. `github:mikemoraned`) — single string column in storage, forward-compatible with new providers.
-- [ ] Unit tests for `Appraiser` parse/display roundtrip and rejection of malformed strings.
+- [x] Add a `Band` enum: `Low`, `MediumLow`, `MediumHigh`, `HighQuality`. Implement `Ord`, `Display`, `FromStr`.
+- [x] `Band::from_score(Score)` using half-open intervals: `[0.0, 0.25)` Low, `[0.25, 0.5)` MediumLow, `[0.5, 0.75)` MediumHigh, `[0.75, 1.0]` HighQuality.
+- [x] `Band::is_visible_in_feed(self)` — true for `MediumHigh` and `HighQuality` only.
+- [x] Unit tests for boundary cases (0.0, 0.25, 0.5, 0.75, 1.0).
+- [x] Add an `Appraiser` enum capturing identity + provider of whoever made an appraisal. Initial single variant: `GitHub { username: String }`. Designed so future providers (e.g. Bluesky) can be added as new variants without breaking existing data.
+- [x] Implement `Display` / `FromStr` for `Appraiser` using a `provider:identifier` wire format (e.g. `github:mikemoraned`) — single string column in storage, forward-compatible with new providers.
+- [x] Unit tests for `Appraiser` parse/display roundtrip and rejection of malformed strings.
 
 #### `skeet-web-shared` crate (new)
-- [ ] Create a new workspace member `skeet-web-shared` for parts that skeet-inspect and skeet-feed will share.
-- [ ] Move the `Store`/`StoreLayer` middleware out of skeet-inspect into skeet-web-shared.
-- [ ] Move shared view types and helpers (`FeedEntry`, `to_feed_entry`) into skeet-web-shared.
-- [ ] Vendor htmx (single `htmx.min.js`) as a static asset, served via cot's static-files support.
-- [ ] Add a base layout template (loads htmx) usable from both crates.
-- [ ] Update skeet-inspect to depend on skeet-web-shared and use the moved code; verify `just inspect` still works.
+- [x] Create a new workspace member `skeet-web-shared` for parts that skeet-inspect and skeet-feed will share.
+- [x] Move the `Store`/`StoreLayer` middleware out of skeet-inspect into skeet-web-shared.
+- [x] Move shared view types and helpers (`FeedEntry`, `to_feed_entry`) into skeet-web-shared.
+- [x] Vendor htmx (single `htmx.min.js`) as a static asset, served via cot's static-files support.
+- [x] Add a base layout template (loads htmx) usable from both crates.
+- [x] Update skeet-inspect to depend on skeet-web-shared and use the moved code; verify `just inspect` still works.
 
 #### Storage: cursor-paged listing (`skeet-store`)
-- [ ] Add `SkeetStore::list_summaries_page(before: Option<DiscoveredAt>, limit: usize) -> (Vec<StoredImageSummary>, next_cursor)` — cursor-based paging by `discovered_at` desc.
-- [ ] Unit tests: first page; subsequent pages; end-of-data; concurrent insert during paging.
+- [x] Add `SkeetStore::list_summaries_page(before: Option<DiscoveredAt>, limit: usize) -> (Vec<StoredImageSummary>, next_cursor)` — cursor-based paging by `discovered_at` desc.
+- [x] Unit tests: first page; subsequent pages; end-of-data; concurrent insert during paging.
 
 #### HTML infrastructure in `skeet-feed`
-- [ ] Add cot template support to skeet-feed (`#[derive(Template)]`, `templates/` directory).
-- [ ] Depend on `skeet-web-shared` for store middleware, vendored htmx static files, and shared view types.
+- [x] Add cot template support to skeet-feed (`#[derive(Template)]`, `templates/` directory).
+- [x] Depend on `skeet-web-shared` for store middleware, vendored htmx static files, and shared view types.
 
 ### Tasks — Implementing Appraisal
 

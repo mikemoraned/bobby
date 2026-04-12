@@ -12,6 +12,7 @@ cot = { workspace = true }
 image = { workspace = true }
 shared = { workspace = true }
 skeet-store = { path = "../skeet-store" }
+skeet-web-shared = { path = "../skeet-web-shared" }
 tokio = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
