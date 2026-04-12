@@ -1,5 +1,6 @@
 #![warn(clippy::all, clippy::nursery)]
 
+pub mod effective_band;
 pub mod feed_entry;
 pub mod layout;
 pub mod static_assets;

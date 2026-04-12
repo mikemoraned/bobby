@@ -62,12 +62,12 @@ Protect the `/admin` area behind GitHub OAuth login. Users authenticate via GitH
 - [x] Unit tests for set/get/clear/list round-trips on each table, including appraiser preservation.
 
 #### Effective band logic
-- [ ] Define a function (in `shared` or `skeet-web-shared`) that, given an image score + manual image band + manual skeet band + sibling-image bands, computes:
+- [x] Define a function (in `shared` or `skeet-web-shared`) that, given an image score + manual image band + manual skeet band + sibling-image bands, computes:
   - per-image effective band: `manual_image.unwrap_or(Band::from_score(score))`
   - per-skeet auto band: worst per-image effective band across the skeet's images
   - per-skeet effective band: `manual_skeet.unwrap_or(auto_skeet)`
   - skeet visible in feed: `effective_skeet_band.is_visible_in_feed() && every image effective band is visible`
-- [ ] Unit tests: no manual; manual demote skeet; manual promote skeet; one bad image taints the whole skeet; manual skeet override beats per-image overrides.
+- [x] Unit tests: no manual; manual demote skeet; manual promote skeet; one bad image taints the whole skeet; manual skeet override beats per-image overrides.
 
 #### Feed filter integration (`skeet-feed`)
 - [ ] Update `FeedCache::refresh()` to also load manual skeet + image appraisals (full-table scans — both tables are tiny).
