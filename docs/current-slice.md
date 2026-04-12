@@ -56,10 +56,10 @@ Protect the `/admin` area behind GitHub OAuth login. Users authenticate via GitH
 ### Tasks — Implementing Appraisal
 
 #### Storage: manual appraisal tables (`skeet-store`)
-- [ ] Add `manual_skeet_appraisal_v1` table: `skeet_id` (string, AT URI, key), `band` (string), `appraiser` (string, `Appraiser` wire format), `appraised_at` (timestamp). Presence of a row = manual appraisal exists; delete to revert to automatic.
-- [ ] Add `manual_image_appraisal_v1` table: `image_id` (string, key), `band`, `appraiser`, `appraised_at`.
-- [ ] `SkeetStore` methods: `set_skeet_band(&SkeetId, Band, &Appraiser)`, `clear_skeet_band`, `get_skeet_band`, `list_all_skeet_appraisals` — and the four image equivalents. `get`/`list` return the stored `Appraiser` alongside the band so the admin view can show who made each call.
-- [ ] Unit tests for set/get/clear/list round-trips on each table, including appraiser preservation.
+- [x] Add `manual_skeet_appraisal_v1` table: `skeet_id` (string, AT URI, key), `band` (string), `appraiser` (string, `Appraiser` wire format), `appraised_at` (timestamp). Presence of a row = manual appraisal exists; delete to revert to automatic.
+- [x] Add `manual_image_appraisal_v1` table: `image_id` (string, key), `band`, `appraiser`, `appraised_at`.
+- [x] `SkeetStore` methods: `set_skeet_band(&SkeetId, Band, &Appraiser)`, `clear_skeet_band`, `get_skeet_band`, `list_all_skeet_appraisals` — and the four image equivalents. `get`/`list` return the stored `Appraiser` alongside the band so the admin view can show who made each call.
+- [x] Unit tests for set/get/clear/list round-trips on each table, including appraiser preservation.
 
 #### Effective band logic
 - [ ] Define a function (in `shared` or `skeet-web-shared`) that, given an image score + manual image band + manual skeet band + sibling-image bands, computes:

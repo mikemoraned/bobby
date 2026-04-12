@@ -25,6 +25,12 @@ pub enum StoreError {
     #[error("invalid zone in store: {0}")]
     InvalidZone(String),
 
+    #[error("invalid band in store: {0}")]
+    InvalidBand(#[from] shared::ParseBandError),
+
+    #[error("invalid appraiser in store: {0}")]
+    InvalidAppraiser(#[from] shared::ParseAppraiserError),
+
     #[error("storage validation failed: {0}")]
     ValidationFailed(String),
 

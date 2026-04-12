@@ -6,6 +6,7 @@ mod error;
 pub mod health;
 mod lancedb_utils;
 mod paging;
+mod appraisals;
 mod schema;
 mod scores;
 mod stored;
@@ -14,10 +15,11 @@ mod summary;
 pub mod test_utils;
 mod types;
 
+pub use appraisals::Appraisal;
 pub use args::StoreArgs;
 pub use compact::CompactTarget;
 pub use error::StoreError;
-pub use shared::{ModelVersion, Score};
+pub use shared::{Appraiser, Band, ModelVersion, Score};
 pub use stored::{StoredImage, StoredImageSummary};
 pub use summary::SkeetStoreSummary;
 pub use types::{DiscoveredAt, ImageId, ImageRecord, InvalidImageId, OriginalAt, SkeetId, Zone};
@@ -40,8 +42,9 @@ use tracing::{info, instrument};
 use arrow_utils::{encode_image_as_png, min_max_timestamp, typed_column};
 use lancedb_utils::execute_query;
 use schema::{
-    SCORE_TABLE_NAME, TABLE_NAME, VALIDATE_TABLE_NAME, images_score_v2_schema, images_v6_schema,
-    validate_v1_schema,
+    IMAGE_APPRAISAL_TABLE_NAME, SCORE_TABLE_NAME, SKEET_APPRAISAL_TABLE_NAME, TABLE_NAME,
+    VALIDATE_TABLE_NAME, images_score_v2_schema, images_v6_schema,
+    manual_image_appraisal_v1_schema, manual_skeet_appraisal_v1_schema, validate_v1_schema,
 };
 use stored::{batches_to_stored_images, batches_to_summaries};
 
@@ -49,6 +52,8 @@ pub struct SkeetStore {
     pub(crate) images_table: lancedb::Table,
     pub(crate) scores_table: lancedb::Table,
     validate_table: lancedb::Table,
+    pub(crate) skeet_appraisal_table: lancedb::Table,
+    pub(crate) image_appraisal_table: lancedb::Table,
     pub(crate) writes_since_compact: AtomicU64,
     pub(crate) compact_every_n_writes: Option<u64>,
     pub(crate) scores_cache: RwLock<Option<scores::ScoresCache>>,
@@ -83,6 +88,22 @@ impl SkeetStore {
             db.create_empty_table(VALIDATE_TABLE_NAME, validate_v1_schema())
                 .execute()
                 .await?;
+        }
+        if !table_names.contains(&SKEET_APPRAISAL_TABLE_NAME.to_string()) {
+            db.create_empty_table(
+                SKEET_APPRAISAL_TABLE_NAME,
+                manual_skeet_appraisal_v1_schema(),
+            )
+            .execute()
+            .await?;
+        }
+        if !table_names.contains(&IMAGE_APPRAISAL_TABLE_NAME.to_string()) {
+            db.create_empty_table(
+                IMAGE_APPRAISAL_TABLE_NAME,
+                manual_image_appraisal_v1_schema(),
+            )
+            .execute()
+            .await?;
         }
 
         let images_table = db.open_table(TABLE_NAME).execute().await?;
@@ -124,6 +145,36 @@ impl SkeetStore {
                 .await?;
         }
 
+        let skeet_appraisal_table = db
+            .open_table(SKEET_APPRAISAL_TABLE_NAME)
+            .execute()
+            .await?;
+        let skeet_appraisal_indices = skeet_appraisal_table.list_indices().await?;
+        if !skeet_appraisal_indices
+            .iter()
+            .any(|idx| idx.columns == vec!["skeet_id"])
+        {
+            skeet_appraisal_table
+                .create_index(&["skeet_id"], Index::Auto)
+                .execute()
+                .await?;
+        }
+
+        let image_appraisal_table = db
+            .open_table(IMAGE_APPRAISAL_TABLE_NAME)
+            .execute()
+            .await?;
+        let image_appraisal_indices = image_appraisal_table.list_indices().await?;
+        if !image_appraisal_indices
+            .iter()
+            .any(|idx| idx.columns == vec!["image_id"])
+        {
+            image_appraisal_table
+                .create_index(&["image_id"], Index::Auto)
+                .execute()
+                .await?;
+        }
+
         let validate_table = db.open_table(VALIDATE_TABLE_NAME).execute().await?;
 
         let images_stats = images_table.stats().await?;
@@ -145,6 +196,8 @@ impl SkeetStore {
             images_table,
             scores_table,
             validate_table,
+            skeet_appraisal_table,
+            image_appraisal_table,
             writes_since_compact: AtomicU64::new(0),
             compact_every_n_writes,
             scores_cache: RwLock::new(None),

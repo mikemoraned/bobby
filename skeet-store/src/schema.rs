@@ -5,6 +5,8 @@ use arrow_schema::{DataType, Field, Schema, TimeUnit};
 pub const TABLE_NAME: &str = "images_v6";
 pub const SCORE_TABLE_NAME: &str = "images_score_v2";
 pub const VALIDATE_TABLE_NAME: &str = "validate_v1";
+pub const SKEET_APPRAISAL_TABLE_NAME: &str = "manual_skeet_appraisal_v1";
+pub const IMAGE_APPRAISAL_TABLE_NAME: &str = "manual_image_appraisal_v1";
 
 pub fn validate_v1_schema() -> Arc<Schema> {
     Arc::new(Schema::new(vec![
@@ -23,6 +25,27 @@ pub fn images_score_v2_schema() -> Arc<Schema> {
         Field::new("score", DataType::Float32, false),
         Field::new("model_version", DataType::Utf8, false),
     ]))
+}
+
+fn appraisal_schema(id_column: &str) -> Arc<Schema> {
+    Arc::new(Schema::new(vec![
+        Field::new(id_column, DataType::Utf8, false),
+        Field::new("band", DataType::Utf8, false),
+        Field::new("appraiser", DataType::Utf8, false),
+        Field::new(
+            "appraised_at",
+            DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
+            false,
+        ),
+    ]))
+}
+
+pub fn manual_skeet_appraisal_v1_schema() -> Arc<Schema> {
+    appraisal_schema("skeet_id")
+}
+
+pub fn manual_image_appraisal_v1_schema() -> Arc<Schema> {
+    appraisal_schema("image_id")
 }
 
 pub fn images_v6_schema() -> Arc<Schema> {

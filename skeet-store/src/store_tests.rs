@@ -2,7 +2,8 @@ use chrono::Utc;
 
 use crate::test_utils::{open_temp_store, test_image, test_image_with_color};
 use crate::{
-    DiscoveredAt, ImageId, ImageRecord, ModelVersion, OriginalAt, Score, SkeetId, SkeetStore, Zone,
+    Appraisal, Appraiser, Band, DiscoveredAt, ImageId, ImageRecord, ModelVersion, OriginalAt,
+    Score, SkeetId, SkeetStore, Zone,
 };
 
 #[tokio::test]
@@ -364,4 +365,192 @@ async fn scores_cache_invalidated_after_batch_upsert() {
         &f.r2.image_id, Score::new(0.9).expect("valid"),
         &f.r1.image_id, Score::new(0.6).expect("valid"),
     ).await;
+}
+
+fn test_appraiser() -> Appraiser {
+    Appraiser::new_github("testuser").expect("valid appraiser")
+}
+
+fn other_appraiser() -> Appraiser {
+    Appraiser::new_github("otheruser").expect("valid appraiser")
+}
+
+#[tokio::test]
+async fn skeet_band_set_get_roundtrip() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let skeet_id: SkeetId = "at://did:plc:abc/app.bsky.feed.post/appr1"
+        .parse()
+        .expect("valid");
+
+    assert_eq!(store.get_skeet_band(&skeet_id).await.unwrap(), None);
+
+    store
+        .set_skeet_band(&skeet_id, Band::HighQuality, &test_appraiser())
+        .await
+        .unwrap();
+
+    let appraisal = store.get_skeet_band(&skeet_id).await.unwrap().expect("should exist");
+    assert_eq!(appraisal.band, Band::HighQuality);
+    assert_eq!(appraisal.appraiser, test_appraiser());
+}
+
+#[tokio::test]
+async fn skeet_band_set_overwrites_previous() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let skeet_id: SkeetId = "at://did:plc:abc/app.bsky.feed.post/appr2"
+        .parse()
+        .expect("valid");
+
+    store
+        .set_skeet_band(&skeet_id, Band::Low, &test_appraiser())
+        .await
+        .unwrap();
+    store
+        .set_skeet_band(&skeet_id, Band::MediumHigh, &other_appraiser())
+        .await
+        .unwrap();
+
+    let appraisal = store.get_skeet_band(&skeet_id).await.unwrap().expect("should exist");
+    assert_eq!(appraisal.band, Band::MediumHigh);
+    assert_eq!(appraisal.appraiser, other_appraiser());
+}
+
+#[tokio::test]
+async fn skeet_band_clear_removes_appraisal() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let skeet_id: SkeetId = "at://did:plc:abc/app.bsky.feed.post/appr3"
+        .parse()
+        .expect("valid");
+
+    store
+        .set_skeet_band(&skeet_id, Band::Low, &test_appraiser())
+        .await
+        .unwrap();
+    store.clear_skeet_band(&skeet_id).await.unwrap();
+
+    assert_eq!(store.get_skeet_band(&skeet_id).await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn list_all_skeet_appraisals_returns_all() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let id1: SkeetId = "at://did:plc:abc/app.bsky.feed.post/list1"
+        .parse()
+        .expect("valid");
+    let id2: SkeetId = "at://did:plc:abc/app.bsky.feed.post/list2"
+        .parse()
+        .expect("valid");
+
+    store.set_skeet_band(&id1, Band::Low, &test_appraiser()).await.unwrap();
+    store.set_skeet_band(&id2, Band::HighQuality, &other_appraiser()).await.unwrap();
+
+    let all = store.list_all_skeet_appraisals().await.unwrap();
+    assert_eq!(all.len(), 2);
+
+    let by_id: std::collections::HashMap<_, _> = all.into_iter().collect();
+    assert_eq!(by_id[&id1], Appraisal { band: Band::Low, appraiser: test_appraiser() });
+    assert_eq!(by_id[&id2], Appraisal { band: Band::HighQuality, appraiser: other_appraiser() });
+}
+
+#[tokio::test]
+async fn image_band_set_get_roundtrip() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let record = make_record("img_appr1");
+    store.add(&record).await.unwrap();
+
+    assert_eq!(store.get_image_band(&record.image_id).await.unwrap(), None);
+
+    store
+        .set_image_band(&record.image_id, Band::MediumLow, &test_appraiser())
+        .await
+        .unwrap();
+
+    let appraisal = store.get_image_band(&record.image_id).await.unwrap().expect("should exist");
+    assert_eq!(appraisal.band, Band::MediumLow);
+    assert_eq!(appraisal.appraiser, test_appraiser());
+}
+
+#[tokio::test]
+async fn image_band_set_overwrites_previous() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let record = make_record("img_appr2");
+    store.add(&record).await.unwrap();
+
+    store
+        .set_image_band(&record.image_id, Band::Low, &test_appraiser())
+        .await
+        .unwrap();
+    store
+        .set_image_band(&record.image_id, Band::HighQuality, &other_appraiser())
+        .await
+        .unwrap();
+
+    let appraisal = store.get_image_band(&record.image_id).await.unwrap().expect("should exist");
+    assert_eq!(appraisal.band, Band::HighQuality);
+    assert_eq!(appraisal.appraiser, other_appraiser());
+}
+
+#[tokio::test]
+async fn image_band_clear_removes_appraisal() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let record = make_record("img_appr3");
+    store.add(&record).await.unwrap();
+
+    store
+        .set_image_band(&record.image_id, Band::MediumHigh, &test_appraiser())
+        .await
+        .unwrap();
+    store.clear_image_band(&record.image_id).await.unwrap();
+
+    assert_eq!(store.get_image_band(&record.image_id).await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn list_all_image_appraisals_returns_all() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let r1 = make_record("img_list1");
+    let r2 = make_record("img_list2");
+    store.add(&r1).await.unwrap();
+    store.add(&r2).await.unwrap();
+
+    store.set_image_band(&r1.image_id, Band::MediumLow, &test_appraiser()).await.unwrap();
+    store.set_image_band(&r2.image_id, Band::HighQuality, &other_appraiser()).await.unwrap();
+
+    let all = store.list_all_image_appraisals().await.unwrap();
+    assert_eq!(all.len(), 2);
+
+    let by_id: std::collections::HashMap<_, _> = all.into_iter().collect();
+    assert_eq!(by_id[&r1.image_id], Appraisal { band: Band::MediumLow, appraiser: test_appraiser() });
+    assert_eq!(by_id[&r2.image_id], Appraisal { band: Band::HighQuality, appraiser: other_appraiser() });
+}
+
+#[tokio::test]
+async fn clear_nonexistent_appraisal_is_ok() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let skeet_id: SkeetId = "at://did:plc:abc/app.bsky.feed.post/noop"
+        .parse()
+        .expect("valid");
+    store.clear_skeet_band(&skeet_id).await.unwrap();
+
+    let record = make_record("noop_img");
+    store.add(&record).await.unwrap();
+    store.clear_image_band(&record.image_id).await.unwrap();
 }
