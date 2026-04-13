@@ -265,10 +265,24 @@ pub async fn home(
 
 #[instrument(skip_all, fields(image_id = %image_id_str))]
 pub async fn annotated_image(
+    head: RequestHead,
     Store(store): Store,
+    crate::StartedAtExtractor(started_at): crate::StartedAtExtractor,
     Path(image_id_str): Path<String>,
 ) -> cot::Result<Response> {
     info!(image_id = %image_id_str, "serving annotated image");
+
+    let last_modified = started_at.http_date();
+
+    // Conditional GET: if the client already has a copy from this server boot, return 304.
+    if let Some(ims) = head.headers.get("if-modified-since").and_then(|v| v.to_str().ok())
+        && ims == last_modified
+    {
+        let mut response = Response::new(Body::empty());
+        *response.status_mut() = StatusCode::NOT_MODIFIED;
+        return Ok(response);
+    }
+
     let image_id: ImageId = image_id_str
         .parse()
         .map_err(|_| cot::Error::internal(format!("invalid image id: {image_id_str}")))?;
@@ -295,5 +309,8 @@ pub async fn annotated_image(
     response
         .headers_mut()
         .insert("content-type", "image/png".parse().expect("valid header"));
+    response
+        .headers_mut()
+        .insert("last-modified", last_modified.parse().expect("valid header"));
     Ok(response)
 }

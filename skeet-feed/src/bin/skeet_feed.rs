@@ -2,10 +2,11 @@
 
 use std::sync::Arc;
 
+use chrono::Utc;
 use clap::Parser;
 use cot::project::Bootstrapper;
 use shared::Appraiser;
-use skeet_feed::AppraiserLayer;
+use skeet_feed::{AppraiserLayer, StartedAtLayer};
 use skeet_feed::feed_cache::{FeedCache, FeedCacheLayer};
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
@@ -98,6 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         feed_config_layer: FeedConfigLayer::new(feed_params),
         store_layer: StoreLayer::from_shared(store),
         appraiser_layer: AppraiserLayer::new(appraiser),
+        started_at_layer: StartedAtLayer::new(Utc::now()),
     };
     let bootstrapper = Bootstrapper::new(project)
         .with_config_name("dev")?

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use chrono::Utc;
 use cot::test::Client;
 use shared::Appraiser;
-use skeet_feed::{AppraiserLayer, FeedCacheLayer};
+use skeet_feed::{AppraiserLayer, FeedCacheLayer, StartedAtLayer};
 use skeet_feed::feed_cache::FeedCache;
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
@@ -35,6 +35,7 @@ async fn client_for(store: SkeetStore, params: FeedParams) -> Client {
         feed_config_layer: FeedConfigLayer::new(params),
         store_layer: StoreLayer::from_shared(store),
         appraiser_layer: AppraiserLayer::new(Some(Arc::new(Appraiser::LocalAdmin))),
+        started_at_layer: StartedAtLayer::new(Utc::now()),
     };
     Client::new(project).await
 }
@@ -336,6 +337,63 @@ async fn static_htmx_js_is_served() {
     let (status, body) = get_body(&mut client, "/static/htmx.min.js").await;
     assert_eq!(status, 200, "htmx.min.js should be served at /static/htmx.min.js");
     assert!(body.contains("htmx"), "response should contain htmx code");
+}
+
+// ─── Annotated image caching ────────────────────────────────────
+
+#[tokio::test]
+async fn annotated_image_returns_last_modified_header() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let store = open_temp_store(&dir).await;
+    let (_, image_id) = seed_scored(&store, "img1", 10, 0.85).await;
+
+    let mut client = client_for(store, test_params()).await;
+
+    let response = client
+        .get(&format!("/skeet/{image_id}/annotated.png"))
+        .await
+        .expect("GET annotated image");
+    assert_eq!(response.status().as_u16(), 200);
+    assert!(
+        response.headers().get("last-modified").is_some(),
+        "response should include Last-Modified header"
+    );
+}
+
+#[tokio::test]
+async fn annotated_image_conditional_get_returns_304() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let store = open_temp_store(&dir).await;
+    let (_, image_id) = seed_scored(&store, "img2", 10, 0.85).await;
+
+    let mut client = client_for(store, test_params()).await;
+
+    // First request — get the Last-Modified value
+    let response = client
+        .get(&format!("/skeet/{image_id}/annotated.png"))
+        .await
+        .expect("GET annotated image");
+    assert_eq!(response.status().as_u16(), 200);
+    let last_modified = response
+        .headers()
+        .get("last-modified")
+        .expect("Last-Modified header")
+        .to_str()
+        .expect("valid header value")
+        .to_string();
+
+    // Second request with If-Modified-Since — should get 304
+    let request = cot::http::Request::builder()
+        .uri(format!("/skeet/{image_id}/annotated.png"))
+        .header("if-modified-since", &last_modified)
+        .body(cot::Body::empty())
+        .expect("build request");
+    let response = client.request(request).await.expect("conditional GET");
+    assert_eq!(
+        response.status().as_u16(),
+        304,
+        "should return 304 Not Modified when If-Modified-Since matches"
+    );
 }
 
 // ─── Admin view tests ───────────────────────────────────────────

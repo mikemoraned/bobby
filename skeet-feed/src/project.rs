@@ -8,6 +8,7 @@ use skeet_web_shared::{StoreLayer, web_static_files};
 
 use crate::AppraiserLayer;
 use crate::FeedCacheLayer;
+use crate::StartedAtLayer;
 use crate::feed_config::FeedConfigLayer;
 use crate::admin::{admin, appraise_image, appraise_skeet};
 use crate::handlers::{
@@ -68,6 +69,7 @@ pub struct FeedProject {
     pub feed_config_layer: FeedConfigLayer,
     pub store_layer: StoreLayer,
     pub appraiser_layer: AppraiserLayer,
+    pub started_at_layer: StartedAtLayer,
 }
 
 impl Project for FeedProject {
@@ -90,6 +92,7 @@ impl Project for FeedProject {
             .middleware(self.feed_config_layer.clone())
             .middleware(self.store_layer.clone())
             .middleware(self.appraiser_layer.clone())
+            .middleware(self.started_at_layer.clone())
             .build()
     }
 }
