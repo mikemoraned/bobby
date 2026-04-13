@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use clap::Parser;
 use cot::project::Bootstrapper;
+use shared::Appraiser;
+use skeet_feed::AppraiserLayer;
 use skeet_feed::feed_cache::{FeedCache, FeedCacheLayer};
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
@@ -39,6 +41,10 @@ struct Args {
     /// Maximum age in hours for posts to be included
     #[arg(long, default_value_t = 48)]
     max_age_hours: u64,
+
+    /// Enable local admin mode (uses Appraiser::LocalAdmin for appraisals)
+    #[arg(long, default_value_t = false)]
+    local_admin: bool,
 }
 
 #[tokio::main]
@@ -80,10 +86,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
     cache.spawn_background_refresh();
 
+    let appraiser = if args.local_admin {
+        info!("local admin mode enabled");
+        Some(Arc::new(Appraiser::LocalAdmin))
+    } else {
+        None
+    };
+
     let project = FeedProject {
         cache_layer: FeedCacheLayer::new(cache),
         feed_config_layer: FeedConfigLayer::new(feed_params),
         store_layer: StoreLayer::from_shared(store),
+        appraiser_layer: AppraiserLayer::new(appraiser),
     };
     let bootstrapper = Bootstrapper::new(project)
         .with_config_name("dev")?

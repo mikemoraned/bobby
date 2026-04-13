@@ -70,31 +70,36 @@ Protect the `/admin` area behind GitHub OAuth login. Users authenticate via GitH
 - [x] Unit tests: no manual; manual demote skeet; manual promote skeet; one bad image taints the whole skeet; manual skeet override beats per-image overrides.
 
 #### Feed filter integration (`skeet-feed`)
-- [ ] Update `FeedCache::refresh()` to also load manual skeet + image appraisals (full-table scans — both tables are tiny).
-- [ ] Update `get_feed_skeleton` to use the effective-band visibility rule instead of `score >= config.min_score`.
-- [ ] Remove the `min_score` field from `FeedConfig` (and the corresponding CLI flag) — band thresholds replace it. Update `fly.staging.toml` and the Justfile feed targets accordingly.
-- [ ] Integ tests: skeet visible by default; manually demoting the skeet hides it; manually demoting one of its images hides it; manually promoting a Low-scored skeet shows it again.
+- [x] Update `FeedCache::refresh()` to also load manual skeet + image appraisals (full-table scans — both tables are tiny).
+- [x] Update `get_feed_skeleton` to use the effective-band visibility rule instead of `score >= config.min_score`.
+- [x] Remove the `min_score` field from `FeedConfig` (and the corresponding CLI flag) — band thresholds replace it. Update `fly.staging.toml` and the Justfile feed targets accordingly.
+- [x] Integ tests: skeet visible by default; manually demoting the skeet hides it; manually demoting one of its images hides it; promoting only the skeet is not enough when its image is Low (lowest band across skeet + images determines visibility); promoting both skeet and image shows it again.
+
+#### Cache-control for feed endpoints
+- [x] When a request to `get_feed_skeleton` or `home` includes `Cache-Control: no-cache`, force a `FeedCache::refresh()` instead of serving potentially stale cached data.
+- [x] Return a `Date` response header set to the wall-clock time when the cache was last refreshed (not the current request time), so clients can see how fresh the data is.
+- [x] Use `Cache-Control: no-cache` in integ tests after appraisal mutations to guarantee the feed reflects the latest store state.
 
 #### Home view (`/`)
-- [ ] New handler `home` rendering the currently-visible feed items as HTML.
-- [ ] Sort: best-to-worst by score (existing feed cache ordering).
-- [ ] Per item: thumbnail (annotated image), score, AT URI, link to bsky.app. No admin controls. No paging — bounded by feed size.
+- [x] New handler `home` rendering the currently-visible feed items as HTML.
+- [x] Sort: best-to-worst by score (existing feed cache ordering).
+- [x] Per item: thumbnail (annotated image), score, AT URI, link to bsky.app. No admin controls. No paging — bounded by feed size.
 
 #### Add default local appraiser (local admin)
-- [ ] create new `Appraiser::LocalAdmin` enum value
-- [ ] when feed is run locally with a `--local-admin` flag then `Appraiser::LocalAdmin` is the default appraiser used. This flag is disabled by default
+- [x] create new `Appraiser::LocalAdmin` enum value
+- [x] when feed is run locally with a `--local-admin` flag then `Appraiser::LocalAdmin` is the default appraiser used. This flag is disabled by default
   * the intent is that this local-admin is used only when running from local desktop
 
 #### Admin view (`/admin`)
-- [ ] New handler `admin` rendering all stored items, sorted by `discovered_at` desc.
-- [ ] Two sub-views: skeet appraisal (default) and image appraisal.
-- [ ] Cursor-based paging using `list_summaries_page`, 10 items at a time.
-- [ ] htmx "load more": initial render shows the first 10 items + a sentinel `<div hx-get="/admin?cursor=..." hx-trigger="revealed" hx-swap="outerHTML">` that fetches the next 10 when scrolled into view. Server returns HTML fragments.
-- [ ] Per item: thumbnail, score, automatic band, manual band (if any), effective band, band selector (4 buttons + "clear manual").
-- [ ] htmx band-update: each band button does `hx-post="/admin/appraise/skeet/{id}"` (or `image/{id}`) and swaps the row in place via `hx-swap="outerHTML"`. The handler reads the current `Appraiser` from the session and passes it to the `SkeetStore` set method.
+- [x] New handler `admin` rendering all stored items, sorted by `discovered_at` desc.
+- [x] Two sub-views: skeet appraisal (default) and image appraisal.
+- [x] Cursor-based paging using `list_summaries_page`, 10 items at a time.
+- [x] htmx "load more": initial render shows the first 10 items + a sentinel `<div hx-get="/admin?cursor=..." hx-trigger="revealed" hx-swap="outerHTML">` that fetches the next 10 when scrolled into view. Server returns HTML fragments.
+- [x] Per item: thumbnail, score, automatic band, manual band (if any), effective band, band selector (4 buttons + "clear manual").
+- [x] htmx band-update: each band button does `hx-post="/admin/appraise/skeet/{id}"` (or `image/{id}`) and swaps the row in place via `hx-swap="outerHTML"`. The handler reads the current `Appraiser` from the session and passes it to the `SkeetStore` set method.
   * this should fail, with an internal error, if no Appraiser has been set
   * an Appraiser of `Appraiser::LocalAdmin` may be set when the server is started with `--local-admin` (see above)
-- [ ] Integ tests: paging returns expected items in expected order; setting a manual band updates the row and the underlying table; clearing reverts to automatic.
+- [x] Integ tests: paging returns expected items in expected order; setting a manual band updates the row and the underlying table; clearing reverts to automatic.
 
 #### Auth: cot session bootstrap
 - [ ] Wire `cot::middleware::SessionMiddleware` into `FeedProject::middlewares()`. Default in-memory store is fine (single-instance Fly machine; re-login after suspend is acceptable).

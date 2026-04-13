@@ -32,6 +32,7 @@ paths:
   - Multi-part integration gets integ tests (use captured real data)
   - Prefer high-level invariant-based tests over bespoke examples; use [proptest](https://docs.rs/proptest/latest/proptest/) for property-based tests
   - Integration tests must use real application types (e.g. `App`, `Project` impls), not test-only duplicates
+  - Integration tests should exercise the public HTTP interface for both setup and assertions — avoid calling store/service methods directly as back-doors when an HTTP endpoint exists for the same operation
 - Binary layout:
   - All binaries must be named files in `src/bin/` (e.g. `src/bin/finder.rs`), never `src/main.rs` or subdirectories like `src/bin/finder/main.rs`
   - Modules used by binaries live under `src/` and are exposed through `lib.rs`, not placed alongside binaries in `src/bin/`

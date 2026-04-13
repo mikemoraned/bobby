@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::FromRequestHead;
 use skeet_store::{Appraisal, ImageId, Score, SkeetId, SkeetStore, StoredImageSummary};
@@ -28,6 +29,7 @@ pub struct CachedFeed {
 struct CacheEntry {
     feed: CachedFeed,
     fetched_at: Instant,
+    refreshed_at: DateTime<Utc>,
 }
 
 pub struct FeedCache {
@@ -100,10 +102,16 @@ impl FeedCache {
             *guard = Some(CacheEntry {
                 feed,
                 fetched_at: Instant::now(),
+                refreshed_at: Utc::now(),
             });
         }
 
         Ok(cloned)
+    }
+
+    pub async fn refreshed_at(&self) -> Option<DateTime<Utc>> {
+        let guard = self.inner.read().await;
+        guard.as_ref().map(|entry| entry.refreshed_at)
     }
 
     pub fn spawn_background_refresh(self: &Arc<Self>) {

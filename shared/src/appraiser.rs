@@ -8,6 +8,7 @@
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Appraiser {
     GitHub { username: String },
+    LocalAdmin,
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -34,6 +35,7 @@ impl std::fmt::Display for Appraiser {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::GitHub { username } => write!(f, "github:{username}"),
+            Self::LocalAdmin => write!(f, "local:admin"),
         }
     }
 }
@@ -47,6 +49,10 @@ impl std::str::FromStr for Appraiser {
             .ok_or_else(|| ParseAppraiserError::Malformed(s.to_string()))?;
         match provider {
             "github" => Self::new_github(identifier),
+            "local" if identifier == "admin" => Ok(Self::LocalAdmin),
+            "local" => Err(ParseAppraiserError::UnknownProvider(
+                format!("local:{identifier}"),
+            )),
             other => Err(ParseAppraiserError::UnknownProvider(other.to_string())),
         }
     }
@@ -90,5 +96,21 @@ mod tests {
     #[test]
     fn new_github_rejects_empty() {
         assert!(Appraiser::new_github("").is_err());
+    }
+
+    #[test]
+    fn local_admin_display() {
+        assert_eq!(Appraiser::LocalAdmin.to_string(), "local:admin");
+    }
+
+    #[test]
+    fn local_admin_roundtrip() {
+        let parsed: Appraiser = "local:admin".parse().expect("roundtrip");
+        assert_eq!(parsed, Appraiser::LocalAdmin);
+    }
+
+    #[test]
+    fn rejects_unknown_local_identifier() {
+        assert!("local:other".parse::<Appraiser>().is_err());
     }
 }

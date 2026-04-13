@@ -20,6 +20,7 @@ skeet-web-shared = { path = "../skeet-web-shared" }
 tokio = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
+urlencoding = "2"
 
 [dev-dependencies]
 chrono = { workspace = true }

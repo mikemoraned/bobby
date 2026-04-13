@@ -1,0 +1,34 @@
+{% if rows.is_empty() %}
+{% if is_first_page %}
+        <p class="empty">No items found.</p>
+{% endif %}
+{% else %}
+{% if is_first_page %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Thumbnail</th>
+                    <th>ID</th>
+                    <th>Score</th>
+                    <th>Auto Band</th>
+                    <th>Manual Band</th>
+                    <th>Effective</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+{% endif %}
+{% for row in rows %}
+{% include "admin_row.html" %}
+{% endfor %}
+{% if is_first_page && next_cursor.is_some() %}
+            </tbody>
+        </table>
+{% endif %}
+{% if next_cursor.is_some() %}
+        <div hx-get="/admin?view={{ view }}&cursor={{ next_cursor_str }}" hx-trigger="revealed" hx-swap="outerHTML"></div>
+{% elif is_first_page %}
+            </tbody>
+        </table>
+{% endif %}
+{% endif %}

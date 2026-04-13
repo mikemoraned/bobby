@@ -5,8 +5,10 @@ use cot::{App, AppBuilder, Project};
 
 use skeet_web_shared::{StoreLayer, web_static_files};
 
+use crate::AppraiserLayer;
 use crate::FeedCacheLayer;
 use crate::feed_config::FeedConfigLayer;
+use crate::admin::{admin, appraise_image, appraise_skeet};
 use crate::handlers::{
     annotated_image, describe_feed_generator, did_document, get_feed_skeleton, home,
 };
@@ -45,6 +47,17 @@ impl App for FeedApp {
                 annotated_image,
                 "annotated_image",
             ),
+            Route::with_handler_and_name("/admin", admin, "admin"),
+            Route::with_handler_and_name(
+                "/admin/appraise/skeet",
+                appraise_skeet,
+                "appraise_skeet",
+            ),
+            Route::with_handler_and_name(
+                "/admin/appraise/image",
+                appraise_image,
+                "appraise_image",
+            ),
         ])
     }
 }
@@ -53,6 +66,7 @@ pub struct FeedProject {
     pub cache_layer: FeedCacheLayer,
     pub feed_config_layer: FeedConfigLayer,
     pub store_layer: StoreLayer,
+    pub appraiser_layer: AppraiserLayer,
 }
 
 impl Project for FeedProject {
@@ -73,6 +87,7 @@ impl Project for FeedProject {
             .middleware(self.cache_layer.clone())
             .middleware(self.feed_config_layer.clone())
             .middleware(self.store_layer.clone())
+            .middleware(self.appraiser_layer.clone())
             .build()
     }
 }

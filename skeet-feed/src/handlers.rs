@@ -1,7 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
+use std::sync::Arc;
 
 use cot::html::Html;
+use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::{Path, UrlQuery};
 use cot::response::Response;
 use cot::{Body, StatusCode, Template};
@@ -9,13 +11,11 @@ use serde::{Deserialize, Serialize};
 use shared::Band;
 use skeet_store::{ImageId, Score, SkeetId, StoredImageSummary};
 use skeet_web_shared::Store;
-use skeet_web_shared::effective_band::{
-    image_effective_band, skeet_auto_band, skeet_effective_band, skeet_visible_in_feed,
-};
+use skeet_web_shared::effective_band::{image_effective_band, skeet_visible_in_feed};
 use tracing::{info, instrument, warn};
 
 use crate::FeedCacheExtractor;
-use crate::feed_cache::CachedFeed;
+use crate::feed_cache::{CachedFeed, FeedCache};
 use crate::feed_config::FeedConfig;
 
 /// Compute the set of skeet IDs whose effective band makes them visible in the feed.
@@ -34,12 +34,8 @@ fn visible_skeet_ids(feed: &CachedFeed) -> HashSet<SkeetId> {
     skeet_images
         .into_iter()
         .filter(|(skeet_id, image_bands)| {
-            let Some(auto) = skeet_auto_band(image_bands) else {
-                return false;
-            };
             let manual_skeet = feed.skeet_appraisals.get(skeet_id).map(|a| a.band);
-            let effective = skeet_effective_band(manual_skeet, auto);
-            skeet_visible_in_feed(effective, image_bands)
+            skeet_visible_in_feed(manual_skeet, image_bands)
         })
         .map(|(skeet_id, _)| skeet_id.clone())
         .collect()
@@ -60,6 +56,37 @@ pub fn visible_entries(feed: &CachedFeed) -> Vec<(StoredImageSummary, Score)> {
         .filter(|(summary, _)| seen.insert(summary.skeet_id.clone()))
         .cloned()
         .collect()
+}
+
+fn wants_no_cache(head: &RequestHead) -> bool {
+    head.headers
+        .get("cache-control")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.contains("no-cache"))
+}
+
+async fn get_feed(cache: &Arc<FeedCache>, head: &RequestHead) -> cot::Result<CachedFeed> {
+    if wants_no_cache(head) {
+        info!("cache-control: no-cache — forcing refresh");
+        cache
+            .refresh()
+            .await
+            .map_err(|e| cot::Error::internal(format!("failed to refresh cache: {e}")))
+    } else {
+        cache
+            .get()
+            .await
+            .map_err(|e| cot::Error::internal(format!("failed to read store: {e}")))
+    }
+}
+
+fn set_date_header(response: &mut Response, refreshed_at: Option<chrono::DateTime<chrono::Utc>>) {
+    if let Some(at) = refreshed_at {
+        let date = at.format("%a, %d %b %Y %H:%M:%S GMT").to_string();
+        if let Ok(val) = date.parse() {
+            response.headers_mut().insert("date", val);
+        }
+    }
 }
 
 fn json_response(body: &impl Serialize) -> cot::Result<Response> {
@@ -148,6 +175,7 @@ struct SkeletonFeedPost {
 
 #[instrument(skip_all, fields(feed = %query.feed))]
 pub async fn get_feed_skeleton(
+    head: RequestHead,
     FeedCacheExtractor(cache): FeedCacheExtractor,
     FeedConfig(config): FeedConfig,
     UrlQuery(query): UrlQuery<FeedSkeletonQuery>,
@@ -168,16 +196,7 @@ pub async fn get_feed_skeleton(
 
     let limit = query.limit.unwrap_or(config.max_entries).min(config.max_entries);
 
-    let staleness = cache.staleness().await;
-    match staleness {
-        Some(d) => info!(staleness_secs = d.as_secs(), "cache staleness"),
-        None => info!("cache empty, will populate on first request"),
-    }
-
-    let feed = cache
-        .get()
-        .await
-        .map_err(|e| cot::Error::internal(format!("failed to read store: {e}")))?;
+    let feed = get_feed(&cache, &head).await?;
 
     let posts: Vec<SkeletonFeedPost> = visible_entries(&feed)
         .into_iter()
@@ -193,7 +212,9 @@ pub async fn get_feed_skeleton(
         feed: posts,
         cursor: None,
     };
-    json_response(&resp)
+    let mut response = json_response(&resp)?;
+    set_date_header(&mut response, cache.refreshed_at().await);
+    Ok(response)
 }
 
 pub struct HomeEntry {
@@ -210,13 +231,13 @@ struct HomeTemplate {
 }
 
 #[instrument(skip_all)]
-pub async fn home(FeedCacheExtractor(cache): FeedCacheExtractor) -> cot::Result<Html> {
+pub async fn home(
+    head: RequestHead,
+    FeedCacheExtractor(cache): FeedCacheExtractor,
+) -> cot::Result<Html> {
     info!("serving home");
 
-    let feed = cache
-        .get()
-        .await
-        .map_err(|e| cot::Error::internal(format!("failed to read store: {e}")))?;
+    let feed = get_feed(&cache, &head).await?;
 
     let entries: Vec<HomeEntry> = visible_entries(&feed)
         .into_iter()

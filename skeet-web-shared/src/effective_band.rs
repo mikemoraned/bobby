@@ -5,27 +5,26 @@ pub fn image_effective_band(score: Score, manual_image_band: Option<Band>) -> Ba
     manual_image_band.unwrap_or_else(|| Band::from_score(score))
 }
 
-/// Per-skeet auto band: the worst effective band across all of the skeet's images.
-///
-/// Returns `None` if `image_bands` is empty.
-pub fn skeet_auto_band(image_bands: &[Band]) -> Option<Band> {
-    image_bands.iter().copied().min()
-}
-
-/// Per-skeet effective band: manual skeet override wins, otherwise the auto band.
-pub fn skeet_effective_band(manual_skeet_band: Option<Band>, auto_band: Band) -> Band {
-    manual_skeet_band.unwrap_or(auto_band)
-}
-
 /// Whether a skeet should appear in the feed.
 ///
-/// Both the effective skeet band and every individual image effective band must
-/// be visible for the skeet to show.
-pub fn skeet_visible_in_feed(effective_skeet_band: Band, image_effective_bands: &[Band]) -> bool {
-    effective_skeet_band.is_visible_in_feed()
-        && image_effective_bands
-            .iter()
-            .all(|b| b.is_visible_in_feed())
+/// Takes the effective skeet band (manual override if set, otherwise absent)
+/// and every image's effective band. Visibility is determined by the lowest
+/// band across all of them — if any single band is not visible, the skeet
+/// is hidden.
+pub fn skeet_visible_in_feed(
+    manual_skeet_band: Option<Band>,
+    image_effective_bands: &[Band],
+) -> bool {
+    if image_effective_bands.is_empty() {
+        return false;
+    }
+
+    let lowest = manual_skeet_band
+        .into_iter()
+        .chain(image_effective_bands.iter().copied())
+        .min();
+
+    lowest.is_some_and(|b| b.is_visible_in_feed())
 }
 
 #[cfg(test)]
@@ -55,79 +54,38 @@ mod tests {
     }
 
     #[test]
-    fn skeet_auto_band_uses_worst() {
-        assert_eq!(
-            skeet_auto_band(&[Band::HighQuality, Band::MediumHigh]),
-            Some(Band::MediumHigh)
-        );
-        assert_eq!(
-            skeet_auto_band(&[Band::HighQuality, Band::Low]),
-            Some(Band::Low)
-        );
+    fn no_images_means_not_visible() {
+        assert!(!skeet_visible_in_feed(None, &[]));
+        assert!(!skeet_visible_in_feed(Some(Band::HighQuality), &[]));
     }
 
     #[test]
-    fn skeet_auto_band_empty() {
-        assert_eq!(skeet_auto_band(&[]), None);
-    }
-
-    #[test]
-    fn skeet_effective_no_manual() {
-        assert_eq!(
-            skeet_effective_band(None, Band::MediumHigh),
-            Band::MediumHigh
-        );
-    }
-
-    #[test]
-    fn skeet_effective_manual_demote() {
-        assert_eq!(
-            skeet_effective_band(Some(Band::Low), Band::HighQuality),
-            Band::Low
-        );
-    }
-
-    #[test]
-    fn skeet_effective_manual_promote() {
-        assert_eq!(
-            skeet_effective_band(Some(Band::HighQuality), Band::Low),
-            Band::HighQuality
-        );
+    fn all_high_quality_is_visible() {
+        let bands = vec![Band::MediumHigh, Band::HighQuality];
+        assert!(skeet_visible_in_feed(None, &bands));
     }
 
     #[test]
     fn one_bad_image_taints_skeet() {
-        let image_bands = vec![Band::HighQuality, Band::Low];
-        let auto = skeet_auto_band(&image_bands).expect("non-empty");
-        let effective = skeet_effective_band(None, auto);
-        assert!(!skeet_visible_in_feed(effective, &image_bands));
+        let bands = vec![Band::HighQuality, Band::Low];
+        assert!(!skeet_visible_in_feed(None, &bands));
     }
 
     #[test]
-    fn manual_skeet_override_beats_image_auto_bands() {
-        // Images are all low, but manual skeet override promotes
-        let image_bands = vec![Band::Low, Band::MediumLow];
-        let auto = skeet_auto_band(&image_bands).expect("non-empty");
-        assert_eq!(auto, Band::Low);
-
-        let effective = skeet_effective_band(Some(Band::HighQuality), auto);
-        assert_eq!(effective, Band::HighQuality);
-        // But individual image bands still block visibility
-        assert!(!skeet_visible_in_feed(effective, &image_bands));
+    fn manual_skeet_override_cannot_rescue_bad_images() {
+        let bands = vec![Band::Low, Band::MediumLow];
+        assert!(!skeet_visible_in_feed(Some(Band::HighQuality), &bands));
     }
 
     #[test]
-    fn all_visible_when_all_good() {
-        let image_bands = vec![Band::MediumHigh, Band::HighQuality];
-        let auto = skeet_auto_band(&image_bands).expect("non-empty");
-        let effective = skeet_effective_band(None, auto);
-        assert!(skeet_visible_in_feed(effective, &image_bands));
+    fn manual_skeet_demote_hides_good_images() {
+        let bands = vec![Band::HighQuality, Band::MediumHigh];
+        assert!(!skeet_visible_in_feed(Some(Band::Low), &bands));
     }
 
     #[test]
-    fn visible_skeet_blocked_by_bad_image() {
-        // Skeet effective is good, but one image is bad
-        let image_bands = vec![Band::HighQuality, Band::MediumLow];
-        assert!(!skeet_visible_in_feed(Band::HighQuality, &image_bands));
+    fn visible_when_skeet_and_images_all_good() {
+        let bands = vec![Band::MediumHigh];
+        assert!(skeet_visible_in_feed(Some(Band::HighQuality), &bands));
     }
 }
