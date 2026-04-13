@@ -5,7 +5,7 @@ image = "ghcr.io/mikemoraned/bobby/skeet-feed:latest"
 primary_region = "lhr"
 
 [processes]
-app = "skeet-feed --store-path s3://hom-bobby/encrypted-store --hostname bobby-staging.houseofmoran.io --publisher-did did:plc:cjvdzmk4iapi5p5orrasehxp"
+app = "skeet-feed --store-path s3://hom-bobby/encrypted-store --hostname bobby-staging.houseofmoran.io --publisher-did did:plc:cjvdzmk4iapi5p5orrasehxp --bind 0.0.0.0:8080"
 
 [env]
 RUST_LOG = "skeet_feed=info,skeet_store=info"

@@ -325,6 +325,19 @@ async fn promoting_skeet_and_image_shows_low_scored_skeet() {
     assert_eq!(posts, vec![skeet_id], "fully promoted skeet should be visible");
 }
 
+// ─── Static assets ──────────────────────────────────────────────
+
+#[tokio::test]
+async fn static_htmx_js_is_served() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let store = open_temp_store(&dir).await;
+    let mut client = client_for(store, test_params()).await;
+
+    let (status, body) = get_body(&mut client, "/static/htmx.min.js").await;
+    assert_eq!(status, 200, "htmx.min.js should be served at /static/htmx.min.js");
+    assert!(body.contains("htmx"), "response should contain htmx code");
+}
+
 // ─── Admin view tests ───────────────────────────────────────────
 
 /// Extract the item IDs from `<td class="id">...</td>` cells in the HTML.

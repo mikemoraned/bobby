@@ -1,6 +1,7 @@
 use cot::config::ProjectConfig;
 use cot::project::{MiddlewareContext, RegisterAppsContext, RootHandler, RootHandlerBuilder};
 use cot::router::{Route, Router};
+use cot::static_files::StaticFilesMiddleware;
 use cot::{App, AppBuilder, Project};
 
 use skeet_web_shared::{StoreLayer, web_static_files};
@@ -81,9 +82,10 @@ impl Project for FeedProject {
     fn middlewares(
         &self,
         handler: RootHandlerBuilder,
-        _context: &MiddlewareContext,
+        context: &MiddlewareContext,
     ) -> RootHandler {
         handler
+            .middleware(StaticFilesMiddleware::from_context(context))
             .middleware(self.cache_layer.clone())
             .middleware(self.feed_config_layer.clone())
             .middleware(self.store_layer.clone())

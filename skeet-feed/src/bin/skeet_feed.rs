@@ -31,7 +31,7 @@ struct Args {
     feed_name: String,
 
     /// Address to bind the server to
-    #[arg(long, default_value = "0.0.0.0:8080")]
+    #[arg(long, default_value = "127.0.0.1:8080")]
     bind: String,
 
     /// Maximum number of posts to return in the feed
