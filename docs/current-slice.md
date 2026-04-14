@@ -102,9 +102,9 @@ Protect the `/admin` area behind GitHub OAuth login. Users authenticate via GitH
 - [x] Integ tests: paging returns expected items in expected order; setting a manual band updates the row and the underlying table; clearing reverts to automatic.
 
 #### Operational — do first (manual, not code)
-- [ ] Register a GitHub OAuth App for staging: GitHub → Settings → Developer settings → OAuth Apps → New OAuth App. Callback URL: `https://bobby-staging.fly.dev/auth/callback`. Store in 1Password as `bobby-github-oauth-staging-client-id` and `bobby-github-oauth-staging-client-secret` (vault: Dev, category: password, value in `password` field).
-- [ ] Register a second OAuth App for local dev. Callback URL: `http://localhost:8080/auth/callback`. Store in 1Password as `bobby-github-oauth-local-client-id` and `bobby-github-oauth-local-client-secret` (vault: Dev, category: password, value in `password` field).
-- [ ] Generate a session secret and store in 1Password: `just generate-session-secret`.
+- [x] Register a GitHub OAuth App for staging: GitHub → Settings → Developer settings → OAuth Apps → New OAuth App. Callback URL: `https://bobby-staging.houseofmoran.io/auth/callback`. Store in 1Password as `bobby-github-oauth-staging-client-id` and `bobby-github-oauth-staging-client-secret` (vault: Dev, category: password, value in `password` field).
+- [x] Register a second OAuth App for local dev. Callback URL: `http://localhost:8080/auth/callback`. Store in 1Password as `bobby-github-oauth-local-client-id` and `bobby-github-oauth-local-client-secret` (vault: Dev, category: password, value in `password` field).
+- [x] Generate a session secret and store in 1Password: `just generate-session-secret`.
 - [ ] Split `bobby.env` into two env files, each containing the shared secrets (R2, OpenAI, OTEL) plus environment-specific OAuth vars:
   - `bobby-local.env` — shared secrets + local OAuth app's `BOBBY_GITHUB_CLIENT_ID`, `BOBBY_GITHUB_CLIENT_SECRET`, `BOBBY_SESSION_SECRET`, `BOBBY_ADMIN_USERS=mikemoraned` (all as `op://` references).
   - `bobby-staging.env` — shared secrets + staging OAuth app's `BOBBY_GITHUB_CLIENT_ID`, `BOBBY_GITHUB_CLIENT_SECRET`, `BOBBY_SESSION_SECRET`, `BOBBY_ADMIN_USERS=mikemoraned` (all as `op://` references).
