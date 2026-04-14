@@ -6,7 +6,8 @@ use chrono::Utc;
 use clap::Parser;
 use cot::project::Bootstrapper;
 use shared::Appraiser;
-use skeet_feed::{AppraiserLayer, StartedAtLayer};
+use skeet_feed::auth_config::OAuthConfig;
+use skeet_feed::{AppraiserLayer, OAuthConfigLayer, StartedAtLayer};
 use skeet_feed::feed_cache::{FeedCache, FeedCacheLayer};
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
@@ -46,6 +47,22 @@ struct Args {
     /// Enable local admin mode (uses Appraiser::LocalAdmin for appraisals)
     #[arg(long, default_value_t = false)]
     local_admin: bool,
+
+    /// GitHub OAuth client ID (env: BOBBY_GITHUB_CLIENT_ID)
+    #[arg(long, env = "BOBBY_GITHUB_CLIENT_ID")]
+    github_client_id: Option<String>,
+
+    /// GitHub OAuth client secret (env: BOBBY_GITHUB_CLIENT_SECRET)
+    #[arg(long, env = "BOBBY_GITHUB_CLIENT_SECRET")]
+    github_client_secret: Option<String>,
+
+    /// Session signing secret (env: BOBBY_SESSION_SECRET)
+    #[arg(long, env = "BOBBY_SESSION_SECRET")]
+    session_secret: Option<String>,
+
+    /// Comma-separated list of allowed GitHub usernames (env: BOBBY_ADMIN_USERS)
+    #[arg(long, env = "BOBBY_ADMIN_USERS")]
+    admin_users: Option<String>,
 }
 
 #[tokio::main]
@@ -94,12 +111,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
 
+    let oauth_config = match (
+        args.github_client_id,
+        args.github_client_secret,
+        &args.admin_users,
+    ) {
+        (Some(client_id), Some(client_secret), Some(admin_users)) => {
+            let redirect_url = format!("https://{}/auth/callback", args.hostname);
+            let users: Vec<String> = admin_users.split(',').map(|s| s.trim().to_string()).collect();
+            info!(admin_users = ?users, "GitHub OAuth configured");
+            Some(Arc::new(OAuthConfig::new(
+                client_id,
+                client_secret,
+                redirect_url,
+                users,
+            )))
+        }
+        _ => {
+            if !args.local_admin {
+                info!("no OAuth config — admin area will be inaccessible without --local-admin");
+            }
+            None
+        }
+    };
+
     let project = FeedProject {
         cache_layer: FeedCacheLayer::new(cache),
         feed_config_layer: FeedConfigLayer::new(feed_params),
         store_layer: StoreLayer::from_shared(store),
         appraiser_layer: AppraiserLayer::new(appraiser),
+        oauth_config_layer: OAuthConfigLayer::new(oauth_config),
         started_at_layer: StartedAtLayer::new(Utc::now()),
+        session_secret: args.session_secret,
     };
     let bootstrapper = Bootstrapper::new(project)
         .with_config_name("dev")?

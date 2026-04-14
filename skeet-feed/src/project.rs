@@ -1,6 +1,8 @@
-use cot::config::ProjectConfig;
+use cot::config::{ProjectConfig, SameSite, SecretKey};
+use cot::middleware::SessionMiddleware;
 use cot::project::{MiddlewareContext, RegisterAppsContext, RootHandler, RootHandlerBuilder};
 use cot::router::{Route, Router};
+use cot::session::store::memory::MemoryStore;
 use cot::static_files::StaticFilesMiddleware;
 use cot::{App, AppBuilder, Project};
 
@@ -8,9 +10,11 @@ use skeet_web_shared::{StoreLayer, web_static_files};
 
 use crate::AppraiserLayer;
 use crate::FeedCacheLayer;
+use crate::OAuthConfigLayer;
 use crate::StartedAtLayer;
-use crate::feed_config::FeedConfigLayer;
 use crate::admin::{admin, appraise_image, appraise_skeet};
+use crate::auth::{auth_callback, auth_login, auth_logout};
+use crate::feed_config::FeedConfigLayer;
 use crate::handlers::{
     annotated_image, describe_feed_generator, did_document, get_feed_skeleton, home,
 };
@@ -60,6 +64,9 @@ impl App for FeedApp {
                 appraise_image,
                 "appraise_image",
             ),
+            Route::with_handler_and_name("/auth/login", auth_login, "auth_login"),
+            Route::with_handler_and_name("/auth/callback", auth_callback, "auth_callback"),
+            Route::with_handler_and_name("/auth/logout", auth_logout, "auth_logout"),
         ])
     }
 }
@@ -69,12 +76,19 @@ pub struct FeedProject {
     pub feed_config_layer: FeedConfigLayer,
     pub store_layer: StoreLayer,
     pub appraiser_layer: AppraiserLayer,
+    pub oauth_config_layer: OAuthConfigLayer,
     pub started_at_layer: StartedAtLayer,
+    pub session_secret: Option<String>,
 }
 
 impl Project for FeedProject {
     fn config(&self, _config_name: &str) -> cot::Result<ProjectConfig> {
-        Ok(ProjectConfig::dev_default())
+        let mut builder = ProjectConfig::builder();
+        builder.debug(cfg!(debug_assertions));
+        if let Some(ref secret) = self.session_secret {
+            builder.secret_key(SecretKey::new(secret.as_bytes()));
+        }
+        Ok(builder.build())
     }
 
     fn register_apps(&self, apps: &mut AppBuilder, _context: &RegisterAppsContext) {
@@ -88,10 +102,12 @@ impl Project for FeedProject {
     ) -> RootHandler {
         handler
             .middleware(StaticFilesMiddleware::from_context(context))
+            .middleware(SessionMiddleware::new(MemoryStore::new()).secure(false).same_site(SameSite::Lax))
             .middleware(self.cache_layer.clone())
             .middleware(self.feed_config_layer.clone())
             .middleware(self.store_layer.clone())
             .middleware(self.appraiser_layer.clone())
+            .middleware(self.oauth_config_layer.clone())
             .middleware(self.started_at_layer.clone())
             .build()
     }

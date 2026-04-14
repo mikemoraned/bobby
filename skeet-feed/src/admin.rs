@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use cot::html::Html;
+use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::UrlQuery;
-use cot::response::Response;
+use cot::response::{IntoResponse, Redirect, Response};
 use cot::{Body, Template};
 use serde::Deserialize;
 use shared::Band;
@@ -55,9 +56,22 @@ pub struct AdminQuery {
 
 #[instrument(skip_all)]
 pub async fn admin(
+    head: RequestHead,
+    AppraiserExtractor(appraiser): AppraiserExtractor,
     Store(store): Store,
     UrlQuery(query): UrlQuery<AdminQuery>,
-) -> cot::Result<Html> {
+) -> cot::Result<Response> {
+    // Admin guard: redirect unauthenticated users to login
+    if appraiser.is_none() {
+        let path = head
+            .uri
+            .path_and_query()
+            .map(|pq| pq.as_str())
+            .unwrap_or("/admin");
+        let return_to = urlencoding::encode(path);
+        return Redirect::new(format!("/auth/login?return_to={return_to}")).into_response();
+    }
+
     let view = query.view.as_deref().unwrap_or("skeet");
     let is_htmx = query.cursor.is_some();
 
@@ -120,7 +134,7 @@ pub async fn admin(
     .render()?;
 
     if is_htmx {
-        return Ok(Html::new(page_html));
+        return Html::new(page_html).into_response();
     }
 
     let rendered = AdminTemplate {
@@ -130,7 +144,7 @@ pub async fn admin(
     .render()?;
 
     info!(view, count = rows.len(), "serving admin page");
-    Ok(Html::new(rendered))
+    Html::new(rendered).into_response()
 }
 
 fn build_rows(

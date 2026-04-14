@@ -34,5 +34,5 @@ Read whichever are relevant before starting work:
 - **Code over comments:** make code self-documenting; add comments only for non-obvious things; substantive docs go in `docs/`
 - **Stability:** no `-pre` dependency versions; no direct git dependency versions
   - Exception: `jetstream-oxide` (pre-1.0) is allowed as the best available Rust Jetstream client
-- **CLI apps:** all config via named CLI params (e.g. `--long-form VALUE`); no env vars except `RUST_LOG` and secrets (which use `BOBBY_`-prefixed env vars injected via `op run --env-file bobby.env`)
+- **CLI apps:** all config via named CLI params (e.g. `--long-form VALUE`); no env vars except `RUST_LOG` and secrets (which use `BOBBY_`-prefixed env vars injected via `op run --env-file bobby-local.env` or `bobby-staging.env`)
 - **Justfile:** capture all command-line invocations in the Justfile

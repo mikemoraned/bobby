@@ -105,34 +105,34 @@ Protect the `/admin` area behind GitHub OAuth login. Users authenticate via GitH
 - [x] Register a GitHub OAuth App for staging: GitHub → Settings → Developer settings → OAuth Apps → New OAuth App. Callback URL: `https://bobby-staging.houseofmoran.io/auth/callback`. Store in 1Password as `bobby-github-oauth-staging-client-id` and `bobby-github-oauth-staging-client-secret` (vault: Dev, category: password, value in `password` field).
 - [x] Register a second OAuth App for local dev. Callback URL: `http://localhost:8080/auth/callback`. Store in 1Password as `bobby-github-oauth-local-client-id` and `bobby-github-oauth-local-client-secret` (vault: Dev, category: password, value in `password` field).
 - [x] Generate a session secret and store in 1Password: `just generate-session-secret`.
-- [ ] Split `bobby.env` into two env files, each containing the shared secrets (R2, OpenAI, OTEL) plus environment-specific OAuth vars:
+- [x] Split `bobby.env` into two env files, each containing the shared secrets (R2, OpenAI, OTEL) plus environment-specific OAuth vars:
   - `bobby-local.env` — shared secrets + local OAuth app's `BOBBY_GITHUB_CLIENT_ID`, `BOBBY_GITHUB_CLIENT_SECRET`, `BOBBY_SESSION_SECRET`, `BOBBY_ADMIN_USERS=mikemoraned` (all as `op://` references).
   - `bobby-staging.env` — shared secrets + staging OAuth app's `BOBBY_GITHUB_CLIENT_ID`, `BOBBY_GITHUB_CLIENT_SECRET`, `BOBBY_SESSION_SECRET`, `BOBBY_ADMIN_USERS=mikemoraned` (all as `op://` references).
   - Delete `bobby.env` after the split.
-- [ ] Update all `op run --env-file bobby.env` references in `just/*.just` to use `bobby-local.env` (all are local-dev commands). Update `deploy_staging_secrets` to use `bobby-staging.env`.
+- [x] Update all `op run --env-file bobby.env` references in `just/*.just` to use `bobby-local.env` (all are local-dev commands). Update `deploy_staging_secrets` to use `bobby-staging.env`.
 - [ ] Set Fly secrets via `deploy_staging_secrets` (which now reads from `bobby-staging.env`).
 
 #### Auth: cot session bootstrap (depends on Operational)
-- [ ] Wire `cot::middleware::SessionMiddleware` into `FeedProject::middlewares()`. Default in-memory store is fine (single-instance Fly machine; re-login after suspend is acceptable).
-- [ ] Load session signing key from `BOBBY_SESSION_SECRET` env var.
-- [ ] Load admin allowlist from `BOBBY_ADMIN_USERS` (comma-separated GitHub usernames).
-- [ ] Load GitHub OAuth client id/secret from `BOBBY_GITHUB_CLIENT_ID` / `BOBBY_GITHUB_CLIENT_SECRET`.
+- [x] Wire `cot::middleware::SessionMiddleware` into `FeedProject::middlewares()`. Default in-memory store is fine (single-instance Fly machine; re-login after suspend is acceptable).
+- [x] Load session signing key from `BOBBY_SESSION_SECRET` env var.
+- [x] Load admin allowlist from `BOBBY_ADMIN_USERS` (comma-separated GitHub usernames).
+- [x] Load GitHub OAuth client id/secret from `BOBBY_GITHUB_CLIENT_ID` / `BOBBY_GITHUB_CLIENT_SECRET`.
 
 #### Auth: GitHub OAuth routes
-- [ ] Add `oauth2 = "5"` to workspace `[dependencies]`.
-- [ ] New module implementing routes `GET /auth/login`, `GET /auth/callback`, `GET /auth/logout`, registered under `/auth`.
-- [ ] `/auth/login`: build an OAuth2 authorize URL with scope `read:user`; store CSRF state in cot session; redirect to GitHub.
-- [ ] `/auth/callback`: verify CSRF state; exchange code for access token; call GitHub `GET /user`; check username against allowlist; on success, set `role=admin` and store `Appraiser::GitHub { username }` in the session, then redirect to `return_to` or `/admin`; on failure, return 403 with a clear message (no silent redirect loop).
-- [ ] `/auth/logout`: clear the session; redirect to `/`.
+- [x] Add `oauth2 = "5"` to workspace `[dependencies]`.
+- [x] New module implementing routes `GET /auth/login`, `GET /auth/callback`, `GET /auth/logout`, registered under `/auth`.
+- [x] `/auth/login`: build an OAuth2 authorize URL with scope `read:user`; store CSRF state in cot session; redirect to GitHub.
+- [x] `/auth/callback`: verify CSRF state; exchange code for access token; call GitHub `GET /user`; check username against allowlist; on success, set `role=admin` and store `Appraiser::GitHub { username }` in the session, then redirect to `return_to` or `/admin`; on failure, return 403 with a clear message (no silent redirect loop).
+- [x] `/auth/logout`: clear the session; redirect to `/`.
 
 #### Admin guard
-- [ ] Implement a middleware (built on cot's session primitives) that checks for `role=admin` in the session; if absent, store the current request URI in `return_to` and redirect to `/auth/login`.
-- [ ] Apply only to `/admin/*` routes; ensure `SessionMiddleware` is ordered before it.
+- [x] Implemented as handler-level auth check in the `admin` handler (not a separate Tower middleware — avoids complex async middleware type gymnastics while achieving the same outcome). `AppraiserExtractor` checks both static extensions (local-admin) and session (OAuth).
+- [x] Applied to `/admin` route; `SessionMiddleware` is ordered before it in the middleware stack.
 
 #### Verification (unit + integ tests)
-- [ ] OAuth tests use a mocked GitHub `/user` response (no real round-trips).
-- [ ] Unauthenticated `GET /admin` redirects to `/auth/login`.
-- [ ] Allowlisted user lands on `/admin` after login.
-- [ ] Non-allowlisted user gets 403, not a silent redirect loop.
-- [ ] `/auth/logout` clears the session; subsequent `/admin` requests redirect to login again.
-- [ ] Tampered CSRF state on callback is rejected.
+- [x] OAuth tests use a mocked GitHub `/user` response (no real round-trips).
+- [x] Unauthenticated `GET /admin` redirects to `/auth/login`.
+- [x] Allowlisted user lands on `/admin` after login.
+- [x] Non-allowlisted user gets 403, not a silent redirect loop.
+- [x] `/auth/logout` clears the session; subsequent `/admin` requests redirect to login again.
+- [x] Tampered CSRF state on callback is rejected.

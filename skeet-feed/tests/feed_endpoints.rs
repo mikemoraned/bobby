@@ -5,13 +5,16 @@ use std::sync::Arc;
 use chrono::Utc;
 use cot::test::Client;
 use shared::Appraiser;
-use skeet_feed::{AppraiserLayer, FeedCacheLayer, StartedAtLayer};
+use skeet_feed::auth_config::OAuthConfig;
+use skeet_feed::{AppraiserLayer, FeedCacheLayer, OAuthConfigLayer, StartedAtLayer};
 use skeet_feed::feed_cache::FeedCache;
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
 use skeet_store::test_utils::{make_record, make_record_at, open_temp_store};
 use skeet_store::{DiscoveredAt, ModelVersion, Score, SkeetStore};
 use skeet_web_shared::StoreLayer;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn test_params() -> FeedParams {
     FeedParams {
@@ -35,7 +38,9 @@ async fn client_for(store: SkeetStore, params: FeedParams) -> Client {
         feed_config_layer: FeedConfigLayer::new(params),
         store_layer: StoreLayer::from_shared(store),
         appraiser_layer: AppraiserLayer::new(Some(Arc::new(Appraiser::LocalAdmin))),
+        oauth_config_layer: OAuthConfigLayer::new(None),
         started_at_layer: StartedAtLayer::new(Utc::now()),
+        session_secret: None,
     };
     Client::new(project).await
 }
@@ -545,5 +550,301 @@ async fn admin_clear_manual_band_reverts_to_automatic() {
     assert!(
         row_has_no_manual_band(rows_html[0]),
         "clearing should revert to automatic (no manual band)"
+    );
+}
+
+// ─── Auth tests ────────────────────────────────────────────────
+
+async fn oauth_client(
+    mock_server: &MockServer,
+    allowed_users: Vec<&str>,
+    dir: &tempfile::TempDir,
+) -> Client {
+    let store = open_temp_store(dir).await;
+    let store = Arc::new(store);
+    let params = test_params();
+    let cache = Arc::new(FeedCache::new(
+        Arc::clone(&store),
+        params.max_entries,
+        params.max_age_hours,
+    ));
+    let oauth_config = OAuthConfig::with_urls(
+        "test-client-id".to_string(),
+        "test-client-secret".to_string(),
+        "http://localhost:8080/auth/callback".to_string(),
+        allowed_users.into_iter().map(String::from).collect(),
+        format!("{}/authorize", mock_server.uri()),
+        format!("{}/token", mock_server.uri()),
+        mock_server.uri().to_string(),
+    );
+    let project = FeedProject {
+        cache_layer: FeedCacheLayer::new(cache),
+        feed_config_layer: FeedConfigLayer::new(params),
+        store_layer: StoreLayer::from_shared(store),
+        appraiser_layer: AppraiserLayer::new(None),
+        oauth_config_layer: OAuthConfigLayer::new(Some(Arc::new(oauth_config))),
+        started_at_layer: StartedAtLayer::new(Utc::now()),
+        session_secret: None,
+    };
+    Client::new(project).await
+}
+
+/// Extract the session cookie value from a response's Set-Cookie header.
+fn extract_session_cookie(response: &cot::http::Response<cot::Body>) -> Option<String> {
+    response
+        .headers()
+        .get("set-cookie")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.split(';').next().unwrap_or("").to_string())
+}
+
+/// Build a GET request with an optional session cookie.
+fn get_with_cookie(uri: &str, cookie: Option<&str>) -> cot::http::Request<cot::Body> {
+    let mut builder = cot::http::Request::builder().uri(uri);
+    if let Some(cookie) = cookie {
+        builder = builder.header("cookie", cookie);
+    }
+    builder.body(cot::Body::empty()).expect("build request")
+}
+
+/// Extract a query parameter from a URL string.
+fn extract_query_param(url: &str, param: &str) -> Option<String> {
+    let query = url.split('?').nth(1)?;
+    for pair in query.split('&') {
+        let mut parts = pair.splitn(2, '=');
+        if parts.next() == Some(param) {
+            return parts
+                .next()
+                .map(|v| urlencoding::decode(v).unwrap_or_default().into_owned());
+        }
+    }
+    None
+}
+
+/// Mount mock responses for GitHub token exchange and /user API.
+async fn mount_github_mocks(mock_server: &MockServer, github_username: &str) {
+    Mock::given(method("POST"))
+        .and(path("/token"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({
+                    "access_token": "test-access-token",
+                    "token_type": "bearer"
+                })),
+        )
+        .mount(mock_server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/user"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({
+                    "login": github_username,
+                })),
+        )
+        .mount(mock_server)
+        .await;
+}
+
+/// Perform a full login flow: /auth/login → capture state → /auth/callback.
+/// Returns the session cookie and final response.
+async fn do_login(
+    client: &mut Client,
+    cookie: Option<&str>,
+) -> (cot::http::Response<cot::Body>, String) {
+    // Step 1: GET /auth/login to get CSRF state and session cookie
+    let response = client
+        .request(get_with_cookie("/auth/login", cookie))
+        .await
+        .expect("GET /auth/login");
+    assert_eq!(response.status().as_u16(), 303, "login should redirect");
+    let location = response
+        .headers()
+        .get("location")
+        .expect("redirect location")
+        .to_str()
+        .expect("valid header")
+        .to_string();
+    let session_cookie = extract_session_cookie(&response).expect("session cookie set");
+    let state = extract_query_param(&location, "state").expect("state param in redirect URL");
+
+    // Step 2: GET /auth/callback with CSRF state and session cookie
+    let callback_uri = format!("/auth/callback?code=test-code&state={state}");
+    let response = client
+        .request(get_with_cookie(&callback_uri, Some(&session_cookie)))
+        .await
+        .expect("GET /auth/callback");
+
+    // Update cookie if a new one was set
+    let callback_cookie = extract_session_cookie(&response);
+    let final_cookie = callback_cookie.unwrap_or(session_cookie);
+    (response, final_cookie)
+}
+
+#[tokio::test]
+async fn unauthenticated_admin_redirects_to_login() {
+    let mock_server = MockServer::start().await;
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let mut client = oauth_client(&mock_server, vec!["testuser"], &dir).await;
+
+    let response = client
+        .request(get_with_cookie("/admin", None))
+        .await
+        .expect("GET /admin");
+    assert_eq!(response.status().as_u16(), 303);
+    let location = response
+        .headers()
+        .get("location")
+        .expect("redirect location")
+        .to_str()
+        .expect("valid header");
+    assert!(
+        location.starts_with("/auth/login"),
+        "should redirect to /auth/login, got: {location}"
+    );
+    assert!(
+        location.contains("return_to"),
+        "should include return_to param"
+    );
+}
+
+#[tokio::test]
+async fn allowlisted_user_lands_on_admin_after_login() {
+    let mock_server = MockServer::start().await;
+    mount_github_mocks(&mock_server, "testuser").await;
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let mut client = oauth_client(&mock_server, vec!["testuser"], &dir).await;
+
+    let (response, cookie) = do_login(&mut client, None).await;
+    assert_eq!(
+        response.status().as_u16(),
+        303,
+        "callback should redirect after successful login"
+    );
+    let location = response
+        .headers()
+        .get("location")
+        .expect("redirect location")
+        .to_str()
+        .expect("valid header");
+    assert_eq!(location, "/admin", "should redirect to /admin");
+
+    // Subsequent GET /admin should succeed (not redirect to login)
+    let response = client
+        .request(get_with_cookie("/admin", Some(&cookie)))
+        .await
+        .expect("GET /admin after login");
+    assert_eq!(
+        response.status().as_u16(),
+        200,
+        "authenticated admin request should return 200"
+    );
+}
+
+#[tokio::test]
+async fn non_allowlisted_user_gets_403() {
+    let mock_server = MockServer::start().await;
+    mount_github_mocks(&mock_server, "eviluser").await;
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let mut client = oauth_client(&mock_server, vec!["testuser"], &dir).await;
+
+    let (response, _) = do_login(&mut client, None).await;
+    assert_eq!(
+        response.status().as_u16(),
+        403,
+        "non-allowlisted user should get 403"
+    );
+    let body_bytes = response
+        .into_body()
+        .into_bytes()
+        .await
+        .expect("read body");
+    let body = String::from_utf8(body_bytes.to_vec()).expect("valid utf8");
+    assert!(
+        body.contains("eviluser"),
+        "403 body should mention the rejected username"
+    );
+}
+
+#[tokio::test]
+async fn logout_clears_session_and_admin_redirects_again() {
+    let mock_server = MockServer::start().await;
+    mount_github_mocks(&mock_server, "testuser").await;
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let mut client = oauth_client(&mock_server, vec!["testuser"], &dir).await;
+
+    // Login
+    let (_, cookie) = do_login(&mut client, None).await;
+
+    // Verify admin works
+    let response = client
+        .request(get_with_cookie("/admin", Some(&cookie)))
+        .await
+        .expect("GET /admin");
+    assert_eq!(response.status().as_u16(), 200);
+
+    // Logout
+    let response = client
+        .request(get_with_cookie("/auth/logout", Some(&cookie)))
+        .await
+        .expect("GET /auth/logout");
+    assert_eq!(response.status().as_u16(), 303);
+    let location = response
+        .headers()
+        .get("location")
+        .expect("redirect location")
+        .to_str()
+        .expect("valid header");
+    assert_eq!(location, "/", "logout should redirect to /");
+    let post_logout_cookie = extract_session_cookie(&response).unwrap_or(cookie);
+
+    // Admin should redirect to login again
+    let response = client
+        .request(get_with_cookie("/admin", Some(&post_logout_cookie)))
+        .await
+        .expect("GET /admin after logout");
+    assert_eq!(
+        response.status().as_u16(),
+        303,
+        "admin should redirect to login after logout"
+    );
+}
+
+#[tokio::test]
+async fn tampered_csrf_state_is_rejected() {
+    let mock_server = MockServer::start().await;
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let mut client = oauth_client(&mock_server, vec!["testuser"], &dir).await;
+
+    // Start login to get a session cookie
+    let response = client
+        .request(get_with_cookie("/auth/login", None))
+        .await
+        .expect("GET /auth/login");
+    let cookie = extract_session_cookie(&response).expect("session cookie");
+
+    // Call callback with tampered state
+    let response = client
+        .request(get_with_cookie(
+            "/auth/callback?code=test-code&state=tampered-state",
+            Some(&cookie),
+        ))
+        .await
+        .expect("GET /auth/callback with tampered state");
+    assert_eq!(
+        response.status().as_u16(),
+        403,
+        "tampered CSRF state should be rejected with 403"
+    );
+    let body_bytes = response
+        .into_body()
+        .into_bytes()
+        .await
+        .expect("read body");
+    let body = String::from_utf8(body_bytes.to_vec()).expect("valid utf8");
+    assert!(
+        body.contains("CSRF"),
+        "rejection should mention CSRF: {body}"
     );
 }
