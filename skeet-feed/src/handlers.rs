@@ -80,11 +80,14 @@ async fn get_feed(cache: &Arc<FeedCache>, head: &RequestHead) -> cot::Result<Cac
     }
 }
 
-fn set_date_header(response: &mut Response, refreshed_at: Option<chrono::DateTime<chrono::Utc>>) {
+fn set_last_modified_header(
+    response: &mut Response,
+    refreshed_at: Option<chrono::DateTime<chrono::Utc>>,
+) {
     if let Some(at) = refreshed_at {
         let date = at.format("%a, %d %b %Y %H:%M:%S GMT").to_string();
         if let Ok(val) = date.parse() {
-            response.headers_mut().insert("date", val);
+            response.headers_mut().insert("last-modified", val);
         }
     }
 }
@@ -213,7 +216,7 @@ pub async fn get_feed_skeleton(
         cursor: None,
     };
     let mut response = json_response(&resp)?;
-    set_date_header(&mut response, cache.refreshed_at().await);
+    set_last_modified_header(&mut response, cache.refreshed_at().await);
     Ok(response)
 }
 

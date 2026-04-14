@@ -14,6 +14,7 @@
                     <th>Manual Band</th>
                     <th>Effective</th>
                     <th>Actions</th>
+                    <th>Link</th>
                 </tr>
             </thead>
             <tbody>
@@ -21,13 +22,12 @@
 {% for row in rows %}
 {% include "admin_row.html" %}
 {% endfor %}
-{% if is_first_page && next_cursor.is_some() %}
-            </tbody>
-        </table>
-{% endif %}
 {% if next_cursor.is_some() %}
-        <div hx-get="/admin?view={{ view }}&cursor={{ next_cursor_str }}" hx-trigger="revealed" hx-swap="outerHTML"></div>
-{% elif is_first_page %}
+                <tr id="load-more" hx-get="/admin?view={{ view }}&cursor={{ next_cursor_str }}" hx-trigger="revealed" hx-swap="outerHTML">
+                    <td colspan="8" style="text-align:center;color:#999">Loading&hellip;</td>
+                </tr>
+{% endif %}
+{% if is_first_page %}
             </tbody>
         </table>
 {% endif %}

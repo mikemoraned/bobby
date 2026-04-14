@@ -14,11 +14,12 @@
     <td><span class="band-tag {{ row.effective_band }}">{{ row.effective_band }}</span></td>
     <td>
         <div class="band-buttons">
-            <button hx-post="/admin/appraise/{{ row.appraise_kind }}?band=HighQuality&id={{ row.item_id_encoded }}" hx-target="#row-{{ row.row_id }}" hx-swap="outerHTML"{% if row.manual_band_str == "HighQuality" %} class="active"{% endif %}>High</button>
-            <button hx-post="/admin/appraise/{{ row.appraise_kind }}?band=MediumHigh&id={{ row.item_id_encoded }}" hx-target="#row-{{ row.row_id }}" hx-swap="outerHTML"{% if row.manual_band_str == "MediumHigh" %} class="active"{% endif %}>MedHigh</button>
-            <button hx-post="/admin/appraise/{{ row.appraise_kind }}?band=MediumLow&id={{ row.item_id_encoded }}" hx-target="#row-{{ row.row_id }}" hx-swap="outerHTML"{% if row.manual_band_str == "MediumLow" %} class="active"{% endif %}>MedLow</button>
-            <button hx-post="/admin/appraise/{{ row.appraise_kind }}?band=Low&id={{ row.item_id_encoded }}" hx-target="#row-{{ row.row_id }}" hx-swap="outerHTML"{% if row.manual_band_str == "Low" %} class="active"{% endif %}>Low</button>
-            <button class="clear" hx-post="/admin/appraise/{{ row.appraise_kind }}?band=clear&id={{ row.item_id_encoded }}" hx-target="#row-{{ row.row_id }}" hx-swap="outerHTML">Clear</button>
+            <button hx-post="/admin/appraise/{{ row.appraise_kind }}?band=HighQuality&id={{ row.item_id_encoded }}" hx-target="#row-{{ row.row_id }}" hx-swap="outerHTML" hx-disabled-elt="closest .band-buttons"{% if row.manual_band_str == "HighQuality" %} class="active"{% endif %}>High</button>
+            <button hx-post="/admin/appraise/{{ row.appraise_kind }}?band=MediumHigh&id={{ row.item_id_encoded }}" hx-target="#row-{{ row.row_id }}" hx-swap="outerHTML" hx-disabled-elt="closest .band-buttons"{% if row.manual_band_str == "MediumHigh" %} class="active"{% endif %}>MedHigh</button>
+            <button hx-post="/admin/appraise/{{ row.appraise_kind }}?band=MediumLow&id={{ row.item_id_encoded }}" hx-target="#row-{{ row.row_id }}" hx-swap="outerHTML" hx-disabled-elt="closest .band-buttons"{% if row.manual_band_str == "MediumLow" %} class="active"{% endif %}>MedLow</button>
+            <button hx-post="/admin/appraise/{{ row.appraise_kind }}?band=Low&id={{ row.item_id_encoded }}" hx-target="#row-{{ row.row_id }}" hx-swap="outerHTML" hx-disabled-elt="closest .band-buttons"{% if row.manual_band_str == "Low" %} class="active"{% endif %}>Low</button>
+            <button class="clear" hx-post="/admin/appraise/{{ row.appraise_kind }}?band=clear&id={{ row.item_id_encoded }}" hx-target="#row-{{ row.row_id }}" hx-swap="outerHTML" hx-disabled-elt="closest .band-buttons">Clear</button>
         </div>
     </td>
+    <td><a href="{{ row.web_url }}" target="_blank">bsky</a></td>
 </tr>
