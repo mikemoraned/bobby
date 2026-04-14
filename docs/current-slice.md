@@ -101,7 +101,18 @@ Protect the `/admin` area behind GitHub OAuth login. Users authenticate via GitH
   * an Appraiser of `Appraiser::LocalAdmin` may be set when the server is started with `--local-admin` (see above)
 - [x] Integ tests: paging returns expected items in expected order; setting a manual band updates the row and the underlying table; clearing reverts to automatic.
 
-#### Auth: cot session bootstrap
+#### Operational — do first (manual, not code)
+- [ ] Register a GitHub OAuth App for staging: GitHub → Settings → Developer settings → OAuth Apps → New OAuth App. Callback URL: `https://bobby-staging.fly.dev/auth/callback`. Store in 1Password as `bobby-github-oauth-staging-client-id` and `bobby-github-oauth-staging-client-secret` (vault: Dev, category: password, value in `password` field).
+- [ ] Register a second OAuth App for local dev. Callback URL: `http://localhost:8080/auth/callback`. Store in 1Password as `bobby-github-oauth-local-client-id` and `bobby-github-oauth-local-client-secret` (vault: Dev, category: password, value in `password` field).
+- [ ] Generate a session secret and store in 1Password: `just generate-session-secret`.
+- [ ] Split `bobby.env` into two env files, each containing the shared secrets (R2, OpenAI, OTEL) plus environment-specific OAuth vars:
+  - `bobby-local.env` — shared secrets + local OAuth app's `BOBBY_GITHUB_CLIENT_ID`, `BOBBY_GITHUB_CLIENT_SECRET`, `BOBBY_SESSION_SECRET`, `BOBBY_ADMIN_USERS=mikemoraned` (all as `op://` references).
+  - `bobby-staging.env` — shared secrets + staging OAuth app's `BOBBY_GITHUB_CLIENT_ID`, `BOBBY_GITHUB_CLIENT_SECRET`, `BOBBY_SESSION_SECRET`, `BOBBY_ADMIN_USERS=mikemoraned` (all as `op://` references).
+  - Delete `bobby.env` after the split.
+- [ ] Update all `op run --env-file bobby.env` references in `just/*.just` to use `bobby-local.env` (all are local-dev commands). Update `deploy_staging_secrets` to use `bobby-staging.env`.
+- [ ] Set Fly secrets via `deploy_staging_secrets` (which now reads from `bobby-staging.env`).
+
+#### Auth: cot session bootstrap (depends on Operational)
 - [ ] Wire `cot::middleware::SessionMiddleware` into `FeedProject::middlewares()`. Default in-memory store is fine (single-instance Fly machine; re-login after suspend is acceptable).
 - [ ] Load session signing key from `BOBBY_SESSION_SECRET` env var.
 - [ ] Load admin allowlist from `BOBBY_ADMIN_USERS` (comma-separated GitHub usernames).
@@ -117,12 +128,6 @@ Protect the `/admin` area behind GitHub OAuth login. Users authenticate via GitH
 #### Admin guard
 - [ ] Implement a middleware (built on cot's session primitives) that checks for `role=admin` in the session; if absent, store the current request URI in `return_to` and redirect to `/auth/login`.
 - [ ] Apply only to `/admin/*` routes; ensure `SessionMiddleware` is ordered before it.
-
-#### Operational (manual, not code)
-- [ ] Register a GitHub OAuth App for production with callback `https://<app-name>.fly.dev/auth/callback`.
-- [ ] Register a second OAuth App (or add a second callback) for `http://localhost:8080/auth/callback`.
-- [ ] Set Fly secrets: `BOBBY_GITHUB_CLIENT_ID`, `BOBBY_GITHUB_CLIENT_SECRET`, `BOBBY_ADMIN_USERS`, `BOBBY_SESSION_SECRET=$(openssl rand -hex 32)`.
-- [ ] Add the new env vars to `bobby.env` for `op run --env-file bobby.env` local dev.
 
 #### Verification (unit + integ tests)
 - [ ] OAuth tests use a mocked GitHub `/user` response (no real round-trips).
