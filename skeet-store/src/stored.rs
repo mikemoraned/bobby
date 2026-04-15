@@ -79,11 +79,7 @@ impl<'a> SummaryColumns<'a> {
             .value(i)
             .parse()
             .map_err(|_| StoreError::InvalidZone(self.archetypes.value(i).to_string()))?;
-        let config_version: ModelVersion = self
-            .config_versions
-            .value(i)
-            .parse()
-            .expect("ModelVersion parse is infallible");
+        let config_version = ModelVersion::from(self.config_versions.value(i));
 
         Ok(StoredImageSummary {
             image_id: self.image_ids.value(i).parse()?,
