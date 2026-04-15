@@ -3,9 +3,11 @@ use std::time::Instant;
 
 use clap::Parser;
 use futures::stream::{self, StreamExt};
+use image::DynamicImage;
+use shared::{ModelVersion, Score};
 use skeet_refine::model::load_model;
-use skeet_refine::refining::{build_agent, create_client, refine_image};
-use skeet_store::StoreArgs;
+use skeet_refine::refining::{build_agent, create_client, refine_image, RefineAgent};
+use skeet_store::{ImageId, StoreArgs};
 use tracing::{error, info};
 
 #[derive(Parser)]
@@ -36,7 +38,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let _guard = shared::tracing::init_with_file_and_stderr(
+    let _guard = shared::tracing::init_with_file(
         "skeet_refine=info,shared=info,skeet_store=info,lance_io=warn,object_store=warn",
         "live-refine.log",
         shared::tracing::TokioConsoleSupport::Disabled,
@@ -91,46 +93,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // When we have a full batch (or budget is about to expire), dispatch in parallel
             if batch_ids.len() >= args.concurrency || started.elapsed() >= budget {
-                let results: Vec<_> = stream::iter(batch_images.iter())
-                    .map(|image| refine_image(&agent, image))
-                    .buffer_unordered(args.concurrency)
-                    .collect()
-                    .await;
-
-                for (id, result) in batch_ids.drain(..).zip(results) {
-                    match result {
-                        Ok(score) => {
-                            info!(image_id = %id, %score, "refined");
-                            pending_scores.push((id, score, model_version.clone()));
-                        }
-                        Err(e) => {
-                            error!(image_id = %id, error = %e, "failed to refine");
-                        }
-                    }
-                }
-                batch_images.clear();
+                dispatch_batch(&agent, &mut batch_ids, &mut batch_images, &model_version, args.concurrency, &mut pending_scores).await;
             }
         }
 
         // Dispatch any remaining images in the last partial batch
         if !batch_ids.is_empty() {
-            let results: Vec<_> = stream::iter(batch_images.iter())
-                .map(|image| refine_image(&agent, image))
-                .buffer_unordered(args.concurrency)
-                .collect()
-                .await;
-
-            for (id, result) in batch_ids.drain(..).zip(results) {
-                match result {
-                    Ok(score) => {
-                        info!(image_id = %id, %score, "refined");
-                        pending_scores.push((id, score, model_version.clone()));
-                    }
-                    Err(e) => {
-                        error!(image_id = %id, error = %e, "failed to refine");
-                    }
-                }
-            }
+            dispatch_batch(&agent, &mut batch_ids, &mut batch_images, &model_version, args.concurrency, &mut pending_scores).await;
         }
 
         // Batch-save all scores in one write
@@ -141,4 +110,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!(scored, remaining, "batch-saved scores");
         }
     }
+}
+
+async fn dispatch_batch(
+    agent: &RefineAgent,
+    batch_ids: &mut Vec<ImageId>,
+    batch_images: &mut Vec<DynamicImage>,
+    model_version: &ModelVersion,
+    concurrency: usize,
+    pending_scores: &mut Vec<(ImageId, Score, ModelVersion)>,
+) {
+    let results: Vec<_> = stream::iter(batch_images.iter())
+        .map(|image| refine_image(agent, image))
+        .buffer_unordered(concurrency)
+        .collect()
+        .await;
+
+    for (id, result) in batch_ids.drain(..).zip(results) {
+        match result {
+            Ok(score) => {
+                info!(image_id = %id, %score, "refined");
+                pending_scores.push((id, score, model_version.clone()));
+            }
+            Err(e) => {
+                error!(image_id = %id, error = %e, "failed to refine");
+            }
+        }
+    }
+    batch_images.clear();
 }

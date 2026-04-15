@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         shared::tracing::TokioConsoleSupport::Disabled,
         |port| shared::tracing::TokioConsoleSupport::Enabled { port },
     );
-    let _guard = shared::tracing::init_with_file_and_stderr("skeet_inspect=info,shared=info,skeet_store=info", "inspect.log", console);
+    let _guard = shared::tracing::init_with_file("skeet_inspect=info,shared=info,skeet_store=info", "inspect.log", console);
     let store = args
         .store
         .open_store()

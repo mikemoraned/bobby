@@ -69,7 +69,7 @@ struct Args {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let _guard = shared::tracing::init_with_file_and_stderr(
+    let _guard = shared::tracing::init_with_file(
         "skeet_feed=info,shared=info,skeet_store=info",
         "feed.log",
         shared::tracing::TokioConsoleSupport::Disabled,

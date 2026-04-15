@@ -55,50 +55,47 @@ fn is_skin_pixel(r: f32, g: f32, b: f32) -> bool {
 
 /// Compute the percentage of skin pixels within a rectangular region.
 pub fn skin_pct_in_rect(mask: &GrayImage, x: u32, y: u32, w: u32, h: u32) -> f32 {
-    let img_w = mask.width();
-    let img_h = mask.height();
-
-    let x_end = (x + w).min(img_w);
-    let y_end = (y + h).min(img_h);
-    let x_start = x.min(img_w);
-    let y_start = y.min(img_h);
-
-    let mut total = 0u32;
-    let mut skin = 0u32;
-
-    for py in y_start..y_end {
-        for px in x_start..x_end {
-            total += 1;
-            if mask.get_pixel(px, py).0[0] > 0 {
-                skin += 1;
-            }
-        }
-    }
-
-    if total == 0 {
-        return 0.0;
-    }
-
-    (skin as f32 / total as f32) * 100.0
+    let rect = clamp_rect(mask, x, y, w, h);
+    skin_pct(mask, |px, py| rect.contains(px, py))
 }
 
 /// Compute the percentage of skin pixels outside a rectangular region.
 pub fn skin_pct_outside_rect(mask: &GrayImage, x: u32, y: u32, w: u32, h: u32) -> f32 {
+    let rect = clamp_rect(mask, x, y, w, h);
+    skin_pct(mask, |px, py| !rect.contains(px, py))
+}
+
+struct Rect {
+    x_start: u32,
+    x_end: u32,
+    y_start: u32,
+    y_end: u32,
+}
+
+impl Rect {
+    const fn contains(&self, px: u32, py: u32) -> bool {
+        px >= self.x_start && px < self.x_end && py >= self.y_start && py < self.y_end
+    }
+}
+
+fn clamp_rect(mask: &GrayImage, x: u32, y: u32, w: u32, h: u32) -> Rect {
     let img_w = mask.width();
     let img_h = mask.height();
+    Rect {
+        x_start: x.min(img_w),
+        x_end: (x + w).min(img_w),
+        y_start: y.min(img_h),
+        y_end: (y + h).min(img_h),
+    }
+}
 
-    let x_end = (x + w).min(img_w);
-    let y_end = (y + h).min(img_h);
-    let x_start = x.min(img_w);
-    let y_start = y.min(img_h);
-
+fn skin_pct(mask: &GrayImage, include: impl Fn(u32, u32) -> bool) -> f32 {
     let mut total = 0u32;
     let mut skin = 0u32;
 
-    for py in 0..img_h {
-        for px in 0..img_w {
-            let inside = px >= x_start && px < x_end && py >= y_start && py < y_end;
-            if !inside {
+    for py in 0..mask.height() {
+        for px in 0..mask.width() {
+            if include(px, py) {
                 total += 1;
                 if mask.get_pixel(px, py).0[0] > 0 {
                     skin += 1;

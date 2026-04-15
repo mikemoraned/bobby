@@ -74,47 +74,7 @@ pub fn init(default_filter: &str) {
         .init();
 }
 
-/// Initialize tracing with a daily rolling file appender and optional OpenTelemetry.
-///
-/// When tokio-console is enabled, file and OTEL layers are replaced by
-/// console-subscriber's own stderr output to avoid a known incompatibility
-/// between `ConsoleLayer` and `fmt::Layer` span tracking.
-///
-/// The returned guards must be held for the lifetime of the program.
-pub fn init_with_file(
-    default_filter: &str,
-    filename: &str,
-    console: TokioConsoleSupport,
-) -> TracingGuard {
-    if let TokioConsoleSupport::Enabled { port } = console {
-        return init_with_console(port);
-    }
-
-    let file_appender = tracing_appender::rolling::daily("logs", filename);
-    let (non_blocking, file_guard) = tracing_appender::non_blocking(file_appender);
-
-    let (otel_layer, otel_guard) = match try_otel_layer() {
-        Some((layer, guard)) => (Some(layer.with_filter(targets_filter(default_filter))), Some(guard)),
-        None => (None, None),
-    };
-
-    tracing_subscriber::registry()
-        .with(
-            fmt::layer()
-                .with_ansi(false)
-                .with_writer(non_blocking)
-                .with_filter(targets_filter(default_filter)),
-        )
-        .with(otel_layer)
-        .init();
-
-    TracingGuard {
-        _file_guard: Some(file_guard),
-        _otel_guard: otel_guard,
-    }
-}
-
-/// Initialize tracing with both a daily rolling file appender, stderr output,
+/// Initialize tracing with a daily rolling file appender, stderr output,
 /// and optional OpenTelemetry.
 ///
 /// When tokio-console is enabled, file and OTEL layers are replaced by
@@ -122,7 +82,7 @@ pub fn init_with_file(
 /// between `ConsoleLayer` and `fmt::Layer` span tracking.
 ///
 /// The returned guards must be held for the lifetime of the program.
-pub fn init_with_file_and_stderr(
+pub fn init_with_file(
     default_filter: &str,
     filename: &str,
     console: TokioConsoleSupport,
