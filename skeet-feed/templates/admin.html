@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Bobby Admin</title>
+        <script src="/static/htmx.min.js" defer></script>
+        <style>
+            body {
+                font-family: system-ui, sans-serif;
+                max-width: 1400px;
+                margin: 2rem auto;
+                padding: 0 1rem;
+            }
+            h1 { text-align: center; }
+            nav { text-align: center; margin-bottom: 1.5rem; }
+            nav a { margin: 0 0.75rem; color: #0066cc; text-decoration: none; font-size: 1.1rem; }
+            nav a:hover { text-decoration: underline; }
+            nav a.active { font-weight: bold; text-decoration: underline; }
+            .empty { color: #666; text-align: center; margin-top: 2rem; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { border: 1px solid #ddd; padding: 0.5rem; vertical-align: top; }
+            th { background: #f5f5f5; text-align: left; }
+            td.thumb img { max-width: 200px; max-height: 200px; }
+            td.id { font-family: monospace; font-size: 0.85rem; word-break: break-all; }
+            td.score { font-family: monospace; text-align: right; }
+            .band-tag {
+                display: inline-block;
+                padding: 0.15rem 0.4rem;
+                border-radius: 4px;
+                font-size: 0.8rem;
+                background: #e0e0e0;
+                margin: 0.1rem 0;
+            }
+            .band-tag.HighQuality { background: #c8e6c9; }
+            .band-tag.MediumHigh  { background: #fff9c4; }
+            .band-tag.MediumLow   { background: #ffe0b2; }
+            .band-tag.Low         { background: #ffcdd2; }
+            .band-buttons { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+            .band-buttons button {
+                padding: 0.25rem 0.5rem;
+                border: 1px solid #999;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 0.8rem;
+                background: #fff;
+            }
+            .band-buttons button:hover { background: #eee; }
+            .band-buttons button.active {
+                font-weight: bold;
+                border-color: #333;
+            }
+            .band-buttons button.clear { color: #c00; border-color: #c00; }
+            .band-buttons button[disabled] { opacity: 0.4; cursor: wait; }
+            a { color: #0066cc; text-decoration: none; }
+            a:hover { text-decoration: underline; }
+        </style>
+    </head>
+    <body>
+        <h1>Bobby Admin</h1>
+        <nav>
+            <a href="/admin?view=skeet" class="{% if view == "skeet" %}active{% endif %}">Skeet Appraisal</a>
+            <a href="/admin?view=image" class="{% if view == "image" %}active{% endif %}">Image Appraisal</a>
+        </nav>
+{{ content|safe }}
+    </body>
+</html>

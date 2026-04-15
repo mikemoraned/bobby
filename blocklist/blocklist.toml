@@ -1,0 +1,23 @@
+[[blocked]]
+at_uri = "at://did:plc:3bebghh7fygmfwjo6udrye43/app.bsky.feed.post/3mh4gatfe2c2d"
+reason = "author no-unauthenticated label"
+
+[[blocked]]
+at_uri = "at://did:plc:4cg25zjw2wuqvnduwqgy7ozt/app.bsky.feed.post/3mhne43icps2l"
+reason = "The author of this post has requested their posts not be displayed on external sites."
+
+[[blocked]]
+at_uri = "at://did:plc:4yqhj5inp67fgorcbewk5zfm/app.bsky.feed.post/3mhnexg5g3k2o"
+reason = "The author of this post has requested their posts not be displayed on external sites."
+
+[[blocked]]
+at_uri = "at://did:plc:iyqgkr3bmlxwma7i63imodfs/app.bsky.feed.post/3mh4g7iacos23"
+reason = "external porn label"
+
+[[blocked]]
+at_uri = "at://did:plc:vx76uzb6m2lvgh3kvbiagsg3/app.bsky.feed.post/3mhne4wdiuc2d"
+reason = "Adult Content"
+
+[[blocked]]
+at_uri = "at://did:plc:wsdcu5le5birr37kohts2aqa/app.bsky.feed.post/3mh4ogusm4c23"
+reason = "quoted author has !no-unauthenticated label"

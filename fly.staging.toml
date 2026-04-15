@@ -1,0 +1,32 @@
+app = "bobby-staging"
+
+[build]
+image = "ghcr.io/mikemoraned/bobby/skeet-feed:latest"
+primary_region = "lhr"
+
+[processes]
+app = "skeet-feed --store-path s3://hom-bobby/encrypted-store --hostname bobby-staging.houseofmoran.io --publisher-did did:plc:cjvdzmk4iapi5p5orrasehxp --bind 0.0.0.0:8080"
+
+[env]
+RUST_LOG = "skeet_feed=info,skeet_store=info"
+OTEL_EXPORTER_OTLP_ENDPOINT = "https://api.honeycomb.io"
+OTEL_SERVICE_NAME = "skeet-feed"
+
+[http_service]
+processes = ["app"]
+internal_port = 8080
+force_https = true
+auto_stop_machines = "suspend"
+auto_start_machines = true
+min_machines_running = 0
+
+[[http_service.checks]]
+grace_period = "10s"
+interval = "30s"
+method = "GET"
+timeout = "5s"
+path = "/.well-known/did.json"
+
+[[vm]]
+size = "shared-cpu-1x"
+memory = "512mb"

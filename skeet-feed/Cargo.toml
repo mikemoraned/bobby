@@ -1,0 +1,45 @@
+[package]
+name = "skeet-feed"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+chrono = { workspace = true }
+clap = { workspace = true }
+cot = { workspace = true }
+image = { workspace = true }
+oauth2 = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+shared = { workspace = true }
+skeet-store = { path = "../skeet-store" }
+skeet-web-shared = { path = "../skeet-web-shared" }
+tokio = { workspace = true }
+tower = { workspace = true }
+tower-sessions = { workspace = true }
+tracing = { workspace = true }
+urlencoding = "2"
+
+[dev-dependencies]
+chrono = { workspace = true }
+image = { workspace = true }
+skeet-store = { path = "../skeet-store", features = ["test-helpers"] }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
+wiremock = "0.6"
+
+[features]
+test = ["cot/test"]
+integ = []
+
+[[bin]]
+name = "skeet-feed"
+path = "src/bin/skeet_feed.rs"
+
+[[bin]]
+name = "register-feed"
+path = "src/bin/register_feed.rs"

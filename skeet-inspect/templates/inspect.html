@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{{ title }}</title>
+        <style>
+            body {
+                font-family: system-ui, sans-serif;
+                max-width: 1400px;
+                margin: 2rem auto;
+                padding: 0 1rem;
+            }
+            h1 { text-align: center; }
+            nav { text-align: center; margin-bottom: 1rem; }
+            .empty { color: #666; text-align: center; margin-top: 2rem; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { border: 1px solid #ddd; padding: 0.5rem; vertical-align: top; }
+            th { background: #f5f5f5; text-align: left; }
+            td.id { font-family: monospace; font-size: 0.85rem; white-space: nowrap; }
+            td.annotated img { max-width: 300px; max-height: 300px; }
+            td.version { font-family: monospace; font-size: 0.85rem; }
+            td.score { font-family: monospace; font-size: 0.85rem; text-align: right; }
+        </style>
+    </head>
+    <body>
+        <nav><a href="/">Home</a> | <a href="/pruned">Pruned</a> | <a href="/refined">Refined</a></nav>
+        <h1>{{ title }}</h1>
+        {% if entries.is_empty() %}
+            <p class="empty">{{ empty_message }}</p>
+        {% else %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Score</th>
+                        <th>Discovered</th>
+                        <th>ID</th>
+                        <th>Zone</th>
+                        <th>Config</th>
+                        <th>Annotated Image</th>
+                        <th>Skeet</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in &entries %}
+                        <tr>
+                            <td class="score">{{ entry.score }}</td>
+                            <td class="id">{{ entry.entry.discovered_at }}</td>
+                            <td class="id">{{ entry.entry.image_id }}</td>
+                            <td>{{ entry.entry.zone }}</td>
+                            <td class="version">{{ entry.entry.config_version }}</td>
+                            <td class="annotated">
+                                <img src="/skeet/{{ entry.entry.image_id }}/annotated.png" loading="lazy" alt="annotated face detection">
+                            </td>
+                            <td>
+                                <blockquote class="bluesky-embed" data-bluesky-uri="{{ entry.entry.at_uri }}">
+                                    <a href="{{ entry.entry.web_url }}">Loading skeet...</a>
+                                </blockquote>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <script async src="https://embed.bsky.app/static/embed.js" charset="utf-8"></script>
+        {% endif %}
+    </body>
+</html>

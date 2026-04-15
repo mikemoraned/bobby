@@ -1,0 +1,40 @@
+FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm AS planner
+WORKDIR /build
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm AS builder
+WORKDIR /build
+RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev && rm -rf /var/lib/apt/lists/*
+COPY --from=planner /build/recipe.json recipe.json
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    cargo chef cook --release --recipe-path recipe.json
+COPY . .
+COPY models/ models/
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    cargo build --release --bin pruner
+
+# The build.rs bakes an absolute path to the .bpk weights file into the binary.
+# Copy it to a stable path so we can place it predictably in the runtime image.
+RUN BPK_PATH=$(find /build/target/release/build -name "face_detection_yunet_2023mar_opset16.bpk" -print -quit) && \
+    cp "$BPK_PATH" /tmp/weights.bpk && \
+    echo "$BPK_PATH" > /tmp/bpk_original_path
+
+FROM debian:bookworm-slim AS runner
+LABEL org.opencontainers.image.source=https://github.com/mikemoraned/bobby
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /build/target/release/pruner /usr/local/bin/pruner
+
+# Restore the .bpk weights file to the exact path the binary expects
+COPY --from=builder /tmp/weights.bpk /tmp/weights.bpk
+COPY --from=builder /tmp/bpk_original_path /tmp/bpk_original_path
+RUN mkdir -p "$(dirname "$(cat /tmp/bpk_original_path)")" && \
+    cp /tmp/weights.bpk "$(cat /tmp/bpk_original_path)" && \
+    rm /tmp/weights.bpk /tmp/bpk_original_path
+
+COPY config/prune.toml /etc/bobby/prune.toml
+
+CMD ["pruner", "--config-path", "/etc/bobby/prune.toml"]

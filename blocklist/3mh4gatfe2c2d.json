@@ -1,0 +1,177 @@
+{
+  "thread": {
+    "$type": "app.bsky.feed.defs#threadViewPost",
+    "post": {
+      "author": {
+        "associated": {
+          "activitySubscription": {
+            "allowSubscriptions": "followers"
+          },
+          "chat": {
+            "allowIncoming": "all"
+          }
+        },
+        "avatar": "https://cdn.bsky.app/img/avatar/plain/did:plc:3bebghh7fygmfwjo6udrye43/bafkreiagk4ydmysrqz5m4sd2zbmg52f5wlmqgd6rvy7pgeh5rs5xfjow2i",
+        "createdAt": "2023-05-12T23:36:42.093Z",
+        "did": "did:plc:3bebghh7fygmfwjo6udrye43",
+        "displayName": "The Ugly Machine",
+        "handle": "theuglymachine.bsky.social",
+        "labels": [
+          {
+            "cid": "bafyreia6fdcpkifef47kv7ad63rkgeoswaianmgmiw4g6erwrj2q3wfzbm",
+            "cts": "1970-01-01T00:00:00.000Z",
+            "src": "did:plc:3bebghh7fygmfwjo6udrye43",
+            "uri": "at://did:plc:3bebghh7fygmfwjo6udrye43/app.bsky.actor.profile/self",
+            "val": "!no-unauthenticated"
+          }
+        ]
+      },
+      "bookmarkCount": 0,
+      "cid": "bafyreidx3qhrqekvf2bq5jktyv2p6h6rnhgjuvu47lzq76txcpgh4l7plm",
+      "embed": {
+        "$type": "app.bsky.embed.recordWithMedia#view",
+        "media": {
+          "$type": "app.bsky.embed.images#view",
+          "images": [
+            {
+              "alt": "Me and chapter on the couch. I am in a big sweater covered in blankets and chapters legs are poking out of the blankets ",
+              "aspectRatio": {
+                "height": 1125,
+                "width": 2000
+              },
+              "fullsize": "https://cdn.bsky.app/img/feed_fullsize/plain/did:plc:3bebghh7fygmfwjo6udrye43/bafkreicml6pgpsbfkosuw2fbcgubhtzzqrulg77uo7b6uoh77ywh2lxnsu",
+              "thumb": "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:3bebghh7fygmfwjo6udrye43/bafkreicml6pgpsbfkosuw2fbcgubhtzzqrulg77uo7b6uoh77ywh2lxnsu"
+            }
+          ]
+        },
+        "record": {
+          "record": {
+            "$type": "app.bsky.embed.record#viewRecord",
+            "author": {
+              "associated": {
+                "activitySubscription": {
+                  "allowSubscriptions": "followers"
+                },
+                "chat": {
+                  "allowIncoming": "all"
+                }
+              },
+              "avatar": "https://cdn.bsky.app/img/avatar/plain/did:plc:3bebghh7fygmfwjo6udrye43/bafkreiagk4ydmysrqz5m4sd2zbmg52f5wlmqgd6rvy7pgeh5rs5xfjow2i",
+              "createdAt": "2023-05-12T23:36:42.093Z",
+              "did": "did:plc:3bebghh7fygmfwjo6udrye43",
+              "displayName": "The Ugly Machine",
+              "handle": "theuglymachine.bsky.social",
+              "labels": [
+                {
+                  "cid": "bafyreia6fdcpkifef47kv7ad63rkgeoswaianmgmiw4g6erwrj2q3wfzbm",
+                  "cts": "1970-01-01T00:00:00.000Z",
+                  "src": "did:plc:3bebghh7fygmfwjo6udrye43",
+                  "uri": "at://did:plc:3bebghh7fygmfwjo6udrye43/app.bsky.actor.profile/self",
+                  "val": "!no-unauthenticated"
+                }
+              ]
+            },
+            "cid": "bafyreihhibhqtrjf2wdqn24ydfale7smccr5g34yib4sol7l2kuhp6euuu",
+            "embeds": [
+              {
+                "$type": "app.bsky.embed.images#view",
+                "images": [
+                  {
+                    "alt": "Chapter peeking out of the covers",
+                    "aspectRatio": {
+                      "height": 2000,
+                      "width": 1125
+                    },
+                    "fullsize": "https://cdn.bsky.app/img/feed_fullsize/plain/did:plc:3bebghh7fygmfwjo6udrye43/bafkreifibtxm4r64iyku4dvoahrrn5ydqizumpqoizsozh4jgj3mcaczwy",
+                    "thumb": "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:3bebghh7fygmfwjo6udrye43/bafkreifibtxm4r64iyku4dvoahrrn5ydqizumpqoizsozh4jgj3mcaczwy"
+                  }
+                ]
+              }
+            ],
+            "indexedAt": "2026-03-15T14:47:57.350Z",
+            "labels": [],
+            "likeCount": 29,
+            "quoteCount": 1,
+            "replyCount": 0,
+            "repostCount": 1,
+            "uri": "at://did:plc:3bebghh7fygmfwjo6udrye43/app.bsky.feed.post/3mh46rzvock2d",
+            "value": {
+              "$type": "app.bsky.feed.post",
+              "createdAt": "2026-03-15T14:47:55.199Z",
+              "embed": {
+                "$type": "app.bsky.embed.images",
+                "images": [
+                  {
+                    "alt": "Chapter peeking out of the covers",
+                    "aspectRatio": {
+                      "height": 2000,
+                      "width": 1125
+                    },
+                    "image": {
+                      "$type": "blob",
+                      "mimeType": "image/jpeg",
+                      "ref": {
+                        "$link": "bafkreifibtxm4r64iyku4dvoahrrn5ydqizumpqoizsozh4jgj3mcaczwy"
+                      },
+                      "size": 900886
+                    }
+                  }
+                ]
+              },
+              "langs": [
+                "en"
+              ],
+              "text": "Ok, I'm up"
+            }
+          }
+        }
+      },
+      "indexedAt": "2026-03-15T17:01:29.957Z",
+      "labels": [],
+      "likeCount": 22,
+      "quoteCount": 0,
+      "record": {
+        "$type": "app.bsky.feed.post",
+        "createdAt": "2026-03-15T17:01:27.888Z",
+        "embed": {
+          "$type": "app.bsky.embed.recordWithMedia",
+          "media": {
+            "$type": "app.bsky.embed.images",
+            "images": [
+              {
+                "alt": "Me and chapter on the couch. I am in a big sweater covered in blankets and chapters legs are poking out of the blankets ",
+                "aspectRatio": {
+                  "height": 1125,
+                  "width": 2000
+                },
+                "image": {
+                  "$type": "blob",
+                  "mimeType": "image/jpeg",
+                  "ref": {
+                    "$link": "bafkreicml6pgpsbfkosuw2fbcgubhtzzqrulg77uo7b6uoh77ywh2lxnsu"
+                  },
+                  "size": 962634
+                }
+              }
+            ]
+          },
+          "record": {
+            "$type": "app.bsky.embed.record",
+            "record": {
+              "cid": "bafyreihhibhqtrjf2wdqn24ydfale7smccr5g34yib4sol7l2kuhp6euuu",
+              "uri": "at://did:plc:3bebghh7fygmfwjo6udrye43/app.bsky.feed.post/3mh46rzvock2d"
+            }
+          }
+        },
+        "langs": [
+          "en"
+        ],
+        "text": "We have moved from bed to couch"
+      },
+      "replyCount": 2,
+      "repostCount": 0,
+      "uri": "at://did:plc:3bebghh7fygmfwjo6udrye43/app.bsky.feed.post/3mh4gatfe2c2d"
+    },
+    "threadContext": {}
+  }
+}

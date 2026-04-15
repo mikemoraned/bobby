@@ -1,0 +1,65 @@
+[package]
+name = "skeet-prune"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+atrium-api = { version = "0.25", default-features = false, features = ["namespace-appbsky"] }
+chrono = { workspace = true }
+clap = { workspace = true }
+face-detection = { path = "../face-detection" }
+fastrand = "2"
+image = { workspace = true }
+jetstream-oxide = "0.1"
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+shared = { workspace = true }
+skin-detection = { path = "../skin-detection" }
+skeet-store = { path = "../skeet-store" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+libtest-mimic = "0.8"
+serde = { workspace = true }
+toml = { workspace = true }
+
+[[bin]]
+name = "pruner"
+path = "src/bin/pruner.rs"
+
+[[bin]]
+name = "classify-examples"
+path = "src/bin/classify_examples.rs"
+
+[[bin]]
+name = "image-metadata-dump"
+path = "src/bin/image_metadata_dump.rs"
+
+[[bin]]
+name = "at-metadata-dump"
+path = "src/bin/at_metadata_dump.rs"
+
+[[bin]]
+name = "add-to-blocklist"
+path = "src/bin/add_to_blocklist.rs"
+
+[[bin]]
+name = "bench-firehose"
+path = "src/bin/bench_firehose.rs"
+
+
+[[test]]
+name = "examples"
+harness = false
+
+[[test]]
+name = "blocklist"
+harness = false
+
+[[test]]
+name = "filter_meta"
+harness = false

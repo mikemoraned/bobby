@@ -1,0 +1,49 @@
+[[example]]
+path = "eno7kayhhljgvgwc7ttdoojx_3mfev3xjylk2w_0.png"
+archetype = "TOP_RIGHT"
+exemplar = true
+
+[[example]]
+path = "jbbneqrt2fxcij3kjwxdu54m_3mfev4a57a22u_0.png"
+rejected = ["FaceNotInAcceptedZone"]
+exemplar = true
+
+[[example]]
+path = "4472a427-f6bd-4e55-87bd-86f5f91e187e.png"
+archetype = "CENTER_LEFT"
+exemplar = true
+
+[[example]]
+path = "bafkreiaj24jwns3psvpdkv2437ldxhnrwa64ypyxnsz2awq6lwrf3eidna.png"
+archetype = "CENTER_RIGHT"
+exemplar = true
+
+[[example]]
+path = "064b26e2-550a-4925-9bd1-aa26d68b1742.png"
+rejected = ["TooManyFaces"]
+exemplar = false
+
+[[example]]
+path = "1de8f881-78be-4a89-8155-f85e5543b342.png"
+rejected = ["FaceTooLarge", "TooMuchSkinOutsideFace"]
+exemplar = false
+
+[[example]]
+path = "a5d59a02-b46e-478b-ac46-801f67b9ac40.png"
+rejected = ["TooMuchSkinOutsideFace"]
+exemplar = false
+
+[[example]]
+path = "43344f90-e12f-4c06-bd54-ec7fb51211e1.png"
+rejected = ["TooManyFaces"]
+exemplar = false
+
+[[example]]
+path = "8978262e-3540-4593-bf8f-dfaf4de2b27f.png"
+rejected = ["TooMuchSkinOutsideFace"]
+exemplar = false
+
+[[example]]
+# TODO: change this to be filtered out in deep pass
+path = "v2:65ec937601ba69124a1a8bc8a9084de6.png"
+archetype = "CENTER_LEFT"

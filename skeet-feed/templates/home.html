@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Bobby Feed</title>
+{% if is_admin %}
+        <script src="/static/htmx.min.js" defer></script>
+{% endif %}
+        <style>
+            body {
+                font-family: system-ui, sans-serif;
+                max-width: 1200px;
+                margin: 2rem auto;
+                padding: 0 1rem;
+            }
+            h1 { text-align: center; }
+            .empty { color: #666; text-align: center; margin-top: 2rem; }
+            .grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+                gap: 1.5rem;
+            }
+            .card {
+                border: 1px solid #ddd;
+                border-radius: 8px;
+                overflow: hidden;
+            }
+            .card img {
+                width: 100%;
+                display: block;
+            }
+            .card .info {
+                padding: 0.75rem;
+                font-size: 0.9rem;
+            }
+            .card .score {
+                font-family: monospace;
+                font-weight: bold;
+            }
+            .card .band {
+                display: inline-block;
+                padding: 0.15rem 0.4rem;
+                border-radius: 4px;
+                font-size: 0.8rem;
+                background: #e0e0e0;
+            }
+            .card .band.HighQuality { background: #c8e6c9; }
+            .card .band.MediumHigh  { background: #fff9c4; }
+            .card .links {
+                margin-top: 0.4rem;
+                font-size: 0.85rem;
+            }
+            .card .links a { color: #0066cc; text-decoration: none; }
+            .card .links a:hover { text-decoration: underline; }
+            .appraise-section {
+                padding: 0.5rem 0.75rem 0.75rem;
+                border-top: 1px solid #eee;
+                font-size: 0.8rem;
+            }
+            .appraise-section .label {
+                font-weight: 600;
+                margin-bottom: 0.25rem;
+                color: #555;
+            }
+            .band-buttons { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 0.4rem; }
+            .band-buttons button {
+                padding: 0.2rem 0.4rem;
+                border: 1px solid #999;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 0.75rem;
+                background: #fff;
+            }
+            .band-buttons button:hover { background: #eee; }
+            .band-buttons button.active {
+                font-weight: bold;
+                border-color: #333;
+            }
+            .band-buttons button.clear { color: #c00; border-color: #c00; }
+            .band-buttons button[disabled] { opacity: 0.4; cursor: wait; }
+        </style>
+    </head>
+    <body>
+        <h1>Bobby Feed</h1>
+{% if entries.is_empty() %}
+        <p class="empty">No visible items in the feed right now.</p>
+{% else %}
+        <div class="grid">
+{% for entry in entries %}
+            <div class="card">
+                <img src="/skeet/{{ entry.image_id }}/annotated.png" alt="Annotated image" loading="lazy">
+                <div class="info">
+                    <span class="score">{{ entry.score }}</span>
+                    <span class="band {{ entry.band }}">{{ entry.band }}</span>
+                    <div class="links">
+                        <a href="{{ entry.web_url }}" target="_blank">bsky.app</a>
+                    </div>
+                </div>
+{% if is_admin %}
+                <div class="appraise-section">
+                    <div class="label">Skeet band</div>
+                    <div class="band-buttons" hx-disabled-elt="find button">
+{% for opt in band_options %}
+                        <button hx-post="/admin/appraise/skeet?band={{ opt.name }}&id={{ entry.skeet_id_encoded }}" hx-swap="none" title="{{ opt.description }}"{% if entry.manual_skeet_band == opt.name %} class="active"{% endif %}>{{ opt.label }}</button>
+{% endfor %}
+                        <button class="clear" hx-post="/admin/appraise/skeet?band=clear&id={{ entry.skeet_id_encoded }}" hx-swap="none">Clear</button>
+                    </div>
+                    <div class="label">Image band</div>
+                    <div class="band-buttons" hx-disabled-elt="find button">
+{% for opt in band_options %}
+                        <button hx-post="/admin/appraise/image?band={{ opt.name }}&id={{ entry.image_id_encoded }}" hx-swap="none" title="{{ opt.description }}"{% if entry.manual_image_band == opt.name %} class="active"{% endif %}>{{ opt.label }}</button>
+{% endfor %}
+                        <button class="clear" hx-post="/admin/appraise/image?band=clear&id={{ entry.image_id_encoded }}" hx-swap="none">Clear</button>
+                    </div>
+                </div>
+{% endif %}
+            </div>
+{% endfor %}
+        </div>
+{% endif %}
+    </body>
+</html>

@@ -1,0 +1,25 @@
+[package]
+name = "face-detection"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[package.metadata.cargo-machete]
+ignored = ["burn-import", "burn-store", "candle-core", "lzma-rust2"]
+
+[dependencies]
+burn = { version = "~0.20", default-features = false, features = ["ndarray"] }
+burn-store = { version = "~0.20", features = ["burnpack"] }
+euclid = "0.22"
+image = { workspace = true }
+imageproc = "0.25"
+shared = { workspace = true }
+
+# Pin transitive deps to avoid burn-import build failures
+lzma-rust2 = "~0.15.7"
+candle-core = "=0.9.1"
+
+[build-dependencies]
+burn-import = "~0.20"

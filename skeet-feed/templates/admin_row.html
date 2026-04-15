@@ -1,0 +1,24 @@
+<tr id="row-{{ row.row_id }}">
+    <td class="thumb"><img src="/skeet/{{ row.image_id }}/annotated.png" alt="Annotated" loading="lazy"></td>
+    <td class="id">{{ row.item_id }}</td>
+    <td class="score">{{ row.score }}</td>
+    <td><span class="band-tag {{ row.auto_band }}">{{ row.auto_band }}</span></td>
+    <td>
+{% if row.manual_band.is_some() %}
+        <span class="band-tag {{ row.manual_band_str }}">{{ row.manual_band_str }}</span>
+        <br><small>by {{ row.manual_appraiser }}</small>
+{% else %}
+        <span style="color:#999">—</span>
+{% endif %}
+    </td>
+    <td><span class="band-tag {{ row.effective_band }}">{{ row.effective_band }}</span></td>
+    <td>
+        <div class="band-buttons">
+{% for opt in band_options %}
+            <button hx-post="/admin/appraise/{{ row.appraise_kind }}?band={{ opt.name }}&id={{ row.item_id_encoded }}" hx-target="#row-{{ row.row_id }}" hx-swap="outerHTML" hx-disabled-elt="closest .band-buttons" title="{{ opt.description }}"{% if row.manual_band_str == opt.name %} class="active"{% endif %}>{{ opt.label }}</button>
+{% endfor %}
+            <button class="clear" hx-post="/admin/appraise/{{ row.appraise_kind }}?band=clear&id={{ row.item_id_encoded }}" hx-target="#row-{{ row.row_id }}" hx-swap="outerHTML" hx-disabled-elt="closest .band-buttons">Clear</button>
+        </div>
+    </td>
+    <td><a href="{{ row.web_url }}" target="_blank">bsky</a></td>
+</tr>

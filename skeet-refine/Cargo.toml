@@ -1,0 +1,38 @@
+[package]
+name = "skeet-refine"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+base64 = "0.22"
+clap = { workspace = true }
+futures = "0.3"
+image = { workspace = true }
+rig-core = "0.33"
+serde = { workspace = true }
+serde_json = { workspace = true }
+shared = { workspace = true }
+skeet-store = { path = "../skeet-store" }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[[bin]]
+name = "train"
+path = "src/bin/train.rs"
+
+[[bin]]
+name = "refine"
+path = "src/bin/refine.rs"
+
+[[bin]]
+name = "live-refine"
+path = "src/bin/live_refine.rs"
