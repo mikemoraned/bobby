@@ -160,6 +160,123 @@ impl From<&str> for ModelVersion {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Score(f32);
 
+/// Quality band for appraising skeets and images.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Band {
+    Low,
+    MediumLow,
+    MediumHigh,
+    HighQuality,
+}
+
+impl Band {
+    pub fn from_score(score: Score) -> Self {
+        let value: f32 = score.into();
+        if value < 0.25 {
+            Self::Low
+        } else if value < 0.5 {
+            Self::MediumLow
+        } else if value < 0.75 {
+            Self::MediumHigh
+        } else {
+            Self::HighQuality
+        }
+    }
+
+    pub const fn is_visible_in_feed(self) -> bool {
+        matches!(self, Self::MediumHigh | Self::HighQuality)
+    }
+}
+
+impl std::fmt::Display for Band {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Low => write!(f, "Low"),
+            Self::MediumLow => write!(f, "MediumLow"),
+            Self::MediumHigh => write!(f, "MediumHigh"),
+            Self::HighQuality => write!(f, "HighQuality"),
+        }
+    }
+}
+
+impl std::str::FromStr for Band {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Low" => Ok(Self::Low),
+            "MediumLow" => Ok(Self::MediumLow),
+            "MediumHigh" => Ok(Self::MediumHigh),
+            "HighQuality" => Ok(Self::HighQuality),
+            other => Err(format!("unknown band: {other}")),
+        }
+    }
+}
+
+impl PartialOrd for Band {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Band {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        use Band::*;
+        match (self, other) {
+            (Low, Low) => std::cmp::Ordering::Equal,
+            (Low, _) => std::cmp::Ordering::Less,
+            (_, Low) => std::cmp::Ordering::Greater,
+            (MediumLow, MediumLow) => std::cmp::Ordering::Equal,
+            (MediumLow, _) => std::cmp::Ordering::Less,
+            (_, MediumLow) => std::cmp::Ordering::Greater,
+            (MediumHigh, MediumHigh) => std::cmp::Ordering::Equal,
+            (MediumHigh, HighQuality) => std::cmp::Ordering::Less,
+            (HighQuality, MediumHigh) => std::cmp::Ordering::Greater,
+            (HighQuality, HighQuality) => std::cmp::Ordering::Equal,
+        }
+    }
+}
+
+/// Identity of whoever made an appraisal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Appraiser {
+    GitHub { username: String },
+}
+
+impl Appraiser {
+    pub fn wire_format(&self) -> String {
+        match self {
+            Self::GitHub { username } => format!("github:{username}"),
+        }
+    }
+
+    pub fn from_wire_format(s: &str) -> Result<Self, String> {
+        let Some((provider, identifier)) = s.split_once(':') else {
+            return Err(format!("invalid appraiser format: {s}"));
+        };
+        match provider {
+            "github" => Ok(Self::GitHub {
+                username: identifier.to_string(),
+            }),
+            other => Err(format!("unknown appraiser provider: {other}")),
+        }
+    }
+}
+
+impl std::fmt::Display for Appraiser {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.wire_format())
+    }
+}
+
+impl std::str::FromStr for Appraiser {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_wire_format(s)
+    }
+}
+
 #[derive(Debug, Clone, thiserror::Error)]
 #[error("score must be between 0.0 and 1.0, got {0}")]
 pub struct InvalidScore(f32);
@@ -225,10 +342,22 @@ impl PruneConfig {
     /// produces a different version.
     pub fn version(&self) -> ModelVersion {
         let mut entries = vec![
-            ("max_face_area_pct", self.max_face_area_pct.value().to_bits()),
-            ("max_outside_face_skin_pct", self.max_outside_face_skin_pct.value().to_bits()),
-            ("min_face_area_pct", self.min_face_area_pct.value().to_bits()),
-            ("min_face_skin_pct", self.min_face_skin_pct.value().to_bits()),
+            (
+                "max_face_area_pct",
+                self.max_face_area_pct.value().to_bits(),
+            ),
+            (
+                "max_outside_face_skin_pct",
+                self.max_outside_face_skin_pct.value().to_bits(),
+            ),
+            (
+                "min_face_area_pct",
+                self.min_face_area_pct.value().to_bits(),
+            ),
+            (
+                "min_face_skin_pct",
+                self.min_face_skin_pct.value().to_bits(),
+            ),
         ];
         entries.sort_by_key(|(k, _)| *k);
 
@@ -351,7 +480,10 @@ mod tests {
     #[test]
     fn rejection_categories() {
         assert_eq!(Rejection::FaceTooSmall.category(), RejectionCategory::Face);
-        assert_eq!(Rejection::BlockedByMetadata.category(), RejectionCategory::Metadata);
+        assert_eq!(
+            Rejection::BlockedByMetadata.category(),
+            RejectionCategory::Metadata
+        );
     }
 
     #[test]
@@ -416,4 +548,74 @@ mod tests {
         }
     }
 
+    #[test]
+    fn band_from_score_boundaries() {
+        assert_eq!(Band::from_score(Score::new(0.0).unwrap()), Band::Low);
+        assert_eq!(Band::from_score(Score::new(0.24).unwrap()), Band::Low);
+        assert_eq!(Band::from_score(Score::new(0.25).unwrap()), Band::MediumLow);
+        assert_eq!(Band::from_score(Score::new(0.49).unwrap()), Band::MediumLow);
+        assert_eq!(Band::from_score(Score::new(0.5).unwrap()), Band::MediumHigh);
+        assert_eq!(
+            Band::from_score(Score::new(0.74).unwrap()),
+            Band::MediumHigh
+        );
+        assert_eq!(
+            Band::from_score(Score::new(0.75).unwrap()),
+            Band::HighQuality
+        );
+        assert_eq!(
+            Band::from_score(Score::new(1.0).unwrap()),
+            Band::HighQuality
+        );
+    }
+
+    #[test]
+    fn band_is_visible_in_feed() {
+        assert!(!Band::Low.is_visible_in_feed());
+        assert!(!Band::MediumLow.is_visible_in_feed());
+        assert!(Band::MediumHigh.is_visible_in_feed());
+        assert!(Band::HighQuality.is_visible_in_feed());
+    }
+
+    #[test]
+    fn band_display_and_fromstr() {
+        for band in [
+            Band::Low,
+            Band::MediumLow,
+            Band::MediumHigh,
+            Band::HighQuality,
+        ] {
+            let s = band.to_string();
+            let parsed: Band = s.parse().expect("should parse");
+            assert_eq!(parsed, band);
+        }
+    }
+
+    #[test]
+    fn band_ordering() {
+        assert!(Band::Low < Band::MediumLow);
+        assert!(Band::MediumLow < Band::MediumHigh);
+        assert!(Band::MediumHigh < Band::HighQuality);
+        assert_eq!(
+            Band::HighQuality.cmp(&Band::HighQuality),
+            std::cmp::Ordering::Equal
+        );
+    }
+
+    #[test]
+    fn appraiser_display_and_fromstr() {
+        let appraiser = Appraiser::GitHub {
+            username: "testuser".to_string(),
+        };
+        let s = appraiser.to_string();
+        assert_eq!(s, "github:testuser");
+        let parsed: Appraiser = s.parse().expect("should parse");
+        assert_eq!(parsed, appraiser);
+    }
+
+    #[test]
+    fn appraiser_rejects_malformed() {
+        assert!("invalid".parse::<Appraiser>().is_err());
+        assert!("unknown:user".parse::<Appraiser>().is_err());
+    }
 }

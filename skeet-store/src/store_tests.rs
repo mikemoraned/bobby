@@ -365,3 +365,37 @@ async fn scores_cache_invalidated_after_batch_upsert() {
         &f.r1.image_id, Score::new(0.6).expect("valid"),
     ).await;
 }
+
+#[tokio::test]
+async fn list_summaries_page_returns_ordered_results() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let r1 = make_record("page1");
+    let r2 = make_record("page2");
+    let r3 = make_record("page3");
+    store.add(&r1).await.unwrap();
+    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+    store.add(&r2).await.unwrap();
+    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+    store.add(&r3).await.unwrap();
+
+    let page1 = store.list_summaries_page(None, 2).await.unwrap();
+    assert_eq!(page1.len(), 2);
+    assert_eq!(page1[0].image_id, r3.image_id);
+    assert_eq!(page1[1].image_id, r2.image_id);
+
+    let before = Some(page1.last().unwrap().discovered_at.clone());
+    let page2 = store.list_summaries_page(before, 2).await.unwrap();
+    assert_eq!(page2.len(), 1);
+    assert_eq!(page2[0].image_id, r1.image_id);
+}
+
+#[tokio::test]
+async fn list_summaries_page_empty_result() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let page = store.list_summaries_page(None, 10).await.unwrap();
+    assert_eq!(page.len(), 0);
+}

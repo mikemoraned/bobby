@@ -1,0 +1,15 @@
+[package]
+name = "skeet-web-shared"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+cot = { workspace = true }
+image = { workspace = true }
+shared = { workspace = true }
+skeet-store = { path = "../skeet-store" }
+tower = { workspace = true }
+tracing = { workspace = true }

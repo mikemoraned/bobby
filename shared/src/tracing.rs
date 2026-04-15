@@ -94,7 +94,10 @@ pub fn init_with_file(
     let (non_blocking, file_guard) = tracing_appender::non_blocking(file_appender);
 
     let (otel_layer, otel_guard) = match try_otel_layer() {
-        Some((layer, guard)) => (Some(layer.with_filter(targets_filter(default_filter))), Some(guard)),
+        Some((layer, guard)) => (
+            Some(layer.with_filter(targets_filter(default_filter))),
+            Some(guard),
+        ),
         None => (None, None),
     };
 
@@ -135,7 +138,10 @@ pub fn init_with_file_and_stderr(
     let (non_blocking, file_guard) = tracing_appender::non_blocking(file_appender);
 
     let (otel_layer, otel_guard) = match try_otel_layer() {
-        Some((layer, guard)) => (Some(layer.with_filter(targets_filter(default_filter))), Some(guard)),
+        Some((layer, guard)) => (
+            Some(layer.with_filter(targets_filter(default_filter))),
+            Some(guard),
+        ),
         None => (None, None),
     };
 
@@ -146,7 +152,11 @@ pub fn init_with_file_and_stderr(
                 .with_writer(non_blocking)
                 .with_filter(targets_filter(default_filter)),
         )
-        .with(fmt::layer().with_writer(std::io::stderr).with_filter(targets_filter(default_filter)))
+        .with(
+            fmt::layer()
+                .with_writer(std::io::stderr)
+                .with_filter(targets_filter(default_filter)),
+        )
         .with(otel_layer)
         .init();
 

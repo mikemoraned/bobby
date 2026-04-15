@@ -219,6 +219,36 @@ impl SkeetStore {
     }
 
     #[instrument(skip(self))]
+    pub async fn list_summaries_page(
+        &self,
+        before: Option<DiscoveredAt>,
+        limit: usize,
+    ) -> Result<Vec<StoredImageSummary>, StoreError> {
+        let mut query = self
+            .images_table
+            .query()
+            .select(lancedb::query::Select::columns(&[
+                "image_id",
+                "skeet_id",
+                "discovered_at",
+                "original_at",
+                "archetype",
+                "config_version",
+                "detected_text",
+            ]))
+            .limit(limit as i64);
+
+        if let Some(before) = before {
+            query = query.only_if(format!("discovered_at < {}", before.timestamp_micros()));
+        }
+
+        let batches = execute_query(&query, "list_summaries_page").await?;
+        let mut summaries = batches_to_summaries(&batches)?;
+        summaries.sort_by(|a, b| b.discovered_at.cmp(&a.discovered_at));
+        Ok(summaries)
+    }
+
+    #[instrument(skip(self))]
     pub async fn get_by_id(&self, image_id: &ImageId) -> Result<Option<StoredImage>, StoreError> {
         let query = self
             .images_table
