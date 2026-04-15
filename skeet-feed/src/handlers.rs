@@ -14,6 +14,7 @@ use skeet_web_shared::Store;
 use skeet_web_shared::effective_band::{image_effective_band, skeet_visible_in_feed};
 use tracing::{info, instrument, warn};
 
+use crate::AppraiserExtractor;
 use crate::FeedCacheExtractor;
 use crate::feed_cache::{CachedFeed, FeedCache};
 use crate::feed_config::FeedConfig;
@@ -222,8 +223,13 @@ pub async fn get_feed_skeleton(
 
 pub struct HomeEntry {
     pub image_id: String,
+    pub skeet_id: String,
+    pub skeet_id_encoded: String,
+    pub image_id_encoded: String,
     pub score: String,
     pub band: String,
+    pub manual_skeet_band: String,
+    pub manual_image_band: String,
     pub web_url: String,
 }
 
@@ -231,15 +237,18 @@ pub struct HomeEntry {
 #[template(path = "home.html")]
 struct HomeTemplate {
     entries: Vec<HomeEntry>,
+    is_admin: bool,
 }
 
 #[instrument(skip_all)]
 pub async fn home(
     head: RequestHead,
+    AppraiserExtractor(appraiser): AppraiserExtractor,
     FeedCacheExtractor(cache): FeedCacheExtractor,
 ) -> cot::Result<Html> {
     info!("serving home");
 
+    let is_admin = appraiser.is_some();
     let feed = get_feed(&cache, &head).await?;
 
     let entries: Vec<HomeEntry> = visible_entries(&feed)
@@ -251,18 +260,24 @@ pub async fn home(
             let did = summary.skeet_id.did();
             let rkey = summary.skeet_id.rkey();
             let manual_image = feed.image_appraisals.get(&summary.image_id).map(|a| a.band);
+            let manual_skeet = feed.skeet_appraisals.get(&summary.skeet_id).map(|a| a.band);
             let band = image_effective_band(score, manual_image);
             Some(HomeEntry {
                 image_id: summary.image_id.to_string(),
+                skeet_id: summary.skeet_id.to_string(),
+                skeet_id_encoded: urlencoding::encode(&summary.skeet_id.to_string()).into_owned(),
+                image_id_encoded: urlencoding::encode(&summary.image_id.to_string()).into_owned(),
                 score: format!("{score}"),
                 band: band.to_string(),
+                manual_skeet_band: manual_skeet.map(|b| b.to_string()).unwrap_or_default(),
+                manual_image_band: manual_image.map(|b| b.to_string()).unwrap_or_default(),
                 web_url: format!("https://bsky.app/profile/{did}/post/{rkey}"),
             })
         })
         .collect();
 
-    info!(count = entries.len(), "serving home entries");
-    let rendered = HomeTemplate { entries }.render()?;
+    info!(count = entries.len(), is_admin, "serving home entries");
+    let rendered = HomeTemplate { entries, is_admin }.render()?;
     Ok(Html::new(rendered))
 }
 

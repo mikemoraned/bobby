@@ -136,3 +136,8 @@ Protect the `/admin` area behind GitHub OAuth login. Users authenticate via GitH
 - [x] Non-allowlisted user gets 403, not a silent redirect loop.
 - [x] `/auth/logout` clears the session; subsequent `/admin` requests redirect to login again.
 - [x] Tampered CSRF state on callback is rejected.
+
+#### Add appraisal abilities to /home
+
+- [x] when the current user is in the role of admin, add controls to /home under each skeet which allow either the skeet or the image to be appraised
+  - note: only enable these if the user happens to be logged-in. if they are not, then home page is still viewable as before, just without controls
