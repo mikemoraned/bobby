@@ -571,7 +571,6 @@ async fn oauth_client(
     let oauth_config = OAuthConfig::with_urls(
         "test-client-id".to_string(),
         "test-client-secret".to_string(),
-        "http://localhost:8080/auth/callback".to_string(),
         allowed_users.into_iter().map(String::from).collect(),
         format!("{}/authorize", mock_server.uri()),
         format!("{}/token", mock_server.uri()),

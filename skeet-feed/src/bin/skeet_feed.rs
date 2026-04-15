@@ -117,13 +117,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &args.admin_users,
     ) {
         (Some(client_id), Some(client_secret), Some(admin_users)) => {
-            let redirect_url = format!("https://{}/auth/callback", args.hostname);
             let users: Vec<String> = admin_users.split(',').map(|s| s.trim().to_string()).collect();
             info!(admin_users = ?users, "GitHub OAuth configured");
             Some(Arc::new(OAuthConfig::new(
                 client_id,
                 client_secret,
-                redirect_url,
                 users,
             )))
         }

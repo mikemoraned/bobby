@@ -9,8 +9,11 @@ use oauth2::{AuthUrl, ClientId, ClientSecret, EndpointNotSet, EndpointSet, Redir
 use tower::{Layer, Service};
 
 pub struct OAuthConfig {
-    pub client: BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet>,
+    pub client_id: String,
+    pub client_secret: String,
     pub admin_users: HashSet<String>,
+    pub auth_url: String,
+    pub token_url: String,
     pub github_api_base_url: String,
 }
 
@@ -18,13 +21,11 @@ impl OAuthConfig {
     pub fn new(
         client_id: String,
         client_secret: String,
-        redirect_url: String,
         admin_users: Vec<String>,
     ) -> Self {
         Self::with_urls(
             client_id,
             client_secret,
-            redirect_url,
             admin_users,
             "https://github.com/login/oauth/authorize".to_string(),
             "https://github.com/login/oauth/access_token".to_string(),
@@ -35,23 +36,27 @@ impl OAuthConfig {
     pub fn with_urls(
         client_id: String,
         client_secret: String,
-        redirect_url: String,
         admin_users: Vec<String>,
         auth_url: String,
         token_url: String,
         github_api_base_url: String,
     ) -> Self {
-        let client = BasicClient::new(ClientId::new(client_id))
-            .set_client_secret(ClientSecret::new(client_secret))
-            .set_auth_uri(AuthUrl::new(auth_url).expect("valid auth URL"))
-            .set_token_uri(TokenUrl::new(token_url).expect("valid token URL"))
-            .set_redirect_uri(RedirectUrl::new(redirect_url).expect("valid redirect URL"));
-
         Self {
-            client,
+            client_id,
+            client_secret,
             admin_users: admin_users.into_iter().collect(),
+            auth_url,
+            token_url,
             github_api_base_url,
         }
+    }
+
+    pub fn build_client(&self, redirect_url: &str) -> BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet> {
+        BasicClient::new(ClientId::new(self.client_id.clone()))
+            .set_client_secret(ClientSecret::new(self.client_secret.clone()))
+            .set_auth_uri(AuthUrl::new(self.auth_url.clone()).expect("valid auth URL"))
+            .set_token_uri(TokenUrl::new(self.token_url.clone()).expect("valid token URL"))
+            .set_redirect_uri(RedirectUrl::new(redirect_url.to_string()).expect("valid redirect URL"))
     }
 
     pub fn is_allowed(&self, username: &str) -> bool {

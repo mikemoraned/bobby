@@ -1,3 +1,4 @@
+use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::UrlQuery;
 use cot::response::{IntoResponse, Redirect, Response};
 use cot::session::Session;
@@ -29,7 +30,21 @@ fn session_err(e: impl std::fmt::Display) -> cot::Error {
     cot::Error::internal(format!("session error: {e}"))
 }
 
+fn redirect_url_from_request(head: &RequestHead) -> String {
+    let host = head
+        .headers
+        .get("host")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("localhost");
+    let scheme = head
+        .uri
+        .scheme_str()
+        .unwrap_or("http");
+    format!("{scheme}://{host}/auth/callback")
+}
+
 pub async fn auth_login(
+    head: RequestHead,
     session: Session,
     OAuthConfigExtractor(config): OAuthConfigExtractor,
     UrlQuery(query): UrlQuery<LoginQuery>,
@@ -37,14 +52,19 @@ pub async fn auth_login(
     let config = config
         .ok_or_else(|| cot::Error::internal("OAuth not configured — use --local-admin for local dev"))?;
 
-    let (auth_url, csrf_state) = config
-        .client
+    let redirect_url = redirect_url_from_request(&head);
+    let client = config.build_client(&redirect_url);
+    let (auth_url, csrf_state) = client
         .authorize_url(CsrfToken::new_random)
         .add_scope(Scope::new("read:user".to_string()))
         .url();
 
     session
         .insert("csrf_state", csrf_state.secret().to_string())
+        .await
+        .map_err(session_err)?;
+    session
+        .insert("oauth_redirect_url", redirect_url)
         .await
         .map_err(session_err)?;
 
@@ -80,10 +100,20 @@ pub async fn auth_callback(
         .await
         .map_err(session_err)?;
 
+    let redirect_url: String = session
+        .get("oauth_redirect_url")
+        .await
+        .map_err(session_err)?
+        .ok_or_else(|| cot::Error::internal("missing oauth_redirect_url in session"))?;
+    session
+        .remove::<String>("oauth_redirect_url")
+        .await
+        .map_err(session_err)?;
+
     // Exchange code for access token
+    let client = config.build_client(&redirect_url);
     let http_client = reqwest::Client::new();
-    let token_result = config
-        .client
+    let token_result = client
         .exchange_code(AuthorizationCode::new(query.code))
         .request_async(&http_client)
         .await
