@@ -223,7 +223,6 @@ pub async fn get_feed_skeleton(
 
 pub struct HomeEntry {
     pub image_id: String,
-    pub skeet_id: String,
     pub skeet_id_encoded: String,
     pub image_id_encoded: String,
     pub score: String,
@@ -262,11 +261,11 @@ pub async fn home(
             let manual_image = feed.image_appraisals.get(&summary.image_id).map(|a| a.band);
             let manual_skeet = feed.skeet_appraisals.get(&summary.skeet_id).map(|a| a.band);
             let band = image_effective_band(score, manual_image);
+            let image_id = summary.image_id.to_string();
             Some(HomeEntry {
-                image_id: summary.image_id.to_string(),
-                skeet_id: summary.skeet_id.to_string(),
                 skeet_id_encoded: urlencoding::encode(&summary.skeet_id.to_string()).into_owned(),
-                image_id_encoded: urlencoding::encode(&summary.image_id.to_string()).into_owned(),
+                image_id_encoded: urlencoding::encode(&image_id).into_owned(),
+                image_id,
                 score: format!("{score}"),
                 band: band.to_string(),
                 manual_skeet_band: manual_skeet.map(|b| b.to_string()).unwrap_or_default(),

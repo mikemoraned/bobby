@@ -1,3 +1,13 @@
+{% macro band_buttons(label, kind, id_encoded, manual_band) %}
+                    <div class="label">{{ label }}</div>
+                    <div class="band-buttons" hx-disabled-elt="find button">
+                        <button hx-post="/admin/appraise/{{ kind }}?band=HighQuality&id={{ id_encoded }}" hx-swap="none"{% if manual_band == "HighQuality" %} class="active"{% endif %}>High</button>
+                        <button hx-post="/admin/appraise/{{ kind }}?band=MediumHigh&id={{ id_encoded }}" hx-swap="none"{% if manual_band == "MediumHigh" %} class="active"{% endif %}>MedHigh</button>
+                        <button hx-post="/admin/appraise/{{ kind }}?band=MediumLow&id={{ id_encoded }}" hx-swap="none"{% if manual_band == "MediumLow" %} class="active"{% endif %}>MedLow</button>
+                        <button hx-post="/admin/appraise/{{ kind }}?band=Low&id={{ id_encoded }}" hx-swap="none"{% if manual_band == "Low" %} class="active"{% endif %}>Low</button>
+                        <button class="clear" hx-post="/admin/appraise/{{ kind }}?band=clear&id={{ id_encoded }}" hx-swap="none">Clear</button>
+                    </div>
+{% endmacro %}
 <!DOCTYPE html>
 <html lang="en">
     <head>
@@ -99,22 +109,8 @@
                 </div>
 {% if is_admin %}
                 <div class="appraise-section">
-                    <div class="label">Skeet band</div>
-                    <div class="band-buttons" hx-disabled-elt="find button">
-                        <button hx-post="/admin/appraise/skeet?band=HighQuality&id={{ entry.skeet_id_encoded }}" hx-swap="none"{% if entry.manual_skeet_band == "HighQuality" %} class="active"{% endif %}>High</button>
-                        <button hx-post="/admin/appraise/skeet?band=MediumHigh&id={{ entry.skeet_id_encoded }}" hx-swap="none"{% if entry.manual_skeet_band == "MediumHigh" %} class="active"{% endif %}>MedHigh</button>
-                        <button hx-post="/admin/appraise/skeet?band=MediumLow&id={{ entry.skeet_id_encoded }}" hx-swap="none"{% if entry.manual_skeet_band == "MediumLow" %} class="active"{% endif %}>MedLow</button>
-                        <button hx-post="/admin/appraise/skeet?band=Low&id={{ entry.skeet_id_encoded }}" hx-swap="none"{% if entry.manual_skeet_band == "Low" %} class="active"{% endif %}>Low</button>
-                        <button class="clear" hx-post="/admin/appraise/skeet?band=clear&id={{ entry.skeet_id_encoded }}" hx-swap="none">Clear</button>
-                    </div>
-                    <div class="label">Image band</div>
-                    <div class="band-buttons" hx-disabled-elt="find button">
-                        <button hx-post="/admin/appraise/image?band=HighQuality&id={{ entry.image_id_encoded }}" hx-swap="none"{% if entry.manual_image_band == "HighQuality" %} class="active"{% endif %}>High</button>
-                        <button hx-post="/admin/appraise/image?band=MediumHigh&id={{ entry.image_id_encoded }}" hx-swap="none"{% if entry.manual_image_band == "MediumHigh" %} class="active"{% endif %}>MedHigh</button>
-                        <button hx-post="/admin/appraise/image?band=MediumLow&id={{ entry.image_id_encoded }}" hx-swap="none"{% if entry.manual_image_band == "MediumLow" %} class="active"{% endif %}>MedLow</button>
-                        <button hx-post="/admin/appraise/image?band=Low&id={{ entry.image_id_encoded }}" hx-swap="none"{% if entry.manual_image_band == "Low" %} class="active"{% endif %}>Low</button>
-                        <button class="clear" hx-post="/admin/appraise/image?band=clear&id={{ entry.image_id_encoded }}" hx-swap="none">Clear</button>
-                    </div>
+                    {% call band_buttons("Skeet band", "skeet", entry.skeet_id_encoded, entry.manual_skeet_band) %}{% endcall %}
+                    {% call band_buttons("Image band", "image", entry.image_id_encoded, entry.manual_image_band) %}{% endcall %}
                 </div>
 {% endif %}
             </div>
