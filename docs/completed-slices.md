@@ -130,3 +130,18 @@ Systematic investigation and resolution of performance bottlenecks across the pi
 - **Visibility**: added OpenTelemetry to skeet-feed on fly.io, per-stage pipeline counters with channel depth monitoring, slow-query plan logging (>100ms threshold).
 - **Feed caching**: added a read-through `FeedCache` in skeet-feed with 5-minute staleness window and 1-minute background refresh, reducing feed response times from ~8s to near-instant for cached results. Used tokio's `start_paused`/`advance` for deterministic time-based tests.
 - **Test infrastructure**: extracted shared test helpers (`make_record`, `open_temp_store`, etc.) into `skeet-store::test_utils` behind a `test-helpers` feature flag, deduplicating across four test files.
+
+## Slice 13: Add /admin area in skeet-feed for manual quality appraisal of skeets and images
+
+Built a full admin area with manual appraisal capabilities and GitHub OAuth authentication:
+
+- **Domain types**: added `Band` enum (Low/MediumLow/MediumHigh/HighQuality) with score-based classification, visibility rules, and an `Appraiser` enum (GitHub username or LocalAdmin) with wire-format serialisation.
+- **Shared web crate**: extracted `skeet-web-shared` for store middleware, shared view types, vendored htmx, and base layout template shared between skeet-inspect and skeet-feed.
+- **Storage**: cursor-paged listing (`list_summaries_page`), manual appraisal tables for both skeets and images (`manual_skeet_appraisal_v1`, `manual_image_appraisal_v1`) with set/get/clear/list operations preserving appraiser identity.
+- **Effective band logic**: computes per-image and per-skeet effective bands combining automatic scores with manual overrides; one bad image taints the whole skeet; manual skeet override wins over automatic. Replaced `min_score` config with band-based visibility.
+- **Feed integration**: `FeedCache::refresh()` loads manual appraisals; `get_feed_skeleton` uses effective-band visibility. Added `Cache-Control: no-cache` support to force refresh, with `Last-modified` header showing cache freshness.
+- **Home view** (`/`): displays currently-visible feed items sorted best-to-worst, with appraisal controls shown when user is logged in as admin.
+- **Admin view** (`/admin`): cursor-paged infinite scroll via htmx, showing all stored items with thumbnails, scores, bands, and per-item band selector buttons (4 bands + clear). Supports both skeet and image appraisal sub-views.
+- **GitHub OAuth**: full OAuth flow (`/auth/login`, `/auth/callback`, `/auth/logout`) with CSRF protection, username allowlist from `BOBBY_ADMIN_USERS` env var, and session-based role management. `--local-admin` flag for local development. Split env files into `bobby-local.env` and `bobby-staging.env`.
+- **Auth guard**: handler-level `AppraiserExtractor` checks both static extensions (local-admin) and session (OAuth); unauthenticated requests redirect to login, non-allowlisted users get 403.
+- **Testing**: comprehensive integ tests for OAuth flow (mocked GitHub), admin access control, CSRF rejection, feed visibility after appraisal mutations, and paging.
