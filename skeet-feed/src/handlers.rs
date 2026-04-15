@@ -232,11 +232,37 @@ pub struct HomeEntry {
     pub web_url: String,
 }
 
+pub struct BandOption {
+    pub name: &'static str,
+    pub label: &'static str,
+    pub description: &'static str,
+}
+
+/// Bands ordered best-to-worst for UI button display.
+const BANDS_BEST_TO_WORST: &[Band] = &[
+    Band::HighQuality,
+    Band::MediumHigh,
+    Band::MediumLow,
+    Band::Low,
+];
+
+pub fn band_options() -> Vec<BandOption> {
+    BANDS_BEST_TO_WORST
+        .iter()
+        .map(|&b| BandOption {
+            name: b.wire_name(),
+            label: b.short_label(),
+            description: b.description(),
+        })
+        .collect()
+}
+
 #[derive(Template)]
 #[template(path = "home.html")]
 struct HomeTemplate {
     entries: Vec<HomeEntry>,
     is_admin: bool,
+    band_options: Vec<BandOption>,
 }
 
 #[instrument(skip_all)]
@@ -276,7 +302,7 @@ pub async fn home(
         .collect();
 
     info!(count = entries.len(), is_admin, "serving home entries");
-    let rendered = HomeTemplate { entries, is_admin }.render()?;
+    let rendered = HomeTemplate { entries, is_admin, band_options: band_options() }.render()?;
     Ok(Html::new(rendered))
 }
 

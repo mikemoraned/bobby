@@ -37,6 +37,35 @@ impl Band {
         }
     }
 
+    pub const ALL: &'static [Self] = &[Self::Low, Self::MediumLow, Self::MediumHigh, Self::HighQuality];
+
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::Low => "Low",
+            Self::MediumLow => "MediumLow",
+            Self::MediumHigh => "MediumHigh",
+            Self::HighQuality => "HighQuality",
+        }
+    }
+
+    pub const fn short_label(self) -> &'static str {
+        match self {
+            Self::Low => "Low",
+            Self::MediumLow => "MedLow",
+            Self::MediumHigh => "MedHigh",
+            Self::HighQuality => "High",
+        }
+    }
+
+    pub const fn description(self) -> &'static str {
+        match self {
+            Self::Low => "Doesn't match the general layout at all; should be blocked at Prune stage",
+            Self::MediumLow => "Technically matches the general layout but doesn't match the theme",
+            Self::MediumHigh => "Matches the general layout and theme, but not great",
+            Self::HighQuality => "Great exemplar of the original idea, or really interesting",
+        }
+    }
+
     /// Whether items in this band should appear in the public feed.
     pub const fn is_visible_in_feed(self) -> bool {
         matches!(self, Self::MediumHigh | Self::HighQuality)
@@ -45,12 +74,7 @@ impl Band {
 
 impl std::fmt::Display for Band {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Low => write!(f, "Low"),
-            Self::MediumLow => write!(f, "MediumLow"),
-            Self::MediumHigh => write!(f, "MediumHigh"),
-            Self::HighQuality => write!(f, "HighQuality"),
-        }
+        f.write_str(self.wire_name())
     }
 }
 

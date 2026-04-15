@@ -13,6 +13,7 @@ use skeet_web_shared::effective_band::image_effective_band;
 use tracing::{info, instrument};
 
 use crate::AppraiserExtractor;
+use crate::handlers::{BandOption, band_options};
 
 const PAGE_SIZE: usize = 10;
 
@@ -46,6 +47,7 @@ struct AdminPageTemplate<'a> {
     view: &'a str,
     next_cursor: Option<&'a str>,
     next_cursor_str: &'a str,
+    band_options: Vec<BandOption>,
 }
 
 #[derive(Deserialize)]
@@ -130,6 +132,7 @@ pub async fn admin(
             None
         },
         next_cursor_str: &next_cursor_str,
+        band_options: band_options(),
     }
     .render()?;
 
@@ -237,6 +240,7 @@ pub struct AppraiseImageQuery {
 #[template(path = "admin_row.html")]
 struct AdminRowTemplate<'a> {
     row: &'a AdminRow,
+    band_options: Vec<BandOption>,
 }
 
 #[instrument(skip_all)]
@@ -363,7 +367,7 @@ async fn render_updated_row(
     );
 
     let row = rows.first().ok_or_else(|| cot::Error::internal("no row built"))?;
-    let html = AdminRowTemplate { row }.render()?;
+    let html = AdminRowTemplate { row, band_options: band_options() }.render()?;
 
     let mut response = Response::new(Body::fixed(html));
     response
