@@ -552,6 +552,128 @@ async fn admin_clear_manual_band_reverts_to_automatic() {
     );
 }
 
+// ─── Admin image view ──────────────────────────────────────────
+
+#[tokio::test]
+async fn admin_image_view_shows_image_ids() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let store = open_temp_store(&dir).await;
+    let (_, image_id) = seed_scored(&store, "imgview1", 10, 0.85).await;
+
+    let mut client = client_for(store, test_params()).await;
+
+    let (status, body) = get_body(&mut client, "/admin?view=image").await;
+    assert_eq!(status, 200);
+    let ids = extract_item_ids(&body);
+    assert_eq!(ids.len(), 1);
+    assert_eq!(ids[0], image_id, "image view should show image IDs");
+}
+
+#[tokio::test]
+async fn admin_image_view_with_manual_band_shows_effective_band() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let store = open_temp_store(&dir).await;
+    let (_, image_id) = seed_scored(&store, "imgeff1", 10, 0.85).await;
+
+    let mut client = client_for(store, test_params()).await;
+
+    // Set a manual image band
+    appraise(&mut client, "image", &image_id, "Low").await;
+
+    // In image view, effective band should use image_effective_band(score, Some(Low)) = Low
+    let (status, body) = get_body(&mut client, "/admin?view=image").await;
+    assert_eq!(status, 200);
+    let rows_html: Vec<&str> = body.split("<tr id=").skip(1).collect();
+    assert_eq!(rows_html.len(), 1);
+    assert!(
+        row_has_manual_band(rows_html[0], "Low"),
+        "image view should show manual band Low"
+    );
+}
+
+#[tokio::test]
+async fn appraise_skeet_returns_row_html() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let store = open_temp_store(&dir).await;
+    let (skeet_id, _) = seed_scored(&store, "approw1", 10, 0.85).await;
+
+    let mut client = client_for(store, test_params()).await;
+
+    let encoded_id = urlencoding::encode(&skeet_id);
+    let (status, body) = get_body(
+        &mut client,
+        &format!("/admin/appraise/skeet?band=Low&id={encoded_id}"),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert!(body.contains("<tr"), "appraise response should contain a table row");
+    assert!(body.contains("Low"), "appraise response should show the new band");
+}
+
+#[tokio::test]
+async fn appraise_image_returns_row_html() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let store = open_temp_store(&dir).await;
+    let (_, image_id) = seed_scored(&store, "appimg1", 10, 0.85).await;
+
+    let mut client = client_for(store, test_params()).await;
+
+    let encoded_id = urlencoding::encode(&image_id);
+    let (status, body) = get_body(
+        &mut client,
+        &format!("/admin/appraise/image?band=HighQuality&id={encoded_id}"),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert!(body.contains("<tr"), "appraise response should contain a table row");
+    assert!(
+        body.contains("HighQuality"),
+        "appraise response should show the new band"
+    );
+}
+
+// ─── Home page ─────────────────────────────────────────────────
+
+#[tokio::test]
+async fn home_page_shows_scored_entries() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let store = open_temp_store(&dir).await;
+    seed_scored(&store, "home1", 10, 0.85).await;
+
+    let mut client = client_for(store, test_params()).await;
+
+    let (status, body) = get_body(&mut client, "/").await;
+    assert_eq!(status, 200);
+    assert!(body.contains("bsky.app"), "home page should contain Bluesky links");
+}
+
+// ─── Feed skeleton caching ─────────────────────────────────────
+
+#[tokio::test]
+async fn feed_skeleton_includes_last_modified_header() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let store = open_temp_store(&dir).await;
+    seed_scored(&store, "lm1", 10, 0.85).await;
+
+    let params = test_params();
+    let feed_uri = params.feed_uri();
+    let mut client = client_for(store, params).await;
+
+    let request = cot::http::Request::builder()
+        .uri(format!(
+            "/xrpc/app.bsky.feed.getFeedSkeleton?feed={feed_uri}"
+        ))
+        .header("cache-control", "no-cache")
+        .body(cot::Body::empty())
+        .expect("build request");
+    let response = client.request(request).await.expect("GET feed skeleton");
+    assert_eq!(response.status().as_u16(), 200);
+    assert!(
+        response.headers().get("last-modified").is_some(),
+        "feed skeleton should include Last-Modified header"
+    );
+}
+
 // ─── Auth tests ────────────────────────────────────────────────
 
 async fn oauth_client(

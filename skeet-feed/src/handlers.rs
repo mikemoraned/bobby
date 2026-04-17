@@ -387,4 +387,53 @@ mod tests {
             assert!(w[0] > w[1]);
         }
     }
+
+    #[test]
+    fn wants_no_cache_true_when_header_present() {
+        let req = cot::http::Request::builder()
+            .header("cache-control", "no-cache")
+            .body(())
+            .expect("build");
+        let (head, _) = req.into_parts();
+        assert!(wants_no_cache(&head));
+    }
+
+    #[test]
+    fn wants_no_cache_false_when_header_absent() {
+        let req = cot::http::Request::builder().body(()).expect("build");
+        let (head, _) = req.into_parts();
+        assert!(!wants_no_cache(&head));
+    }
+
+    #[test]
+    fn wants_no_cache_false_for_other_directives() {
+        let req = cot::http::Request::builder()
+            .header("cache-control", "max-age=60")
+            .body(())
+            .expect("build");
+        let (head, _) = req.into_parts();
+        assert!(!wants_no_cache(&head));
+    }
+
+    #[test]
+    fn set_last_modified_header_adds_header() {
+        use chrono::TimeZone as _;
+        let dt = chrono::Utc.with_ymd_and_hms(2024, 6, 15, 9, 30, 0).unwrap();
+        let mut response = Response::new(Body::empty());
+        set_last_modified_header(&mut response, Some(dt));
+        let val = response
+            .headers()
+            .get("last-modified")
+            .expect("header should be set")
+            .to_str()
+            .expect("valid str");
+        assert_eq!(val, "Sat, 15 Jun 2024 09:30:00 GMT");
+    }
+
+    #[test]
+    fn set_last_modified_header_noop_when_none() {
+        let mut response = Response::new(Body::empty());
+        set_last_modified_header(&mut response, None);
+        assert!(response.headers().get("last-modified").is_none());
+    }
 }
