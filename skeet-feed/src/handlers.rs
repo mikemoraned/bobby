@@ -357,3 +357,34 @@ pub async fn annotated_image(
         .insert("last-modified", last_modified.parse().expect("valid header"));
     Ok(response)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use shared::Band;
+
+    #[test]
+    fn band_options_covers_all_bands() {
+        let options = band_options();
+        assert_eq!(options.len(), Band::ALL.len());
+    }
+
+    #[test]
+    fn band_options_names_are_distinct() {
+        let options = band_options();
+        let unique: std::collections::HashSet<_> = options.iter().map(|o| o.name).collect();
+        assert_eq!(unique.len(), options.len());
+    }
+
+    #[test]
+    fn band_options_ordered_best_to_worst() {
+        let options = band_options();
+        let bands: Vec<Band> = options
+            .iter()
+            .map(|o| o.name.parse().expect("valid band"))
+            .collect();
+        for w in bands.windows(2) {
+            assert!(w[0] > w[1]);
+        }
+    }
+}
