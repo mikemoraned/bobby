@@ -1,13 +1,16 @@
-# Current Slice: Slice 14 — Property-based tests for value types
+# Current Slice: Slice 14 — Property-based tests for value types + Mutation-testing for coverage check
 
 ### Target
 
 Adopt [`proptest`](https://docs.rs/proptest/latest/proptest/) for value-type tests across the workspace. The codebase is currently example-based throughout, but several value types are textbook property-test candidates: validity ranges, parse/display roundtrips, and ordering invariants. Convert the strongest candidates and use them as the template for future tests.
 
+Get confidence that tests are covering behaviour using mutation testing.
+
 ### Tasks
 
 #### Set up
 - [x] Add `proptest` to `[workspace.dependencies]` and as a `dev-dependency` of `shared`, `skeet-store`, and `skeet-feed`.
+- [x] Install [cargo mutants](https://mutants.rs/installation.html)
 
 #### Convert strongest candidates first
 - [x] **`Score`** (`shared/src/score.rs`) — collapse the 6 example tests into properties:
@@ -32,3 +35,7 @@ Adopt [`proptest`](https://docs.rs/proptest/latest/proptest/) for value-type tes
 #### Guardrails
 - [x] Keep the example tests as named regressions where they encode a specific historical bug or boundary case worth documenting; otherwise remove them when the property-based version subsumes them (per the "remove dead code" rule).
 - [x] Make sure properties run under `just test` with a sensible iteration count (default is usually fine).
+- [ ] use [cargo mutants](https://mutants.rs/welcome.html) to prove the tests are covering code 
+    - [ ] migrate test running to use `nextest` so that it is faster
+    - [ ] do a test run of cargo mutants on a single (smallest) crate; apply any fixes to tests
+    - [ ] repeat for each crate

@@ -19,15 +19,19 @@ convert-models: download-models
     cd model-conversion && uv run python convert_yunet.py
 
 prerequisites: convert-models
-    brew install protobuf openssl
-    cargo install --quiet tokio-console
+    brew install protobuf openssl cargo-nextest
+    cargo install tokio-console
+    cargo install --locked cargo-mutants
 
 build:
     cargo build --quiet
 
 test:
-    cargo test --quiet --release -p skeet-feed --features test
-    cargo test --quiet --release
+    cargo nextest run --release -p skeet-feed --features test
+    cargo nextest run --release
+
+mutants:
+    cargo mutants -p shared -p skeet-store -p skeet-feed
 
 clippy:
     cargo clippy --quiet --workspace -- -D warnings

@@ -167,7 +167,21 @@ mod tests {
         }
     }
 
+    #[test]
+    fn percentage_display() {
+        assert_eq!(Percentage::new(0.0).expect("valid").to_string(), "0.0%");
+        assert_eq!(Percentage::new(50.0).expect("valid").to_string(), "50.0%");
+        assert_eq!(Percentage::new(100.0).expect("valid").to_string(), "100.0%");
+    }
+
     proptest! {
+        #[test]
+        fn percentage_equality(i in 0u32..=100u32, j in 0u32..=100u32) {
+            let a = Percentage::new(i as f32).expect("valid");
+            let b = Percentage::new(j as f32).expect("valid");
+            prop_assert_eq!(a == b, i == j);
+        }
+
         #[test]
         fn percentage_validity(x in proptest::num::f32::ANY) {
             let result = Percentage::new(x);

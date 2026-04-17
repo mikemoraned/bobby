@@ -137,12 +137,6 @@ impl std::fmt::Display for Nsid {
     }
 }
 
-impl PartialEq<&str> for Nsid {
-    fn eq(&self, other: &&str) -> bool {
-        self.0 == *other
-    }
-}
-
 impl PartialEq<str> for Nsid {
     fn eq(&self, other: &str) -> bool {
         self.0 == other
@@ -186,7 +180,70 @@ mod tests {
         assert_eq!(id.rkey().as_str(), "xyz789");
     }
 
+    #[test]
+    fn equal_skeet_ids() {
+        let a: SkeetId = "at://did:plc:abc/app.bsky.feed.post/xyz".parse().unwrap();
+        let b: SkeetId = "at://did:plc:abc/app.bsky.feed.post/xyz".parse().unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn unequal_skeet_ids_differ_by_component() {
+        let base: SkeetId = "at://did:plc:abc/app.bsky.feed.post/xyz".parse().unwrap();
+        assert_ne!(base, "at://did:plc:zzz/app.bsky.feed.post/xyz".parse::<SkeetId>().unwrap());
+        assert_ne!(base, "at://did:plc:abc/app.bsky.feed.get/xyz".parse::<SkeetId>().unwrap());
+        assert_ne!(base, "at://did:plc:abc/app.bsky.feed.post/abc".parse::<SkeetId>().unwrap());
+    }
+
+    #[test]
+    fn nsid_as_str_and_equality() {
+        let id: SkeetId = "at://did:plc:abc/app.bsky.feed.post/xyz".parse().unwrap();
+        assert_eq!(id.collection().as_str(), "app.bsky.feed.post");
+        // compare &Nsid != &str directly to exercise PartialEq<str> for Nsid
+        assert_ne!(id.collection(), "app.bsky.feed.like");
+    }
+
     proptest! {
+        #[test]
+        fn equal_skeet_ids_have_same_hash(
+            did in "[a-z][a-z0-9:]{1,10}",
+            collection in "[a-z][a-z0-9.]{1,10}",
+            rkey in "[a-z][a-z0-9]{1,10}",
+        ) {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            let uri = format!("at://{did}/{collection}/{rkey}");
+            let a: SkeetId = uri.parse().expect("valid");
+            let b: SkeetId = uri.parse().expect("valid");
+            let hash = |id: &SkeetId| { let mut h = DefaultHasher::new(); id.hash(&mut h); h.finish() };
+            prop_assert_eq!(hash(&a), hash(&b));
+        }
+
+        #[test]
+        fn different_skeet_ids_have_different_hashes(
+            did_a in "[a-z][a-z0-9]{1,10}",
+            did_b in "[a-z][a-z0-9]{1,10}",
+        ) {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            prop_assume!(did_a != did_b);
+            let a: SkeetId = format!("at://{did_a}/app.bsky.feed.post/rkey").parse().expect("valid");
+            let b: SkeetId = format!("at://{did_b}/app.bsky.feed.post/rkey").parse().expect("valid");
+            let hash = |id: &SkeetId| { let mut h = DefaultHasher::new(); id.hash(&mut h); h.finish() };
+            prop_assert_ne!(hash(&a), hash(&b));
+        }
+
+        #[test]
+        fn skeet_id_ordering_is_not_none(
+            did_a in "[a-z][a-z0-9]{1,10}",
+            did_b in "[a-z][a-z0-9]{1,10}",
+        ) {
+            let a: SkeetId = format!("at://{did_a}/app.bsky.feed.post/rkey").parse().expect("valid");
+            let b: SkeetId = format!("at://{did_b}/app.bsky.feed.post/rkey").parse().expect("valid");
+            prop_assert!(a.partial_cmp(&b).is_some());
+            prop_assert_eq!(a.partial_cmp(&b), Some(did_a.cmp(&did_b)));
+        }
+
         /// Arbitrary (did, collection, rkey) triples without '/' round-trip through
         /// the AT URI format: `at://{did}/{collection}/{rkey}`.
         #[test]

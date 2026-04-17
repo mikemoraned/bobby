@@ -37,6 +37,26 @@ impl fmt::Display for SkeetStoreSummary {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_shows_counts() {
+        let summary = SkeetStoreSummary {
+            image_count: 42,
+            score_count: 7,
+            scored_image_count: 3,
+            discovered_at_range: None,
+            original_at_range: None,
+        };
+        let s = summary.to_string();
+        assert!(s.contains("42"));
+        assert!(s.contains("7"));
+        assert!(s.contains("3"));
+    }
+}
+
 impl SkeetStore {
     #[instrument(skip(self))]
     pub async fn summarise(&self) -> Result<SkeetStoreSummary, StoreError> {

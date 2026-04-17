@@ -50,3 +50,48 @@ impl BlocklistConfig {
         self.blocked.sort_by(|a, b| a.skeet_id.cmp(&b.skeet_id));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(uri: &str) -> BlockedEntry {
+        BlockedEntry { skeet_id: uri.parse().expect("valid AT URI"), reason: "test".to_string() }
+    }
+
+    #[test]
+    fn empty_blocklist_contains_nothing() {
+        let config = BlocklistConfig::default();
+        let id = "at://did:plc:abc/app.bsky.feed.post/xyz".parse().expect("valid");
+        assert!(!config.contains(&id));
+    }
+
+    #[test]
+    fn add_makes_entry_findable() {
+        let mut config = BlocklistConfig::default();
+        let uri = "at://did:plc:abc/app.bsky.feed.post/xyz";
+        let id = uri.parse().expect("valid");
+        assert!(config.add(entry(uri)));
+        assert!(config.contains(&id));
+    }
+
+    #[test]
+    fn add_returns_false_for_duplicate() {
+        let mut config = BlocklistConfig::default();
+        let uri = "at://did:plc:abc/app.bsky.feed.post/xyz";
+        assert!(config.add(entry(uri)));
+        assert!(!config.add(entry(uri)));
+        assert_eq!(config.blocked.len(), 1);
+    }
+
+    #[test]
+    fn add_maintains_sorted_order() {
+        let mut config = BlocklistConfig::default();
+        config.add(entry("at://did:plc:zzz/app.bsky.feed.post/rkey"));
+        config.add(entry("at://did:plc:aaa/app.bsky.feed.post/rkey"));
+        let ids: Vec<_> = config.blocked.iter().map(|e| e.skeet_id.to_string()).collect();
+        let mut sorted = ids.clone();
+        sorted.sort();
+        assert_eq!(ids, sorted);
+    }
+}

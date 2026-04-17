@@ -88,6 +88,12 @@ impl std::str::FromStr for Rejection {
 mod tests {
     use super::*;
 
+    #[test]
+    fn rejection_category_display() {
+        assert_eq!(RejectionCategory::Face.to_string(), "Face");
+        assert_eq!(RejectionCategory::Metadata.to_string(), "Metadata");
+    }
+
     /// Covers all variants — adding a new variant without a `FromStr` arm will fail here.
     #[test]
     fn rejection_roundtrips_through_string() {

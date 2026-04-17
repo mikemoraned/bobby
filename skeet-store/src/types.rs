@@ -124,16 +124,23 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
 
-    /// V1 and V2 variants are structurally distinct: a UUID string parsed as V1
-    /// can never equal a content-hash V2 id.
     #[test]
-    fn v1_and_v2_are_not_equal() {
-        let v1: ImageId = "24950d63-d0b5-46c9-ac10-e4338362bd4c"
-            .parse()
-            .expect("valid UUID");
-        let img = image::DynamicImage::new_rgba8(2, 2);
-        let v2 = ImageId::from_image(&img);
-        assert_ne!(v1, v2);
+    fn discovered_at_formatting() {
+        use chrono::TimeZone as _;
+        let dt = chrono::Utc.with_ymd_and_hms(2024, 6, 15, 9, 30, 0).unwrap();
+        let d = DiscoveredAt::new(dt);
+        assert_eq!(d.format_short(), "2024-06-15 09:30");
+        assert!(d.to_string().contains("2024-06-15"));
+    }
+
+    #[test]
+    fn original_at_formatting_and_timestamp() {
+        use chrono::TimeZone as _;
+        let dt = chrono::Utc.with_ymd_and_hms(2024, 6, 15, 9, 30, 0).unwrap();
+        let o = OriginalAt::new(dt);
+        assert_eq!(o.timestamp_micros(), dt.timestamp_micros());
+        assert_eq!(o.format_short(), "2024-06-15 09:30");
+        assert!(o.to_string().contains("2024-06-15"));
     }
 
     proptest! {

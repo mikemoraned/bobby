@@ -115,6 +115,20 @@ mod tests {
     }
 
     #[test]
+    fn short_labels_are_distinct() {
+        let labels: Vec<_> = Band::ALL.iter().map(|b| b.short_label()).collect();
+        let unique: std::collections::HashSet<_> = labels.iter().collect();
+        assert_eq!(labels.len(), unique.len());
+    }
+
+    #[test]
+    fn descriptions_are_distinct() {
+        let descs: Vec<_> = Band::ALL.iter().map(|b| b.description()).collect();
+        let unique: std::collections::HashSet<_> = descs.iter().collect();
+        assert_eq!(descs.len(), unique.len());
+    }
+
+    #[test]
     fn roundtrips_through_string() {
         for band in Band::ALL {
             let parsed: Band = band.to_string().parse().expect("roundtrip");
