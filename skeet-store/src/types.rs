@@ -162,5 +162,36 @@ mod tests {
             let id2 = ImageId::V2(md5::compute(&b2));
             prop_assume!(id1 != id2);
         }
+
+        /// A timestamp equal to `now` is always within any hour window (offset = 0).
+        #[test]
+        fn discovered_now_is_always_within(
+            ts in 0i64..=2_000_000_000i64,
+            hours in 0u64..=8760u64,
+        ) {
+            use chrono::TimeZone as _;
+            let now = chrono::Utc.timestamp_opt(ts, 0).single()
+                .expect("ts in range");
+            let d = DiscoveredAt::new(now);
+            prop_assert!(d.is_within_hours(now, hours));
+        }
+
+        /// `is_within_hours` matches the arithmetic: offset_hours <= window_hours ⟺ within.
+        #[test]
+        fn within_hours_matches_arithmetic(
+            ts_now in 360_000i64..=2_000_000_000i64,
+            offset_hours in 0u64..=100u64,
+            window_hours in 0u64..=200u64,
+        ) {
+            use chrono::TimeZone as _;
+            let now = chrono::Utc.timestamp_opt(ts_now, 0).single()
+                .expect("ts in range");
+            let then = chrono::Utc
+                .timestamp_opt(ts_now - offset_hours as i64 * 3600, 0)
+                .single()
+                .expect("ts in range");
+            let d = DiscoveredAt::new(then);
+            prop_assert_eq!(d.is_within_hours(now, window_hours), offset_hours <= window_hours);
+        }
     }
 }

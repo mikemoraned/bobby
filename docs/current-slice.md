@@ -25,10 +25,10 @@ Adopt [`proptest`](https://docs.rs/proptest/latest/proptest/) for value-type tes
 - [x] **`Appraiser`** (`shared/src/appraiser.rs`) — parse/display roundtrip for valid appraisers; rejection of empty identifiers and unknown providers over arbitrary strings.
 
 #### Lower-priority candidates
-- [ ] **`PruneConfig::version()`** — property: equal configs hash equal; differing configs hash differently (with overwhelming probability).
-- [ ] **`DiscoveredAt::is_within_hours`** — time-arithmetic invariants over arbitrary timestamps and hour windows.
-- [ ] **Effective band logic** (`skeet-feed/src/effective_band.rs`) — properties for manual-override semantics: manual demote always hides; manual promote at skeet level always wins over automatic; "one bad image taints the whole skeet" holds across all (manual, automatic) combinations.
+- [x] **`PruneConfig::version()`** — property: equal configs hash equal; differing configs hash differently (with overwhelming probability).
+- [x] **`DiscoveredAt::is_within_hours`** — time-arithmetic invariants over arbitrary timestamps and hour windows.
+- [x] **Effective band logic** (`skeet-feed/src/effective_band.rs`) — properties for manual-override semantics: manual demote always hides; manual promote at skeet level always wins over automatic; "one bad image taints the whole skeet" holds across all (manual, automatic) combinations.
 
 #### Guardrails
-- [ ] Keep the example tests as named regressions where they encode a specific historical bug or boundary case worth documenting; otherwise remove them when the property-based version subsumes them (per the "remove dead code" rule).
-- [ ] Make sure properties run under `just test` with a sensible iteration count (default is usually fine).
+- [x] Keep the example tests as named regressions where they encode a specific historical bug or boundary case worth documenting; otherwise remove them when the property-based version subsumes them (per the "remove dead code" rule).
+- [x] Make sure properties run under `just test` with a sensible iteration count (default is usually fine).

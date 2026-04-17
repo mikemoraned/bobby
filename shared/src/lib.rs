@@ -158,6 +158,15 @@ mod tests {
         assert_eq!(roundtripped, v);
     }
 
+    fn make_config(a: u32, b: u32, c: u32, d: u32) -> PruneConfig {
+        PruneConfig {
+            min_face_area_pct: Percentage::new(a as f32).expect("valid"),
+            max_face_area_pct: Percentage::new(b as f32).expect("valid"),
+            min_face_skin_pct: Percentage::new(c as f32).expect("valid"),
+            max_outside_face_skin_pct: Percentage::new(d as f32).expect("valid"),
+        }
+    }
+
     proptest! {
         #[test]
         fn percentage_validity(x in proptest::num::f32::ANY) {
@@ -171,6 +180,32 @@ mod tests {
             let a = Percentage::new(i as f32).expect("valid");
             let b = Percentage::new(j as f32).expect("valid");
             prop_assert_eq!(a.partial_cmp(&b), (i as f32).partial_cmp(&(j as f32)));
+        }
+
+        /// Same config always produces the same version string (pure, deterministic).
+        #[test]
+        fn equal_configs_hash_equal(
+            a in 0u32..=100u32, b in 0u32..=100u32,
+            c in 0u32..=100u32, d in 0u32..=100u32,
+        ) {
+            let config1 = make_config(a, b, c, d);
+            let config2 = make_config(a, b, c, d);
+            prop_assert_eq!(config1.version(), config2.version());
+        }
+
+        /// Different configs produce different version strings (hash collisions are
+        /// astronomically rare given DefaultHasher's 64-bit output and our small domain).
+        #[test]
+        fn different_configs_hash_differently(
+            a1 in 0u32..=100u32, b1 in 0u32..=100u32,
+            c1 in 0u32..=100u32, d1 in 0u32..=100u32,
+            a2 in 0u32..=100u32, b2 in 0u32..=100u32,
+            c2 in 0u32..=100u32, d2 in 0u32..=100u32,
+        ) {
+            prop_assume!((a1, b1, c1, d1) != (a2, b2, c2, d2));
+            let config1 = make_config(a1, b1, c1, d1);
+            let config2 = make_config(a2, b2, c2, d2);
+            prop_assert_ne!(config1.version(), config2.version());
         }
     }
 }
