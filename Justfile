@@ -30,8 +30,8 @@ test:
     cargo nextest run --release -p skeet-feed --features test
     cargo nextest run --release
 
-mutants:
-    cargo mutants -p shared -p skeet-store -p skeet-feed
+mutants-on-diff:
+    git diff main | cargo mutants --in-diff -
 
 clippy:
     cargo clippy --quiet --workspace -- -D warnings
