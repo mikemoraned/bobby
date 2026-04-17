@@ -46,40 +46,31 @@ impl PartialOrd for Score {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
-    #[test]
-    fn score_valid_range() {
-        let s = Score::new(0.5).expect("valid");
-        assert_eq!(f32::from(s), 0.5);
-    }
+    proptest! {
+        /// `Score::new(x).is_ok()` iff `0.0 ≤ x ≤ 1.0` (NaN and out-of-range both rejected).
+        #[test]
+        fn score_validity(x in proptest::num::f32::ANY) {
+            let result = Score::new(x);
+            let expected_valid = (0.0..=1.0).contains(&x);
+            prop_assert_eq!(result.is_ok(), expected_valid);
+        }
 
-    #[test]
-    fn score_rejects_negative() {
-        assert!(Score::new(-0.1).is_err());
-    }
+        /// Display uses `{:.2}` (2 decimal places). Generate scores in hundredths so the
+        /// roundtrip is exact: `Score(i/100) → "{:.2}" → parse → same value`.
+        #[test]
+        fn score_roundtrip(i in 0u32..=100u32) {
+            let score = Score::new(i as f32 / 100.0).expect("hundredths are always in [0, 1]");
+            let parsed: Score = score.to_string().parse().expect("display output is valid");
+            prop_assert_eq!(score.to_string(), parsed.to_string());
+        }
 
-    #[test]
-    fn score_rejects_over_one() {
-        assert!(Score::new(1.1).is_err());
-    }
-
-    #[test]
-    fn score_boundaries() {
-        assert!(Score::new(0.0).is_ok());
-        assert!(Score::new(1.0).is_ok());
-    }
-
-    #[test]
-    fn score_roundtrips_through_string() {
-        let s = Score::new(0.75).expect("valid");
-        let parsed: Score = s.to_string().parse().expect("should parse");
-        assert_eq!(f32::from(parsed), 0.75);
-    }
-
-    #[test]
-    fn score_ordering() {
-        let a = Score::new(0.3).expect("valid");
-        let b = Score::new(0.9).expect("valid");
-        assert!(a < b);
+        #[test]
+        fn score_ordering_matches_f32(a in 0.0f32..=1.0f32, b in 0.0f32..=1.0f32) {
+            let sa = Score::new(a).expect("valid");
+            let sb = Score::new(b).expect("valid");
+            prop_assert_eq!(sa.partial_cmp(&sb), a.partial_cmp(&b));
+        }
     }
 }

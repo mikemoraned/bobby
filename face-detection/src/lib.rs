@@ -93,6 +93,7 @@ impl Face {
             .intersection(&image_rect)
             .map_or(0.0, |r| r.area());
         Percentage::new((clipped_area / image_area) * 100.0)
+            .expect("clipped face area is always in [0, image_area], so ratio is in [0, 100]")
     }
 }
 

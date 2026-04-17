@@ -24,6 +24,7 @@ tracing = { workspace = true }
 urlencoding = "2"
 
 [dev-dependencies]
+proptest = { workspace = true }
 skeet-store = { path = "../skeet-store", features = ["test-helpers"] }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

@@ -7,17 +7,17 @@ Adopt [`proptest`](https://docs.rs/proptest/latest/proptest/) for value-type tes
 ### Tasks
 
 #### Set up
-- [ ] Add `proptest` to `[workspace.dependencies]` and as a `dev-dependency` of `shared`, `skeet-store`, and `skeet-feed`.
+- [x] Add `proptest` to `[workspace.dependencies]` and as a `dev-dependency` of `shared`, `skeet-store`, and `skeet-feed`.
 
 #### Convert strongest candidates first
-- [ ] **`Score`** (`shared/src/score.rs`) — collapse the 6 example tests into properties:
+- [x] **`Score`** (`shared/src/score.rs`) — collapse the 6 example tests into properties:
     - validity: `∀ f32 x: Score::new(x).is_ok() ⟺ 0.0 ≤ x ≤ 1.0`
     - parse/display roundtrip: `∀ valid Score s: s.to_string().parse() == Ok(s)` (mod float precision)
     - ordering matches the underlying f32 ordering
-- [ ] **`Percentage`** (`shared/src/lib.rs`) — validity + ordering properties. Note: `Percentage::new` currently panics on invalid input; refactor to return `Result` first.
-- [ ] **`ImageId` V1 and V2** (`skeet-store/src/types.rs`) — parse/display roundtrip; "different content yields different V2 id" over arbitrary byte slices instead of two hardcoded image sizes.
-- [ ] **`SkeetId`** (`shared/src/skeet_id.rs`) — parse/display roundtrip over arbitrary valid `(did, collection, rkey)` triples; rejection of arbitrary malformed strings.
-- [ ] **`Band`** (`shared/src/band.rs`) — `from_score` totality, monotonicity, and visibility-threshold equivalence; parse/display roundtrip.
+- [x] **`Percentage`** (`shared/src/lib.rs`) — validity + ordering properties. Note: `Percentage::new` currently panics on invalid input; refactor to return `Result` first.
+- [x] **`ImageId` V1 and V2** (`skeet-store/src/types.rs`) — parse/display roundtrip; "different content yields different V2 id" over arbitrary byte slices instead of two hardcoded image sizes.
+- [x] **`SkeetId`** (`shared/src/skeet_id.rs`) — parse/display roundtrip over arbitrary valid `(did, collection, rkey)` triples; rejection of arbitrary malformed strings.
+- [x] **`Band`** (`shared/src/band.rs`) — `from_score` totality, monotonicity, and visibility-threshold equivalence; parse/display roundtrip.
 
 #### Plug existing gaps
 - [ ] **`Rejection`** roundtrip test (`shared/src/rejection.rs`) currently only covers 2 of 8 variants. Replace with an exhaustive iteration (or a property over an `Arbitrary<Rejection>`) so adding a new variant without a matching `FromStr` arm fails the test.

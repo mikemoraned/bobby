@@ -168,6 +168,7 @@ impl std::fmt::Display for RecordKey {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn for_post_constructs_at_uri() {
@@ -185,8 +186,24 @@ mod tests {
         assert_eq!(id.rkey().as_str(), "xyz789");
     }
 
-    #[test]
-    fn rejects_invalid_uri() {
-        assert!("not-an-at-uri".parse::<SkeetId>().is_err());
+    proptest! {
+        /// Arbitrary (did, collection, rkey) triples without '/' round-trip through
+        /// the AT URI format: `at://{did}/{collection}/{rkey}`.
+        #[test]
+        fn skeet_id_roundtrip(
+            did in "[a-z][a-z0-9:]{1,20}",
+            collection in "[a-z][a-z0-9.]{1,20}",
+            rkey in "[a-z][a-z0-9_-]{1,20}",
+        ) {
+            let uri = format!("at://{did}/{collection}/{rkey}");
+            let id: SkeetId = uri.parse().expect("valid AT URI");
+            prop_assert_eq!(id.to_string(), uri);
+        }
+
+        /// Strings without the `at://` prefix are always rejected.
+        #[test]
+        fn skeet_id_rejects_no_prefix(s in "[a-zA-Z0-9._-]{1,40}") {
+            prop_assert!(s.parse::<SkeetId>().is_err());
+        }
     }
 }

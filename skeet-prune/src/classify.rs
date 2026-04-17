@@ -49,10 +49,14 @@ pub fn classify(
         face.height as u32,
     );
 
-    if Percentage::new(face_skin) < config.min_face_skin_pct {
+    let face_skin_pct = Percentage::new(face_skin)
+        .expect("skin_pct_in_rect returns pixel ratios, always in [0, 100]");
+    let outside_skin_pct = Percentage::new(outside_skin)
+        .expect("skin_pct_outside_rect returns pixel ratios, always in [0, 100]");
+    if face_skin_pct < config.min_face_skin_pct {
         reasons.push(Rejection::TooLittleFaceSkin);
     }
-    if Percentage::new(outside_skin) > config.max_outside_face_skin_pct {
+    if outside_skin_pct > config.max_outside_face_skin_pct {
         reasons.push(Rejection::TooMuchSkinOutsideFace);
     }
 

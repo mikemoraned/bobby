@@ -29,13 +29,17 @@ pub use zone::Zone;
 #[serde(transparent)]
 pub struct Percentage(f32);
 
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("percentage must be between 0.0 and 100.0, got {0}")]
+pub struct InvalidPercentage(f32);
+
 impl Percentage {
-    pub fn new(value: f32) -> Self {
-        assert!(
-            (0.0..=100.0).contains(&value),
-            "percentage must be between 0.0 and 100.0, got {value}"
-        );
-        Self(value)
+    pub fn new(value: f32) -> Result<Self, InvalidPercentage> {
+        if (0.0..=100.0).contains(&value) {
+            Ok(Self(value))
+        } else {
+            Err(InvalidPercentage(value))
+        }
     }
 
     pub const fn value(self) -> f32 {
@@ -145,36 +149,28 @@ pub struct SkeetImage {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn percentage_valid_range() {
-        let p = Percentage::new(50.0);
-        assert_eq!(p.value(), 50.0);
-    }
-
-    #[test]
-    #[should_panic(expected = "percentage must be between")]
-    fn percentage_rejects_negative() {
-        Percentage::new(-1.0);
-    }
-
-    #[test]
-    #[should_panic(expected = "percentage must be between")]
-    fn percentage_rejects_over_100() {
-        Percentage::new(100.1);
-    }
-
-    #[test]
-    fn percentage_ordering() {
-        let a = Percentage::new(10.0);
-        let b = Percentage::new(60.0);
-        assert!(a < b);
-    }
+    use proptest::prelude::*;
 
     #[test]
     fn model_version_roundtrips_through_string() {
         let v = ModelVersion::from("abc123");
         let roundtripped = ModelVersion::from(v.to_string().as_str());
         assert_eq!(roundtripped, v);
+    }
+
+    proptest! {
+        #[test]
+        fn percentage_validity(x in proptest::num::f32::ANY) {
+            let result = Percentage::new(x);
+            let expected_valid = (0.0..=100.0).contains(&x);
+            prop_assert_eq!(result.is_ok(), expected_valid);
+        }
+
+        #[test]
+        fn percentage_ordering(i in 0u32..=100u32, j in 0u32..=100u32) {
+            let a = Percentage::new(i as f32).expect("valid");
+            let b = Percentage::new(j as f32).expect("valid");
+            prop_assert_eq!(a.partial_cmp(&b), (i as f32).partial_cmp(&(j as f32)));
+        }
     }
 }
