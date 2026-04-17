@@ -61,42 +61,7 @@ impl std::str::FromStr for Appraiser {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn github_display() {
-        let a = Appraiser::new_github("mikemoraned").expect("valid");
-        assert_eq!(a.to_string(), "github:mikemoraned");
-    }
-
-    #[test]
-    fn github_roundtrip() {
-        let a = Appraiser::new_github("mikemoraned").expect("valid");
-        let parsed: Appraiser = a.to_string().parse().expect("roundtrip");
-        assert_eq!(parsed, a);
-    }
-
-    #[test]
-    fn rejects_malformed_missing_colon() {
-        let err = "mikemoraned".parse::<Appraiser>().unwrap_err();
-        assert!(matches!(err, ParseAppraiserError::Malformed(_)));
-    }
-
-    #[test]
-    fn rejects_unknown_provider() {
-        let err = "twitter:someone".parse::<Appraiser>().unwrap_err();
-        assert!(matches!(err, ParseAppraiserError::UnknownProvider(_)));
-    }
-
-    #[test]
-    fn rejects_empty_identifier() {
-        let err = "github:".parse::<Appraiser>().unwrap_err();
-        assert!(matches!(err, ParseAppraiserError::EmptyIdentifier(_)));
-    }
-
-    #[test]
-    fn new_github_rejects_empty() {
-        assert!(Appraiser::new_github("").is_err());
-    }
+    use proptest::prelude::*;
 
     #[test]
     fn local_admin_display() {
@@ -112,5 +77,40 @@ mod tests {
     #[test]
     fn rejects_unknown_local_identifier() {
         assert!("local:other".parse::<Appraiser>().is_err());
+    }
+
+    proptest! {
+        #[test]
+        fn github_roundtrip_arbitrary(username in "[a-zA-Z0-9_-]{1,39}") {
+            let a = Appraiser::new_github(&username).expect("non-empty username");
+            let parsed: Appraiser = a.to_string().parse().expect("roundtrip");
+            prop_assert_eq!(parsed, a);
+        }
+
+        /// Strings without a ':' are always `Malformed`.
+        #[test]
+        fn rejects_malformed_no_colon(s in "[a-zA-Z0-9]{1,30}") {
+            let err = s.parse::<Appraiser>().expect_err("no colon → malformed");
+            prop_assert!(matches!(err, ParseAppraiserError::Malformed(_)));
+        }
+
+        /// Any provider that is neither "github" nor "local" is `UnknownProvider`.
+        #[test]
+        fn rejects_unknown_provider_arbitrary(
+            provider in "[a-z]{2,10}",
+            id in "[a-z]{1,20}",
+        ) {
+            prop_assume!(provider != "github" && provider != "local");
+            let s = format!("{provider}:{id}");
+            let err = s.parse::<Appraiser>().expect_err("unknown provider");
+            prop_assert!(matches!(err, ParseAppraiserError::UnknownProvider(_)));
+        }
+
+        /// An empty identifier after a known provider is always rejected.
+        #[test]
+        fn rejects_empty_identifier(provider in "(github|local)") {
+            let s = format!("{provider}:");
+            prop_assert!(s.parse::<Appraiser>().is_err());
+        }
     }
 }

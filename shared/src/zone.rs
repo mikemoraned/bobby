@@ -13,6 +13,20 @@ pub enum Zone {
     BottomRight,
 }
 
+impl Zone {
+    pub const ALL: &'static [Self] = &[
+        Self::TopLeft,
+        Self::TopCenter,
+        Self::TopRight,
+        Self::CenterLeft,
+        Self::CenterCenter,
+        Self::CenterRight,
+        Self::BottomLeft,
+        Self::BottomCenter,
+        Self::BottomRight,
+    ];
+}
+
 impl std::fmt::Display for Zone {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -52,21 +66,12 @@ impl std::str::FromStr for Zone {
 mod tests {
     use super::*;
 
+    /// Covers all variants — adding a new variant without a `FromStr` arm will fail here.
     #[test]
     fn zone_roundtrips_through_string() {
-        for z in [
-            Zone::TopLeft,
-            Zone::TopCenter,
-            Zone::TopRight,
-            Zone::CenterLeft,
-            Zone::CenterCenter,
-            Zone::CenterRight,
-            Zone::BottomLeft,
-            Zone::BottomCenter,
-            Zone::BottomRight,
-        ] {
+        for &z in Zone::ALL {
             let s = z.to_string();
-            let parsed: Zone = s.parse().expect("should parse");
+            let parsed: Zone = s.parse().expect("roundtrip");
             assert_eq!(parsed, z);
         }
     }

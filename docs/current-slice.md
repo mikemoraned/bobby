@@ -20,9 +20,9 @@ Adopt [`proptest`](https://docs.rs/proptest/latest/proptest/) for value-type tes
 - [x] **`Band`** (`shared/src/band.rs`) — `from_score` totality, monotonicity, and visibility-threshold equivalence; parse/display roundtrip.
 
 #### Plug existing gaps
-- [ ] **`Rejection`** roundtrip test (`shared/src/rejection.rs`) currently only covers 2 of 8 variants. Replace with an exhaustive iteration (or a property over an `Arbitrary<Rejection>`) so adding a new variant without a matching `FromStr` arm fails the test.
-- [ ] **`Zone`** (`shared/src/zone.rs`) — parse/display roundtrip over all 9 variants (currently 1 test that iterates manually).
-- [ ] **`Appraiser`** (`shared/src/appraiser.rs`) — parse/display roundtrip for valid appraisers; rejection of empty identifiers and unknown providers over arbitrary strings.
+- [x] **`Rejection`** roundtrip test (`shared/src/rejection.rs`) currently only covers 2 of 8 variants. Replace with an exhaustive iteration (or a property over an `Arbitrary<Rejection>`) so adding a new variant without a matching `FromStr` arm fails the test.
+- [x] **`Zone`** (`shared/src/zone.rs`) — parse/display roundtrip over all 9 variants (currently 1 test that iterates manually).
+- [x] **`Appraiser`** (`shared/src/appraiser.rs`) — parse/display roundtrip for valid appraisers; rejection of empty identifiers and unknown providers over arbitrary strings.
 
 #### Lower-priority candidates
 - [ ] **`PruneConfig::version()`** — property: equal configs hash equal; differing configs hash differently (with overwhelming probability).

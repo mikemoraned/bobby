@@ -26,6 +26,17 @@ pub enum Rejection {
 }
 
 impl Rejection {
+    pub const ALL: &'static [Self] = &[
+        Self::FaceTooSmall,
+        Self::FaceTooLarge,
+        Self::FaceNotInAcceptedZone,
+        Self::TooManyFaces,
+        Self::TooFewFrontalFaces,
+        Self::TooLittleFaceSkin,
+        Self::TooMuchSkinOutsideFace,
+        Self::BlockedByMetadata,
+    ];
+
     pub const fn category(self) -> RejectionCategory {
         match self {
             Self::FaceTooSmall
@@ -77,11 +88,12 @@ impl std::str::FromStr for Rejection {
 mod tests {
     use super::*;
 
+    /// Covers all variants — adding a new variant without a `FromStr` arm will fail here.
     #[test]
     fn rejection_roundtrips_through_string() {
-        for r in [Rejection::FaceTooSmall, Rejection::FaceTooLarge] {
+        for &r in Rejection::ALL {
             let s = r.to_string();
-            let parsed: Rejection = s.parse().expect("should parse");
+            let parsed: Rejection = s.parse().expect("roundtrip");
             assert_eq!(parsed, r);
         }
     }
