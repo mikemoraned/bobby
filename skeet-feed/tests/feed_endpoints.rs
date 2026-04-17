@@ -6,13 +6,12 @@ use chrono::Utc;
 use cot::test::Client;
 use shared::Appraiser;
 use skeet_feed::auth_config::OAuthConfig;
-use skeet_feed::{AppraiserLayer, FeedCacheLayer, OAuthConfigLayer, StartedAtLayer};
+use skeet_feed::{AppraiserLayer, FeedCacheLayer, OAuthConfigLayer, StartedAtLayer, StoreLayer};
 use skeet_feed::feed_cache::FeedCache;
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
 use skeet_store::test_utils::{make_record, make_record_at, open_temp_store};
 use skeet_store::{DiscoveredAt, ModelVersion, Score, SkeetStore};
-use skeet_web_shared::StoreLayer;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 

@@ -26,7 +26,6 @@ build:
     cargo build --quiet
 
 test:
-    cargo test --quiet --release -p skeet-inspect --features test
     cargo test --quiet --release -p skeet-feed --features test
     cargo test --quiet --release
 

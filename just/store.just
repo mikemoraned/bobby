@@ -18,15 +18,6 @@ prune:
 prune-r2:
     RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_SERVICE_NAME=skeet-prune op run --env-file bobby-local.env -- cargo run --quiet --release --bin pruner -- --config-path config/prune.toml --store-path {{ R2_STORE }} --fallback-local-store {{ FALLBACK_STORE }}
 
-inspect:
-    RUST_BACKTRACE=1 cargo run --quiet --release --bin skeet-inspect -- --store-path {{ STORE }}
-
-inspect-fallback:
-    RUST_BACKTRACE=1 cargo run --quiet --release --bin skeet-inspect -- --store-path {{ FALLBACK_STORE }}
-
-inspect-r2:
-    RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_SERVICE_NAME=skeet-inspect op run --env-file bobby-local.env -- cargo run --quiet --release --bin skeet-inspect -- --store-path {{ R2_STORE }}
-
 export-image image_id:
     cargo run --quiet --release --bin export-image -- --store-path {{ STORE }} --image-id {{ image_id }} --output examples/{{ image_id }}.png
 

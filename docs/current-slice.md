@@ -7,7 +7,7 @@ Adopt [`proptest`](https://docs.rs/proptest/latest/proptest/) for value-type tes
 ### Tasks
 
 #### Set up
-- [ ] Add `proptest` to `[workspace.dependencies]` and as a `dev-dependency` of `shared`, `skeet-store`, and `skeet-web-shared`.
+- [ ] Add `proptest` to `[workspace.dependencies]` and as a `dev-dependency` of `shared`, `skeet-store`, and `skeet-feed`.
 
 #### Convert strongest candidates first
 - [ ] **`Score`** (`shared/src/score.rs`) — collapse the 6 example tests into properties:
@@ -27,7 +27,7 @@ Adopt [`proptest`](https://docs.rs/proptest/latest/proptest/) for value-type tes
 #### Lower-priority candidates
 - [ ] **`PruneConfig::version()`** — property: equal configs hash equal; differing configs hash differently (with overwhelming probability).
 - [ ] **`DiscoveredAt::is_within_hours`** — time-arithmetic invariants over arbitrary timestamps and hour windows.
-- [ ] **Effective band logic** (`skeet-web-shared/src/effective_band.rs`) — properties for manual-override semantics: manual demote always hides; manual promote at skeet level always wins over automatic; "one bad image taints the whole skeet" holds across all (manual, automatic) combinations.
+- [ ] **Effective band logic** (`skeet-feed/src/effective_band.rs`) — properties for manual-override semantics: manual demote always hides; manual promote at skeet level always wins over automatic; "one bad image taints the whole skeet" holds across all (manual, automatic) combinations.
 
 #### Guardrails
 - [ ] Keep the example tests as named regressions where they encode a specific historical bug or boundary case worth documenting; otherwise remove them when the property-based version subsumes them (per the "remove dead code" rule).

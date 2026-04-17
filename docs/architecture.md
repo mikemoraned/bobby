@@ -11,8 +11,7 @@ The original project scanned Twitter's firehose, applied face detection (via Ope
 - **skeet-prune** — continuously listens to the Bluesky firehose and applies fast, approximate checks to discard candidates that can't possibly match, then stores surviving images in the skeet-store
 - **skeet-refine** — applies more expensive LLM-based scoring to pruned candidates, assigning each a quality score
 - **skeet-store** — stores found skeets in an S3-compatible store, in tables, managed as [LanceDB](https://lancedb.com) tables.
-- **skeet-feed** — Bluesky feed generator (AT Protocol feed skeleton) that serves the top-scored images as a custom feed. Deployed on Fly.io with OpenTelemetry tracing to Honeycomb.
-- **skeet-inspect** — HTTP service that reads from the store and surfaces all found skeets for inspection
+- **skeet-feed** — Bluesky feed generator (AT Protocol feed skeleton) that serves the top-scored images as a custom feed. Also provides an admin web UI for inspecting found skeets and manually appraising them. Deployed on Fly.io with OpenTelemetry tracing to Honeycomb.
 
 ## Constraints, Trade-offs and Technology Choices
 

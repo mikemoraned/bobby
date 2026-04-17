@@ -7,12 +7,11 @@ use clap::Parser;
 use cot::project::Bootstrapper;
 use shared::Appraiser;
 use skeet_feed::auth_config::OAuthConfig;
-use skeet_feed::{AppraiserLayer, OAuthConfigLayer, StartedAtLayer};
+use skeet_feed::{AppraiserLayer, OAuthConfigLayer, StartedAtLayer, StoreLayer};
 use skeet_feed::feed_cache::{FeedCache, FeedCacheLayer};
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
 use skeet_store::StoreArgs;
-use skeet_web_shared::StoreLayer;
 use tracing::info;
 
 #[derive(Parser)]

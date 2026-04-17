@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use shared::{Appraiser, Band};
 use skeet_store::{Appraisal, DiscoveredAt, ImageId, Score, SkeetId, StoredImageSummary};
-use skeet_web_shared::Store;
-use skeet_web_shared::effective_band::image_effective_band;
+use crate::Store;
+use crate::effective_band::image_effective_band;
 use tracing::{info, instrument};
 
 use crate::AppraiserExtractor;

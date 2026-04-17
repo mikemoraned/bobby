@@ -10,8 +10,8 @@ use cot::{Body, StatusCode, Template};
 use serde::{Deserialize, Serialize};
 use shared::Band;
 use skeet_store::{ImageId, Score, SkeetId, StoredImageSummary};
-use skeet_web_shared::Store;
-use skeet_web_shared::effective_band::{image_effective_band, skeet_visible_in_feed};
+use crate::Store;
+use crate::effective_band::{image_effective_band, skeet_visible_in_feed};
 use tracing::{info, instrument, warn};
 
 use crate::AppraiserExtractor;

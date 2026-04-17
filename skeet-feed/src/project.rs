@@ -6,9 +6,9 @@ use cot::session::store::memory::MemoryStore;
 use cot::static_files::StaticFilesMiddleware;
 use cot::{App, AppBuilder, Project};
 
-use skeet_web_shared::{StoreLayer, web_static_files};
-
 use crate::AppraiserLayer;
+use crate::StoreLayer;
+use crate::web_static_files;
 use crate::FeedCacheLayer;
 use crate::OAuthConfigLayer;
 use crate::StartedAtLayer;
