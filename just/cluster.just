@@ -70,6 +70,11 @@ cluster-deploy-all: push-pruner push-live-refine push-compact cluster-deploy-pru
 
 cluster-restart-all: cluster-restart-pruner cluster-restart-live-refine
 
+cluster-enable-all: cluster-enable-pruner cluster-enable-live-refine
+
+cluster-disable-all: cluster-disable-pruner cluster-disable-live-refine
+
+
 cluster-logs-pruner:
     kubectl logs -l app=pruner --tail=100 -f | lnav
 
@@ -81,6 +86,18 @@ cluster-logs-bench-firehose:
 
 cluster-restart-pruner:
     kubectl rollout restart deployment pruner
+
+cluster-enable-pruner:
+    kubectl scale deployment pruner --replicas 1
+
+cluster-enable-live-refine:
+    kubectl scale deployment live-refine --replicas 1
+
+cluster-disable-pruner:
+    kubectl scale deployment pruner --replicas 0
+
+cluster-disable-live-refine:
+    kubectl scale deployment live-refine --replicas 0
 
 cluster-restart-live-refine:
     kubectl rollout restart deployment live-refine
