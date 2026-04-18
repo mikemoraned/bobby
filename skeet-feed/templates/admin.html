@@ -59,8 +59,8 @@
     <body>
         <h1>Bobby Admin</h1>
         <nav>
-            <a href="/admin?view=skeet" class="{% if view == "skeet" %}active{% endif %}">Skeet Appraisal</a>
-            <a href="/admin?view=image" class="{% if view == "image" %}active{% endif %}">Image Appraisal</a>
+            <a href="/admin?view=skeet" class="{% if view == "skeet" %}active{% endif %}">Skeet Appraisal ({{ skeet_appraisal_count }})</a>
+            <a href="/admin?view=image" class="{% if view == "image" %}active{% endif %}">Image Appraisal ({{ image_appraisal_count }})</a>
         </nav>
 {{ content|safe }}
     </body>

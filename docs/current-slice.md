@@ -23,7 +23,7 @@ So, what we want is:
 
 #### Manual Appraisal
 
-* [ ] extend feed admin pages to show overall counts of number of appraised skeets and images, on respective views
+* [x] extend feed admin pages to show overall counts of number of appraised skeets and images, on respective views
 * [ ] manually appraise 200 images
 
 #### (Imperfect) Precision/Recall measure
@@ -40,7 +40,7 @@ So, what we want is:
 
 #### Re-introduce text-based filtering as an optional filter
 
-* [ ] go back through commit history and bring back the text-detection crate contents. don't yet hook it into any classification i.e. we won't use it for real yet
+* [ ] go back through commit history and bring back the text-detection crate contents (see commit `92a72bfc2f7095eff4601fea40f8c271044ccb0a`). don't yet hook it into any classification i.e. we won't use it for real yet
 * [ ] run mutation-testing on this, to flush out any testing gaps. also migrate any tests to prop-based style
 * [ ] make classification methods configurable by making it so that we can optionally use text-detection, but face-detection and skin-detection are on by default.
 
