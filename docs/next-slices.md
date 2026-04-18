@@ -19,7 +19,16 @@ So, what we want is:
 
 * [ ] I added `tokio-console` support but I've not really used it. I originally added it because I thought it was more like a local telemetry viewer than async debugger. So, generally useful, but not for most of what I've been doing. TLDR: support for it should be removed, and dependency can be deleted.
 
-#### (Imperfec) Precision/Recall measure
+#### Bugs
+
+* [ ] is auth login actually working for github admin when deployed?
+
+#### Manual Appraisal
+
+* [ ] extend feed admin pages to show overall counts of number of appraised skeets and images, on respective views
+* [ ] appraise 200 images
+
+#### (Imperfect) Precision/Recall measure
 
 * [ ] write a small CLI in `skeet-prune` called `eval` which:
     1. finds all images in a store that have been manually appraised into a particular Band i.e. ignore anything not manually appraised
