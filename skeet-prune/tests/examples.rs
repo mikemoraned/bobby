@@ -19,9 +19,6 @@ struct Example {
     archetype: Option<String>,
     #[serde(default)]
     rejected: Vec<String>,
-    #[serde(default)]
-    #[allow(dead_code)]
-    exemplar: bool,
 }
 
 thread_local! {

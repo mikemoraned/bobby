@@ -2,17 +2,25 @@ use crate::status::Status;
 use skeet_store::{ImageRecord, SkeetStore};
 use tracing::{info, instrument, warn};
 
-#[instrument(skip(store, record, status), fields(image_id = %record.image_id, skeet_id = %record.skeet_id))]
-pub async fn save(store: &SkeetStore, record: &ImageRecord, status: &mut Status) {
+/// Returns `true` if the image already exists (caller should skip saving).
+async fn already_exists(store: &SkeetStore, record: &ImageRecord) -> bool {
     match store.exists(&record.image_id).await {
         Ok(true) => {
             info!(image_id = %record.image_id, "image already exists, skipping");
-            return;
+            true
         }
-        Ok(false) => {}
+        Ok(false) => false,
         Err(e) => {
             warn!(error = %e, "failed to check image existence, attempting save anyway");
+            false
         }
+    }
+}
+
+#[instrument(skip(store, record, status), fields(image_id = %record.image_id, skeet_id = %record.skeet_id))]
+pub async fn save(store: &SkeetStore, record: &ImageRecord, status: &mut Status) {
+    if already_exists(store, record).await {
+        return;
     }
 
     match store.add(record).await {
@@ -38,15 +46,8 @@ pub async fn save_with_fallback(
     record: &ImageRecord,
     status: &mut Status,
 ) {
-    match primary.exists(&record.image_id).await {
-        Ok(true) => {
-            info!(image_id = %record.image_id, "image already exists, skipping");
-            return;
-        }
-        Ok(false) => {}
-        Err(e) => {
-            warn!(error = %e, "failed to check image existence, attempting save anyway");
-        }
+    if already_exists(primary, record).await {
+        return;
     }
 
     match primary.add(record).await {

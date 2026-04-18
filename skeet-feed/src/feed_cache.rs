@@ -285,4 +285,42 @@ mod tests {
         let result = cache.get().await.expect("get");
         assert!(result.entries.is_empty());
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn cache_refetches_at_exact_boundary() {
+        let len = cache_get_len_after_advance(MAX_CACHE_STALENESS).await;
+        assert_eq!(len, 2, "cache should refresh at exactly MAX_CACHE_STALENESS");
+    }
+
+    #[tokio::test]
+    async fn refreshed_at_returns_some_after_get() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let store = Arc::new(open_temp_store(&dir).await);
+        seed_store(&store, "a", 10, 0.9).await;
+
+        let cache = FeedCache::new(Arc::clone(&store), 10, 48);
+        assert!(cache.refreshed_at().await.is_none());
+
+        cache.get().await.expect("get");
+        let refreshed = cache.refreshed_at().await;
+        assert!(refreshed.is_some(), "refreshed_at should be Some after get");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn staleness_increases_over_time() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let store = Arc::new(open_temp_store(&dir).await);
+        seed_store(&store, "a", 10, 0.9).await;
+
+        let cache = FeedCache::new(Arc::clone(&store), 10, 48);
+        cache.get().await.expect("get");
+
+        tokio::time::advance(Duration::from_secs(30)).await;
+        let staleness = cache.staleness().await.expect("staleness should be Some");
+        assert!(
+            staleness >= Duration::from_secs(30),
+            "staleness should be at least 30s, got {:?}",
+            staleness,
+        );
+    }
 }

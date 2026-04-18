@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_or(shared::tracing::TokioConsoleSupport::Disabled, |port| {
             shared::tracing::TokioConsoleSupport::Enabled { port }
         });
-    let _guard = shared::tracing::init_with_file_and_stderr(
+    let _guard = shared::tracing::init_with_file(
         "skeet_prune=info,shared=info,skeet_store=info,lance_io=warn,object_store=warn",
         "pruner.log",
         console,

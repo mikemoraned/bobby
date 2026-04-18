@@ -1,22 +1,5 @@
 # Next Slices
 
-## Slice 15: re-introduce text-filtering to reduce costs / increase quality
-
-### Target
-
-As of 15th April, I am seeing a lot of low-quality skeets come through with text in them. We previously were applying text filtering but it didn't seem to be of much value, as it was only excluding a small %-age. It may be that were just lucky before and now it'd be more useful.
-
-Now that we have an ability to manually appraised skeet images by quality we should use this to establish a test set.
-
-So, what we want is:
-* a manually-appraised set (200 should be enough) of images
-* text-based pruning re-applied, perhaps differently to before
-* a measurement of precision on this test set before/after pruning by text
-
-### Tasks
-
-TBC
-
 ## Slice 16: reducing unintentional bias
 
 ### Target

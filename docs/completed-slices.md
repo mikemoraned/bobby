@@ -145,3 +145,13 @@ Built a full admin area with manual appraisal capabilities and GitHub OAuth auth
 - **GitHub OAuth**: full OAuth flow (`/auth/login`, `/auth/callback`, `/auth/logout`) with CSRF protection, username allowlist from `BOBBY_ADMIN_USERS` env var, and session-based role management. `--local-admin` flag for local development. Split env files into `bobby-local.env` and `bobby-staging.env`.
 - **Auth guard**: handler-level `AppraiserExtractor` checks both static extensions (local-admin) and session (OAuth); unauthenticated requests redirect to login, non-allowlisted users get 403.
 - **Testing**: comprehensive integ tests for OAuth flow (mocked GitHub), admin access control, CSRF rejection, feed visibility after appraisal mutations, and paging.
+
+## Slice 14: Property-based tests for value types + Mutation-testing for coverage check
+
+Adopted `proptest` for property-based testing across value types and introduced `cargo-mutants` for mutation testing to verify test coverage:
+
+- **Property-based tests**: converted example-based tests to property-based for `Score` (validity, parse/display roundtrip, ordering), `Percentage` (refactored from panic to `Result`, validity, equality), `ImageId` V1/V2 (roundtrip, content-addressability), `SkeetId` (roundtrip, hash consistency), `Band` (totality, monotonicity, parse/display), `Rejection` (exhaustive roundtrip), `Zone` (roundtrip), `Appraiser` (roundtrip, rejection), `PruneConfig` (hash consistency), `DiscoveredAt` (time arithmetic), and effective band logic (manual override semantics).
+- **Mutation testing infrastructure**: migrated test runner to `nextest` for faster execution, configured via `.cargo/mutants.toml`. Added `just mutants-on-diff` recipe to run `cargo mutants --in-diff` against the main branch diff.
+- **Mutation testing results**: systematically ran `cargo mutants` on shared (36→6 missed), skeet-store (134→92), and skeet-feed (36→24). Added targeted unit and integration tests for health.rs (LanceDB stats), feed_cache (staleness boundary, refreshed_at), handlers (wants_no_cache, set_last_modified_header), store operations (get/delete/compact/summarise), admin views (image view, appraise response body), and home page.
+- **Detection crate tests**: added high-level public API tests for skin-detection (`detect_skin` dimensions/marking, `skin_pct_in_rect`/`skin_pct_outside_rect`) and face-detection (`area_pct_known_value`, `annotate_image` rendering). Deferred deeper algorithm-level mutation coverage to a future slice using test dataset comparisons.
+- **Cleanup**: removed dead code (`PartialEq<&str> for Nsid`), added distinctness tests for Band labels/descriptions, and ensured all 230 tests pass with clippy clean.

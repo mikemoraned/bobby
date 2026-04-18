@@ -110,10 +110,7 @@ impl SkeetStore {
         let model_versions = typed_column::<StringArray>(&batches[0], "model_version")?;
         let score = Score::new(scores.value(0))
             .map_err(|e| StoreError::ValidationFailed(e.to_string()))?;
-        let model_version: ModelVersion = model_versions
-            .value(0)
-            .parse()
-            .expect("ModelVersion parse is infallible");
+        let model_version = ModelVersion::from(model_versions.value(0));
         Ok(Some((score, model_version)))
     }
 

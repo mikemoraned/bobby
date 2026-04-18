@@ -93,6 +93,7 @@ impl Face {
             .intersection(&image_rect)
             .map_or(0.0, |r| r.area());
         Percentage::new((clipped_area / image_area) * 100.0)
+            .expect("clipped face area is always in [0, image_area], so ratio is in [0, 100]")
     }
 }
 
@@ -251,6 +252,18 @@ mod tests {
         assert!(
             pct.value() <= 100.0,
             "area_pct should be capped at 100.0, got {}",
+            pct.value()
+        );
+    }
+
+    #[test]
+    fn area_pct_known_value() {
+        // 50x50 face on 100x100 image = 25%
+        let face = make_face(0.0, 0.0, 50.0, 50.0);
+        let pct = face.area_pct(100, 100);
+        assert!(
+            (pct.value() - 25.0).abs() < 0.01,
+            "expected 25%, got {}",
             pct.value()
         );
     }

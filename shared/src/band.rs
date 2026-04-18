@@ -95,11 +95,13 @@ impl std::str::FromStr for Band {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     fn score(value: f32) -> Score {
         Score::new(value).expect("valid score")
     }
 
+    /// Documents the exact threshold values (0.25, 0.5, 0.75) and their boundary behaviour.
     #[test]
     fn from_score_boundaries() {
         assert_eq!(Band::from_score(score(0.0)), Band::Low);
@@ -113,30 +115,24 @@ mod tests {
     }
 
     #[test]
-    fn visibility_rules() {
-        assert!(!Band::Low.is_visible_in_feed());
-        assert!(!Band::MediumLow.is_visible_in_feed());
-        assert!(Band::MediumHigh.is_visible_in_feed());
-        assert!(Band::HighQuality.is_visible_in_feed());
+    fn short_labels_are_distinct() {
+        let labels: Vec<_> = Band::ALL.iter().map(|b| b.short_label()).collect();
+        let unique: std::collections::HashSet<_> = labels.iter().collect();
+        assert_eq!(labels.len(), unique.len());
     }
 
     #[test]
-    fn ordering_is_worst_to_best() {
-        assert!(Band::Low < Band::MediumLow);
-        assert!(Band::MediumLow < Band::MediumHigh);
-        assert!(Band::MediumHigh < Band::HighQuality);
+    fn descriptions_are_distinct() {
+        let descs: Vec<_> = Band::ALL.iter().map(|b| b.description()).collect();
+        let unique: std::collections::HashSet<_> = descs.iter().collect();
+        assert_eq!(descs.len(), unique.len());
     }
 
     #[test]
     fn roundtrips_through_string() {
-        for band in [
-            Band::Low,
-            Band::MediumLow,
-            Band::MediumHigh,
-            Band::HighQuality,
-        ] {
+        for band in Band::ALL {
             let parsed: Band = band.to_string().parse().expect("roundtrip");
-            assert_eq!(parsed, band);
+            assert_eq!(parsed, *band);
         }
     }
 
@@ -145,5 +141,24 @@ mod tests {
         assert!("Nope".parse::<Band>().is_err());
         assert!("".parse::<Band>().is_err());
         assert!("low".parse::<Band>().is_err()); // case-sensitive
+    }
+
+    proptest! {
+        /// `from_score` is non-decreasing: higher scores never yield lower bands.
+        #[test]
+        fn band_from_score_monotone(a in 0.0f32..=1.0f32, b in 0.0f32..=1.0f32) {
+            let sa = Score::new(a).expect("valid");
+            let sb = Score::new(b).expect("valid");
+            if a <= b {
+                prop_assert!(Band::from_score(sa) <= Band::from_score(sb));
+            }
+        }
+
+        /// Visibility iff band ≥ MediumHigh — the threshold is always consistent.
+        #[test]
+        fn band_visibility_matches_threshold(a in 0.0f32..=1.0f32) {
+            let band = Band::from_score(Score::new(a).expect("valid"));
+            prop_assert_eq!(band.is_visible_in_feed(), band >= Band::MediumHigh);
+        }
     }
 }

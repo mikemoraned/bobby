@@ -17,7 +17,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 shared = { workspace = true }
 skeet-store = { path = "../skeet-store" }
-skeet-web-shared = { path = "../skeet-web-shared" }
 tokio = { workspace = true }
 tower = { workspace = true }
 tower-sessions = { workspace = true }
@@ -25,8 +24,7 @@ tracing = { workspace = true }
 urlencoding = "2"
 
 [dev-dependencies]
-chrono = { workspace = true }
-image = { workspace = true }
+proptest = { workspace = true }
 skeet-store = { path = "../skeet-store", features = ["test-helpers"] }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

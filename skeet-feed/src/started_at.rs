@@ -78,3 +78,22 @@ where
         self.inner.call(req)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone as _;
+
+    #[test]
+    fn http_date_format() {
+        let dt = chrono::Utc.with_ymd_and_hms(2024, 6, 15, 9, 30, 0).unwrap();
+        assert_eq!(StartedAt(dt).http_date(), "Sat, 15 Jun 2024 09:30:00 GMT");
+    }
+
+    #[test]
+    fn http_date_differs_for_different_times() {
+        let dt1 = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+        let dt2 = chrono::Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap();
+        assert_ne!(StartedAt(dt1).http_date(), StartedAt(dt2).http_date());
+    }
+}

@@ -11,8 +11,8 @@ just prerequisites
 ## Key Commands
 
 - `just prune` — run skeet-prune (listens to firehose, classifies images, saves matches)
-- `just inspect` — run skeet-inspect (web UI showing found skeets at http://127.0.0.1:8000/)
 - `just clippy` — always run after completing each task
+- `just mutants-on-diff` — run mutation testing on changed code; run after completing any non-trivial change
 - `just validate-storage` — validate store read/write works
 
 ## Methodology

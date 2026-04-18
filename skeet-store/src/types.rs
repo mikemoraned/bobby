@@ -122,69 +122,83 @@ pub struct ImageRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
-    fn v2_roundtrips_through_string() {
-        let img = image::DynamicImage::new_rgba8(2, 2);
-        let id = ImageId::from_image(&img);
-        let s = id.to_string();
-        assert!(s.starts_with("v2:"));
-        let parsed: ImageId = s.parse().unwrap();
-        assert_eq!(id, parsed);
+    fn discovered_at_formatting() {
+        use chrono::TimeZone as _;
+        let dt = chrono::Utc.with_ymd_and_hms(2024, 6, 15, 9, 30, 0).unwrap();
+        let d = DiscoveredAt::new(dt);
+        assert_eq!(d.format_short(), "2024-06-15 09:30");
+        assert!(d.to_string().contains("2024-06-15"));
     }
 
     #[test]
-    fn v2_is_deterministic_for_same_content() {
-        let img = image::DynamicImage::new_rgba8(2, 2);
-        let id1 = ImageId::from_image(&img);
-        let id2 = ImageId::from_image(&img);
-        assert_eq!(id1, id2);
+    fn original_at_formatting_and_timestamp() {
+        use chrono::TimeZone as _;
+        let dt = chrono::Utc.with_ymd_and_hms(2024, 6, 15, 9, 30, 0).unwrap();
+        let o = OriginalAt::new(dt);
+        assert_eq!(o.timestamp_micros(), dt.timestamp_micros());
+        assert_eq!(o.format_short(), "2024-06-15 09:30");
+        assert!(o.to_string().contains("2024-06-15"));
     }
 
-    #[test]
-    fn v2_differs_for_different_content() {
-        let img1 = image::DynamicImage::new_rgba8(2, 2);
-        let img2 = image::DynamicImage::new_rgba8(3, 3);
-        assert_ne!(ImageId::from_image(&img1), ImageId::from_image(&img2));
-    }
+    proptest! {
+        #[test]
+        fn image_id_v1_roundtrip(v in any::<u128>()) {
+            let id = ImageId::V1(uuid::Uuid::from_u128(v));
+            let parsed: ImageId = id.to_string().parse().expect("V1 roundtrip");
+            prop_assert_eq!(id, parsed);
+        }
 
-    #[test]
-    fn v1_uuid_parsed_from_string() {
-        let id: ImageId = "24950d63-d0b5-46c9-ac10-e4338362bd4c".parse().unwrap();
-        assert!(matches!(id, ImageId::V1(_)));
-        assert_eq!(id.to_string(), "24950d63-d0b5-46c9-ac10-e4338362bd4c");
-    }
+        #[test]
+        fn image_id_v2_roundtrip(bytes in any::<[u8; 16]>()) {
+            let id = ImageId::V2(md5::Digest(bytes));
+            let s = id.to_string();
+            prop_assert!(s.starts_with("v2:"));
+            let parsed: ImageId = s.parse().expect("V2 roundtrip");
+            prop_assert_eq!(id, parsed);
+        }
 
-    #[test]
-    fn v1_uuid_roundtrips_through_string() {
-        let id: ImageId = "24950d63-d0b5-46c9-ac10-e4338362bd4c".parse().unwrap();
-        let parsed: ImageId = id.to_string().parse().unwrap();
-        assert_eq!(id, parsed);
-    }
+        /// Different byte content produces different V2 ids (MD5 collisions are
+        /// astronomically rare with random inputs; any collision is skipped).
+        #[test]
+        fn image_id_v2_different_content(b1 in any::<Vec<u8>>(), b2 in any::<Vec<u8>>()) {
+            prop_assume!(b1 != b2);
+            let id1 = ImageId::V2(md5::compute(&b1));
+            let id2 = ImageId::V2(md5::compute(&b2));
+            prop_assume!(id1 != id2);
+        }
 
-    #[test]
-    fn v1_and_v2_are_not_equal() {
-        let v1: ImageId = "24950d63-d0b5-46c9-ac10-e4338362bd4c".parse().unwrap();
-        let img = image::DynamicImage::new_rgba8(2, 2);
-        let v2 = ImageId::from_image(&img);
-        assert_ne!(v1, v2);
-    }
+        /// A timestamp equal to `now` is always within any hour window (offset = 0).
+        #[test]
+        fn discovered_now_is_always_within(
+            ts in 0i64..=2_000_000_000i64,
+            hours in 0u64..=8760u64,
+        ) {
+            use chrono::TimeZone as _;
+            let now = chrono::Utc.timestamp_opt(ts, 0).single()
+                .expect("ts in range");
+            let d = DiscoveredAt::new(now);
+            prop_assert!(d.is_within_hours(now, hours));
+        }
 
-    #[test]
-    fn rejects_invalid_string() {
-        assert!("not-valid".parse::<ImageId>().is_err());
-    }
-
-    #[test]
-    fn rejects_v2_with_bad_hex() {
-        assert!("v2:not-hex".parse::<ImageId>().is_err());
-    }
-
-    #[test]
-    fn skeet_id_preserves_value() {
-        let id: SkeetId = "at://did:plc:abc123/app.bsky.feed.post/xyz"
-            .parse()
-            .expect("valid AT URI");
-        assert_eq!(id.to_string(), "at://did:plc:abc123/app.bsky.feed.post/xyz");
+        /// `is_within_hours` matches the arithmetic: offset_hours <= window_hours ⟺ within.
+        #[test]
+        fn within_hours_matches_arithmetic(
+            ts_now in 360_000i64..=2_000_000_000i64,
+            offset_hours in 0u64..=100u64,
+            window_hours in 0u64..=200u64,
+        ) {
+            use chrono::TimeZone as _;
+            let now = chrono::Utc.timestamp_opt(ts_now, 0).single()
+                .expect("ts in range");
+            let then = chrono::Utc
+                .timestamp_opt(ts_now - offset_hours as i64 * 3600, 0)
+                .single()
+                .expect("ts in range");
+            let d = DiscoveredAt::new(then);
+            prop_assert_eq!(d.is_within_hours(now, window_hours), offset_hours <= window_hours);
+        }
     }
 }

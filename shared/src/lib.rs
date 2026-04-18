@@ -9,27 +9,37 @@ pub mod appraiser;
 pub mod band;
 mod blocklist;
 pub mod labels;
+mod rejection;
+pub mod score;
 pub mod skeet_id;
 pub mod tracing;
+mod zone;
 
 pub use appraiser::{Appraiser, ParseAppraiserError};
 pub use band::{Band, ParseBandError};
 pub use blocklist::{BlockedEntry, BlocklistConfig};
+pub use rejection::{Rejection, RejectionCategory};
+pub use score::{InvalidScore, Score};
 use serde::Deserialize;
 use skeet_id::SkeetId;
+pub use zone::Zone;
 
 /// A percentage value in the range 0.0–100.0.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(transparent)]
 pub struct Percentage(f32);
 
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("percentage must be between 0.0 and 100.0, got {0}")]
+pub struct InvalidPercentage(f32);
+
 impl Percentage {
-    pub fn new(value: f32) -> Self {
-        assert!(
-            (0.0..=100.0).contains(&value),
-            "percentage must be between 0.0 and 100.0, got {value}"
-        );
-        Self(value)
+    pub fn new(value: f32) -> Result<Self, InvalidPercentage> {
+        if (0.0..=100.0).contains(&value) {
+            Ok(Self(value))
+        } else {
+            Err(InvalidPercentage(value))
+        }
     }
 
     pub const fn value(self) -> f32 {
@@ -55,81 +65,6 @@ impl PartialOrd for Percentage {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum RejectionCategory {
-    Face,
-    Metadata,
-}
-
-impl std::fmt::Display for RejectionCategory {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Face => write!(f, "Face"),
-            Self::Metadata => write!(f, "Metadata"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Rejection {
-    FaceTooSmall,
-    FaceTooLarge,
-    FaceNotInAcceptedZone,
-    TooManyFaces,
-    TooFewFrontalFaces,
-    TooLittleFaceSkin,
-    TooMuchSkinOutsideFace,
-    BlockedByMetadata,
-}
-
-impl Rejection {
-    pub const fn category(self) -> RejectionCategory {
-        match self {
-            Self::FaceTooSmall
-            | Self::FaceTooLarge
-            | Self::FaceNotInAcceptedZone
-            | Self::TooManyFaces
-            | Self::TooFewFrontalFaces
-            | Self::TooLittleFaceSkin
-            | Self::TooMuchSkinOutsideFace => RejectionCategory::Face,
-            Self::BlockedByMetadata => RejectionCategory::Metadata,
-        }
-    }
-}
-
-impl std::fmt::Display for Rejection {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::FaceTooSmall => write!(f, "FaceTooSmall"),
-            Self::FaceTooLarge => write!(f, "FaceTooLarge"),
-            Self::FaceNotInAcceptedZone => write!(f, "FaceNotInAcceptedZone"),
-            Self::TooManyFaces => write!(f, "TooManyFaces"),
-            Self::TooFewFrontalFaces => write!(f, "TooFewFrontalFaces"),
-            Self::TooLittleFaceSkin => write!(f, "TooLittleFaceSkin"),
-            Self::TooMuchSkinOutsideFace => write!(f, "TooMuchSkinOutsideFace"),
-            Self::BlockedByMetadata => write!(f, "BlockedByMetadata"),
-        }
-    }
-}
-
-impl std::str::FromStr for Rejection {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "FaceTooSmall" => Ok(Self::FaceTooSmall),
-            "FaceTooLarge" => Ok(Self::FaceTooLarge),
-            "FaceNotInAcceptedZone" => Ok(Self::FaceNotInAcceptedZone),
-            "TooManyFaces" => Ok(Self::TooManyFaces),
-            "TooFewFrontalFaces" => Ok(Self::TooFewFrontalFaces),
-            "TooLittleFaceSkin" => Ok(Self::TooLittleFaceSkin),
-            "TooMuchSkinOutsideFace" => Ok(Self::TooMuchSkinOutsideFace),
-            "BlockedByMetadata" => Ok(Self::BlockedByMetadata),
-            other => Err(format!("unknown rejection: {other}")),
-        }
-    }
-}
-
 /// A short hash string identifying a particular model or config version.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ModelVersion(String);
@@ -146,62 +81,9 @@ impl std::fmt::Display for ModelVersion {
     }
 }
 
-impl std::str::FromStr for ModelVersion {
-    type Err = std::convert::Infallible;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self(s.to_string()))
-    }
-}
-
 impl From<&str> for ModelVersion {
     fn from(s: &str) -> Self {
         Self(s.to_string())
-    }
-}
-
-/// A score in the range 0.0–1.0, where 1.0 is the best match.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Score(f32);
-
-#[derive(Debug, Clone, thiserror::Error)]
-#[error("score must be between 0.0 and 1.0, got {0}")]
-pub struct InvalidScore(f32);
-
-impl Score {
-    pub fn new(value: f32) -> Result<Self, InvalidScore> {
-        if (0.0..=1.0).contains(&value) {
-            Ok(Self(value))
-        } else {
-            Err(InvalidScore(value))
-        }
-    }
-}
-
-impl From<Score> for f32 {
-    fn from(score: Score) -> Self {
-        score.0
-    }
-}
-
-impl std::fmt::Display for Score {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:.2}", self.0)
-    }
-}
-
-impl std::str::FromStr for Score {
-    type Err = InvalidScore;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let value: f32 = s.parse().map_err(|_| InvalidScore(f32::NAN))?;
-        Self::new(value)
-    }
-}
-
-impl PartialOrd for Score {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
     }
 }
 
@@ -258,56 +140,6 @@ pub enum Classification {
     Rejected(Vec<Rejection>),
 }
 
-/// A zone within the image, defined by overlaying a 4x4 grid and taking 2x2
-/// blocks at each valid offset (0, 1, 2) in both X and Y, giving 9 zones.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Zone {
-    TopLeft,
-    TopCenter,
-    TopRight,
-    CenterLeft,
-    CenterCenter,
-    CenterRight,
-    BottomLeft,
-    BottomCenter,
-    BottomRight,
-}
-
-impl std::fmt::Display for Zone {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::TopLeft => write!(f, "TOP_LEFT"),
-            Self::TopCenter => write!(f, "TOP_CENTER"),
-            Self::TopRight => write!(f, "TOP_RIGHT"),
-            Self::CenterLeft => write!(f, "CENTER_LEFT"),
-            Self::CenterCenter => write!(f, "CENTER_CENTER"),
-            Self::CenterRight => write!(f, "CENTER_RIGHT"),
-            Self::BottomLeft => write!(f, "BOTTOM_LEFT"),
-            Self::BottomCenter => write!(f, "BOTTOM_CENTER"),
-            Self::BottomRight => write!(f, "BOTTOM_RIGHT"),
-        }
-    }
-}
-
-impl std::str::FromStr for Zone {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "TOP_LEFT" => Ok(Self::TopLeft),
-            "TOP_CENTER" => Ok(Self::TopCenter),
-            "TOP_RIGHT" => Ok(Self::TopRight),
-            "CENTER_LEFT" => Ok(Self::CenterLeft),
-            "CENTER_CENTER" => Ok(Self::CenterCenter),
-            "CENTER_RIGHT" => Ok(Self::CenterRight),
-            "BOTTOM_LEFT" => Ok(Self::BottomLeft),
-            "BOTTOM_CENTER" => Ok(Self::BottomCenter),
-            "BOTTOM_RIGHT" => Ok(Self::BottomRight),
-            other => Err(format!("unknown zone: {other}")),
-        }
-    }
-}
-
 pub struct SkeetImage {
     pub skeet_id: SkeetId,
     pub original_at: DateTime<Utc>,
@@ -317,107 +149,77 @@ pub struct SkeetImage {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn percentage_valid_range() {
-        let p = Percentage::new(50.0);
-        assert_eq!(p.value(), 50.0);
-    }
-
-    #[test]
-    #[should_panic(expected = "percentage must be between")]
-    fn percentage_rejects_negative() {
-        Percentage::new(-1.0);
-    }
-
-    #[test]
-    #[should_panic(expected = "percentage must be between")]
-    fn percentage_rejects_over_100() {
-        Percentage::new(100.1);
-    }
-
-    #[test]
-    fn percentage_ordering() {
-        let a = Percentage::new(10.0);
-        let b = Percentage::new(60.0);
-        assert!(a < b);
-    }
-
-    #[test]
-    fn rejection_roundtrips_through_string() {
-        for r in [Rejection::FaceTooSmall, Rejection::FaceTooLarge] {
-            let s = r.to_string();
-            let parsed: Rejection = s.parse().expect("should parse");
-            assert_eq!(parsed, r);
-        }
-    }
-
-    #[test]
-    fn rejection_categories() {
-        assert_eq!(Rejection::FaceTooSmall.category(), RejectionCategory::Face);
-        assert_eq!(Rejection::BlockedByMetadata.category(), RejectionCategory::Metadata);
-    }
-
-    #[test]
-    fn score_valid_range() {
-        let s = Score::new(0.5).expect("valid");
-        assert_eq!(f32::from(s), 0.5);
-    }
-
-    #[test]
-    fn score_rejects_negative() {
-        assert!(Score::new(-0.1).is_err());
-    }
-
-    #[test]
-    fn score_rejects_over_one() {
-        assert!(Score::new(1.1).is_err());
-    }
-
-    #[test]
-    fn score_boundaries() {
-        assert!(Score::new(0.0).is_ok());
-        assert!(Score::new(1.0).is_ok());
-    }
-
-    #[test]
-    fn score_roundtrips_through_string() {
-        let s = Score::new(0.75).expect("valid");
-        let parsed: Score = s.to_string().parse().expect("should parse");
-        assert_eq!(f32::from(parsed), 0.75);
-    }
-
-    #[test]
-    fn score_ordering() {
-        let a = Score::new(0.3).expect("valid");
-        let b = Score::new(0.9).expect("valid");
-        assert!(a < b);
-    }
+    use proptest::prelude::*;
 
     #[test]
     fn model_version_roundtrips_through_string() {
         let v = ModelVersion::from("abc123");
-        let parsed: ModelVersion = v.to_string().parse().expect("should parse");
-        assert_eq!(parsed, v);
+        let roundtripped = ModelVersion::from(v.to_string().as_str());
+        assert_eq!(roundtripped, v);
     }
 
-    #[test]
-    fn zone_roundtrips_through_string() {
-        for z in [
-            Zone::TopLeft,
-            Zone::TopCenter,
-            Zone::TopRight,
-            Zone::CenterLeft,
-            Zone::CenterCenter,
-            Zone::CenterRight,
-            Zone::BottomLeft,
-            Zone::BottomCenter,
-            Zone::BottomRight,
-        ] {
-            let s = z.to_string();
-            let parsed: Zone = s.parse().expect("should parse");
-            assert_eq!(parsed, z);
+    fn make_config(a: u32, b: u32, c: u32, d: u32) -> PruneConfig {
+        PruneConfig {
+            min_face_area_pct: Percentage::new(a as f32).expect("valid"),
+            max_face_area_pct: Percentage::new(b as f32).expect("valid"),
+            min_face_skin_pct: Percentage::new(c as f32).expect("valid"),
+            max_outside_face_skin_pct: Percentage::new(d as f32).expect("valid"),
         }
     }
 
+    #[test]
+    fn percentage_display() {
+        assert_eq!(Percentage::new(0.0).expect("valid").to_string(), "0.0%");
+        assert_eq!(Percentage::new(50.0).expect("valid").to_string(), "50.0%");
+        assert_eq!(Percentage::new(100.0).expect("valid").to_string(), "100.0%");
+    }
+
+    proptest! {
+        #[test]
+        fn percentage_equality(i in 0u32..=100u32, j in 0u32..=100u32) {
+            let a = Percentage::new(i as f32).expect("valid");
+            let b = Percentage::new(j as f32).expect("valid");
+            prop_assert_eq!(a == b, i == j);
+        }
+
+        #[test]
+        fn percentage_validity(x in proptest::num::f32::ANY) {
+            let result = Percentage::new(x);
+            let expected_valid = (0.0..=100.0).contains(&x);
+            prop_assert_eq!(result.is_ok(), expected_valid);
+        }
+
+        #[test]
+        fn percentage_ordering(i in 0u32..=100u32, j in 0u32..=100u32) {
+            let a = Percentage::new(i as f32).expect("valid");
+            let b = Percentage::new(j as f32).expect("valid");
+            prop_assert_eq!(a.partial_cmp(&b), (i as f32).partial_cmp(&(j as f32)));
+        }
+
+        /// Same config always produces the same version string (pure, deterministic).
+        #[test]
+        fn equal_configs_hash_equal(
+            a in 0u32..=100u32, b in 0u32..=100u32,
+            c in 0u32..=100u32, d in 0u32..=100u32,
+        ) {
+            let config1 = make_config(a, b, c, d);
+            let config2 = make_config(a, b, c, d);
+            prop_assert_eq!(config1.version(), config2.version());
+        }
+
+        /// Different configs produce different version strings (hash collisions are
+        /// astronomically rare given DefaultHasher's 64-bit output and our small domain).
+        #[test]
+        fn different_configs_hash_differently(
+            a1 in 0u32..=100u32, b1 in 0u32..=100u32,
+            c1 in 0u32..=100u32, d1 in 0u32..=100u32,
+            a2 in 0u32..=100u32, b2 in 0u32..=100u32,
+            c2 in 0u32..=100u32, d2 in 0u32..=100u32,
+        ) {
+            prop_assume!((a1, b1, c1, d1) != (a2, b2, c2, d2));
+            let config1 = make_config(a1, b1, c1, d1);
+            let config2 = make_config(a2, b2, c2, d2);
+            prop_assert_ne!(config1.version(), config2.version());
+        }
+    }
 }

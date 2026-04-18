@@ -23,7 +23,7 @@ cluster-delete: _cluster-ssh-keys
 
 # --- Secrets ---
 
-cluster-secrets-install:
+cluster-1password-secrets-install:
     helm repo add 1password https://1password.github.io/connect-helm-charts
     helm repo update
     op document get "bobby-connect-credentials" --vault Dev --out-file infra/1password-credentials.json --force
@@ -34,17 +34,21 @@ cluster-secrets-install:
     rm infra/1password-credentials.json
     kubectl apply -f infra/k8s/onepassword-items.yaml
 
-cluster-secrets-status:
-    kubectl get onepassworditems
-    kubectl get secrets
 
-# --- Deployments ---
-
-cluster-ghcr-pull-secret:
+cluster-ghcr-secret-install:
     kubectl create secret docker-registry ghcr-pull-secret \
         --docker-server=ghcr.io \
         --docker-username=mikemoraned \
         "--docker-password=$(op read 'op://Dev/bobby-ghcr-pat-1/password')"
+
+cluster-secret-install: cluster-1password-secrets-install cluster-ghcr-secret-install 
+
+cluster-secret-status:
+    kubectl get onepassworditems
+    kubectl get secrets
+
+
+# --- Deployments ---
 
 cluster-deploy-pruner:
     kubectl apply -f infra/k8s/pruner-deployment.yaml
@@ -62,21 +66,14 @@ cluster-deploy-compact:
 cluster-logs-compact:
     kubectl logs -l app=compact --tail=100 -f | lnav
 
-cluster-run-compact name="compact-manual":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    kubectl delete job {{ name }} 2>/dev/null || true
-    kubectl create job {{ name }} --from=cronjob/compact
-    echo "Waiting for pod to start..."
-    kubectl wait --for=condition=Ready pod -l job-name={{ name }} --timeout=120s
-    POD=$(kubectl get pod -l job-name={{ name }} -o jsonpath='{.items[0].metadata.name}')
-    echo "Pod: $POD"
-    echo "Tailing memory peak (bytes) — exits when pod dies:"
-    while kubectl exec "$POD" -- cat /sys/fs/cgroup/memory.peak 2>/dev/null; do sleep 1; done
-
 cluster-deploy-all: push-pruner push-live-refine push-compact cluster-deploy-pruner cluster-deploy-live-refine cluster-deploy-compact
 
 cluster-restart-all: cluster-restart-pruner cluster-restart-live-refine
+
+cluster-enable-all: cluster-enable-pruner cluster-enable-live-refine
+
+cluster-disable-all: cluster-disable-pruner cluster-disable-live-refine
+
 
 cluster-logs-pruner:
     kubectl logs -l app=pruner --tail=100 -f | lnav
@@ -89,6 +86,18 @@ cluster-logs-bench-firehose:
 
 cluster-restart-pruner:
     kubectl rollout restart deployment pruner
+
+cluster-enable-pruner:
+    kubectl scale deployment pruner --replicas 1
+
+cluster-enable-live-refine:
+    kubectl scale deployment live-refine --replicas 1
+
+cluster-disable-pruner:
+    kubectl scale deployment pruner --replicas 0
+
+cluster-disable-live-refine:
+    kubectl scale deployment live-refine --replicas 0
 
 cluster-restart-live-refine:
     kubectl rollout restart deployment live-refine

@@ -1,6 +1,6 @@
 use chrono::Utc;
 
-use crate::test_utils::{open_temp_store, test_image, test_image_with_color};
+use crate::test_utils::{make_record_at, open_temp_store, test_image, test_image_with_color};
 use crate::{
     Appraisal, Appraiser, Band, DiscoveredAt, ImageId, ImageRecord, ModelVersion, OriginalAt,
     Score, SkeetId, SkeetStore, Zone,
@@ -553,4 +553,223 @@ async fn clear_nonexistent_appraisal_is_ok() {
     let record = make_record("noop_img");
     store.add(&record).await.unwrap();
     store.clear_image_band(&record.image_id).await.unwrap();
+}
+
+#[tokio::test]
+async fn get_by_id_returns_stored_image() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+    let record = make_record("getbyid1");
+    store.add(&record).await.unwrap();
+
+    let found = store.get_by_id(&record.image_id).await.unwrap();
+    assert!(found.is_some());
+    assert_eq!(found.unwrap().summary.image_id, record.image_id);
+}
+
+#[tokio::test]
+async fn get_by_id_returns_none_for_nonexistent() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+    let fake_id: ImageId = "00000000-0000-0000-0000-000000000000".parse().unwrap();
+    assert!(store.get_by_id(&fake_id).await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn exists_returns_false_for_nonexistent() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+    let fake_id: ImageId = "00000000-0000-0000-0000-000000000000".parse().unwrap();
+    assert!(!store.exists(&fake_id).await.unwrap());
+}
+
+#[tokio::test]
+async fn delete_removes_record() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+    let record = make_record("del1");
+    store.add(&record).await.unwrap();
+    assert!(store.exists(&record.image_id).await.unwrap());
+
+    store.delete_by_id(&record.image_id).await.unwrap();
+    assert!(!store.exists(&record.image_id).await.unwrap());
+    assert_eq!(store.count().await.unwrap(), 0);
+}
+
+#[tokio::test]
+async fn validate_succeeds_on_healthy_store() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+    store.validate().await.unwrap();
+}
+
+#[tokio::test]
+async fn list_all_by_most_recent_orders_newest_first() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let old = make_record_at(
+        "old",
+        100,
+        0,
+        0,
+        DiscoveredAt::new(Utc::now() - chrono::Duration::hours(2)),
+    );
+    let new = make_record_at(
+        "new",
+        200,
+        0,
+        0,
+        DiscoveredAt::new(Utc::now()),
+    );
+    store.add(&old).await.unwrap();
+    store.add(&new).await.unwrap();
+
+    let result = store.list_all_by_most_recent().await.unwrap();
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].summary.image_id, new.image_id);
+    assert_eq!(result[1].summary.image_id, old.image_id);
+}
+
+#[tokio::test]
+async fn list_scored_summaries_rejects_excessive_limit() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+    let result = store.list_scored_summaries_by_score(101, None).await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn list_scores_for_ids_returns_matching() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let r1 = make_record("lsfi1");
+    let r2 = make_record("lsfi2");
+    store.add(&r1).await.unwrap();
+    store.add(&r2).await.unwrap();
+
+    let mv = test_model_version();
+    let s1 = Score::new(0.7).expect("valid");
+    store.upsert_score(&r1.image_id, &s1, &mv).await.unwrap();
+
+    let id1_str = r1.image_id.to_string();
+    let id2_str = r2.image_id.to_string();
+    let scores = store
+        .list_scores_for_ids(&[&id1_str, &id2_str])
+        .await
+        .unwrap();
+    assert_eq!(scores.len(), 1);
+    assert_eq!(scores[&r1.image_id], s1);
+}
+
+#[tokio::test]
+async fn list_scored_summaries_filters_by_max_age() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+    let mv = test_model_version();
+
+    // Old record (3 days ago)
+    let old = make_record_at(
+        "age_old",
+        50,
+        0,
+        0,
+        DiscoveredAt::new(Utc::now() - chrono::Duration::hours(72)),
+    );
+    store.add(&old).await.unwrap();
+    store
+        .upsert_score(&old.image_id, &Score::new(0.9).expect("valid"), &mv)
+        .await
+        .unwrap();
+
+    // Recent record
+    let recent = make_record("age_recent");
+    store.add(&recent).await.unwrap();
+    store
+        .upsert_score(&recent.image_id, &Score::new(0.5).expect("valid"), &mv)
+        .await
+        .unwrap();
+
+    // With 24h max age, only recent should appear
+    let scored = store
+        .list_scored_summaries_by_score(10, Some(24))
+        .await
+        .unwrap();
+    assert_eq!(scored.len(), 1);
+    assert_eq!(scored[0].0.image_id, recent.image_id);
+
+    // With None (no age filter), both should appear
+    let scored_all = store
+        .list_scored_summaries_by_score(10, None)
+        .await
+        .unwrap();
+    assert_eq!(scored_all.len(), 2);
+}
+
+#[tokio::test]
+async fn content_matches_identical_and_different() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let r1 = make_record("cm1");
+    let r3 = make_record_at("cm2", 0, 255, 0, DiscoveredAt::now());
+    store.add(&r1).await.unwrap();
+    store.add(&r3).await.unwrap();
+
+    let img1 = store.get_by_id(&r1.image_id).await.unwrap().unwrap();
+    let img1_again = store.get_by_id(&r1.image_id).await.unwrap().unwrap();
+    let img3 = store.get_by_id(&r3.image_id).await.unwrap().unwrap();
+
+    assert!(img1.content_matches(&img1_again).unwrap());
+    assert!(!img1.content_matches(&img3).unwrap());
+}
+
+#[tokio::test]
+async fn compact_succeeds_on_empty_store() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+    store.compact().await.unwrap();
+}
+
+#[tokio::test]
+async fn compact_preserves_data() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+    let record = make_record("compact1");
+    store.add(&record).await.unwrap();
+
+    let mv = test_model_version();
+    store
+        .upsert_score(&record.image_id, &Score::new(0.8).expect("valid"), &mv)
+        .await
+        .unwrap();
+
+    store.compact().await.unwrap();
+
+    assert_eq!(store.count().await.unwrap(), 1);
+    assert!(store.exists(&record.image_id).await.unwrap());
+    let score = store.get_score(&record.image_id).await.unwrap();
+    assert_eq!(score, Some((Score::new(0.8).expect("valid"), mv)));
+}
+
+#[tokio::test]
+async fn summarise_returns_counts() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+    let record = make_record("summ1");
+    store.add(&record).await.unwrap();
+
+    let mv = test_model_version();
+    store
+        .upsert_score(&record.image_id, &Score::new(0.7).expect("valid"), &mv)
+        .await
+        .unwrap();
+
+    let summary = store.summarise().await.unwrap();
+    assert_eq!(summary.image_count, 1);
+    assert_eq!(summary.score_count, 1);
+    assert_eq!(summary.scored_image_count, 1);
+    assert!(summary.discovered_at_range.is_some());
+    assert!(summary.original_at_range.is_some());
 }

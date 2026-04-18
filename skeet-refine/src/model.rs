@@ -89,7 +89,7 @@ impl RefineModel {
         let mut version = String::with_capacity(8);
         write!(version, "{hash:016x}").expect("write to String");
         version.truncate(8);
-        version.parse().expect("ModelVersion parse is infallible")
+        ModelVersion::from(version.as_str())
     }
 }
 

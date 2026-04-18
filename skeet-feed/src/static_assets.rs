@@ -1,12 +1,12 @@
-//! Vendored web static assets shared across web-facing crates.
+//! Vendored web static assets served by skeet-feed.
 //!
-//! Currently this is just `htmx.min.js`. Consumer crates should call
-//! [`web_static_files`] from their [`cot::App::static_files`] implementation
-//! to register these files with the project's static files middleware.
+//! Currently this is just `htmx.min.js`. Called from
+//! [`cot::App::static_files`] to register these files with the project's
+//! static files middleware.
 
 use cot::static_files::StaticFile;
 
-/// Returns the list of static files shared across web crates.
+/// Returns the list of static files bundled with skeet-feed.
 ///
 /// Each file is included at compile time via [`include_bytes!`], so the
 /// returned vector is cheap to build and never fails at runtime.

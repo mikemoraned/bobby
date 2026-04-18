@@ -6,10 +6,12 @@ use cot::request::extractors::UrlQuery;
 use cot::response::{IntoResponse, Redirect, Response};
 use cot::{Body, Template};
 use serde::Deserialize;
-use shared::Band;
+use std::sync::Arc;
+
+use shared::{Appraiser, Band};
 use skeet_store::{Appraisal, DiscoveredAt, ImageId, Score, SkeetId, StoredImageSummary};
-use skeet_web_shared::Store;
-use skeet_web_shared::effective_band::image_effective_band;
+use crate::Store;
+use crate::effective_band::image_effective_band;
 use tracing::{info, instrument};
 
 use crate::AppraiserExtractor;
@@ -225,13 +227,7 @@ fn build_rows(
 }
 
 #[derive(Deserialize)]
-pub struct AppraiseSkeetQuery {
-    pub band: String,
-    pub id: String,
-}
-
-#[derive(Deserialize)]
-pub struct AppraiseImageQuery {
+pub struct AppraiseQuery {
     pub band: String,
     pub id: String,
 }
@@ -247,34 +243,13 @@ struct AdminRowTemplate<'a> {
 pub async fn appraise_skeet(
     Store(store): Store,
     AppraiserExtractor(appraiser): AppraiserExtractor,
-    UrlQuery(query): UrlQuery<AppraiseSkeetQuery>,
+    UrlQuery(query): UrlQuery<AppraiseQuery>,
 ) -> cot::Result<Response> {
-    let appraiser = appraiser
-        .ok_or_else(|| cot::Error::internal("no appraiser configured — use --local-admin or authenticate"))?;
-
     let skeet_id: SkeetId = query
         .id
         .parse()
         .map_err(|e| cot::Error::internal(format!("invalid skeet_id: {e}")))?;
-
-    if query.band == "clear" {
-        store
-            .clear_skeet_band(&skeet_id)
-            .await
-            .map_err(|e| cot::Error::internal(format!("failed to clear band: {e}")))?;
-        info!(%skeet_id, "cleared skeet band");
-    } else {
-        let band: Band = query
-            .band
-            .parse()
-            .map_err(|e| cot::Error::internal(format!("invalid band: {e}")))?;
-        store
-            .set_skeet_band(&skeet_id, band, &appraiser)
-            .await
-            .map_err(|e| cot::Error::internal(format!("failed to set band: {e}")))?;
-        info!(%skeet_id, %band, "set skeet band");
-    }
-
+    apply_appraisal(&store, appraiser, &query.band, AppraiseTarget::Skeet(&skeet_id)).await?;
     render_updated_row(&store, &skeet_id.to_string(), "skeet").await
 }
 
@@ -282,35 +257,61 @@ pub async fn appraise_skeet(
 pub async fn appraise_image(
     Store(store): Store,
     AppraiserExtractor(appraiser): AppraiserExtractor,
-    UrlQuery(query): UrlQuery<AppraiseImageQuery>,
+    UrlQuery(query): UrlQuery<AppraiseQuery>,
 ) -> cot::Result<Response> {
-    let appraiser = appraiser
-        .ok_or_else(|| cot::Error::internal("no appraiser configured — use --local-admin or authenticate"))?;
-
     let image_id: ImageId = query
         .id
         .parse()
         .map_err(|e| cot::Error::internal(format!("invalid image_id: {e}")))?;
+    apply_appraisal(&store, appraiser, &query.band, AppraiseTarget::Image(&image_id)).await?;
+    render_updated_row(&store, &image_id.to_string(), "image").await
+}
 
-    if query.band == "clear" {
-        store
-            .clear_image_band(&image_id)
-            .await
-            .map_err(|e| cot::Error::internal(format!("failed to clear band: {e}")))?;
-        info!(%image_id, "cleared image band");
+enum AppraiseTarget<'a> {
+    Skeet(&'a SkeetId),
+    Image(&'a ImageId),
+}
+
+async fn apply_appraisal(
+    store: &skeet_store::SkeetStore,
+    appraiser: Option<Arc<Appraiser>>,
+    band_str: &str,
+    target: AppraiseTarget<'_>,
+) -> cot::Result<()> {
+    let appraiser = appraiser
+        .ok_or_else(|| cot::Error::internal("no appraiser configured — use --local-admin or authenticate"))?;
+
+    if band_str == "clear" {
+        match &target {
+            AppraiseTarget::Skeet(id) => {
+                store.clear_skeet_band(id).await
+                    .map_err(|e| cot::Error::internal(format!("failed to clear band: {e}")))?;
+                info!(%id, "cleared skeet band");
+            }
+            AppraiseTarget::Image(id) => {
+                store.clear_image_band(id).await
+                    .map_err(|e| cot::Error::internal(format!("failed to clear band: {e}")))?;
+                info!(%id, "cleared image band");
+            }
+        }
     } else {
-        let band: Band = query
-            .band
+        let band: Band = band_str
             .parse()
             .map_err(|e| cot::Error::internal(format!("invalid band: {e}")))?;
-        store
-            .set_image_band(&image_id, band, &appraiser)
-            .await
-            .map_err(|e| cot::Error::internal(format!("failed to set band: {e}")))?;
-        info!(%image_id, %band, "set image band");
+        match &target {
+            AppraiseTarget::Skeet(id) => {
+                store.set_skeet_band(id, band, &appraiser).await
+                    .map_err(|e| cot::Error::internal(format!("failed to set band: {e}")))?;
+                info!(%id, %band, "set skeet band");
+            }
+            AppraiseTarget::Image(id) => {
+                store.set_image_band(id, band, &appraiser).await
+                    .map_err(|e| cot::Error::internal(format!("failed to set band: {e}")))?;
+                info!(%id, %band, "set image band");
+            }
+        }
     }
-
-    render_updated_row(&store, &image_id.to_string(), "image").await
+    Ok(())
 }
 
 async fn render_updated_row(

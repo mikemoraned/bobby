@@ -20,9 +20,11 @@ pub fn blocked_labels(post_thread_json: &Value) -> Vec<String> {
         for label in labels {
             if let Some(val) = label.get("val").and_then(Value::as_str)
                 && shared::labels::EXCLUDED_VALUES.contains(&val)
-                && !found.contains(&val.to_string())
             {
-                found.push(val.to_string());
+                let s = val.to_string();
+                if !found.contains(&s) {
+                    found.push(s);
+                }
             }
         }
     }
