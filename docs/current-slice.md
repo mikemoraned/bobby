@@ -35,7 +35,8 @@ Get confidence that tests are covering behaviour using mutation testing.
 #### Guardrails
 - [x] Keep the example tests as named regressions where they encode a specific historical bug or boundary case worth documenting; otherwise remove them when the property-based version subsumes them (per the "remove dead code" rule).
 - [x] Make sure properties run under `just test` with a sensible iteration count (default is usually fine).
-- [ ] use [cargo mutants](https://mutants.rs/welcome.html) to prove the tests are covering code 
-    - [ ] migrate test running to use `nextest` so that it is faster
-    - [ ] do a test run of cargo mutants on a single (smallest) crate; apply any fixes to tests
-    - [ ] repeat for each crate
+- [x] use [cargo mutants](https://mutants.rs/welcome.html) to prove the tests are covering code 
+    - [x] migrate test running to use `nextest` so that it is faster
+    - [x] do a test run of cargo mutants on a single (smallest) crate; apply any fixes to tests
+    - [x] repeat for each crate
+        * decided to skip face-detection and skin-detection until we can add more tests based on test datasets
