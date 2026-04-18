@@ -20,7 +20,7 @@ So, what we want is:
 #### Bugs
 
 * [ ] is auth login actually working for github admin when deployed? (it does work locally i.e. when I go to localhost)
-    * if I go to https://bobby-staging.houseofmoran.io/admin I get the following:
+    * [x] if I go to https://bobby-staging.houseofmoran.io/admin I get the following:
         * response:
         ```
         The redirect_uri is not associated with this application.
@@ -31,6 +31,15 @@ So, what we want is:
         &redirect_uri=http%3A%2F%2Fbobby-staging.houseofmoran.io%2Fauth%2Fcallback&scope=read%3Auser
         ```
         * I think this should be `https` not `http`?
+    * [ ] I think I am now seeing issues caused by using a `MemoryStore` and the fly.io machine stopping; this is not too surprising. To fix this:
+        * [ ] before making changes, upgrade cot.rs to 0.6 (we are on 0.5); apply any fixes for breaking changes
+        * [ ] do a bit of research into things like [tower_sessions](https://github.com/maxcountryman/tower-sessions) and [axum-login](https://github.com/maxcountryman/axum-login); my preference is to re-use as many standard thirty-party code as possible for auth-related activities on the assumption it has been well-tested
+        * [ ] what I want to end up with is:
+            * when `--local-admin` is enabled, the Appraiser is `Appraiser::LocalAdmin`; no persistent session store should be needed, other than one in-memory
+            * when not enabled:
+                * Appraiser is derived as now i.e. a github login is done as now
+                * The sessions, or any other state, is kept in a redis DB
+                    * an upstash.com redis has been created, and the URL is 1Password in the `bobby-upstash-redis-tcp-url` entry
 
 #### Manual Appraisal
 

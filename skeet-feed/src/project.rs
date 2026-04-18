@@ -1,10 +1,12 @@
-use cot::config::{ProjectConfig, SameSite, SecretKey};
+use cot::config::{CacheUrl, ProjectConfig, SameSite, SecretKey};
 use cot::middleware::SessionMiddleware;
 use cot::project::{MiddlewareContext, RegisterAppsContext, RootHandler, RootHandlerBuilder};
 use cot::router::{Route, Router};
 use cot::session::store::memory::MemoryStore;
+use cot::session::store::redis::RedisStore;
 use cot::static_files::StaticFilesMiddleware;
 use cot::{App, AppBuilder, Project};
+use tracing::info;
 
 use crate::AppraiserLayer;
 use crate::StoreLayer;
@@ -79,6 +81,7 @@ pub struct FeedProject {
     pub oauth_config_layer: OAuthConfigLayer,
     pub started_at_layer: StartedAtLayer,
     pub session_secret: Option<String>,
+    pub redis_url: Option<String>,
 }
 
 impl Project for FeedProject {
@@ -100,9 +103,22 @@ impl Project for FeedProject {
         handler: RootHandlerBuilder,
         context: &MiddlewareContext,
     ) -> RootHandler {
+        let session_middleware = self.redis_url.as_ref().map_or_else(
+            || {
+                info!("using in-memory session store");
+                SessionMiddleware::new(MemoryStore::new()).secure(false).same_site(SameSite::Lax)
+            },
+            |url| {
+                info!("using Redis session store");
+                let store = RedisStore::new(&CacheUrl::from(url.as_str()))
+                    .expect("failed to create Redis session store");
+                SessionMiddleware::new(store).secure(true).same_site(SameSite::Lax)
+            },
+        );
+
         handler
             .middleware(StaticFilesMiddleware::from_context(context))
-            .middleware(SessionMiddleware::new(MemoryStore::new()).secure(false).same_site(SameSite::Lax))
+            .middleware(session_middleware)
             .middleware(self.cache_layer.clone())
             .middleware(self.feed_config_layer.clone())
             .middleware(self.store_layer.clone())

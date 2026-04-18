@@ -40,6 +40,7 @@ async fn client_for(store: SkeetStore, params: FeedParams) -> Client {
         oauth_config_layer: OAuthConfigLayer::new(None),
         started_at_layer: StartedAtLayer::new(Utc::now()),
         session_secret: None,
+        redis_url: None,
     };
     Client::new(project).await
 }
@@ -705,6 +706,7 @@ async fn oauth_client(
         oauth_config_layer: OAuthConfigLayer::new(Some(Arc::new(oauth_config))),
         started_at_layer: StartedAtLayer::new(Utc::now()),
         session_secret: None,
+        redis_url: None,
     };
     Client::new(project).await
 }

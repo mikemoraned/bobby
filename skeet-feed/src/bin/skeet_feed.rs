@@ -59,6 +59,10 @@ struct Args {
     #[arg(long, env = "BOBBY_SESSION_SECRET")]
     session_secret: Option<String>,
 
+    /// Redis URL for persistent session storage (env: BOBBY_REDIS_URL)
+    #[arg(long, env = "BOBBY_REDIS_URL")]
+    redis_url: Option<String>,
+
     /// Comma-separated list of allowed GitHub usernames (env: BOBBY_ADMIN_USERS)
     #[arg(long, env = "BOBBY_ADMIN_USERS")]
     admin_users: Option<String>,
@@ -139,6 +143,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         oauth_config_layer: OAuthConfigLayer::new(oauth_config),
         started_at_layer: StartedAtLayer::new(Utc::now()),
         session_secret: args.session_secret,
+        redis_url: args.redis_url,
     };
     let bootstrapper = Bootstrapper::new(project)
         .with_config_name("dev")?
