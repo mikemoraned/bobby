@@ -7,10 +7,10 @@ use clap::Parser;
 use cot::project::Bootstrapper;
 use shared::Appraiser;
 use skeet_feed::auth_config::OAuthConfig;
-use skeet_feed::{AppraiserLayer, OAuthConfigLayer, StartedAtLayer, StoreLayer};
 use skeet_feed::feed_cache::{FeedCache, FeedCacheLayer};
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
+use skeet_feed::{AppraiserLayer, OAuthConfigLayer, StartedAtLayer, StoreLayer};
 use skeet_store::StoreArgs;
 use tracing::info;
 
@@ -72,10 +72,8 @@ struct Args {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let _guard = shared::tracing::init_with_file(
-        "skeet_feed=info,shared=info,skeet_store=info",
-        "feed.log",
-    );
+    let _guard =
+        shared::tracing::init_with_file("skeet_feed=info,shared=info,skeet_store=info", "feed.log");
 
     let store = Arc::new(
         args.store
@@ -119,13 +117,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &args.admin_users,
     ) {
         (Some(client_id), Some(client_secret), Some(admin_users)) => {
-            let users: Vec<String> = admin_users.split(',').map(|s| s.trim().to_string()).collect();
+            let users: Vec<String> = admin_users
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect();
             info!(admin_users = ?users, "GitHub OAuth configured");
-            Some(Arc::new(OAuthConfig::new(
-                client_id,
-                client_secret,
-                users,
-            )))
+            Some(Arc::new(OAuthConfig::new(client_id, client_secret, users)))
         }
         _ => {
             if !args.local_admin {
@@ -143,7 +140,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         oauth_config_layer: OAuthConfigLayer::new(oauth_config),
         started_at_layer: StartedAtLayer::new(Utc::now()),
         session_secret: args.session_secret,
-        redis_url: args.redis_url,
+        // redis_url: args.redis_url,
+        redis_url: None, // TODO: fix once we've worked out "invalid cache URL: RelativeUrlWithoutBase"
     };
     let bootstrapper = Bootstrapper::new(project)
         .with_config_name("dev")?
