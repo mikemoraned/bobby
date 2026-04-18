@@ -37,8 +37,10 @@ fn redirect_url_from_request(head: &RequestHead) -> String {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("localhost");
     let scheme = head
-        .uri
-        .scheme_str()
+        .headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .or_else(|| head.uri.scheme_str())
         .unwrap_or("http");
     format!("{scheme}://{host}/auth/callback")
 }
