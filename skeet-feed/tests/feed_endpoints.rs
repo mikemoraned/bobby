@@ -720,9 +720,21 @@ fn extract_session_cookie(response: &cot::http::Response<cot::Body>) -> Option<S
 
 /// Build a GET request with an optional session cookie.
 fn get_with_cookie(uri: &str, cookie: Option<&str>) -> cot::http::Request<cot::Body> {
+    get_with_cookie_and_headers(uri, cookie, &[])
+}
+
+/// Build a GET request with an optional session cookie and extra headers.
+fn get_with_cookie_and_headers(
+    uri: &str,
+    cookie: Option<&str>,
+    extra_headers: &[(&str, &str)],
+) -> cot::http::Request<cot::Body> {
     let mut builder = cot::http::Request::builder().uri(uri);
     if let Some(cookie) = cookie {
         builder = builder.header("cookie", cookie);
+    }
+    for (name, value) in extra_headers {
+        builder = builder.header(*name, *value);
     }
     builder.body(cot::Body::empty()).expect("build request")
 }
@@ -966,5 +978,33 @@ async fn tampered_csrf_state_is_rejected() {
     assert!(
         body.contains("CSRF"),
         "rejection should mention CSRF: {body}"
+    );
+}
+
+#[tokio::test]
+async fn login_redirect_uses_https_when_x_forwarded_proto_is_set() {
+    let mock_server = MockServer::start().await;
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let mut client = oauth_client(&mock_server, vec!["testuser"], &dir).await;
+
+    let request = get_with_cookie_and_headers(
+        "/auth/login",
+        None,
+        &[("x-forwarded-proto", "https")],
+    );
+    let response = client.request(request).await.expect("GET /auth/login");
+    assert_eq!(response.status().as_u16(), 303, "login should redirect");
+
+    let location = response
+        .headers()
+        .get("location")
+        .expect("redirect location")
+        .to_str()
+        .expect("valid header");
+    let redirect_uri =
+        extract_query_param(location, "redirect_uri").expect("redirect_uri in OAuth URL");
+    assert!(
+        redirect_uri.starts_with("https://"),
+        "redirect_uri should use https when x-forwarded-proto is https, got: {redirect_uri}"
     );
 }

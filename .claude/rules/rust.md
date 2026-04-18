@@ -28,6 +28,7 @@ paths:
 - Cross-crate models go in a `shared` crate's `lib.rs`
 - Keep shared/library types as pure data types — don't add policy or business-logic methods to them. Policy logic belongs in the crate that owns the decision. Only inherent behaviour (formatting, parsing, construction) belongs on the type itself.
 - Testing:
+  - Always use `cargo nextest run` to run tests, never `cargo test`
   - Core functionality gets inline unit tests
   - Multi-part integration gets integ tests (use captured real data)
   - Prefer high-level invariant-based tests over bespoke examples; use [proptest](https://docs.rs/proptest/latest/proptest/) for property-based tests

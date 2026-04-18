@@ -19,7 +19,18 @@ So, what we want is:
 
 #### Bugs
 
-* [ ] is auth login actually working for github admin when deployed?
+* [ ] is auth login actually working for github admin when deployed? (it does work locally i.e. when I go to localhost)
+    * if I go to https://bobby-staging.houseofmoran.io/admin I get the following:
+        * response:
+        ```
+        The redirect_uri is not associated with this application.
+        The application might be misconfigured or could be trying to redirect you to a website you weren't expecting.
+        ```
+        * url contains:
+        ```
+        &redirect_uri=http%3A%2F%2Fbobby-staging.houseofmoran.io%2Fauth%2Fcallback&scope=read%3Auser
+        ```
+        * I think this should be `https` not `http`?
 
 #### Manual Appraisal
 
