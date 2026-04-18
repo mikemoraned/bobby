@@ -35,7 +35,8 @@ So, what we want is:
 #### Manual Appraisal
 
 * [x] extend feed admin pages to show overall counts of number of appraised skeets and images, on respective views
-* [ ] manually appraise 200 images
+* [x] manually appraise 200 images
+    * there was actually already 354
 
 #### (Imperfect) Precision/Recall measure
 
