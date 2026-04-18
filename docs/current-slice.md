@@ -41,6 +41,10 @@ So, what we want is:
                 * The sessions, or any other state, is kept in a redis DB
                     * an upstash.com redis has been created, and the URL is 1Password in the `bobby-upstash-redis-tcp-url` entry
     * [ ] deploy to https://bobby-staging.houseofmoran.io/ do a manual test to check that https://bobby-staging.houseofmoran.io/admin works:
+        * [ ] the deploy to fly.io failed on startup because first, the secret was malformed (I fixed that) but then because we've not compiled in support for tls: "failed to create Redis session store: PoolCreation(Config(Redis(can't connect with TLS, the feature is not enabled - InvalidClientConfig)))". We can fix this, but first we need a failing integ test so we catch these sorts of problems earlier:
+            * [ ] create an integ test which uses a testcontainers redis setup (https://testcontainers.com/modules/redis/?language=rust) to create a local redis for use in tests, that we can attempt to connect to over TLS and see it fail
+            * [ ] add TLS support and see it pass
+            * [ ] re-enable redis in fly.io by setting `--use_redis`
         * [ ] login, do some admin e.g. appraising some images
         * wait a few hours, don't reload page
         * [ ] do some more admin, without logging-in again, and check still works
