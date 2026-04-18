@@ -1,42 +1,50 @@
-# Current Slice: Slice 14 — Property-based tests for value types + Mutation-testing for coverage check
+# Current Slice: Slice 15 — re-introduce text-filtering to reduce costs / increase quality
 
 ### Target
 
-Adopt [`proptest`](https://docs.rs/proptest/latest/proptest/) for value-type tests across the workspace. The codebase is currently example-based throughout, but several value types are textbook property-test candidates: validity ranges, parse/display roundtrips, and ordering invariants. Convert the strongest candidates and use them as the template for future tests.
+As of 15th April, I am seeing a lot of low-quality skeets come through with text in them. We previously were applying text filtering but it didn't seem to be of much value, as it was only excluding a small %-age. It may be that were just lucky before and now it'd be more useful.
 
-Get confidence that tests are covering behaviour using mutation testing.
+Now that we have an ability to manually appraised skeet images by quality we should use this to establish a test set.
+
+So, what we want is:
+* a manually-appraised set (200 should be enough) of images
+* text-based pruning re-applied, perhaps differently to before
+* a measurement of precision on this test set before/after pruning by text
 
 ### Tasks
 
-#### Set up
-- [x] Add `proptest` to `[workspace.dependencies]` and as a `dev-dependency` of `shared`, `skeet-store`, and `skeet-feed`.
-- [x] Install [cargo mutants](https://mutants.rs/installation.html)
+#### Cleanups
 
-#### Convert strongest candidates first
-- [x] **`Score`** (`shared/src/score.rs`) — collapse the 6 example tests into properties:
-    - validity: `∀ f32 x: Score::new(x).is_ok() ⟺ 0.0 ≤ x ≤ 1.0`
-    - parse/display roundtrip: `∀ valid Score s: s.to_string().parse() == Ok(s)` (mod float precision)
-    - ordering matches the underlying f32 ordering
-- [x] **`Percentage`** (`shared/src/lib.rs`) — validity + ordering properties. Note: `Percentage::new` currently panics on invalid input; refactor to return `Result` first.
-- [x] **`ImageId` V1 and V2** (`skeet-store/src/types.rs`) — parse/display roundtrip; "different content yields different V2 id" over arbitrary byte slices instead of two hardcoded image sizes.
-- [x] **`SkeetId`** (`shared/src/skeet_id.rs`) — parse/display roundtrip over arbitrary valid `(did, collection, rkey)` triples; rejection of arbitrary malformed strings.
-- [x] **`Band`** (`shared/src/band.rs`) — `from_score` totality, monotonicity, and visibility-threshold equivalence; parse/display roundtrip.
+* [ ] I added `tokio-console` support but I've not really used it. I originally added it because I thought it was more like a local telemetry viewer than async debugger. So, generally useful, but not for most of what I've been doing. TLDR: support for it should be removed, and dependency can be deleted.
 
-#### Plug existing gaps
-- [x] **`Rejection`** roundtrip test (`shared/src/rejection.rs`) currently only covers 2 of 8 variants. Replace with an exhaustive iteration (or a property over an `Arbitrary<Rejection>`) so adding a new variant without a matching `FromStr` arm fails the test.
-- [x] **`Zone`** (`shared/src/zone.rs`) — parse/display roundtrip over all 9 variants (currently 1 test that iterates manually).
-- [x] **`Appraiser`** (`shared/src/appraiser.rs`) — parse/display roundtrip for valid appraisers; rejection of empty identifiers and unknown providers over arbitrary strings.
+#### Bugs
 
-#### Lower-priority candidates
-- [x] **`PruneConfig::version()`** — property: equal configs hash equal; differing configs hash differently (with overwhelming probability).
-- [x] **`DiscoveredAt::is_within_hours`** — time-arithmetic invariants over arbitrary timestamps and hour windows.
-- [x] **Effective band logic** (`skeet-feed/src/effective_band.rs`) — properties for manual-override semantics: manual demote always hides; manual promote at skeet level always wins over automatic; "one bad image taints the whole skeet" holds across all (manual, automatic) combinations.
+* [ ] is auth login actually working for github admin when deployed?
 
-#### Guardrails
-- [x] Keep the example tests as named regressions where they encode a specific historical bug or boundary case worth documenting; otherwise remove them when the property-based version subsumes them (per the "remove dead code" rule).
-- [x] Make sure properties run under `just test` with a sensible iteration count (default is usually fine).
-- [x] use [cargo mutants](https://mutants.rs/welcome.html) to prove the tests are covering code 
-    - [x] migrate test running to use `nextest` so that it is faster
-    - [x] do a test run of cargo mutants on a single (smallest) crate; apply any fixes to tests
-    - [x] repeat for each crate
-        * decided to skip face-detection and skin-detection until we can add more tests based on test datasets
+#### Manual Appraisal
+
+* [ ] extend feed admin pages to show overall counts of number of appraised skeets and images, on respective views
+* [ ] appraise 200 images
+
+#### (Imperfect) Precision/Recall measure
+
+* [ ] write a small CLI in `skeet-prune` called `eval` which:
+    1. finds all images in a store that have been manually appraised into a particular Band i.e. ignore anything not manually appraised
+        * this may involve adding support to `SkeetStore` for this
+    2. map the Band for an image to a binary `should_be_pruned` variable:
+        * Band = Low, then should be pruned, `should_be_pruned` = true
+        * Band = anything else, then may be allowed, `should_be_pruned` = false
+    3. fetch the information for these images we want to assess, and for each, run them through a classify pass, where we collect whether an image would have been pruned or not
+    4. do precision/recall evaluation by taking `should_be_pruned` as the actual, and whether it was pruned in step 3 as the prediction
+        * note that as overall measures these are skewed, as the only images that have been appraised are the ones that previously had not been pruned. so we are biasing towards only examining that subset, and not the wider unknown set that was never seen by a person. this is ok, as we are using this here as a way to see if text-detection can be a narrower more precise way to exclude images. We are aiming to measure an increase in precision and no loss of recall, and this is measurement method is sufficient for that.
+
+#### Re-introduce text-based filtering as an optional filter
+
+* [ ] go back through commit history and bring back the text-detection crate contents. don't yet hook it into any classification i.e. we won't use it for real yet
+* [ ] run mutation-testing on this, to flush out any testing gaps. also migrate any tests to prop-based style
+* [ ] make classification methods configurable by making it so that we can optionally use text-detection, but face-detection and skin-detection are on by default.
+
+#### Evaluate text-detection
+
+* [ ] using above capabilities, do two runs of `eval` one with defaults (no text detection) and one with text-detection enabled and compare performance
+    * it may be overkill, but `eval` could be extended to do the shared steps (1+2) and then run two different classification configs side-by-side on the same data; this way we ensure we are comparing like-for-like
