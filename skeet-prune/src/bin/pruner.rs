@@ -24,10 +24,6 @@ struct Args {
     #[arg(long)]
     fallback_local_store: Option<String>,
 
-    /// Enable tokio-console on this port
-    #[arg(long)]
-    tokio_console_port: Option<u16>,
-
     /// Status log interval in seconds (default: 30)
     #[arg(long, default_value = "30")]
     status_interval_secs: u64,
@@ -41,15 +37,9 @@ struct Args {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let console = args
-        .tokio_console_port
-        .map_or(shared::tracing::TokioConsoleSupport::Disabled, |port| {
-            shared::tracing::TokioConsoleSupport::Enabled { port }
-        });
     let _guard = shared::tracing::init_with_file(
         "skeet_prune=info,shared=info,skeet_store=info,lance_io=warn,object_store=warn",
         "pruner.log",
-        console,
     );
 
     let http = reqwest::Client::new();

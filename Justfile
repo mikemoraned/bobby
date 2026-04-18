@@ -20,7 +20,6 @@ convert-models: download-models
 
 prerequisites: convert-models
     brew install protobuf openssl cargo-nextest
-    cargo install tokio-console
     cargo install --locked cargo-mutants
 
 build:

@@ -15,7 +15,7 @@ So, what we want is:
 
 #### Cleanups
 
-* [ ] I added `tokio-console` support but I've not really used it. I originally added it because I thought it was more like a local telemetry viewer than async debugger. So, generally useful, but not for most of what I've been doing. TLDR: support for it should be removed, and dependency can be deleted.
+* [x] I added `tokio-console` support but I've not really used it. I originally added it because I thought it was more like a local telemetry viewer than async debugger. So, generally useful, but not for most of what I've been doing. TLDR: support for it should be removed, and dependency can be deleted.
 
 #### Bugs
 
@@ -24,7 +24,7 @@ So, what we want is:
 #### Manual Appraisal
 
 * [ ] extend feed admin pages to show overall counts of number of appraised skeets and images, on respective views
-* [ ] appraise 200 images
+* [ ] manually appraise 200 images
 
 #### (Imperfect) Precision/Recall measure
 
