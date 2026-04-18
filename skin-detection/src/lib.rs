@@ -137,4 +137,79 @@ mod tests {
         // Gray fails max-min > 15 and |R-G| > 15
         assert!(!is_skin_pixel(128.0, 128.0, 128.0));
     }
+
+    // ─── detect_skin ───────────────────────────────────────────
+
+    #[test]
+    fn detect_skin_dimensions_match_input() {
+        let img = DynamicImage::new_rgb8(32, 24);
+        let mask = detect_skin(&img);
+        assert_eq!(mask.dimensions(), (32, 24));
+    }
+
+    #[test]
+    fn detect_skin_marks_skin_colored_pixels() {
+        let mut img = image::RgbImage::new(4, 4);
+        for pixel in img.pixels_mut() {
+            *pixel = image::Rgb([200, 150, 120]);
+        }
+        let mask = detect_skin(&DynamicImage::ImageRgb8(img));
+        assert!(mask.pixels().all(|p| p.0[0] == 255));
+    }
+
+    #[test]
+    fn detect_skin_leaves_non_skin_as_zero() {
+        let img = DynamicImage::new_rgb8(4, 4);
+        let mask = detect_skin(&img);
+        assert!(mask.pixels().all(|p| p.0[0] == 0));
+    }
+
+    // ─── skin_pct_in_rect / skin_pct_outside_rect ─────────────
+
+    #[test]
+    fn skin_pct_in_rect_all_skin() {
+        let mask = GrayImage::from_pixel(20, 20, Luma([255]));
+        let pct = skin_pct_in_rect(&mask, 5, 5, 10, 10);
+        assert!((pct - 100.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn skin_pct_in_rect_no_skin() {
+        let mask = GrayImage::from_pixel(20, 20, Luma([0]));
+        let pct = skin_pct_in_rect(&mask, 5, 5, 10, 10);
+        assert!(pct.abs() < 0.01);
+    }
+
+    #[test]
+    fn skin_pct_outside_rect_zero_when_skin_only_inside() {
+        let mut mask = GrayImage::new(20, 20);
+        for y in 5..15 {
+            for x in 5..15 {
+                mask.put_pixel(x, y, Luma([255]));
+            }
+        }
+        let outside = skin_pct_outside_rect(&mask, 5, 5, 10, 10);
+        assert!(outside.abs() < 0.01);
+    }
+
+    #[test]
+    fn skin_pct_outside_rect_nonzero_when_skin_outside() {
+        let mask = GrayImage::from_pixel(20, 20, Luma([255]));
+        let outside = skin_pct_outside_rect(&mask, 5, 5, 10, 10);
+        assert!(outside > 0.0);
+    }
+
+    #[test]
+    fn skin_pct_in_and_outside_are_complementary() {
+        let mut mask = GrayImage::new(20, 20);
+        for y in 5..15 {
+            for x in 5..15 {
+                mask.put_pixel(x, y, Luma([255]));
+            }
+        }
+        let inside = skin_pct_in_rect(&mask, 5, 5, 10, 10);
+        let outside = skin_pct_outside_rect(&mask, 5, 5, 10, 10);
+        assert!((inside - 100.0).abs() < 0.01);
+        assert!(outside.abs() < 0.01);
+    }
 }

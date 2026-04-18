@@ -255,4 +255,16 @@ mod tests {
             pct.value()
         );
     }
+
+    #[test]
+    fn area_pct_known_value() {
+        // 50x50 face on 100x100 image = 25%
+        let face = make_face(0.0, 0.0, 50.0, 50.0);
+        let pct = face.area_pct(100, 100);
+        assert!(
+            (pct.value() - 25.0).abs() < 0.01,
+            "expected 25%, got {}",
+            pct.value()
+        );
+    }
 }

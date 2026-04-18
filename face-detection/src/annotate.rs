@@ -53,3 +53,97 @@ pub fn annotate_image(
 
     DynamicImage::ImageRgba8(canvas)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Landmarks;
+    use image::GrayImage;
+    use image::Luma;
+
+    fn test_face() -> Face {
+        Face {
+            x: 20.0,
+            y: 20.0,
+            width: 60.0,
+            height: 60.0,
+            score: 0.9,
+            landmarks: Landmarks {
+                right_eye: (35.0, 35.0),
+                left_eye: (65.0, 35.0),
+                nose: (50.0, 50.0),
+                right_mouth: (40.0, 60.0),
+                left_mouth: (60.0, 60.0),
+            },
+        }
+    }
+
+    #[test]
+    fn annotate_preserves_dimensions() {
+        let img = DynamicImage::new_rgb8(100, 100);
+        let mask = GrayImage::new(100, 100);
+        let result = annotate_image(&img, &test_face(), &mask);
+        assert_eq!(result.width(), 100);
+        assert_eq!(result.height(), 100);
+    }
+
+    #[test]
+    fn annotate_produces_rgba_output() {
+        let img = DynamicImage::new_rgb8(100, 100);
+        let mask = GrayImage::new(100, 100);
+        let result = annotate_image(&img, &test_face(), &mask);
+        assert!(result.as_rgba8().is_some());
+    }
+
+    #[test]
+    fn annotate_skin_overlay_changes_pixels() {
+        // White image with all-skin mask → overlay should tint pixels
+        let img = DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
+            100, 100, image::Rgb([255, 255, 255]),
+        ));
+        let mask = GrayImage::from_pixel(100, 100, Luma([255]));
+        let result = annotate_image(&img, &test_face(), &mask);
+        let rgba = result.as_rgba8().expect("rgba");
+        // The overlay blends with SKIN_OVERLAY (0, 200, 100, 128)
+        // For white (255, 255, 255): r = (255+0)/2=127, g = (255+200)/2=227, b = (255+100)/2=177
+        let pixel = rgba.get_pixel(0, 0);
+        assert!(pixel[0] < 200, "red channel should be tinted down");
+        assert!(pixel[1] > 200, "green channel should stay high");
+    }
+
+    #[test]
+    fn annotate_no_skin_leaves_pixels_untinted() {
+        let img = DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
+            100, 100, image::Rgb([255, 255, 255]),
+        ));
+        let mask = GrayImage::from_pixel(100, 100, Luma([0]));
+        let result = annotate_image(&img, &test_face(), &mask);
+        let rgba = result.as_rgba8().expect("rgba");
+        // Non-face pixels with no skin should remain white-ish
+        // (face bbox pixels will have red lines drawn on them)
+        // Check a corner pixel that's outside the crosshairs
+        let pixel = rgba.get_pixel(99, 0);
+        // This pixel is at the right edge, top — the horizontal crosshair
+        // passes at cy≈50 and vertical at cx≈50, so (99,0) is outside both
+        // BUT the horizontal line at cy goes all the way to img_w at cy,
+        // and vertical line goes all the way. Actually (99,0) is not on
+        // any crosshair since cy=50 and cx=50.
+        assert_eq!(pixel[0], 255);
+        assert_eq!(pixel[1], 255);
+        assert_eq!(pixel[2], 255);
+    }
+
+    #[test]
+    fn annotate_draws_bounding_box() {
+        let img = DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
+            100, 100, image::Rgb([255, 255, 255]),
+        ));
+        let mask = GrayImage::new(100, 100);
+        let result = annotate_image(&img, &test_face(), &mask);
+        let rgba = result.as_rgba8().expect("rgba");
+        // The bounding box edge at (20, 20) should have red drawn on it
+        let pixel = rgba.get_pixel(20, 20);
+        assert_eq!(pixel[0], 255, "red channel should be max on bbox");
+        assert_eq!(pixel[1], 0, "green should be 0 on red bbox");
+    }
+}
