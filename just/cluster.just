@@ -1,5 +1,5 @@
 HETZNER_SSH_DIR := "infra/ssh"
-export KUBECONFIG := "infra/kubeconfig"
+export KUBECONFIG := "/Users/mxm/Code/mine/bobby_worktrees/bobby/infra/kubeconfig" # cluster-creation/deletion sits on main branch
 
 cluster-prerequisites:
     brew install vitobotta/tap/hetzner_k3s helm kubectl lnav
