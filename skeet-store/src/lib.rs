@@ -134,6 +134,24 @@ impl SkeetStore {
         Ok(batches_to_stored_images(&batches)?.into_iter().next())
     }
 
+    #[instrument(skip(self, image_ids), fields(count = image_ids.len()))]
+    pub async fn get_by_ids(&self, image_ids: &[ImageId]) -> Result<Vec<StoredImage>, StoreError> {
+        if image_ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let id_list = image_ids
+            .iter()
+            .map(|id| format!("'{id}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let query = self
+            .images_table
+            .query()
+            .only_if(format!("image_id IN ({id_list})"));
+        let batches = execute_query(&query, "get_by_ids").await?;
+        batches_to_stored_images(&batches)
+    }
+
     #[instrument(skip(self))]
     pub async fn exists(&self, image_id: &ImageId) -> Result<bool, StoreError> {
         let query = self

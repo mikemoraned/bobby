@@ -51,6 +51,10 @@ path = "src/bin/add_to_blocklist.rs"
 name = "bench-firehose"
 path = "src/bin/bench_firehose.rs"
 
+[[bin]]
+name = "eval"
+path = "src/bin/eval.rs"
+
 
 [[test]]
 name = "examples"

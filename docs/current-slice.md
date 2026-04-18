@@ -53,7 +53,7 @@ So, what we want is:
 
 #### (Imperfect) Precision/Recall measure
 
-* [ ] write a small CLI in `skeet-prune` called `eval` which:
+* [x] write a small CLI in `skeet-prune` called `eval` which:
     1. finds all images in a store that have been manually appraised into a particular Band i.e. ignore anything not manually appraised
         * this may involve adding support to `SkeetStore` for this
     2. map the Band for an image to a binary `should_be_pruned` variable:
