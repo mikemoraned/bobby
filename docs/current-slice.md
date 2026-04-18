@@ -60,7 +60,11 @@ So, what we want is:
         * Band = Low, then should be pruned, `should_be_pruned` = true
         * Band = anything else, then may be allowed, `should_be_pruned` = false
     3. fetch the information for these images we want to assess, and for each, run them through a classify pass, where we collect whether an image would have been pruned or not
+        * read-only: no store updates, just re-run classification on stored images
+        * add a batch loading method to `SkeetStore` (e.g. `get_by_ids`, batch size ~10) to load images without pulling entire store into memory
     4. do precision/recall evaluation by taking `should_be_pruned` as the actual, and whether it was pruned in step 3 as the prediction
+        * output a summary text table to stdout (TP, FP, TN, FN, precision, recall, F1)
+        * also output same data as a CSV file (via `--output-csv` flag) so it can be checked-in and compared across runs
         * note that as overall measures these are skewed, as the only images that have been appraised are the ones that previously had not been pruned. so we are biasing towards only examining that subset, and not the wider unknown set that was never seen by a person. this is ok, as we are using this here as a way to see if text-detection can be a narrower more precise way to exclude images. We are aiming to measure an increase in precision and no loss of recall, and this is measurement method is sufficient for that.
 
 #### Re-introduce text-based filtering as an optional filter
