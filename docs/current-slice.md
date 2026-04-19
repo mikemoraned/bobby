@@ -112,4 +112,12 @@ So, what we want is:
         Precision=0.973  Recall=0.791  F1=0.872
         ```
     * **Conclusion**: text-detection is highly effective — 97.3% precision means almost no good images are wrongly pruned (only 7 of 137), and 79.1% recall catches the majority of low-quality images.
-        * [ ] Recommendation: enable text-detection in the default category set for production.
+        * [x] Recommendation: enable text-detection in the default category set for production.
+* [ ] capture summary numbers after deployed to cluster with text-detection enabled:
+    * before:
+    ```
+    2026-04-19T21:24:28.606492Z  INFO skeet_prune::status: skeets: 484400 (4.3/s) | images: 494081 | saved: 2227 (0.5%) | rejected: 607610 (BlockedByMetadata: 116326 [18%], FaceNotInAcceptedZone: 7725 [1%], FaceTooLarge: 1140 [0%], FaceTooSmall: 44151 [7%], TooFewFrontalFaces: 376127 [59%], TooLittleFaceSkin: 16077 [3%], TooManyFaces: 47255 [7%], TooMuchSkinOutsideFace: 24620 [4%]) | categories: Face: 491284 [81%] (sole: 491284 [81%]), Metadata: 116326 [19%] (sole: 116326 [19%])
+    ```
+    * after:
+    ```
+    ```
