@@ -86,3 +86,28 @@ So, what we want is:
 
 * [ ] using above capabilities, do two runs of `eval` one with defaults (no text detection) and one with text-detection enabled and compare precision/recall
     * [x] make `eval` have an arg which it passes to `PruneConfig` to decide which `RejectionCategory`'s to use
+    * here are the results:
+        * default (no textdetection):
+        ```
+        Evaluation against 457 manually appraised images
+
+        Confusion matrix (positive = should be pruned):
+                        Predicted: keep Predicted: prune
+        Actual: keep    137             0
+        Actual: prune   320             0
+
+        TP=0  FP=0  TN=137  FN=320
+        Precision=0.000  Recall=0.000  F1=0.000
+        ```
+        * with text-detection:
+        ```
+        Evaluation against 457 manually appraised images
+
+        Confusion matrix (positive = should be pruned):
+                        Predicted: keep Predicted: prune
+        Actual: keep    130             7
+        Actual: prune   67              253
+
+        TP=253  FP=7  TN=130  FN=67
+        Precision=0.973  Recall=0.791  F1=0.872
+        ```
