@@ -8,9 +8,12 @@
 
 #![cfg(feature = "integ")]
 
+mod common;
+
 use std::sync::Arc;
 
 use chrono::Utc;
+use common::{extract_query_param, extract_session_cookie, get_with_cookie, mount_github_mocks};
 use cot::test::Client;
 use rcgen::{CertificateParams, KeyPair};
 use skeet_feed::auth_config::OAuthConfig;
@@ -23,8 +26,7 @@ use skeet_store::{ModelVersion, Score, SkeetStore};
 use testcontainers::core::{IntoContainerPort, WaitFor};
 use testcontainers::runners::AsyncRunner;
 use testcontainers::{ContainerAsync, CopyTargetOptions, GenericImage, ImageExt};
-use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::MockServer;
 
 const REDIS_TLS_PORT: u16 = 6380;
 
@@ -69,54 +71,6 @@ async fn oauth_client_with_redis(
         redis_url: Some(redis_url.to_string()),
     };
     Client::new(project).await
-}
-
-async fn mount_github_mocks(mock_server: &MockServer) {
-    Mock::given(method("POST"))
-        .and(path("/token"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "access_token": "test-access-token",
-            "token_type": "bearer"
-        })))
-        .mount(mock_server)
-        .await;
-
-    Mock::given(method("GET"))
-        .and(path("/user"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "login": "testuser",
-        })))
-        .mount(mock_server)
-        .await;
-}
-
-fn extract_session_cookie(response: &cot::http::Response<cot::Body>) -> Option<String> {
-    response
-        .headers()
-        .get("set-cookie")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.split(';').next().unwrap_or("").to_string())
-}
-
-fn get_with_cookie(uri: &str, cookie: Option<&str>) -> cot::http::Request<cot::Body> {
-    let mut builder = cot::http::Request::builder().uri(uri);
-    if let Some(cookie) = cookie {
-        builder = builder.header("cookie", cookie);
-    }
-    builder.body(cot::Body::empty()).expect("build request")
-}
-
-fn extract_query_param(url: &str, param: &str) -> Option<String> {
-    let query = url.split('?').nth(1)?;
-    for pair in query.split('&') {
-        let mut parts = pair.splitn(2, '=');
-        if parts.next() == Some(param) {
-            return parts
-                .next()
-                .map(|v| urlencoding::decode(v).unwrap_or_default().into_owned());
-        }
-    }
-    None
 }
 
 /// Perform a full login flow: /auth/login -> capture state -> /auth/callback.
@@ -239,7 +193,7 @@ async fn login_and_admin_with_redis_session_store() {
     let redis_url = format!("redis://{host}:{port}");
 
     let mock_server = MockServer::start().await;
-    mount_github_mocks(&mock_server).await;
+    mount_github_mocks(&mock_server, "testuser").await;
 
     let dir = tempfile::tempdir().expect("create temp dir");
     let store = open_temp_store(&dir).await;
@@ -288,7 +242,7 @@ async fn login_and_admin_with_redis_over_tls() {
     let (_container, redis_url) = start_redis_with_tls().await;
 
     let mock_server = MockServer::start().await;
-    mount_github_mocks(&mock_server).await;
+    mount_github_mocks(&mock_server, "testuser").await;
 
     let dir = tempfile::tempdir().expect("create temp dir");
     let store = open_temp_store(&dir).await;

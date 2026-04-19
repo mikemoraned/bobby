@@ -1,8 +1,14 @@
 #![cfg(feature = "test")]
 
+mod common;
+
 use std::sync::Arc;
 
 use chrono::Utc;
+use common::{
+    extract_query_param, extract_session_cookie, get_with_cookie, get_with_cookie_and_headers,
+    mount_github_mocks,
+};
 use cot::test::Client;
 use shared::Appraiser;
 use skeet_feed::auth_config::OAuthConfig;
@@ -12,8 +18,7 @@ use skeet_feed::project::FeedProject;
 use skeet_feed::{AppraiserLayer, FeedCacheLayer, OAuthConfigLayer, StartedAtLayer, StoreLayer};
 use skeet_store::test_utils::{make_record, make_record_at, open_temp_store};
 use skeet_store::{DiscoveredAt, ModelVersion, Score, SkeetStore};
-use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::MockServer;
 
 fn test_params() -> FeedParams {
     FeedParams {
@@ -741,69 +746,7 @@ async fn oauth_client(
     Client::new(project).await
 }
 
-/// Extract the session cookie value from a response's Set-Cookie header.
-fn extract_session_cookie(response: &cot::http::Response<cot::Body>) -> Option<String> {
-    response
-        .headers()
-        .get("set-cookie")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.split(';').next().unwrap_or("").to_string())
-}
 
-/// Build a GET request with an optional session cookie.
-fn get_with_cookie(uri: &str, cookie: Option<&str>) -> cot::http::Request<cot::Body> {
-    get_with_cookie_and_headers(uri, cookie, &[])
-}
-
-/// Build a GET request with an optional session cookie and extra headers.
-fn get_with_cookie_and_headers(
-    uri: &str,
-    cookie: Option<&str>,
-    extra_headers: &[(&str, &str)],
-) -> cot::http::Request<cot::Body> {
-    let mut builder = cot::http::Request::builder().uri(uri);
-    if let Some(cookie) = cookie {
-        builder = builder.header("cookie", cookie);
-    }
-    for (name, value) in extra_headers {
-        builder = builder.header(*name, *value);
-    }
-    builder.body(cot::Body::empty()).expect("build request")
-}
-
-/// Extract a query parameter from a URL string.
-fn extract_query_param(url: &str, param: &str) -> Option<String> {
-    let query = url.split('?').nth(1)?;
-    for pair in query.split('&') {
-        let mut parts = pair.splitn(2, '=');
-        if parts.next() == Some(param) {
-            return parts
-                .next()
-                .map(|v| urlencoding::decode(v).unwrap_or_default().into_owned());
-        }
-    }
-    None
-}
-
-/// Mount mock responses for GitHub token exchange and /user API.
-async fn mount_github_mocks(mock_server: &MockServer, github_username: &str) {
-    Mock::given(method("POST"))
-        .and(path("/token"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "access_token": "test-access-token",
-            "token_type": "bearer"
-        })))
-        .mount(mock_server)
-        .await;
-
-    Mock::given(method("GET"))
-        .and(path("/user"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "login": github_username,
-        })))
-        .mount(mock_server)
-        .await;
-}
 
 /// Perform a full login flow: /auth/login → capture state → /auth/callback.
 /// Returns the session cookie and final response.
