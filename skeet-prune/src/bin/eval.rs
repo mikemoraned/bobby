@@ -27,9 +27,9 @@ struct Args {
     #[arg(long)]
     output_csv: Option<PathBuf>,
 
-    /// Rejection categories to enable (comma-separated, default: Face,Metadata,Text)
-    #[arg(long, value_delimiter = ',', default_value = "Face,Metadata,Text")]
-    categories: Vec<RejectionCategory>,
+    /// Rejection categories to enable (comma-separated, defaults to RejectionCategories::default())
+    #[arg(long, value_delimiter = ',')]
+    categories: Option<Vec<RejectionCategory>>,
 }
 
 #[derive(Default)]
@@ -91,8 +91,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let store = args.store.open_store().await?;
-    let categories = RejectionCategories::from(args.categories);
-    let prune_config = PruneConfig::from_file(&args.config_path, Some(categories))?;
+    let categories = args.categories.map(RejectionCategories::from);
+    let prune_config = PruneConfig::from_file(&args.config_path, categories)?;
     let detector = FaceDetector::from_bundled_weights();
     let text_detector = if prune_config.is_category_enabled(RejectionCategory::Text) {
         info!("text detection enabled, loading models");
