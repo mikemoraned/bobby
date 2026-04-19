@@ -26,6 +26,16 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-feature
 tempfile = "3"
 proptest = "1"
 cot = { version = "0.6", default-features = false, features = ["redis"] }
+# HACK: cot 0.6 doesn't expose TLS features for its redis dependency.
+# Adding deadpool-redis directly with tokio-rustls-comp makes Cargo unify
+# features on the single deadpool-redis 0.23.x copy, enabling TLS for cot's
+# RedisStore. This is fragile — if cot changes its deadpool-redis version the
+# unification may silently stop. Remove once cot exposes a redis-tls feature.
+deadpool-redis = { version = "0.23", features = ["tokio-rustls-comp", "tls-rustls-insecure"] }
+rcgen = "0.14"
+rustls = { version = "0.23", features = ["ring"] }
+testcontainers = "0.27"
+testcontainers-modules = { version = "0.15", features = ["redis"] }
 oauth2 = "5"
 tower = "0.5"
 tower-sessions = "0.14"

@@ -11,7 +11,10 @@ test_feed:
     cargo test --release -p skeet-feed --features test
 
 integ_test_feed:
-    TEST_BASE_URL=http://127.0.0.1:8080 cargo test --release -p skeet-feed --features integ --test feed_integration
+    TEST_BASE_URL=http://127.0.0.1:8080 cargo nextest run --release -p skeet-feed --features integ --test feed_integration
+
+integ_test_redis:
+    cargo nextest run --release -p skeet-feed --features integ --test redis_session
 
 deploy_staging: deploy_staging_secrets deploy_staging_app integ_test_staging
 

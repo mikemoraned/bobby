@@ -10,6 +10,7 @@ workspace = true
 chrono = { workspace = true }
 clap = { workspace = true }
 cot = { workspace = true }
+deadpool-redis = { workspace = true } # see workspace Cargo.toml for why this is here
 image = { workspace = true }
 oauth2 = { workspace = true }
 reqwest = { workspace = true }
@@ -27,12 +28,16 @@ urlencoding = "2"
 proptest = { workspace = true }
 skeet-store = { path = "../skeet-store", features = ["test-helpers"] }
 tempfile = { workspace = true }
+rcgen = { workspace = true }
+rustls = { workspace = true }
+testcontainers = { workspace = true }
+testcontainers-modules = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 wiremock = "0.6"
 
 [features]
 test = ["cot/test"]
-integ = []
+integ = ["test"]
 
 [[bin]]
 name = "skeet-feed"
