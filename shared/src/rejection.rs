@@ -106,13 +106,17 @@ impl std::str::FromStr for Rejection {
     }
 }
 
-/// A set of enabled rejection categories.
+/// A set of rejection categories.
 #[derive(Debug, Clone)]
 pub struct RejectionCategories(HashSet<RejectionCategory>);
 
 impl Default for RejectionCategories {
     fn default() -> Self {
-        Self(HashSet::from([RejectionCategory::Face, RejectionCategory::Metadata]))
+        Self(HashSet::from([
+            RejectionCategory::Face,
+            RejectionCategory::Metadata,
+            RejectionCategory::Text,
+        ]))
     }
 }
 
@@ -154,6 +158,9 @@ mod tests {
     fn rejection_categories() {
         assert_eq!(Rejection::FaceTooSmall.category(), RejectionCategory::Face);
         assert_eq!(Rejection::TooMuchText.category(), RejectionCategory::Text);
-        assert_eq!(Rejection::BlockedByMetadata.category(), RejectionCategory::Metadata);
+        assert_eq!(
+            Rejection::BlockedByMetadata.category(),
+            RejectionCategory::Metadata
+        );
     }
 }

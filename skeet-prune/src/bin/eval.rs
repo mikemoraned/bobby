@@ -27,8 +27,8 @@ struct Args {
     #[arg(long)]
     output_csv: Option<PathBuf>,
 
-    /// Rejection categories to enable (comma-separated, default: Face,Metadata)
-    #[arg(long, value_delimiter = ',', default_value = "Face,Metadata")]
+    /// Rejection categories to enable (comma-separated, default: Face,Metadata,Text)
+    #[arg(long, value_delimiter = ',', default_value = "Face,Metadata,Text")]
     categories: Vec<RejectionCategory>,
 }
 

@@ -111,3 +111,5 @@ So, what we want is:
         TP=253  FP=7  TN=130  FN=67
         Precision=0.973  Recall=0.791  F1=0.872
         ```
+    * **Conclusion**: text-detection is highly effective — 97.3% precision means almost no good images are wrongly pruned (only 7 of 137), and 79.1% recall catches the majority of low-quality images.
+        * [ ] Recommendation: enable text-detection in the default category set for production.
