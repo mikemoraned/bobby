@@ -21,6 +21,7 @@ skeet-store = { path = "../skeet-store" }
 tokio = { workspace = true }
 tower = { workspace = true }
 tower-sessions = { workspace = true }
+rustls = { workspace = true }
 tracing = { workspace = true }
 urlencoding = "2"
 
@@ -29,7 +30,6 @@ proptest = { workspace = true }
 skeet-store = { path = "../skeet-store", features = ["test-helpers"] }
 tempfile = { workspace = true }
 rcgen = { workspace = true }
-rustls = { workspace = true }
 testcontainers = { workspace = true }
 testcontainers-modules = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
