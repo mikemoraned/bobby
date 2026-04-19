@@ -73,11 +73,16 @@ So, what we want is:
 
 #### Re-introduce text-based filtering as an optional filter
 
-* [ ] go back through commit history and bring back the text-detection crate contents (see commit `92a72bfc2f7095eff4601fea40f8c271044ccb0a`). don't yet hook it into any classification i.e. we won't use it for real yet
-* [ ] run mutation-testing on this, to flush out any testing gaps. also migrate any tests to prop-based style
-* [ ] make classification methods configurable by making it so that we can optionally use text-detection, but face-detection and skin-detection are on by default.
+* [x] go back through commit history and bring back the text-detection crate contents (see commit `92a72bfc2f7095eff4601fea40f8c271044ccb0a`). don't yet hook it into any classification i.e. we won't use it for real yet
+* [x] run mutation-testing on this, to flush out any testing gaps. also migrate any tests to prop-based style
+* [x] make classification methods configurable by making it so that we can optionally use text-detection, but face-detection and skin-detection are on by default.
+    * note this means we *don't* enable usage of text-detection as a side-effect of defining something in [config](../config/prune.toml) like `text_area_pct`
+    * instead we should make it so that we can separate detailed config (e.g. `text_area_pct` and `min_face_area_pct`) from whether a particular category is enabled.
+    * we can do this by adding a `HashSet` of `RejectionCategory` to `PruneConfig`, `categories` which has a default but can be overridden: when `PruneConfig::from_file` is called, it can be passed an `Optional` `categories` argument which can override the default. This should also effect the version hash.
+    * then when setting things up, we can use this list of categories to decide what to initialise
+    * we should always put config like `text_area_pct` in [config](../config/prune.toml) as we can now control whether something is enabled separately
 
 #### Evaluate text-detection
 
-* [ ] using above capabilities, do two runs of `eval` one with defaults (no text detection) and one with text-detection enabled and compare performance
-    * it may be overkill, but `eval` could be extended to do the shared steps (1+2) and then run two different classification configs side-by-side on the same data; this way we ensure we are comparing like-for-like
+* [ ] using above capabilities, do two runs of `eval` one with defaults (no text detection) and one with text-detection enabled and compare precision/recall
+    * [x] make `eval` have an arg which it passes to `PruneConfig` to decide which `RejectionCategory`'s to use

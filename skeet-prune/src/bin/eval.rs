@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use face_detection::FaceDetector;
-use shared::{Classification, PruneConfig};
+use shared::{Classification, PruneConfig, RejectionCategories, RejectionCategory};
 use skeet_store::{Band, ImageId, StoreArgs};
 use tracing::info;
 
@@ -26,6 +26,10 @@ struct Args {
     /// Write precision/recall summary as CSV to this file
     #[arg(long)]
     output_csv: Option<PathBuf>,
+
+    /// Rejection categories to enable (comma-separated, default: Face,Metadata)
+    #[arg(long, value_delimiter = ',', default_value = "Face,Metadata")]
+    categories: Vec<RejectionCategory>,
 }
 
 #[derive(Default)]
@@ -87,8 +91,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let store = args.store.open_store().await?;
-    let prune_config = PruneConfig::from_file(&args.config_path)?;
+    let categories = RejectionCategories::from(args.categories);
+    let prune_config = PruneConfig::from_file(&args.config_path, Some(categories))?;
     let detector = FaceDetector::from_bundled_weights();
+    let text_detector = if prune_config.is_category_enabled(RejectionCategory::Text) {
+        info!("text detection enabled, loading models");
+        Some(text_detection::TextDetector::from_bundled_models())
+    } else {
+        None
+    };
 
     let appraisals = store.list_all_image_appraisals().await?;
     info!(count = appraisals.len(), "loaded image appraisals");
@@ -112,8 +123,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             let faces = detector.detect(&stored.image);
             let skin_mask = skin_detection::detect_skin(&stored.image);
+            let text_area_pct = text_detector.as_ref().and_then(|td| {
+                let r = td.detect(&stored.image);
+                shared::Percentage::new(
+                    r.text_area_pct(stored.image.width(), stored.image.height()),
+                )
+                .ok()
+            });
             let classification =
-                skeet_prune::classify(&faces, &stored.image, &skin_mask, &prune_config);
+                skeet_prune::classify(&faces, &stored.image, &skin_mask, text_area_pct, &prune_config);
             let was_pruned = matches!(classification, Classification::Rejected(_));
             matrix.record(should_be_pruned, was_pruned);
         }

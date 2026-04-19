@@ -44,7 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let http = reqwest::Client::new();
 
-    let prune_config = PruneConfig::from_file(&args.config_path)?;
+    let prune_config = PruneConfig::from_file(&args.config_path, None)?;
     let config_version = prune_config.version();
 
     info!(config_version = %config_version, "prune config loaded");

@@ -99,5 +99,8 @@ eval:
 eval-r2:
     op run --env-file bobby-local.env -- cargo run --quiet --release --bin eval -- --config-path config/prune.toml --store-path {{ R2_STORE }}
 
+eval-r2-text:
+    op run --env-file bobby-local.env -- cargo run --quiet --release --bin eval -- --config-path config/prune.toml --store-path {{ R2_STORE }} --categories Face,Metadata,Text
+
 bench-firehose:
     cargo run --quiet --release --bin bench-firehose

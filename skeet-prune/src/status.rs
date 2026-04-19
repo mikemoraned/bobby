@@ -8,8 +8,9 @@ use tracing::info;
 
 use crate::pipeline::{ChannelMonitors, PipelineCounters};
 
-const ALL_CATEGORIES: [RejectionCategory; 2] = [
+const ALL_CATEGORIES: [RejectionCategory; 3] = [
     RejectionCategory::Face,
+    RejectionCategory::Text,
     RejectionCategory::Metadata,
 ];
 
