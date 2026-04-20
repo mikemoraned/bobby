@@ -3,11 +3,13 @@ GHCR_REPO := "ghcr.io/mikemoraned/bobby"
 ghcr-login:
     op read "op://Dev/bobby-ghcr-pat-1/password" | docker login ghcr.io -u mikemoraned --password-stdin
 
+GIT_HASH := `git rev-parse --short HEAD`
+
 build-pruner:
-    docker buildx build --platform linux/arm64 -f Dockerfile.pruner -t {{ GHCR_REPO }}/pruner:latest .
+    docker buildx build --platform linux/arm64 --build-arg BUILD_GIT_HASH={{ GIT_HASH }} -f Dockerfile.pruner -t {{ GHCR_REPO }}/pruner:latest .
 
 push-pruner:
-    docker buildx build --platform linux/arm64 -f Dockerfile.pruner -t {{ GHCR_REPO }}/pruner:latest --push .
+    docker buildx build --platform linux/arm64 --build-arg BUILD_GIT_HASH={{ GIT_HASH }} -f Dockerfile.pruner -t {{ GHCR_REPO }}/pruner:latest --push .
 
 build-live-refine:
     docker buildx build --platform linux/arm64 -f Dockerfile.live-refine -t {{ GHCR_REPO }}/live-refine:latest .
