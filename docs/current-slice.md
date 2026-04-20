@@ -18,8 +18,16 @@ However, what I actually have, as of 19th Apr is:
 
 #### Get visibility on R2 usage
 
-* [ ] implement an `object_store` wrapper for each lancedb `SkeetStore` user which logs a running metric every time a particular S3 API operation is used
-    * I've registered for grafana cloud, so can use that instead of honeycomb, which may be easier to use
+I've registered for grafana cloud, so can use that instead of honeycomb, which may be easier to use
+
+* [ ] migrate to grafana cloud as the endpoint to which traces are sent
+    * [ ] before migrating everything create a small test cli which sends some sample metrics and traces
+        * still use standard opentelemetry apis wherever possible
+    * [ ] if that works, we can then migrate everything else; this should be a case of changing some env variables as opposed to changing any code
+* [ ] implement an `object_store` wrapper for each cli main which is lancedb `SkeetStore` consumer
+    * this should log a metric for every particular S3 API operation is used
+    * ideally this should be easily mapping to a Class A or Class B action
+    * the outcome I want is a graph over time of operations per-cli so I can see which cli is using the most operations, of how those split out per operation for a particular cli
 
 #### Idea: Switch to notification-listening for live-refine
 
