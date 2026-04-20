@@ -18,16 +18,43 @@ However, what I actually have, as of 19th Apr is:
 
 #### Get visibility on R2 usage
 
-I've registered for grafana cloud, so can use that instead of honeycomb, which may be easier to use
+I've registered for grafana cloud, so can use that instead of honeycomb, which may be easier to use. 
 
+Docs:
+* traces: https://grafana.com/docs/grafana-cloud/send-data/traces/
+* metrics: https://grafana.com/docs/grafana-cloud/send-data/metrics/#ways-to-connect-your-data-to-grafana-cloud
+
+Details for OLTP:
+OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+OTEL_EXPORTER_OTLP_ENDPOINT=op://bobby-grafanacloud-oltp-endpoint/password
+OTEL_EXPORTER_OTLP_HEADERS=op://bobby-grafanacloud-oltp-headers/password
+
+* [ ] upgrade lancedb from 0.26 to 0.27 (lance-io 2.0.0 → 3.0.0)
+    * do this as a standalone task before the wrapper work
+    * check for breaking changes in lancedb 0.27 CHANGELOG
 * [ ] migrate to grafana cloud as the endpoint to which traces are sent
-    * [ ] before migrating everything create a small test cli which sends some sample metrics and traces
-        * still use standard opentelemetry apis wherever possible
-    * [ ] if that works, we can then migrate everything else; this should be a case of changing some env variables as opposed to changing any code
-* [ ] implement an `object_store` wrapper for each cli main which is lancedb `SkeetStore` consumer
-    * this should log a metric for every particular S3 API operation is used
-    * ideally this should be easily mapping to a Class A or Class B action
-    * the outcome I want is a graph over time of operations per-cli so I can see which cli is using the most operations, of how those split out per operation for a particular cli
+    * `shared::tracing` (`shared/src/tracing.rs`) already uses standard OTLP via env vars (`OTEL_EXPORTER_OTLP_ENDPOINT`); currently points at Honeycomb for all CLIs (Hetzner + fly.io)
+    * [ ] create a small test CLI (`skeet-store/src/bin/otel-test.rs`) that sends sample trace spans using `shared::tracing::init_with_file`, then exits
+        * add a `just` target to run it via `op run` with the Grafana Cloud env vars
+        * still use standard opentelemetry apis; no grafana-specific code
+    * [ ] if that works, update env files for Hetzner and fly.io deployments — should be env var changes only, no code changes
+* [ ] implement a `WrappingObjectStore` to count R2 operations per CLI
+    * this should log a metric for every particular S3 API operation used
+    * ideally this should easily map to R2 Class A or Class B actions
+    * the outcome I want is a graph over time of operations per-cli so I can see which cli is using the most operations, and how those split out per operation for a particular cli
+    * **Approach: `lance_io::object_store::WrappingObjectStore` trait**
+        * trait has one method: `fn wrap(&self, store_prefix: &str, original: Arc<dyn ObjectStore>) -> Arc<dyn ObjectStore>`
+        * decorates the built-in S3 store — lance still handles credentials, multipart, commit semantics
+        * the wrapper delegates every call to the inner store but emits OTel metrics (counters by operation type + CLI name)
+        * S3 operations to track: GET/HEAD → R2 Class B; PUT/DELETE/LIST → R2 Class A
+    * **Plumbing into lancedb**
+        * pass wrapper via `ObjectStoreParams { object_store_wrapper: Some(Arc::new(wrapper)), .. }`
+        * thread into table operations via `lance_read_params()` / `lance_write_params()` on `OpenTableBuilder` etc.
+        * note: `ReadParams` uses field `store_options`, `WriteParams` uses field `store_params` (asymmetric naming)
+        * all table operations go through `SkeetStore` methods, so plumbing is contained
+    * **Dependency: `lance-io`**
+        * lancedb 0.26 → lance-io =2.0.0; lancedb 0.27 → lance-io =3.0.0
+        * upgrade lancedb first (task above), then add lance-io =3.0.0
 
 #### Idea: Switch to notification-listening for live-refine
 
