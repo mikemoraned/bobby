@@ -84,7 +84,7 @@ So, what we want is:
 
 #### Evaluate text-detection
 
-* [ ] using above capabilities, do two runs of `eval` one with defaults (no text detection) and one with text-detection enabled and compare precision/recall
+* [x] using above capabilities, do two runs of `eval` one with defaults (no text detection) and one with text-detection enabled and compare precision/recall
     * [x] make `eval` have an arg which it passes to `PruneConfig` to decide which `RejectionCategory`'s to use
     * here are the results:
         * default (no textdetection):
@@ -113,11 +113,13 @@ So, what we want is:
         ```
     * **Conclusion**: text-detection is highly effective — 97.3% precision means almost no good images are wrongly pruned (only 7 of 137), and 79.1% recall catches the majority of low-quality images.
         * [x] Recommendation: enable text-detection in the default category set for production.
-* [ ] capture summary numbers after deployed to cluster with text-detection enabled:
+* [x] capture summary numbers after deployed to cluster with text-detection enabled:
     * before:
     ```
     2026-04-19T21:24:28.606492Z  INFO skeet_prune::status: skeets: 484400 (4.3/s) | images: 494081 | saved: 2227 (0.5%) | rejected: 607610 (BlockedByMetadata: 116326 [18%], FaceNotInAcceptedZone: 7725 [1%], FaceTooLarge: 1140 [0%], FaceTooSmall: 44151 [7%], TooFewFrontalFaces: 376127 [59%], TooLittleFaceSkin: 16077 [3%], TooManyFaces: 47255 [7%], TooMuchSkinOutsideFace: 24620 [4%]) | categories: Face: 491284 [81%] (sole: 491284 [81%]), Metadata: 116326 [19%] (sole: 116326 [19%])
     ```
     * after:
     ```
+    2026-04-20T21:34:54.885288Z  INFO skeet_prune::status: skeets: 23752 (1.4/s) | images: 24002 | saved: 33 (0.1%) | rejected: 29098 (BlockedByMetadata: 5187 [16%], FaceNotInAcceptedZone: 369 [1%], FaceTooLarge: 60 [0%], FaceTooSmall: 2365 [7%], TooFewFrontalFaces: 17320 [55%], TooLittleFaceSkin: 833 [3%], TooManyFaces: 2765 [9%], TooMuchSkinOutsideFace: 1273 [4%], TooMuchText: 1423 [5%]) | categories: Face: 23678 [81%] (sole: 22488 [77%]), Text: 1423 [5%] (sole: 233 [1%]), Metadata: 5187 [18%] (sole: 5187 [18%])
     ```
+    * **Summary**: text-detection is active and catching 5% of rejections, with 1% being images rejected *solely* for text (i.e. would have passed all other filters). Other category distributions are stable (Face ~81%, Metadata ~18%). Save rate dropped from 0.5% to 0.1%, consistent with the additional filtering. Combined with the eval results (97.3% precision, 79.1% recall), text-detection is working as intended — catching low-quality text-heavy images with minimal false positives.
