@@ -18,7 +18,7 @@ mod zone;
 pub use appraiser::{Appraiser, ParseAppraiserError};
 pub use band::{Band, ParseBandError};
 pub use blocklist::{BlockedEntry, BlocklistConfig};
-pub use rejection::{Rejection, RejectionCategory};
+pub use rejection::{Rejection, RejectionCategories, RejectionCategory};
 pub use score::{InvalidScore, Score};
 use serde::Deserialize;
 use skeet_id::SkeetId;
@@ -88,31 +88,46 @@ impl From<&str> for ModelVersion {
 }
 
 /// Configuration for prune classification thresholds.
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct PruneConfig {
     pub min_face_area_pct: Percentage,
     pub max_face_area_pct: Percentage,
     pub min_face_skin_pct: Percentage,
     pub max_outside_face_skin_pct: Percentage,
+    pub max_text_area_pct: Percentage,
+    #[serde(skip)]
+    categories: RejectionCategories,
 }
 
 impl PruneConfig {
     /// Load configuration from a TOML file at the given path.
-    pub fn from_file(path: &std::path::Path) -> Result<Self, Box<dyn std::error::Error>> {
+    /// If `categories` is `None`, the default set is used.
+    pub fn from_file(
+        path: &std::path::Path,
+        categories: Option<RejectionCategories>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let text = std::fs::read_to_string(path)?;
-        let config: Self = toml::from_str(&text)?;
+        let mut config: Self = toml::from_str(&text)?;
+        config.categories = categories.unwrap_or_default();
         Ok(config)
     }
 
-    /// Compute a version string by hashing all config values.
-    ///
-    /// The version is a short hex string derived from sorting all config
-    /// key-value pairs and hashing them. Changing any threshold value
+    pub fn is_category_enabled(&self, category: RejectionCategory) -> bool {
+        self.categories.contains(&category)
+    }
+
+    pub const fn categories(&self) -> &RejectionCategories {
+        &self.categories
+    }
+
+    /// Compute a version string by hashing all config values and enabled
+    /// categories. Changing any threshold or the set of enabled categories
     /// produces a different version.
     pub fn version(&self) -> ModelVersion {
         let mut entries = vec![
             ("max_face_area_pct", self.max_face_area_pct.value().to_bits()),
             ("max_outside_face_skin_pct", self.max_outside_face_skin_pct.value().to_bits()),
+            ("max_text_area_pct", self.max_text_area_pct.value().to_bits()),
             ("min_face_area_pct", self.min_face_area_pct.value().to_bits()),
             ("min_face_skin_pct", self.min_face_skin_pct.value().to_bits()),
         ];
@@ -123,10 +138,16 @@ impl PruneConfig {
             k.hash(&mut hasher);
             v.hash(&mut hasher);
         }
+
+        let mut cat_names: Vec<_> = self.categories.iter().map(ToString::to_string).collect();
+        cat_names.sort();
+        for name in &cat_names {
+            name.hash(&mut hasher);
+        }
+
         let hash = hasher.finish();
 
         let mut version = String::with_capacity(8);
-        // Take first 8 hex chars for a short but unique-enough string
         write!(version, "{hash:016x}").expect("write to String");
         version.truncate(8);
         ModelVersion(version)
@@ -164,6 +185,8 @@ mod tests {
             max_face_area_pct: Percentage::new(b as f32).expect("valid"),
             min_face_skin_pct: Percentage::new(c as f32).expect("valid"),
             max_outside_face_skin_pct: Percentage::new(d as f32).expect("valid"),
+            max_text_area_pct: Percentage::new(10.0).expect("valid"),
+            categories: RejectionCategories::default(),
         }
     }
 

@@ -5,12 +5,22 @@ use imageproc::rect::Rect;
 use crate::Face;
 
 const RED: Rgba<u8> = Rgba([255, 0, 0, 255]);
+const BLUE: Rgba<u8> = Rgba([80, 80, 255, 255]);
 const SKIN_OVERLAY: Rgba<u8> = Rgba([0, 200, 100, 128]);
+
+/// A bounding box for a region of detected text.
+pub struct TextRegion {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
 
 pub fn annotate_image(
     image: &DynamicImage,
     face: &Face,
     skin_mask: &GrayImage,
+    text_regions: &[TextRegion],
 ) -> DynamicImage {
     let mut canvas: RgbaImage = image.to_rgba8();
     let (img_w, img_h) = (canvas.width() as i32, canvas.height() as i32);
@@ -51,6 +61,16 @@ pub fn annotate_image(
     draw_line_segment_mut(&mut canvas, (cx, 0.0), (cx, box_top), RED);
     draw_line_segment_mut(&mut canvas, (cx, box_bottom), (cx, img_h as f32), RED);
 
+    for region in text_regions {
+        if region.width > 0 && region.height > 0 {
+            draw_hollow_rect_mut(
+                &mut canvas,
+                Rect::at(region.x, region.y).of_size(region.width as u32, region.height as u32),
+                BLUE,
+            );
+        }
+    }
+
     DynamicImage::ImageRgba8(canvas)
 }
 
@@ -82,7 +102,7 @@ mod tests {
     fn annotate_preserves_dimensions() {
         let img = DynamicImage::new_rgb8(100, 100);
         let mask = GrayImage::new(100, 100);
-        let result = annotate_image(&img, &test_face(), &mask);
+        let result = annotate_image(&img, &test_face(), &mask, &[]);
         assert_eq!(result.width(), 100);
         assert_eq!(result.height(), 100);
     }
@@ -91,7 +111,7 @@ mod tests {
     fn annotate_produces_rgba_output() {
         let img = DynamicImage::new_rgb8(100, 100);
         let mask = GrayImage::new(100, 100);
-        let result = annotate_image(&img, &test_face(), &mask);
+        let result = annotate_image(&img, &test_face(), &mask, &[]);
         assert!(result.as_rgba8().is_some());
     }
 
@@ -102,7 +122,7 @@ mod tests {
             100, 100, image::Rgb([255, 255, 255]),
         ));
         let mask = GrayImage::from_pixel(100, 100, Luma([255]));
-        let result = annotate_image(&img, &test_face(), &mask);
+        let result = annotate_image(&img, &test_face(), &mask, &[]);
         let rgba = result.as_rgba8().expect("rgba");
         // The overlay blends with SKIN_OVERLAY (0, 200, 100, 128)
         // For white (255, 255, 255): r = (255+0)/2=127, g = (255+200)/2=227, b = (255+100)/2=177
@@ -117,7 +137,7 @@ mod tests {
             100, 100, image::Rgb([255, 255, 255]),
         ));
         let mask = GrayImage::from_pixel(100, 100, Luma([0]));
-        let result = annotate_image(&img, &test_face(), &mask);
+        let result = annotate_image(&img, &test_face(), &mask, &[]);
         let rgba = result.as_rgba8().expect("rgba");
         // Non-face pixels with no skin should remain white-ish
         // (face bbox pixels will have red lines drawn on them)
@@ -139,7 +159,7 @@ mod tests {
             100, 100, image::Rgb([255, 255, 255]),
         ));
         let mask = GrayImage::new(100, 100);
-        let result = annotate_image(&img, &test_face(), &mask);
+        let result = annotate_image(&img, &test_face(), &mask, &[]);
         let rgba = result.as_rgba8().expect("rgba");
         // The bounding box edge at (20, 20) should have red drawn on it
         let pixel = rgba.get_pixel(20, 20);

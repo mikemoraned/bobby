@@ -9,7 +9,7 @@ fn main() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let examples_dir = root.join("examples");
 
-    let config = PruneConfig::from_file(&root.join("config/prune.toml"))
+    let config = PruneConfig::from_file(&root.join("config/prune.toml"), None)
         .expect("load prune.toml");
 
     let detector = FaceDetector::from_bundled_weights();
@@ -69,7 +69,7 @@ fn main() {
             );
         }
 
-        let classification = skeet_prune::classify(&faces, &img, &skin_mask, &config);
+        let classification = skeet_prune::classify(&faces, &img, &skin_mask, None, &config);
         match &classification {
             Classification::Accepted(zone) => println!("  classification: Accepted({zone})"),
             Classification::Rejected(reasons) if reasons.is_empty() => {

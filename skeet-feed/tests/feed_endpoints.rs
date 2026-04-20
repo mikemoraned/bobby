@@ -1,19 +1,24 @@
 #![cfg(feature = "test")]
 
+mod common;
+
 use std::sync::Arc;
 
 use chrono::Utc;
+use common::{
+    extract_query_param, extract_session_cookie, get_with_cookie, get_with_cookie_and_headers,
+    mount_github_mocks,
+};
 use cot::test::Client;
 use shared::Appraiser;
 use skeet_feed::auth_config::OAuthConfig;
-use skeet_feed::{AppraiserLayer, FeedCacheLayer, OAuthConfigLayer, StartedAtLayer, StoreLayer};
 use skeet_feed::feed_cache::FeedCache;
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
+use skeet_feed::{AppraiserLayer, FeedCacheLayer, OAuthConfigLayer, StartedAtLayer, StoreLayer};
 use skeet_store::test_utils::{make_record, make_record_at, open_temp_store};
 use skeet_store::{DiscoveredAt, ModelVersion, Score, SkeetStore};
-use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::MockServer;
 
 fn test_params() -> FeedParams {
     FeedParams {
@@ -40,6 +45,8 @@ async fn client_for(store: SkeetStore, params: FeedParams) -> Client {
         oauth_config_layer: OAuthConfigLayer::new(None),
         started_at_layer: StartedAtLayer::new(Utc::now()),
         session_secret: None,
+        use_redis: false,
+        redis_url: None,
     };
     Client::new(project).await
 }
@@ -48,7 +55,10 @@ async fn get_body(client: &mut Client, path: &str) -> (u16, String) {
     let response = client.get(path).await.expect("GET request");
     let status = response.status().as_u16();
     let body_bytes = response.into_body().into_bytes().await.expect("read body");
-    (status, String::from_utf8(body_bytes.to_vec()).expect("valid utf8"))
+    (
+        status,
+        String::from_utf8(body_bytes.to_vec()).expect("valid utf8"),
+    )
 }
 
 #[tokio::test]
@@ -76,11 +86,7 @@ async fn describe_returns_feed_list() {
     let store = open_temp_store(&dir).await;
     let mut client = client_for(store, test_params()).await;
 
-    let (status, body) = get_body(
-        &mut client,
-        "/xrpc/app.bsky.feed.describeFeedGenerator",
-    )
-    .await;
+    let (status, body) = get_body(&mut client, "/xrpc/app.bsky.feed.describeFeedGenerator").await;
     assert_eq!(status, 200);
 
     let resp: serde_json::Value = serde_json::from_str(&body).expect("valid JSON");
@@ -219,7 +225,9 @@ async fn seed_scored(store: &SkeetStore, suffix: &str, r: u8, score: f32) -> (St
 /// Fetch the feed skeleton with `Cache-Control: no-cache` to guarantee fresh data.
 async fn feed_posts(client: &mut Client, feed_uri: &str) -> Vec<String> {
     let request = cot::http::Request::builder()
-        .uri(format!("/xrpc/app.bsky.feed.getFeedSkeleton?feed={feed_uri}"))
+        .uri(format!(
+            "/xrpc/app.bsky.feed.getFeedSkeleton?feed={feed_uri}"
+        ))
         .header("cache-control", "no-cache")
         .body(cot::Body::empty())
         .expect("build request");
@@ -290,7 +298,10 @@ async fn manually_demoting_image_hides_skeet() {
     appraise(&mut client, "image", &image_id, "Low").await;
 
     let posts = feed_posts(&mut client, &feed_uri).await;
-    assert!(posts.is_empty(), "skeet with demoted image should be hidden");
+    assert!(
+        posts.is_empty(),
+        "skeet with demoted image should be hidden"
+    );
 }
 
 #[tokio::test]
@@ -309,7 +320,10 @@ async fn promoting_skeet_alone_not_enough_when_image_is_low() {
     appraise(&mut client, "skeet", &skeet_id, "HighQuality").await;
 
     let posts = feed_posts(&mut client, &feed_uri).await;
-    assert!(posts.is_empty(), "low image should still block promoted skeet");
+    assert!(
+        posts.is_empty(),
+        "low image should still block promoted skeet"
+    );
 }
 
 #[tokio::test]
@@ -327,7 +341,11 @@ async fn promoting_skeet_and_image_shows_low_scored_skeet() {
     appraise(&mut client, "image", &image_id, "HighQuality").await;
 
     let posts = feed_posts(&mut client, &feed_uri).await;
-    assert_eq!(posts, vec![skeet_id], "fully promoted skeet should be visible");
+    assert_eq!(
+        posts,
+        vec![skeet_id],
+        "fully promoted skeet should be visible"
+    );
 }
 
 // ─── Static assets ──────────────────────────────────────────────
@@ -339,7 +357,10 @@ async fn static_htmx_js_is_served() {
     let mut client = client_for(store, test_params()).await;
 
     let (status, body) = get_body(&mut client, "/static/htmx.min.js").await;
-    assert_eq!(status, 200, "htmx.min.js should be served at /static/htmx.min.js");
+    assert_eq!(
+        status, 200,
+        "htmx.min.js should be served at /static/htmx.min.js"
+    );
     assert!(body.contains("htmx"), "response should contain htmx code");
 }
 
@@ -476,7 +497,9 @@ async fn admin_paging_returns_items_in_discovered_at_desc_order() {
 
     // Extract cursor from the htmx load-more div
     let cursor_marker = r#"hx-get="/admin?view=skeet&cursor="#;
-    let cursor_pos = body.find(cursor_marker).expect("should have a next-page cursor");
+    let cursor_pos = body
+        .find(cursor_marker)
+        .expect("should have a next-page cursor");
     let after = &body[cursor_pos + cursor_marker.len()..];
     let cursor_end = after.find('"').expect("cursor value ends with quote");
     let cursor = &after[..cursor_end];
@@ -606,8 +629,14 @@ async fn appraise_skeet_returns_row_html() {
     )
     .await;
     assert_eq!(status, 200);
-    assert!(body.contains("<tr"), "appraise response should contain a table row");
-    assert!(body.contains("Low"), "appraise response should show the new band");
+    assert!(
+        body.contains("<tr"),
+        "appraise response should contain a table row"
+    );
+    assert!(
+        body.contains("Low"),
+        "appraise response should show the new band"
+    );
 }
 
 #[tokio::test]
@@ -625,7 +654,10 @@ async fn appraise_image_returns_row_html() {
     )
     .await;
     assert_eq!(status, 200);
-    assert!(body.contains("<tr"), "appraise response should contain a table row");
+    assert!(
+        body.contains("<tr"),
+        "appraise response should contain a table row"
+    );
     assert!(
         body.contains("HighQuality"),
         "appraise response should show the new band"
@@ -644,7 +676,10 @@ async fn home_page_shows_scored_entries() {
 
     let (status, body) = get_body(&mut client, "/").await;
     assert_eq!(status, 200);
-    assert!(body.contains("bsky.app"), "home page should contain Bluesky links");
+    assert!(
+        body.contains("bsky.app"),
+        "home page should contain Bluesky links"
+    );
 }
 
 // ─── Feed skeleton caching ─────────────────────────────────────
@@ -705,67 +740,13 @@ async fn oauth_client(
         oauth_config_layer: OAuthConfigLayer::new(Some(Arc::new(oauth_config))),
         started_at_layer: StartedAtLayer::new(Utc::now()),
         session_secret: None,
+        use_redis: false,
+        redis_url: None,
     };
     Client::new(project).await
 }
 
-/// Extract the session cookie value from a response's Set-Cookie header.
-fn extract_session_cookie(response: &cot::http::Response<cot::Body>) -> Option<String> {
-    response
-        .headers()
-        .get("set-cookie")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.split(';').next().unwrap_or("").to_string())
-}
 
-/// Build a GET request with an optional session cookie.
-fn get_with_cookie(uri: &str, cookie: Option<&str>) -> cot::http::Request<cot::Body> {
-    let mut builder = cot::http::Request::builder().uri(uri);
-    if let Some(cookie) = cookie {
-        builder = builder.header("cookie", cookie);
-    }
-    builder.body(cot::Body::empty()).expect("build request")
-}
-
-/// Extract a query parameter from a URL string.
-fn extract_query_param(url: &str, param: &str) -> Option<String> {
-    let query = url.split('?').nth(1)?;
-    for pair in query.split('&') {
-        let mut parts = pair.splitn(2, '=');
-        if parts.next() == Some(param) {
-            return parts
-                .next()
-                .map(|v| urlencoding::decode(v).unwrap_or_default().into_owned());
-        }
-    }
-    None
-}
-
-/// Mount mock responses for GitHub token exchange and /user API.
-async fn mount_github_mocks(mock_server: &MockServer, github_username: &str) {
-    Mock::given(method("POST"))
-        .and(path("/token"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(serde_json::json!({
-                    "access_token": "test-access-token",
-                    "token_type": "bearer"
-                })),
-        )
-        .mount(mock_server)
-        .await;
-
-    Mock::given(method("GET"))
-        .and(path("/user"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(serde_json::json!({
-                    "login": github_username,
-                })),
-        )
-        .mount(mock_server)
-        .await;
-}
 
 /// Perform a full login flow: /auth/login → capture state → /auth/callback.
 /// Returns the session cookie and final response.
@@ -875,11 +856,7 @@ async fn non_allowlisted_user_gets_403() {
         403,
         "non-allowlisted user should get 403"
     );
-    let body_bytes = response
-        .into_body()
-        .into_bytes()
-        .await
-        .expect("read body");
+    let body_bytes = response.into_body().into_bytes().await.expect("read body");
     let body = String::from_utf8(body_bytes.to_vec()).expect("valid utf8");
     assert!(
         body.contains("eviluser"),
@@ -957,14 +934,35 @@ async fn tampered_csrf_state_is_rejected() {
         403,
         "tampered CSRF state should be rejected with 403"
     );
-    let body_bytes = response
-        .into_body()
-        .into_bytes()
-        .await
-        .expect("read body");
+    let body_bytes = response.into_body().into_bytes().await.expect("read body");
     let body = String::from_utf8(body_bytes.to_vec()).expect("valid utf8");
     assert!(
         body.contains("CSRF"),
         "rejection should mention CSRF: {body}"
+    );
+}
+
+#[tokio::test]
+async fn login_redirect_uses_https_when_x_forwarded_proto_is_set() {
+    let mock_server = MockServer::start().await;
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let mut client = oauth_client(&mock_server, vec!["testuser"], &dir).await;
+
+    let request =
+        get_with_cookie_and_headers("/auth/login", None, &[("x-forwarded-proto", "https")]);
+    let response = client.request(request).await.expect("GET /auth/login");
+    assert_eq!(response.status().as_u16(), 303, "login should redirect");
+
+    let location = response
+        .headers()
+        .get("location")
+        .expect("redirect location")
+        .to_str()
+        .expect("valid header");
+    let redirect_uri =
+        extract_query_param(location, "redirect_uri").expect("redirect_uri in OAuth URL");
+    assert!(
+        redirect_uri.starts_with("https://"),
+        "redirect_uri should use https when x-forwarded-proto is https, got: {redirect_uri}"
     );
 }

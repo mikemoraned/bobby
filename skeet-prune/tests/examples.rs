@@ -54,7 +54,7 @@ fn main() {
 
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
 
-    let config = PruneConfig::from_file(&root.join("config/prune.toml"))
+    let config = PruneConfig::from_file(&root.join("config/prune.toml"), None)
         .unwrap_or_else(|e| panic!("failed to load prune.toml: {e}"));
 
     let expected_text = std::fs::read_to_string(root.join("examples/expected.toml"))
@@ -75,12 +75,13 @@ fn main() {
         let img_path = examples_dir.join(&example.path);
         let expected = expected_classification(example);
 
+        let config = config.clone();
         trials.push(Trial::test(format!("{stem}::classification"), move || {
             let img = image::open(&img_path)
                 .map_err(|e| format!("failed to load {}: {e}", img_path.display()))?;
             let skin_mask = skin_detection::detect_skin(&img);
             let faces = with_detector(|d| d.detect(&img));
-            let actual = skeet_prune::classify(&faces, &img, &skin_mask, &config);
+            let actual = skeet_prune::classify(&faces, &img, &skin_mask, None, &config);
             if actual != expected {
                 return Err(format!("expected {expected:?}, got {actual:?}").into());
             }

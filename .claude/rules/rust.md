@@ -28,6 +28,7 @@ paths:
 - Cross-crate models go in a `shared` crate's `lib.rs`
 - Keep shared/library types as pure data types — don't add policy or business-logic methods to them. Policy logic belongs in the crate that owns the decision. Only inherent behaviour (formatting, parsing, construction) belongs on the type itself.
 - Testing:
+  - Always use `cargo nextest run` to run tests, never `cargo test`
   - Core functionality gets inline unit tests
   - Multi-part integration gets integ tests (use captured real data)
   - Prefer high-level invariant-based tests over bespoke examples; use [proptest](https://docs.rs/proptest/latest/proptest/) for property-based tests
@@ -37,6 +38,7 @@ paths:
   - All binaries must be named files in `src/bin/` (e.g. `src/bin/finder.rs`), never `src/main.rs` or subdirectories like `src/bin/finder/main.rs`
   - Modules used by binaries live under `src/` and are exposed through `lib.rs`, not placed alongside binaries in `src/bin/`
 - Use `Option<T>` (with `None`) to represent "not set" / "disabled" — never use sentinel values like `0`, `-1`, or empty strings to encode absence
+- Keep feature enablement flags (e.g. `--use-redis`) separate from their configuration values (e.g. `--redis-url`). A feature's on/off switch should not be derived from whether its config happens to be present — these are independent concerns.
 - CLI apps: all config via named CLI params (`--long-form VALUE`); no env vars except `RUST_LOG`
 - Prefer functions over macros — only use `macro_rules!` when you genuinely need syntax or control flow that a function can't express
 - We should aim to keep `lib.rs` files below 300 lines (found via a command like `find . -name "lib.rs" | grep -v "target" | xargs wc -l`). Any `lib.rs` file going above this limit should trigger us to apply other rules, for example related to extracting modules, that will allow us to split into into logical chunks.

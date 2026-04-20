@@ -22,17 +22,28 @@ pub async fn run_workers(
     let rx = Arc::new(Mutex::new(rx));
     let mut handles = Vec::with_capacity(num_workers);
 
+    let enable_text = prune_config.is_category_enabled(shared::RejectionCategory::Text);
+
     for worker_id in 0..num_workers {
         let rx = Arc::clone(&rx);
         let tx = tx.clone();
         let http = http.clone();
         let config_version = config_version.clone();
+        let prune_config = prune_config.clone();
         let counters = Arc::clone(&counters);
 
         handles.push(tokio::spawn(async move {
-            let detector = FaceDetector::from_bundled_weights();
+            let face = FaceDetector::from_bundled_weights();
+            let text = if enable_text {
+                info!(worker_id, "loading text detection models");
+                Some(text_detection::TextDetector::from_bundled_models()
+                    .expect("failed to load text detection models"))
+            } else {
+                None
+            };
+            let detectors = Detectors { face, text };
             info!(worker_id, "image worker ready");
-            run_single(rx, tx, http, detector, prune_config, config_version, counters).await;
+            run_single(rx, tx, http, detectors, prune_config, config_version, counters).await;
         }));
     }
 
@@ -43,11 +54,16 @@ pub async fn run_workers(
     }
 }
 
+struct Detectors {
+    face: FaceDetector,
+    text: Option<text_detection::TextDetector>,
+}
+
 async fn run_single(
     rx: Arc<Mutex<mpsc::Receiver<MetaResult>>>,
     tx: mpsc::Sender<ImageResult>,
     http: reqwest::Client,
-    detector: FaceDetector,
+    detectors: Detectors,
     prune_config: PruneConfig,
     config_version: ModelVersion,
     counters: Arc<PipelineCounters>,
@@ -66,7 +82,8 @@ async fn run_single(
                 for skeet_image in skeet_images {
                     let result = match crate::classify_image(
                         skeet_image,
-                        &detector,
+                        &detectors.face,
+                        detectors.text.as_ref(),
                         &prune_config,
                         &config_version,
                     ) {

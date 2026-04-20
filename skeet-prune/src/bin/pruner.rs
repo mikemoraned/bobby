@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::Parser;
-use shared::PruneConfig;
+use shared::{PruneConfig, RejectionCategory};
 use skeet_prune::firehose::SkeetCandidate;
 use skeet_prune::pipeline::{ChannelMonitors, ImageResult, MetaResult, PipelineCounters};
 use skeet_store::{SkeetStore, StoreArgs};
@@ -24,10 +24,6 @@ struct Args {
     #[arg(long)]
     fallback_local_store: Option<String>,
 
-    /// Enable tokio-console on this port
-    #[arg(long)]
-    tokio_console_port: Option<u16>,
-
     /// Status log interval in seconds (default: 30)
     #[arg(long, default_value = "30")]
     status_interval_secs: u64,
@@ -41,23 +37,35 @@ struct Args {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let console = args
-        .tokio_console_port
-        .map_or(shared::tracing::TokioConsoleSupport::Disabled, |port| {
-            shared::tracing::TokioConsoleSupport::Enabled { port }
-        });
     let _guard = shared::tracing::init_with_file(
         "skeet_prune=info,shared=info,skeet_store=info,lance_io=warn,object_store=warn",
         "pruner.log",
-        console,
     );
+
+    info!(git_hash = env!("BUILD_GIT_HASH"), "pruner starting");
 
     let http = reqwest::Client::new();
 
-    let prune_config = PruneConfig::from_file(&args.config_path)?;
+    let prune_config = PruneConfig::from_file(&args.config_path, None)?;
     let config_version = prune_config.version();
 
-    info!(config_version = %config_version, "prune config loaded");
+    info!(
+        config_version = %config_version,
+        categories = ?prune_config.categories(),
+        "prune config loaded"
+    );
+
+    // Early sanity check: verify all required models can be loaded before
+    // starting the pipeline, so we fail fast with clear errors.
+    if prune_config.is_category_enabled(RejectionCategory::Text) {
+        info!(
+            detection_model = text_detection::TextDetector::bundled_detection_model_path(),
+            recognition_model = text_detection::TextDetector::bundled_recognition_model_path(),
+            "validating text detection models"
+        );
+        text_detection::TextDetector::from_bundled_models()?;
+        info!("text detection models validated");
+    }
 
     let store = args.store.open_store().await?;
     store.validate().await?;

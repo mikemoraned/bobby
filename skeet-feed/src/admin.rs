@@ -39,6 +39,8 @@ pub struct AdminRow {
 struct AdminTemplate<'a> {
     view: &'a str,
     content: &'a str,
+    skeet_appraisal_count: usize,
+    image_appraisal_count: usize,
 }
 
 #[derive(Template)]
@@ -145,6 +147,8 @@ pub async fn admin(
     let rendered = AdminTemplate {
         view,
         content: &page_html,
+        skeet_appraisal_count: skeet_appraisals.len(),
+        image_appraisal_count: image_appraisals.len(),
     }
     .render()?;
 

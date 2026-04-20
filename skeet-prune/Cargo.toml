@@ -18,6 +18,7 @@ reqwest = { workspace = true }
 serde_json = { workspace = true }
 shared = { workspace = true }
 skin-detection = { path = "../skin-detection" }
+text-detection = { path = "../text-detection" }
 skeet-store = { path = "../skeet-store" }
 tokio = { workspace = true }
 tracing = { workspace = true }
@@ -50,6 +51,10 @@ path = "src/bin/add_to_blocklist.rs"
 [[bin]]
 name = "bench-firehose"
 path = "src/bin/bench_firehose.rs"
+
+[[bin]]
+name = "eval"
+path = "src/bin/eval.rs"
 
 
 [[test]]

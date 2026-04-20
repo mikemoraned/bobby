@@ -1,6 +1,6 @@
 # Next Slices
 
-## Slice 16: reducing unintentional bias
+## Slice 17: reducing unintentional bias
 
 ### Target
 

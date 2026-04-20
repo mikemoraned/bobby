@@ -20,7 +20,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _guard = shared::tracing::init_with_file(
         "bench_firehose=info,skeet_prune=info,shared=info",
         "bench-firehose.log",
-        shared::tracing::TokioConsoleSupport::Disabled,
     );
 
     let run_duration = Duration::from_secs(args.duration_secs);
