@@ -96,7 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let detector = FaceDetector::from_bundled_weights();
     let text_detector = if prune_config.is_category_enabled(RejectionCategory::Text) {
         info!("text detection enabled, loading models");
-        Some(text_detection::TextDetector::from_bundled_models())
+        Some(text_detection::TextDetector::from_bundled_models()?)
     } else {
         None
     };

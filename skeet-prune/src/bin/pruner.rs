@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::Parser;
-use shared::PruneConfig;
+use shared::{PruneConfig, RejectionCategory};
 use skeet_prune::firehose::SkeetCandidate;
 use skeet_prune::pipeline::{ChannelMonitors, ImageResult, MetaResult, PipelineCounters};
 use skeet_store::{SkeetStore, StoreArgs};
@@ -42,12 +42,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "pruner.log",
     );
 
+    info!(git_hash = env!("BUILD_GIT_HASH"), "pruner starting");
+
     let http = reqwest::Client::new();
 
     let prune_config = PruneConfig::from_file(&args.config_path, None)?;
     let config_version = prune_config.version();
 
-    info!(config_version = %config_version, "prune config loaded");
+    info!(
+        config_version = %config_version,
+        categories = ?prune_config.categories(),
+        "prune config loaded"
+    );
+
+    // Early sanity check: verify all required models can be loaded before
+    // starting the pipeline, so we fail fast with clear errors.
+    if prune_config.is_category_enabled(RejectionCategory::Text) {
+        info!(
+            detection_model = text_detection::TextDetector::bundled_detection_model_path(),
+            recognition_model = text_detection::TextDetector::bundled_recognition_model_path(),
+            "validating text detection models"
+        );
+        text_detection::TextDetector::from_bundled_models()?;
+        info!("text detection models validated");
+    }
 
     let store = args.store.open_store().await?;
     store.validate().await?;

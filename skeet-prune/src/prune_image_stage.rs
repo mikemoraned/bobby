@@ -36,7 +36,8 @@ pub async fn run_workers(
             let face = FaceDetector::from_bundled_weights();
             let text = if enable_text {
                 info!(worker_id, "loading text detection models");
-                Some(text_detection::TextDetector::from_bundled_models())
+                Some(text_detection::TextDetector::from_bundled_models()
+                    .expect("failed to load text detection models"))
             } else {
                 None
             };
