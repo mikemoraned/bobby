@@ -1,0 +1,2 @@
+- [feedback_no_bespoke_bash.md](feedback_no_bespoke_bash.md) — Avoid complex bash scripts in just targets; prefer simple declarative approaches
+- [feedback_use_jq.md](feedback_use_jq.md) — Use jq for JSON parsing, never inline python
