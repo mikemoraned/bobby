@@ -1,7 +1,6 @@
 STORE := "store"
 R2_STORE := "s3://hom-bobby/encrypted-store"
 FALLBACK_STORE := "fallback-store"
-OTEL_ENDPOINT := "https://api.honeycomb.io"
 
 import 'just/store.just'
 import 'just/feed.just'

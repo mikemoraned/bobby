@@ -16,7 +16,7 @@ prune:
     RUST_BACKTRACE=1 cargo run --quiet --release --bin pruner -- --config-path config/prune.toml --store-path {{ STORE }}
 
 prune-r2:
-    RUST_BACKTRACE=1 OTEL_EXPORTER_OTLP_ENDPOINT={{ OTEL_ENDPOINT }} OTEL_SERVICE_NAME=skeet-prune op run --env-file bobby-local.env -- cargo run --quiet --release --bin pruner -- --config-path config/prune.toml --store-path {{ R2_STORE }} --fallback-local-store {{ FALLBACK_STORE }}
+    RUST_BACKTRACE=1 OTEL_SERVICE_NAME=skeet-prune op run --env-file bobby-local.env -- cargo run --quiet --release --bin pruner -- --config-path config/prune.toml --store-path {{ R2_STORE }} --fallback-local-store {{ FALLBACK_STORE }}
 
 export-image image_id:
     cargo run --quiet --release --bin export-image -- --store-path {{ STORE }} --image-id {{ image_id }} --output examples/{{ image_id }}.png
@@ -104,3 +104,6 @@ eval-r2-text:
 
 bench-firehose:
     cargo run --quiet --release --bin bench-firehose
+
+otel-test:
+    OTEL_SERVICE_NAME=otel-test op run --env-file bobby-grafana-otel.env -- cargo run --quiet --release --bin otel-test

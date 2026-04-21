@@ -27,7 +27,7 @@ cluster-1password-secrets-install:
     helm repo add 1password https://1password.github.io/connect-helm-charts
     helm repo update
     op document get "bobby-connect-credentials" --vault Dev --out-file infra/1password-credentials.json --force
-    helm install connect 1password/connect \
+    helm upgrade --install connect 1password/connect \
         --set-file connect.credentials=infra/1password-credentials.json \
         --set operator.create=true \
         --set "operator.token.value=$(op read 'op://Dev/bobby-connect-token/credential')"
@@ -39,7 +39,8 @@ cluster-ghcr-secret-install:
     kubectl create secret docker-registry ghcr-pull-secret \
         --docker-server=ghcr.io \
         --docker-username=mikemoraned \
-        "--docker-password=$(op read 'op://Dev/bobby-ghcr-pat-1/password')"
+        "--docker-password=$(op read 'op://Dev/bobby-ghcr-pat-1/password')" \
+        --dry-run=client -o yaml | kubectl apply -f -
 
 cluster-secret-install: cluster-1password-secrets-install cluster-ghcr-secret-install 
 

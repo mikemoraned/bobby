@@ -51,15 +51,18 @@ spec:
                 secretKeyRef:
                   name: bobby-openai-api-key
                   key: password
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "http/protobuf"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "https://api.honeycomb.io"
-            - name: HONEYCOMB_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: bobby-otel-headers
+                  name: bobby-grafana-oltp-endpoint
                   key: password
             - name: OTEL_EXPORTER_OTLP_HEADERS
-              value: "x-honeycomb-team=$(HONEYCOMB_API_KEY)"
+              valueFrom:
+                secretKeyRef:
+                  name: bobby-grafana-oltp-headers
+                  key: password
             - name: OTEL_SERVICE_NAME
               value: "skeet-live-refine"
             - name: OTEL_RESOURCE_ATTRIBUTES

@@ -26,18 +26,18 @@ Docs:
 
 Details for OLTP:
 OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
-OTEL_EXPORTER_OTLP_ENDPOINT=op://bobby-grafanacloud-oltp-endpoint/password
-OTEL_EXPORTER_OTLP_HEADERS=op://bobby-grafanacloud-oltp-headers/password
+OTEL_EXPORTER_OTLP_ENDPOINT=op://Dev/bobby-grafanacloud-oltp-endpoint/password
+OTEL_EXPORTER_OTLP_HEADERS=op://Dev/bobby-grafanacloud-oltp-headers/password
 
 * [x] upgrade lancedb from 0.26 to 0.27 (lance-io 2.0.0 → 3.0.0)
     * do this as a standalone task before the wrapper work
     * check for breaking changes in lancedb 0.27 CHANGELOG
-* [ ] migrate to grafana cloud as the endpoint to which traces are sent
+* [x] migrate to grafana cloud as the endpoint to which traces are sent
     * `shared::tracing` (`shared/src/tracing.rs`) already uses standard OTLP via env vars (`OTEL_EXPORTER_OTLP_ENDPOINT`); currently points at Honeycomb for all CLIs (Hetzner + fly.io)
-    * [ ] create a small test CLI (`skeet-store/src/bin/otel-test.rs`) that sends sample trace spans using `shared::tracing::init_with_file`, then exits
+    * [x] create a small test CLI (`skeet-store/src/bin/otel-test.rs`) that sends sample trace spans using `shared::tracing::init_with_file`, then exits
         * add a `just` target to run it via `op run` with the Grafana Cloud env vars
         * still use standard opentelemetry apis; no grafana-specific code
-    * [ ] if that works, update env files for Hetzner and fly.io deployments — should be env var changes only, no code changes
+    * [x] if that works, update env files for Hetzner and fly.io deployments — should be env var changes only, no code changes
 * [ ] implement a `WrappingObjectStore` to count R2 operations per CLI
     * this should log a metric for every particular S3 API operation used
     * ideally this should easily map to R2 Class A or Class B actions
