@@ -29,7 +29,7 @@ OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 OTEL_EXPORTER_OTLP_ENDPOINT=op://bobby-grafanacloud-oltp-endpoint/password
 OTEL_EXPORTER_OTLP_HEADERS=op://bobby-grafanacloud-oltp-headers/password
 
-* [ ] upgrade lancedb from 0.26 to 0.27 (lance-io 2.0.0 → 3.0.0)
+* [x] upgrade lancedb from 0.26 to 0.27 (lance-io 2.0.0 → 3.0.0)
     * do this as a standalone task before the wrapper work
     * check for breaking changes in lancedb 0.27 CHANGELOG
 * [ ] migrate to grafana cloud as the endpoint to which traces are sent

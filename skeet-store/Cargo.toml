@@ -11,7 +11,7 @@ chrono = { workspace = true }
 clap = { workspace = true }
 futures = "0.3"
 image = { workspace = true }
-lancedb = { version = "0.26", features = ["aws"] }
+lancedb = { version = "0.27", features = ["aws"] }
 rand = "0.9"
 shared = { workspace = true }
 thiserror = { workspace = true }

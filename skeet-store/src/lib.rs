@@ -31,7 +31,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use arrow_array::{
-    Int64Array, LargeBinaryArray, RecordBatch, RecordBatchIterator, StringArray,
+    Int64Array, LargeBinaryArray, RecordBatch, StringArray,
     TimestampMicrosecondArray,
 };
 use chrono::Utc;
@@ -85,8 +85,7 @@ impl SkeetStore {
             ],
         )?;
 
-        let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
-        self.images_table.add(batches).execute().await?;
+        self.images_table.add(vec![batch]).execute().await?;
         self.compact_if_needed().await?;
 
         Ok(())
@@ -195,8 +194,7 @@ impl SkeetStore {
             ],
         )?;
 
-        let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
-        self.validate_table.add(batches).execute().await?;
+        self.validate_table.add(vec![batch]).execute().await?;
 
         let query = self
             .validate_table

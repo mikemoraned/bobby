@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use arrow_array::{Float32Array, RecordBatch, RecordBatchIterator, StringArray};
+use arrow_array::{Float32Array, RecordBatch, StringArray};
 use lancedb::query::QueryBase;
 use tracing::{debug, info, instrument};
 
@@ -43,8 +43,7 @@ impl SkeetStore {
             ],
         )?;
 
-        let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
-        self.scores_table.add(batches).execute().await?;
+        self.scores_table.add(vec![batch]).execute().await?;
         Ok(())
     }
 
@@ -84,8 +83,7 @@ impl SkeetStore {
             ],
         )?;
 
-        let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
-        self.scores_table.add(batches).execute().await?;
+        self.scores_table.add(vec![batch]).execute().await?;
         self.compact_if_needed().await?;
         Ok(())
     }

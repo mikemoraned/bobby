@@ -32,7 +32,8 @@ test:
     cargo nextest run --release
 
 mutants-on-diff:
-    git diff main | cargo mutants --in-diff -
+    git diff main > /tmp/bobby-mutants-diff.patch
+    cargo mutants --in-diff /tmp/bobby-mutants-diff.patch
 
 clippy:
     cargo clippy --quiet --workspace -- -D warnings

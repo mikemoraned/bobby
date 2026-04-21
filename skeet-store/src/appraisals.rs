@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow_array::{RecordBatch, RecordBatchIterator, StringArray, TimestampMicrosecondArray};
+use arrow_array::{RecordBatch, StringArray, TimestampMicrosecondArray};
 use chrono::Utc;
 use lancedb::query::QueryBase;
 use shared::{Appraiser, Band};
@@ -49,8 +49,7 @@ impl SkeetStore {
             ],
         )?;
 
-        let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
-        self.skeet_appraisal_table.add(batches).execute().await?;
+        self.skeet_appraisal_table.add(vec![batch]).execute().await?;
         Ok(())
     }
 
@@ -114,8 +113,7 @@ impl SkeetStore {
             ],
         )?;
 
-        let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
-        self.image_appraisal_table.add(batches).execute().await?;
+        self.image_appraisal_table.add(vec![batch]).execute().await?;
         Ok(())
     }
 
