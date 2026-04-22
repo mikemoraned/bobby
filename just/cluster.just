@@ -21,6 +21,15 @@ cluster-delete: _cluster-ssh-keys
     HCLOUD_TOKEN=$(op read "op://Dev/bobby-hetzner-api-token/password") hetzner-k3s delete --config infra/bobby-cluster.yaml
     just _cluster-ssh-keys-cleanup
 
+# --- Addons ---
+
+cluster-install-metrics-server:
+    helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
+    helm repo update metrics-server
+    helm upgrade --install metrics-server metrics-server/metrics-server \
+        --namespace kube-system \
+        --set args={--kubelet-insecure-tls}
+
 # --- Secrets ---
 
 cluster-1password-secrets-install:
