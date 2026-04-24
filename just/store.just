@@ -65,12 +65,6 @@ add-to-blocklist at_uri reason="manual":
 train:
     op run --env-file bobby-local.env -- cargo run --quiet --release --bin train
 
-refine:
-    op run --env-file bobby-local.env -- cargo run --quiet --release --bin refine -- --store-path {{ STORE }}
-
-refine-r2:
-    {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file bobby-local.env -- cargo run --quiet --release --bin refine -- --store-path {{ R2_STORE }}
-
 live-refine:
     op run --env-file bobby-local.env -- cargo run --quiet --release --bin live-refine -- --store-path {{ STORE }}
 
@@ -91,9 +85,6 @@ eval-r2:
 
 eval-r2-text:
     {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file bobby-local.env -- cargo run --quiet --release --bin eval -- --config-path config/prune.toml --store-path {{ R2_STORE }} --categories Face,Metadata,Text
-
-bench-firehose:
-    cargo run --quiet --release --bin bench-firehose
 
 otel-test:
     OTEL_SERVICE_NAME=otel-test op run --env-file bobby-grafana-otel.env -- cargo run --quiet --release --bin otel-test

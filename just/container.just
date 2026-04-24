@@ -18,12 +18,6 @@ build-live-refine:
 push-live-refine:
     docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.live-refine -t {{ GHCR_REPO }}/live-refine:latest -t {{ GHCR_REPO }}/live-refine:{{ GIT_HASH }} --push .
 
-build-bench-firehose:
-    docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.bench-firehose -t {{ GHCR_REPO }}/bench-firehose:latest .
-
-push-bench-firehose:
-    docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.bench-firehose -t {{ GHCR_REPO }}/bench-firehose:latest -t {{ GHCR_REPO }}/bench-firehose:{{ GIT_HASH }} --push .
-
 build-compact:
     docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.compact -t {{ GHCR_REPO }}/compact:latest .
 

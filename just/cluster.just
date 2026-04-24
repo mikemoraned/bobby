@@ -66,10 +66,6 @@ cluster-deploy-pruner:
 cluster-deploy-live-refine:
     IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/live-refine-deployment.yaml | kubectl apply -f -
 
-cluster-run-bench-firehose:
-    -kubectl delete job bench-firehose
-    kubectl apply -f infra/k8s/bench-firehose-job.yaml
-
 cluster-deploy-compact:
     IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/compact-cronjob.yaml | kubectl apply -f -
 
@@ -90,9 +86,6 @@ cluster-logs-pruner:
 
 cluster-logs-live-refine:
     kubectl logs -l app=live-refine --tail=100 -f | lnav
-
-cluster-logs-bench-firehose:
-    kubectl logs -l app=bench-firehose
 
 cluster-restart-pruner:
     kubectl rollout restart deployment pruner
