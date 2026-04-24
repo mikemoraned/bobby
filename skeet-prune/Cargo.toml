@@ -23,6 +23,9 @@ skeet-store = { path = "../skeet-store" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 
+[build-dependencies]
+build-support = { workspace = true }
+
 [dev-dependencies]
 libtest-mimic = "0.8"
 serde = { workspace = true }

@@ -82,6 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let _guard =
         shared::tracing::init_with_file("skeet_feed=info,shared=info,skeet_store=info", "feed.log");
+    info!(git_hash = env!("BUILD_GIT_HASH"), "skeet-feed starting");
 
     let store = Arc::new(
         args.store

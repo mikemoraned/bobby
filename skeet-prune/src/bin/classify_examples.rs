@@ -6,6 +6,8 @@ use face_detection::FaceDetector;
 use shared::{Classification, PruneConfig};
 
 fn main() {
+    println!("git_hash={}", env!("BUILD_GIT_HASH"));
+
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let examples_dir = root.join("examples");
 

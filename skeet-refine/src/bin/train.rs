@@ -146,6 +146,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
+    info!(git_hash = env!("BUILD_GIT_HASH"), "train starting");
 
     let args = Args::parse();
     let examples = load_examples(&args.examples_path)?;

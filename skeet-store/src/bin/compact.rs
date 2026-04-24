@@ -22,6 +22,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _guard = shared::tracing::init_with_file("info", "compact");
+    info!(git_hash = env!("BUILD_GIT_HASH"), "compact starting");
 
     let args = Args::parse();
     let store = args.store.open_store("compact").await?;

@@ -87,6 +87,7 @@ impl ConfusionMatrix {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     shared::tracing::init("info");
+    info!(git_hash = env!("BUILD_GIT_HASH"), "eval starting");
 
     let args = Args::parse();
 

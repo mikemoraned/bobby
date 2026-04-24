@@ -25,6 +25,9 @@ rustls = { workspace = true }
 tracing = { workspace = true }
 urlencoding = "2"
 
+[build-dependencies]
+build-support = { workspace = true }
+
 [dev-dependencies]
 proptest = { workspace = true }
 skeet-store = { path = "../skeet-store", features = ["test-helpers"] }

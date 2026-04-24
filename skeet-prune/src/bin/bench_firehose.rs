@@ -21,6 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "bench_firehose=info,skeet_prune=info,shared=info",
         "bench-firehose.log",
     );
+    info!(git_hash = env!("BUILD_GIT_HASH"), "bench-firehose starting");
 
     let run_duration = Duration::from_secs(args.duration_secs);
     let recv_timeout = Duration::from_secs(5);

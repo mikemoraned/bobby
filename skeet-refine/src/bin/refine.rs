@@ -29,6 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
+    info!(git_hash = env!("BUILD_GIT_HASH"), "refine starting");
 
     let args = Args::parse();
     let model = load_model(&args.model_path)?;

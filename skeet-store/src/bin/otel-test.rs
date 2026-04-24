@@ -8,6 +8,7 @@ use tracing::{info, info_span};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _guard = shared::tracing::init_with_file("info", "otel-test");
+    info!(git_hash = env!("BUILD_GIT_HASH"), "otel-test starting");
 
     // --- traces ---
     let span = info_span!("otel_test_root", test_run = %uuid::Uuid::new_v4());

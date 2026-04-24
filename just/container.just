@@ -4,33 +4,34 @@ ghcr-login:
     op read "op://Dev/bobby-ghcr-pat-1/password" | docker login ghcr.io -u mikemoraned --password-stdin
 
 GIT_HASH := `git rev-parse --short HEAD`
+BUILD_HASH_ARG := "--build-arg BUILD_GIT_HASH=" + GIT_HASH
 
 build-pruner:
-    docker buildx build --platform linux/arm64 --build-arg BUILD_GIT_HASH={{ GIT_HASH }} -f Dockerfile.pruner -t {{ GHCR_REPO }}/pruner:latest .
+    docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.pruner -t {{ GHCR_REPO }}/pruner:latest .
 
 push-pruner:
-    docker buildx build --platform linux/arm64 --build-arg BUILD_GIT_HASH={{ GIT_HASH }} -f Dockerfile.pruner -t {{ GHCR_REPO }}/pruner:latest --push .
+    docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.pruner -t {{ GHCR_REPO }}/pruner:latest --push .
 
 build-live-refine:
-    docker buildx build --platform linux/arm64 -f Dockerfile.live-refine -t {{ GHCR_REPO }}/live-refine:latest .
+    docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.live-refine -t {{ GHCR_REPO }}/live-refine:latest .
 
 push-live-refine:
-    docker buildx build --platform linux/arm64 -f Dockerfile.live-refine -t {{ GHCR_REPO }}/live-refine:latest --push .
+    docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.live-refine -t {{ GHCR_REPO }}/live-refine:latest --push .
 
 build-bench-firehose:
-    docker buildx build --platform linux/arm64 -f Dockerfile.bench-firehose -t {{ GHCR_REPO }}/bench-firehose:latest .
+    docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.bench-firehose -t {{ GHCR_REPO }}/bench-firehose:latest .
 
 push-bench-firehose:
-    docker buildx build --platform linux/arm64 -f Dockerfile.bench-firehose -t {{ GHCR_REPO }}/bench-firehose:latest --push .
+    docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.bench-firehose -t {{ GHCR_REPO }}/bench-firehose:latest --push .
 
 build-compact:
-    docker buildx build --platform linux/arm64 -f Dockerfile.compact -t {{ GHCR_REPO }}/compact:latest .
+    docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.compact -t {{ GHCR_REPO }}/compact:latest .
 
 push-compact:
-    docker buildx build --platform linux/arm64 -f Dockerfile.compact -t {{ GHCR_REPO }}/compact:latest --push .
+    docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.compact -t {{ GHCR_REPO }}/compact:latest --push .
 
 build-skeet-feed:
-    docker buildx build --platform linux/amd64 -f Dockerfile.skeet-feed -t {{ GHCR_REPO }}/skeet-feed:latest .
+    docker buildx build --platform linux/amd64 {{ BUILD_HASH_ARG }} -f Dockerfile.skeet-feed -t {{ GHCR_REPO }}/skeet-feed:latest .
 
 push-skeet-feed:
-    docker buildx build --platform linux/amd64 -f Dockerfile.skeet-feed -t {{ GHCR_REPO }}/skeet-feed:latest --push .
+    docker buildx build --platform linux/amd64 {{ BUILD_HASH_ARG }} -f Dockerfile.skeet-feed -t {{ GHCR_REPO }}/skeet-feed:latest --push .

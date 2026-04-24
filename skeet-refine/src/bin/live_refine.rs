@@ -42,6 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "skeet_refine=info,shared=info,skeet_store=info,lance_io=warn,object_store=warn",
         "live-refine.log",
     );
+    info!(git_hash = env!("BUILD_GIT_HASH"), "live-refine starting");
 
     let args = Args::parse();
     let model = load_model(&args.model_path)?;

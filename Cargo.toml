@@ -1,11 +1,12 @@
 [workspace]
-members = ["skeet-store", "skeet-prune", "skeet-feed", "skeet-refine", "face-detection", "shared", "skin-detection", "text-detection"]
+members = ["build-support", "skeet-store", "skeet-prune", "skeet-feed", "skeet-refine", "face-detection", "shared", "skin-detection", "text-detection"]
 resolver = "2"
 
 [workspace.lints.clippy]
 unwrap_used = "deny"
 
 [workspace.dependencies]
+build-support = { path = "build-support" }
 chrono = "0.4"
 clap = { version = "4", features = ["derive", "env"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
