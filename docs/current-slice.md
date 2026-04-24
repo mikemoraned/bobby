@@ -56,9 +56,17 @@ OTEL_EXPORTER_OTLP_HEADERS=op://Dev/bobby-grafanacloud-oltp-headers/password
         * lancedb 0.26 → lance-io =2.0.0; lancedb 0.27 → lance-io =3.0.0
         * upgrade lancedb first (task above), then add lance-io =3.0.0
 
+##### Observations
+
+###### 24th Apr
+
+The `skeet-feed` sends about 2.5K Class B operations. This kinda makes sense now in that there is a background job that refreshes once a minute. 
+
+`skeet-prune` and `skeet-live-refine` seems to both do a *lot* of `get` and `get_range` requests (both send up to 30K per minute of each, for a period of about 4 minutes each). I can sort-of understand why live-refine might need to do a lot of gets to get an image (though would be good if it's not lots of requests), however I don't see why pruner would have to.
+
 #### Idea: Only update feed cache on version change
 
-As of 24th Apr, from looking at the metrics graphs, the `skeet-feed` sends about 2.5K Class B operations. This kinda makes sense now in that there is a background job that refreshes once a minute. Ultimately it'd be good for this to be more of a push-on-change approach, where a central cache is updated when something has changed about scoring or similar. However, for now, I think we can have a different approach i.e.
+Ultimately it'd be good for this to be more of a push-on-change approach, where a central cache is updated when something has changed about scoring or similar. However, for now, I think we can have a different approach i.e.
 
 * [ ] update `SkeetStore` to have a `version_snapshot` method which returns a `HashSet<Version>` where
     * `Version` is a struct with a `name` and `tag`
