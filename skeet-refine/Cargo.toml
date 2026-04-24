@@ -34,9 +34,5 @@ name = "train"
 path = "src/bin/train.rs"
 
 [[bin]]
-name = "refine"
-path = "src/bin/refine.rs"
-
-[[bin]]
 name = "live-refine"
 path = "src/bin/live_refine.rs"

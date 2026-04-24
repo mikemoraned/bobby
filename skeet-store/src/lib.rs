@@ -112,12 +112,6 @@ impl SkeetStore {
     }
 
     #[instrument(skip(self))]
-    pub async fn list_all(&self) -> Result<Vec<StoredImage>, StoreError> {
-        let batches = execute_query(&self.images_table.query(), "list_all").await?;
-        batches_to_stored_images(&batches)
-    }
-
-    #[instrument(skip(self))]
     pub async fn list_all_summaries(&self) -> Result<Vec<StoredImageSummary>, StoreError> {
         let query = self
             .images_table

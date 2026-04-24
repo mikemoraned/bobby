@@ -30,13 +30,12 @@ async fn roundtrip_store_and_retrieve() {
     store.add(&record).await.unwrap();
     assert_eq!(store.count().await.unwrap(), 1);
 
-    let images = store.list_all().await.unwrap();
-    assert_eq!(images.len(), 1);
-    assert_eq!(images[0].summary.image_id, record.image_id);
-    assert_eq!(images[0].summary.skeet_id, record.skeet_id);
-    assert_eq!(images[0].image.width(), 2);
-    assert_eq!(images[0].image.height(), 2);
-    assert_eq!(images[0].summary.zone, Zone::TopRight);
+    let stored = store.get_by_id(&record.image_id).await.unwrap().unwrap();
+    assert_eq!(stored.summary.image_id, record.image_id);
+    assert_eq!(stored.summary.skeet_id, record.skeet_id);
+    assert_eq!(stored.image.width(), 2);
+    assert_eq!(stored.image.height(), 2);
+    assert_eq!(stored.summary.zone, Zone::TopRight);
 }
 
 #[tokio::test]
