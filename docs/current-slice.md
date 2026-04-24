@@ -58,7 +58,7 @@ OTEL_EXPORTER_OTLP_HEADERS=op://Dev/bobby-grafanacloud-oltp-headers/password
 
 #### Get visibility on overall pipeline performance and content stats 
 
-* [ ] `skeet-prune`: emit OTel metrics (same Grafana Cloud endpoint as R2 visibility) at the same cadence as the periodic status log line. Emit raw cumulative counts as counters (let Grafana compute rates). Example log output these are derived from:
+* [x] `skeet-prune`: emit OTel metrics (same Grafana Cloud endpoint as R2 visibility) at the same cadence as the periodic status log line. Emit raw cumulative counts as counters (let Grafana compute rates). Example log output these are derived from:
 ```
 2026-04-24T20:01:04.482091Z  INFO skeet_prune::status: skeets: 10443 (0.8/s) | images: 10391 | saved: 24 (0.2%) | rejected: 12695 (BlockedByMetadata: 2349 [17%], FaceNotInAcceptedZone: 153 [1%], FaceTooLarge: 30 [0%], FaceTooSmall: 1017 [7%], TooFewFrontalFaces: 7440 [54%], TooLittleFaceSkin: 382 [3%], TooManyFaces: 1289 [9%], TooMuchSkinOutsideFace: 538 [4%], TooMuchText: 529 [4%]) | categories: Face: 10253 [81%] (sole: 9817 [77%]), Text: 529 [4%] (sole: 93 [1%]), Metadata: 2349 [19%] (sole: 2349 [19%])
 2026-04-24T20:01:04.482139Z  INFO skeet_prune::status: pipeline | throughput: firehose=10461 (0.8/s), meta=10444 (0.8/s), image=8094 (0.6/s) | depth: firehose=16, meta=0, image=0
@@ -73,7 +73,14 @@ OTEL_EXPORTER_OTLP_HEADERS=op://Dev/bobby-grafanacloud-oltp-headers/password
         * `skeet_prune.rejected.total` — counter, label `reason` ∈ {`BlockedByMetadata`, `FaceNotInAcceptedZone`, `FaceTooLarge`, `FaceTooSmall`, `TooFewFrontalFaces`, `TooLittleFaceSkin`, `TooManyFaces`, `TooMuchSkinOutsideFace`, `TooMuchText`}
         * `skeet_prune.categories.total` — counter, label `category` ∈ {`Face`, `Text`, `Metadata`}
         * `skeet_prune.categories.sole.total` — counter, label `category` ∈ {`Face`, `Text`, `Metadata`} (images where that category was the sole detection)
-* [ ] `skeet-live-refine`: defer — details TBD once prune metrics are in place
+* [x] `skeet-live-refine`: emit OTel metrics at the end of each poll tick (after batch-saving scores). Cumulative counters; let Grafana compute rates.
+    * **Throughput metrics:**
+        * `skeet_live_refine.images.unscored` — counter (cumulative images found unscored at the start of each tick)
+        * `skeet_live_refine.images.scored` — counter (cumulative images successfully scored)
+        * `skeet_live_refine.images.errors` — counter, label `reason` ∈ {`ImageEncoding`, `Completion`, `ParseScore`}
+    * **Score distribution:**
+        * `skeet_live_refine.scores` — OTel `Histogram<f64>`, one observation per scored image, explicit bucket boundaries `[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]` (gives 10 buckets covering 0.0–1.0)
+    * **Approach:** add a `metrics.rs` module to `skeet-refine` (same pattern as `skeet-prune`); wire `PruneMetrics` → `LiveRefineMetrics` at the bottom of the `loop` body in `live_refine.rs` once per tick
 
 #### Bring k8s image tagging closer to best-practice by not using `latest` and instead the git hash
 

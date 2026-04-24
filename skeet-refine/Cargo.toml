@@ -11,6 +11,7 @@ base64 = "0.22"
 clap = { workspace = true }
 futures = "0.3"
 image = { workspace = true }
+opentelemetry = { workspace = true }
 rig-core = "0.33"
 serde = { workspace = true }
 serde_json = { workspace = true }
