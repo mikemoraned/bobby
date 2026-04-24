@@ -196,6 +196,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let budget = std::time::Duration::from_secs(args.interval_secs);
         let started = Instant::now();
 
+        let originals = store.get_originals_by_ids(&unscored_ids).await?;
+        let mut originals_map: HashMap<ImageId, DynamicImage> = originals
+            .into_iter()
+            .map(|s| (s.summary.image_id, s.image))
+            .collect();
+
         let mut acc = TickAccumulator::new();
         let mut batch = Batch::new();
 
@@ -204,8 +210,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 break;
             }
 
-            match store.get_by_id(image_id).await? {
-                Some(stored) => batch.push(image_id.clone(), stored.image),
+            match originals_map.remove(image_id) {
+                Some(image) => batch.push(image_id.clone(), image),
                 None => error!(image_id = %image_id, "image not found in store"),
             }
 

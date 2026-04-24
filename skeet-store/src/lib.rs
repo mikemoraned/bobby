@@ -22,7 +22,7 @@ pub use args::StoreArgs;
 pub use compact::CompactTarget;
 pub use error::StoreError;
 pub use shared::{Appraiser, Band, ModelVersion, Score};
-pub use stored::{StoredImage, StoredImageSummary};
+pub use stored::{StoredImage, StoredImageSummary, StoredOriginal};
 pub use summary::SkeetStoreSummary;
 pub use types::{DiscoveredAt, ImageId, ImageRecord, InvalidImageId, OriginalAt, SkeetId, Zone};
 
@@ -45,7 +45,7 @@ use lance_io::object_store::ObjectStoreParams;
 use lancedb::table::WriteOptions;
 use lancedb_utils::execute_query;
 use schema::{images_v6_schema, validate_v1_schema};
-use stored::{batches_to_stored_images, batches_to_summaries};
+use stored::{batches_to_original_images, batches_to_stored_images, batches_to_summaries};
 
 pub struct SkeetStore {
     pub(crate) images_table: lancedb::Table,
@@ -156,6 +156,37 @@ impl SkeetStore {
             .only_if(format!("image_id IN ({id_list})"));
         let batches = execute_query(&query, "get_by_ids").await?;
         batches_to_stored_images(&batches)
+    }
+
+    #[instrument(skip(self, image_ids), fields(count = image_ids.len()))]
+    pub async fn get_originals_by_ids(
+        &self,
+        image_ids: &[ImageId],
+    ) -> Result<Vec<StoredOriginal>, StoreError> {
+        if image_ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let id_list = image_ids
+            .iter()
+            .map(|id| format!("'{id}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let query = self
+            .images_table
+            .query()
+            .only_if(format!("image_id IN ({id_list})"))
+            .select(lancedb::query::Select::columns(&[
+                "image_id",
+                "skeet_id",
+                "discovered_at",
+                "original_at",
+                "archetype",
+                "config_version",
+                "detected_text",
+                "image",
+            ]));
+        let batches = execute_query(&query, "get_originals_by_ids").await?;
+        batches_to_original_images(&batches)
     }
 
     #[instrument(skip(self))]

@@ -117,8 +117,8 @@ The `compact` cron job already runs every 10 minutes against all tables. The `co
 
 `live_refine.rs` fetches images one at a time via `get_by_id` inside a loop, generating O(N) separate R2 queries each returning a full `StoredImage` (~4MB: original + annotated PNG blobs). Live-refine only needs the original image for scoring.
 
-* [ ] replace the per-image `get_by_id` loop (`live_refine.rs:78-97`) with a single `store.get_by_ids(&batch_ids)` call before dispatching the scoring batch
-* [ ] make `annotated_image` optional in `StoredImage` (e.g. `Option<DynamicImage>`), and add a fetch mode or separate query path that skips the `annotated_image` column — so callers like live-refine that don't need it don't pay the R2 cost
+* [x] replace the per-image `get_by_id` loop (`live_refine.rs:78-97`) with a single `store.get_by_ids(&batch_ids)` call before dispatching the scoring batch
+* [x] make `annotated_image` optional in `StoredImage` (e.g. `Option<DynamicImage>`), and add a fetch mode or separate query path that skips the `annotated_image` column — so callers like live-refine that don't need it don't pay the R2 cost
 
 #### Idea: Only update feed cache on version change
 

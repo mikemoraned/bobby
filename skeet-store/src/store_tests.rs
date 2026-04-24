@@ -265,7 +265,10 @@ async fn list_scored_summaries_ordered_by_score() {
         .unwrap();
     // r3 not scored
 
-    let scored = store.list_scored_summaries_by_score(10, None).await.unwrap();
+    let scored = store
+        .list_scored_summaries_by_score(10, None)
+        .await
+        .unwrap();
     assert_eq!(scored.len(), 2);
     assert_eq!(scored[0].0.image_id, r2.image_id);
     assert_eq!(scored[0].1, Score::new(0.9).expect("valid"));
@@ -296,11 +299,19 @@ async fn setup_cache_test(prefix: &str) -> CacheTestFixture {
         .unwrap();
 
     // Populate any internal cache
-    let scored = store.list_scored_summaries_by_score(10, None).await.unwrap();
+    let scored = store
+        .list_scored_summaries_by_score(10, None)
+        .await
+        .unwrap();
     assert_eq!(scored.len(), 1);
     assert_eq!(scored[0].0.image_id, r1.image_id);
 
-    CacheTestFixture { store, r1, r2, _dir: dir }
+    CacheTestFixture {
+        store,
+        r1,
+        r2,
+        _dir: dir,
+    }
 }
 
 async fn assert_scores_reflect_update(
@@ -310,11 +321,20 @@ async fn assert_scores_reflect_update(
     expected_second: &ImageId,
     expected_second_score: Score,
 ) {
-    let scored = store.list_scored_summaries_by_score(10, None).await.unwrap();
+    let scored = store
+        .list_scored_summaries_by_score(10, None)
+        .await
+        .unwrap();
     assert_eq!(scored.len(), 2);
-    assert_eq!(scored[0].0.image_id, *expected_first, "wrong image in first position");
+    assert_eq!(
+        scored[0].0.image_id, *expected_first,
+        "wrong image in first position"
+    );
     assert_eq!(scored[0].1, expected_first_score);
-    assert_eq!(scored[1].0.image_id, *expected_second, "wrong image in second position");
+    assert_eq!(
+        scored[1].0.image_id, *expected_second,
+        "wrong image in second position"
+    );
     assert_eq!(scored[1].1, expected_second_score);
 }
 
@@ -330,9 +350,12 @@ async fn scores_cache_invalidated_after_write() {
         .unwrap();
     assert_scores_reflect_update(
         &f.store,
-        &f.r2.image_id, Score::new(0.8).expect("valid"),
-        &f.r1.image_id, Score::new(0.5).expect("valid"),
-    ).await;
+        &f.r2.image_id,
+        Score::new(0.8).expect("valid"),
+        &f.r1.image_id,
+        Score::new(0.5).expect("valid"),
+    )
+    .await;
 
     // Update an existing score
     f.store
@@ -341,9 +364,12 @@ async fn scores_cache_invalidated_after_write() {
         .unwrap();
     assert_scores_reflect_update(
         &f.store,
-        &f.r1.image_id, Score::new(0.95).expect("valid"),
-        &f.r2.image_id, Score::new(0.8).expect("valid"),
-    ).await;
+        &f.r1.image_id,
+        Score::new(0.95).expect("valid"),
+        &f.r2.image_id,
+        Score::new(0.8).expect("valid"),
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -354,16 +380,27 @@ async fn scores_cache_invalidated_after_batch_upsert() {
     // Batch write: updates r1 and adds r2 in one call
     f.store
         .batch_upsert_scores(&[
-            (f.r1.image_id.clone(), Score::new(0.6).expect("valid"), mv.clone()),
-            (f.r2.image_id.clone(), Score::new(0.9).expect("valid"), mv.clone()),
+            (
+                f.r1.image_id.clone(),
+                Score::new(0.6).expect("valid"),
+                mv.clone(),
+            ),
+            (
+                f.r2.image_id.clone(),
+                Score::new(0.9).expect("valid"),
+                mv.clone(),
+            ),
         ])
         .await
         .unwrap();
     assert_scores_reflect_update(
         &f.store,
-        &f.r2.image_id, Score::new(0.9).expect("valid"),
-        &f.r1.image_id, Score::new(0.6).expect("valid"),
-    ).await;
+        &f.r2.image_id,
+        Score::new(0.9).expect("valid"),
+        &f.r1.image_id,
+        Score::new(0.6).expect("valid"),
+    )
+    .await;
 }
 
 fn test_appraiser() -> Appraiser {
@@ -390,7 +427,11 @@ async fn skeet_band_set_get_roundtrip() {
         .await
         .unwrap();
 
-    let appraisal = store.get_skeet_band(&skeet_id).await.unwrap().expect("should exist");
+    let appraisal = store
+        .get_skeet_band(&skeet_id)
+        .await
+        .unwrap()
+        .expect("should exist");
     assert_eq!(appraisal.band, Band::HighQuality);
     assert_eq!(appraisal.appraiser, test_appraiser());
 }
@@ -413,7 +454,11 @@ async fn skeet_band_set_overwrites_previous() {
         .await
         .unwrap();
 
-    let appraisal = store.get_skeet_band(&skeet_id).await.unwrap().expect("should exist");
+    let appraisal = store
+        .get_skeet_band(&skeet_id)
+        .await
+        .unwrap()
+        .expect("should exist");
     assert_eq!(appraisal.band, Band::MediumHigh);
     assert_eq!(appraisal.appraiser, other_appraiser());
 }
@@ -448,15 +493,33 @@ async fn list_all_skeet_appraisals_returns_all() {
         .parse()
         .expect("valid");
 
-    store.set_skeet_band(&id1, Band::Low, &test_appraiser()).await.unwrap();
-    store.set_skeet_band(&id2, Band::HighQuality, &other_appraiser()).await.unwrap();
+    store
+        .set_skeet_band(&id1, Band::Low, &test_appraiser())
+        .await
+        .unwrap();
+    store
+        .set_skeet_band(&id2, Band::HighQuality, &other_appraiser())
+        .await
+        .unwrap();
 
     let all = store.list_all_skeet_appraisals().await.unwrap();
     assert_eq!(all.len(), 2);
 
     let by_id: std::collections::HashMap<_, _> = all.into_iter().collect();
-    assert_eq!(by_id[&id1], Appraisal { band: Band::Low, appraiser: test_appraiser() });
-    assert_eq!(by_id[&id2], Appraisal { band: Band::HighQuality, appraiser: other_appraiser() });
+    assert_eq!(
+        by_id[&id1],
+        Appraisal {
+            band: Band::Low,
+            appraiser: test_appraiser()
+        }
+    );
+    assert_eq!(
+        by_id[&id2],
+        Appraisal {
+            band: Band::HighQuality,
+            appraiser: other_appraiser()
+        }
+    );
 }
 
 #[tokio::test]
@@ -474,7 +537,11 @@ async fn image_band_set_get_roundtrip() {
         .await
         .unwrap();
 
-    let appraisal = store.get_image_band(&record.image_id).await.unwrap().expect("should exist");
+    let appraisal = store
+        .get_image_band(&record.image_id)
+        .await
+        .unwrap()
+        .expect("should exist");
     assert_eq!(appraisal.band, Band::MediumLow);
     assert_eq!(appraisal.appraiser, test_appraiser());
 }
@@ -496,7 +563,11 @@ async fn image_band_set_overwrites_previous() {
         .await
         .unwrap();
 
-    let appraisal = store.get_image_band(&record.image_id).await.unwrap().expect("should exist");
+    let appraisal = store
+        .get_image_band(&record.image_id)
+        .await
+        .unwrap()
+        .expect("should exist");
     assert_eq!(appraisal.band, Band::HighQuality);
     assert_eq!(appraisal.appraiser, other_appraiser());
 }
@@ -528,15 +599,33 @@ async fn list_all_image_appraisals_returns_all() {
     store.add(&r1).await.unwrap();
     store.add(&r2).await.unwrap();
 
-    store.set_image_band(&r1.image_id, Band::MediumLow, &test_appraiser()).await.unwrap();
-    store.set_image_band(&r2.image_id, Band::HighQuality, &other_appraiser()).await.unwrap();
+    store
+        .set_image_band(&r1.image_id, Band::MediumLow, &test_appraiser())
+        .await
+        .unwrap();
+    store
+        .set_image_band(&r2.image_id, Band::HighQuality, &other_appraiser())
+        .await
+        .unwrap();
 
     let all = store.list_all_image_appraisals().await.unwrap();
     assert_eq!(all.len(), 2);
 
     let by_id: std::collections::HashMap<_, _> = all.into_iter().collect();
-    assert_eq!(by_id[&r1.image_id], Appraisal { band: Band::MediumLow, appraiser: test_appraiser() });
-    assert_eq!(by_id[&r2.image_id], Appraisal { band: Band::HighQuality, appraiser: other_appraiser() });
+    assert_eq!(
+        by_id[&r1.image_id],
+        Appraisal {
+            band: Band::MediumLow,
+            appraiser: test_appraiser()
+        }
+    );
+    assert_eq!(
+        by_id[&r2.image_id],
+        Appraisal {
+            band: Band::HighQuality,
+            appraiser: other_appraiser()
+        }
+    );
 }
 
 #[tokio::test]
@@ -572,6 +661,31 @@ async fn get_by_id_returns_none_for_nonexistent() {
     let store = open_temp_store(&dir).await;
     let fake_id: ImageId = "00000000-0000-0000-0000-000000000000".parse().unwrap();
     assert!(store.get_by_id(&fake_id).await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn get_originals_by_ids_returns_images() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+    let record1 = make_record("orig1");
+    let record2 = make_record("orig2");
+    store.add(&record1).await.unwrap();
+    store.add(&record2).await.unwrap();
+
+    let ids = vec![record1.image_id.clone(), record2.image_id.clone()];
+    let originals = store.get_originals_by_ids(&ids).await.unwrap();
+    assert_eq!(originals.len(), 2);
+    let original_ids: Vec<_> = originals.iter().map(|o| &o.summary.image_id).collect();
+    assert!(original_ids.contains(&&record1.image_id));
+    assert!(original_ids.contains(&&record2.image_id));
+}
+
+#[tokio::test]
+async fn get_originals_by_ids_returns_empty_for_no_ids() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+    let originals = store.get_originals_by_ids(&[]).await.unwrap();
+    assert!(originals.is_empty());
 }
 
 #[tokio::test]
