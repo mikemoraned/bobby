@@ -10,28 +10,28 @@ build-pruner:
     docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.pruner -t {{ GHCR_REPO }}/pruner:latest .
 
 push-pruner:
-    docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.pruner -t {{ GHCR_REPO }}/pruner:latest --push .
+    docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.pruner -t {{ GHCR_REPO }}/pruner:latest -t {{ GHCR_REPO }}/pruner:{{ GIT_HASH }} --push .
 
 build-live-refine:
     docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.live-refine -t {{ GHCR_REPO }}/live-refine:latest .
 
 push-live-refine:
-    docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.live-refine -t {{ GHCR_REPO }}/live-refine:latest --push .
+    docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.live-refine -t {{ GHCR_REPO }}/live-refine:latest -t {{ GHCR_REPO }}/live-refine:{{ GIT_HASH }} --push .
 
 build-bench-firehose:
     docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.bench-firehose -t {{ GHCR_REPO }}/bench-firehose:latest .
 
 push-bench-firehose:
-    docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.bench-firehose -t {{ GHCR_REPO }}/bench-firehose:latest --push .
+    docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.bench-firehose -t {{ GHCR_REPO }}/bench-firehose:latest -t {{ GHCR_REPO }}/bench-firehose:{{ GIT_HASH }} --push .
 
 build-compact:
     docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.compact -t {{ GHCR_REPO }}/compact:latest .
 
 push-compact:
-    docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.compact -t {{ GHCR_REPO }}/compact:latest --push .
+    docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.compact -t {{ GHCR_REPO }}/compact:latest -t {{ GHCR_REPO }}/compact:{{ GIT_HASH }} --push .
 
 build-skeet-feed:
     docker buildx build --platform linux/amd64 {{ BUILD_HASH_ARG }} -f Dockerfile.skeet-feed -t {{ GHCR_REPO }}/skeet-feed:latest .
 
 push-skeet-feed:
-    docker buildx build --platform linux/amd64 {{ BUILD_HASH_ARG }} -f Dockerfile.skeet-feed -t {{ GHCR_REPO }}/skeet-feed:latest --push .
+    docker buildx build --platform linux/amd64 {{ BUILD_HASH_ARG }} -f Dockerfile.skeet-feed -t {{ GHCR_REPO }}/skeet-feed:latest -t {{ GHCR_REPO }}/skeet-feed:{{ GIT_HASH }} --push .

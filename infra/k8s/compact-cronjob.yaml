@@ -22,7 +22,8 @@ spec:
             - name: ghcr-pull-secret
           containers:
             - name: compact
-              image: ghcr.io/mikemoraned/bobby/compact:latest
+              image: ghcr.io/mikemoraned/bobby/compact:${IMAGE_TAG}
+              imagePullPolicy: IfNotPresent
               command: ["compact"]
               args:
                 - "--store-path"

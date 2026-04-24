@@ -18,7 +18,8 @@ spec:
         - name: ghcr-pull-secret
       containers:
         - name: live-refine
-          image: ghcr.io/mikemoraned/bobby/live-refine:latest
+          image: ghcr.io/mikemoraned/bobby/live-refine:${IMAGE_TAG}
+          imagePullPolicy: IfNotPresent
           command: ["live-refine"]
           args:
             - "--model-path"

@@ -18,7 +18,8 @@ spec:
         - name: ghcr-pull-secret
       containers:
         - name: pruner
-          image: ghcr.io/mikemoraned/bobby/pruner:latest
+          image: ghcr.io/mikemoraned/bobby/pruner:${IMAGE_TAG}
+          imagePullPolicy: IfNotPresent
           command: ["pruner"]
           args:
             - "--config-path"

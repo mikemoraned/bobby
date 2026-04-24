@@ -61,17 +61,17 @@ cluster-secret-status:
 # --- Deployments ---
 
 cluster-deploy-pruner:
-    kubectl apply -f infra/k8s/pruner-deployment.yaml
+    IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/pruner-deployment.yaml | kubectl apply -f -
 
 cluster-deploy-live-refine:
-    kubectl apply -f infra/k8s/live-refine-deployment.yaml
+    IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/live-refine-deployment.yaml | kubectl apply -f -
 
 cluster-run-bench-firehose:
     -kubectl delete job bench-firehose
     kubectl apply -f infra/k8s/bench-firehose-job.yaml
 
 cluster-deploy-compact:
-    kubectl apply -f infra/k8s/compact-cronjob.yaml
+    IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/compact-cronjob.yaml | kubectl apply -f -
 
 cluster-logs-compact:
     kubectl logs -l app=compact --tail=100 -f | lnav

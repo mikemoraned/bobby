@@ -19,7 +19,7 @@ convert-models: download-models
     cd model-conversion && uv run python convert_yunet.py
 
 prerequisites: convert-models
-    brew install protobuf openssl cargo-nextest
+    brew install protobuf openssl cargo-nextest gettext
     cargo install --locked cargo-mutants
 
 build:

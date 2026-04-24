@@ -22,7 +22,7 @@ deploy_staging_secrets:
     op inject -i bobby-staging.env | grep "^BOBBY_\|^OTEL_" | fly secrets import --config fly.staging.toml
 
 deploy_staging_app: push-skeet-feed
-    fly deploy --config fly.staging.toml
+    fly deploy --config fly.staging.toml --image {{ GHCR_REPO }}/skeet-feed:{{ GIT_HASH }}
 
 integ_test_staging:
     TEST_BASE_URL=https://bobby-staging.fly.dev cargo test --release -p skeet-feed --features integ --test feed_integration
