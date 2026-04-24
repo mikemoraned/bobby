@@ -100,6 +100,29 @@ impl Batch {
     }
 }
 
+/// Running totals accumulated across all ticks, used to drive OTel metrics.
+struct RunningTotals {
+    unscored: u64,
+    scored: u64,
+    errors: HashMap<String, u64>,
+}
+
+impl RunningTotals {
+    fn new() -> Self {
+        Self {
+            unscored: 0,
+            scored: 0,
+            errors: HashMap::new(),
+        }
+    }
+
+    fn absorb_tick(&mut self, unscored_count: u64, acc: &TickAccumulator) {
+        self.unscored += unscored_count;
+        self.scored += acc.pending_scores.len() as u64;
+        acc.merge_errors_into(&mut self.errors);
+    }
+}
+
 /// Mutable state accumulated within a single tick.
 struct TickAccumulator {
     pending_scores: Vec<(ImageId, Score, ModelVersion)>,
@@ -114,7 +137,6 @@ impl TickAccumulator {
         }
     }
 
-    /// Merge this tick's error counts into a running cross-tick total.
     fn merge_errors_into(&self, totals: &mut HashMap<String, u64>) {
         for (reason, count) in &self.errors {
             *totals.entry(reason.clone()).or_default() += count;
@@ -156,9 +178,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(args.interval_secs));
 
     let mut metrics = LiveRefineMetrics::new();
-    let mut total_unscored: u64 = 0;
-    let mut total_scored: u64 = 0;
-    let mut total_errors: HashMap<String, u64> = HashMap::new();
+    let mut totals = RunningTotals::new();
 
     loop {
         interval.tick().await;
@@ -171,7 +191,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
-        total_unscored += unscored_ids.len() as u64;
         info!(count = unscored_ids.len(), "found unscored images");
 
         let budget = std::time::Duration::from_secs(args.interval_secs);
@@ -199,11 +218,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             batch.dispatch(&ctx, &mut acc).await;
         }
 
-        acc.merge_errors_into(&mut total_errors);
+        totals.absorb_tick(unscored_ids.len() as u64, &acc);
 
         let tick_scores = acc.scores();
         let scored = acc.pending_scores.len();
-        total_scored += scored as u64;
 
         if !acc.pending_scores.is_empty() {
             store.batch_upsert_scores(&acc.pending_scores).await?;
@@ -211,6 +229,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!(scored, remaining, "batch-saved scores");
         }
 
-        metrics.emit(total_unscored, total_scored, &total_errors, &tick_scores);
+        metrics.emit(totals.unscored, totals.scored, &totals.errors, &tick_scores);
     }
 }
