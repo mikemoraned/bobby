@@ -56,6 +56,25 @@ OTEL_EXPORTER_OTLP_HEADERS=op://Dev/bobby-grafanacloud-oltp-headers/password
         * lancedb 0.26 → lance-io =2.0.0; lancedb 0.27 → lance-io =3.0.0
         * upgrade lancedb first (task above), then add lance-io =3.0.0
 
+#### Get visibility on overall pipeline performance and content stats 
+
+* [ ] `skeet-prune`: emit OTel metrics (same Grafana Cloud endpoint as R2 visibility) at the same cadence as the periodic status log line. Emit raw cumulative counts as counters (let Grafana compute rates). Example log output these are derived from:
+```
+2026-04-24T20:01:04.482091Z  INFO skeet_prune::status: skeets: 10443 (0.8/s) | images: 10391 | saved: 24 (0.2%) | rejected: 12695 (BlockedByMetadata: 2349 [17%], FaceNotInAcceptedZone: 153 [1%], FaceTooLarge: 30 [0%], FaceTooSmall: 1017 [7%], TooFewFrontalFaces: 7440 [54%], TooLittleFaceSkin: 382 [3%], TooManyFaces: 1289 [9%], TooMuchSkinOutsideFace: 538 [4%], TooMuchText: 529 [4%]) | categories: Face: 10253 [81%] (sole: 9817 [77%]), Text: 529 [4%] (sole: 93 [1%]), Metadata: 2349 [19%] (sole: 2349 [19%])
+2026-04-24T20:01:04.482139Z  INFO skeet_prune::status: pipeline | throughput: firehose=10461 (0.8/s), meta=10444 (0.8/s), image=8094 (0.6/s) | depth: firehose=16, meta=0, image=0
+```
+    * **Performance metrics** (from the `pipeline` log line):
+        * `skeet_prune.pipeline.throughput` — counter, label `stage` ∈ {`firehose`, `meta`, `image`}
+        * `skeet_prune.pipeline.depth` — gauge, label `stage` ∈ {`firehose`, `meta`, `image`}
+    * **Content metrics** (from the content log line):
+        * `skeet_prune.skeets.total` — counter (cumulative skeets seen)
+        * `skeet_prune.images.total` — counter (cumulative images seen)
+        * `skeet_prune.saved.total` — counter (cumulative images saved)
+        * `skeet_prune.rejected.total` — counter, label `reason` ∈ {`BlockedByMetadata`, `FaceNotInAcceptedZone`, `FaceTooLarge`, `FaceTooSmall`, `TooFewFrontalFaces`, `TooLittleFaceSkin`, `TooManyFaces`, `TooMuchSkinOutsideFace`, `TooMuchText`}
+        * `skeet_prune.categories.total` — counter, label `category` ∈ {`Face`, `Text`, `Metadata`}
+        * `skeet_prune.categories.sole.total` — counter, label `category` ∈ {`Face`, `Text`, `Metadata`} (images where that category was the sole detection)
+* [ ] `skeet-live-refine`: defer — details TBD once prune metrics are in place
+
 #### Bring k8s image tagging closer to best-practice by not using `latest` and instead the git hash
 
 * [x] add `envsubst` (part of GNU `gettext`) to the `prerequisites` target — already present on dev machine via Homebrew but should be explicit
