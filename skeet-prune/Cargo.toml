@@ -16,6 +16,7 @@ image = { workspace = true }
 jetstream-oxide = "0.1"
 reqwest = { workspace = true }
 serde_json = { workspace = true }
+opentelemetry = { workspace = true }
 shared = { workspace = true }
 skin-detection = { path = "../skin-detection" }
 text-detection = { path = "../text-detection" }
