@@ -62,7 +62,7 @@ OTEL_EXPORTER_OTLP_HEADERS=op://Dev/bobby-grafanacloud-oltp-headers/password
 
 The `skeet-feed` sends about 2.5K Class B operations. This kinda makes sense now in that there is a background job that refreshes once a minute. 
 
-`skeet-prune` and `skeet-live-refine` seems to both do a *lot* of `get` and `get_range` requests (both send up to 30K per minute of each, for a period of about 4 minutes each). I can sort-of understand why live-refine might need to do a lot of gets to get an image (though would be good if it's not lots of requests), however I don't see why pruner would have to.
+`skeet-prune` and `skeet-live-refine` seems to both do a *lot* of `get` and `get_range` requests (both send up to 30K per minute of each, for a period of about 4 minutes each). During this time other operations like `head`,`list` and `put` are tiny (10's per minute) I can sort-of understand why live-refine might need to do a lot of gets to get an image (though would be good if it's not lots of requests), however I don't see why pruner would have to.
 
 #### Idea: Only update feed cache on version change
 
@@ -84,9 +84,24 @@ Ultimately it'd be good for this to be more of a push-on-change approach, where 
 
 The outcome of this should be that we only incur the cost of updating the in-memory cache when something has changed.
 
+#### Idea: Remove inline compaction in favour of the cron job
+
+The `compact` cron job already runs every 10 minutes against all tables. The `compact_every_n_writes` mechanism duplicates this inline, blocking the save path and generating large GET/GET_RANGE bursts against R2 during each run.
+
+* [ ] remove `compact_every_n_writes` from `StoreArgs` and `SkeetStore` entirely
+* [ ] remove the `compact_if_needed` call sites in `lib.rs` and `scores.rs`
+* [ ] remove the `writes_since_compact` counter from `SkeetStore`
+
 #### Idea: Switch to notification-listening queue for live-refine
 
 * [ ] rather than polling the remote store for recently-updated images that have been pruned, the `pruner` and `live-refine` clis can communicate via a notification queue that says when an image candidate has been found.
+
+#### Idea: Batch image fetches in live-refine
+
+`live_refine.rs` fetches images one at a time via `get_by_id` inside a loop, generating O(N) separate R2 queries each returning a full `StoredImage` (~4MB: original + annotated PNG blobs). Live-refine only needs the original image for scoring.
+
+* [ ] replace the per-image `get_by_id` loop (`live_refine.rs:78-97`) with a single `store.get_by_ids(&batch_ids)` call before dispatching the scoring batch
+* [ ] make `annotated_image` optional in `StoredImage` (e.g. `Option<DynamicImage>`), and add a fetch mode or separate query path that skips the `annotated_image` column — so callers like live-refine that don't need it don't pay the R2 cost
 
 #### Idea: put in place some sort of caching of Lancedb R2 lookups
 
