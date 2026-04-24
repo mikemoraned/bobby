@@ -18,7 +18,7 @@ prune:
     RUST_BACKTRACE=1 cargo run --quiet --release --bin pruner -- --config-path config/prune.toml --store-path {{ STORE }}
 
 prune-r2:
-    RUST_BACKTRACE=1 OTEL_SERVICE_NAME=skeet-prune {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file bobby-local.env -- cargo run --quiet --release --bin pruner -- --config-path config/prune.toml --store-path {{ R2_STORE }} --fallback-local-store {{ FALLBACK_STORE }}
+    RUST_BACKTRACE=1 OTEL_SERVICE_NAME=skeet-prune {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file bobby-local.env -- cargo run --quiet --release --bin pruner -- --config-path config/prune.toml --store-path {{ R2_STORE }}
 
 export-image image_id:
     cargo run --quiet --release --bin export-image -- --store-path {{ STORE }} --image-id {{ image_id }} --output examples/{{ image_id }}.png
@@ -31,9 +31,6 @@ image-metadata-dump image_id:
 
 image-metadata-dump-r2 image_id:
     {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file bobby-local.env -- cargo run --quiet --release --bin image-metadata-dump -- --store-path {{ R2_STORE }} --image-id {{ image_id }}
-
-image-metadata-dump-fallback image_id:
-    cargo run --quiet --release --bin image-metadata-dump -- --store-path {{ FALLBACK_STORE }} --image-id {{ image_id }}
 
 at-metadata-dump at_uri:
     cargo run --quiet --release --bin at-metadata-dump -- --at-uri {{ at_uri }}
@@ -55,9 +52,6 @@ compact table="all":
 
 compact-check:
     cargo run --quiet --release --bin compact -- --store-path {{ STORE }} --check-only
-
-compact-fallback table="all":
-    cargo run --quiet --release --bin compact -- --store-path {{ FALLBACK_STORE }} --table {{ table }}
 
 compact-r2 table="all":
     {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file bobby-local.env -- cargo run --quiet --release --bin compact -- --store-path {{ R2_STORE }} --table {{ table }}

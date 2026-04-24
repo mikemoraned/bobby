@@ -1,6 +1,5 @@
 STORE := "store"
 R2_STORE := "s3://hom-bobby/encrypted-store"
-FALLBACK_STORE := "fallback-store"
 
 import 'just/store.just'
 import 'just/feed.just'

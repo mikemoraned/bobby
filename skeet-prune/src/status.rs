@@ -18,8 +18,6 @@ pub struct Status {
     post_count: u64,
     image_count: u64,
     saved_count: u64,
-    saved_remote: u64,
-    saved_fallback: u64,
     rejected_count: u64,
     rejection_counts: HashMap<Rejection, u64>,
     category_counts: HashMap<RejectionCategory, u64>,
@@ -43,8 +41,6 @@ impl Status {
             post_count: 0,
             image_count: 0,
             saved_count: 0,
-            saved_remote: 0,
-            saved_fallback: 0,
             rejected_count: 0,
             rejection_counts: HashMap::new(),
             category_counts: HashMap::new(),
@@ -66,16 +62,6 @@ impl Status {
 
     pub const fn record_saved(&mut self) {
         self.saved_count += 1;
-    }
-
-    pub const fn record_saved_remote(&mut self) {
-        self.saved_count += 1;
-        self.saved_remote += 1;
-    }
-
-    pub const fn record_saved_fallback(&mut self) {
-        self.saved_count += 1;
-        self.saved_fallback += 1;
     }
 
     pub fn record_rejected(&mut self, reasons: &[Rejection]) {
@@ -127,14 +113,7 @@ impl Status {
             0.0
         };
 
-        let saved_detail = if self.saved_fallback > 0 {
-            format!(
-                "saved: {saved} ({hit_rate:.1}%) [remote: {}, fallback: {}]",
-                self.saved_remote, self.saved_fallback
-            )
-        } else {
-            format!("saved: {saved} ({hit_rate:.1}%)")
-        };
+        let saved_detail = format!("saved: {saved} ({hit_rate:.1}%)");
 
         let mut msg = format!(
             "skeets: {posts} ({skeets_per_sec:.1}/s) | images: {images} | {saved_detail} | rejected: {rejected}"
