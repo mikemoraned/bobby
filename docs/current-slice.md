@@ -56,7 +56,27 @@ OTEL_EXPORTER_OTLP_HEADERS=op://Dev/bobby-grafanacloud-oltp-headers/password
         * lancedb 0.26 → lance-io =2.0.0; lancedb 0.27 → lance-io =3.0.0
         * upgrade lancedb first (task above), then add lance-io =3.0.0
 
-#### Idea: Switch to notification-listening for live-refine
+#### Idea: Only update feed cache on version change
+
+As of 24th Apr, from looking at the metrics graphs, the `skeet-feed` sends about 2.5K Class B operations. This kinda makes sense now in that there is a background job that refreshes once a minute. Ultimately it'd be good for this to be more of a push-on-change approach, where a central cache is updated when something has changed about scoring or similar. However, for now, I think we can have a different approach i.e.
+
+* [ ] update `SkeetStore` to have a `version_snapshot` method which returns a `HashSet<Version>` where
+    * `Version` is a struct with a `name` and `tag`
+        * `name` is the name of the underlying table
+        * `value` is an opaque identifier capturing the version of the table
+    * this `value` should be a `String` to keep non-coupled to the underlying implementation, but which should be derived from the `version` of each underlying lancedb table
+* [ ] update the `skeet-feed` cache so that it still runs once a minute but functions as follows when it wants to test if cache needs updated:
+    1. fetch `version_snapshot`
+    2. filter `HashSet<Version>` down to only the `name`'s it depends to invalidate the cache:
+        * so, for example, it is only a change in appraisals or image scores that should effect the cache; changes to images or skeets does not affect it
+    3. (assuming this `HashSet<Version>` has been previously saved on the cache) compare those against what has just been found
+    4. if they are different then proceed as now in invalidating and updating the cache
+* [ ] we can also remove the staleness check as this method should mean we don't need it anymore
+* [ ] all of the above should be down in a failing-test-first way as we are introducing more complexity here
+
+The outcome of this should be that we only incur the cost of updating the in-memory cache when something has changed.
+
+#### Idea: Switch to notification-listening queue for live-refine
 
 * [ ] rather than polling the remote store for recently-updated images that have been pruned, the `pruner` and `live-refine` clis can communicate via a notification queue that says when an image candidate has been found.
 
