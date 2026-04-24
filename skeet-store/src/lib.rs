@@ -27,7 +27,6 @@ pub use summary::SkeetStoreSummary;
 pub use types::{DiscoveredAt, ImageId, ImageRecord, InvalidImageId, OriginalAt, SkeetId, Zone};
 
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
 
 use lance_io::object_store::WrappingObjectStore;
 use tokio::sync::RwLock;
@@ -54,8 +53,6 @@ pub struct SkeetStore {
     validate_table: lancedb::Table,
     pub(crate) skeet_appraisal_table: lancedb::Table,
     pub(crate) image_appraisal_table: lancedb::Table,
-    pub(crate) writes_since_compact: AtomicU64,
-    pub(crate) compact_every_n_writes: Option<u64>,
     pub(crate) scores_cache: RwLock<Option<scores::ScoresCache>>,
     pub(crate) store_wrapper: Option<Arc<dyn WrappingObjectStore>>,
 }
@@ -110,7 +107,6 @@ impl SkeetStore {
             .write_options(self.write_options())
             .execute()
             .await?;
-        self.compact_if_needed().await?;
 
         Ok(())
     }
@@ -185,7 +181,6 @@ impl SkeetStore {
         self.images_table
             .delete(&format!("image_id = '{image_id}'"))
             .await?;
-        self.compact_if_needed().await?;
         Ok(())
     }
 

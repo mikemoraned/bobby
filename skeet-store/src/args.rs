@@ -2,8 +2,6 @@ use tracing::instrument;
 
 use crate::{SkeetStore, StoreError};
 
-const DEFAULT_COMPACT_EVERY_N_WRITES: u64 = 100;
-
 #[derive(Clone, Debug, clap::Args)]
 pub struct StoreArgs {
     /// Store location: local path or S3 URI (e.g. s3://bucket/path)
@@ -29,17 +27,9 @@ pub struct StoreArgs {
     /// SSE-C encryption key (base64-encoded 256-bit AES key); enables server-side encryption
     #[arg(long, env = "BOBBY_SSE_C_KEY")]
     pub sse_c_key: Option<String>,
-
-    /// Trigger automatic compaction after this many writes (omit to disable)
-    #[arg(long, default_value_t = DEFAULT_COMPACT_EVERY_N_WRITES)]
-    pub compact_every_n_writes: u64,
 }
 
 impl StoreArgs {
-    const fn compact_option(&self) -> Option<u64> {
-        Some(self.compact_every_n_writes)
-    }
-
     pub fn storage_options(&self) -> Vec<(String, String)> {
         let mut opts = Vec::new();
         if let Some(endpoint) = &self.s3_endpoint {
@@ -68,7 +58,6 @@ impl StoreArgs {
         SkeetStore::open(
             &self.store_path,
             self.storage_options(),
-            self.compact_option(),
             cli_name,
         )
         .await

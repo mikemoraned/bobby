@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use lance::dataset::ReadParams;
@@ -22,7 +21,6 @@ impl SkeetStore {
     pub async fn open(
         uri: &str,
         storage_options: Vec<(String, String)>,
-        compact_every_n_writes: Option<u64>,
         cli_name: &str,
     ) -> Result<Self, StoreError> {
         info!(uri, cli_name, "opening store");
@@ -173,15 +171,13 @@ impl SkeetStore {
             info!(index_name = %idx.name, ?stats, "scores_table index stats");
         }
 
-        info!(uri, ?compact_every_n_writes, "store opened");
+        info!(uri, "store opened");
         Ok(Self {
             images_table,
             scores_table,
             validate_table,
             skeet_appraisal_table,
             image_appraisal_table,
-            writes_since_compact: AtomicU64::new(0),
-            compact_every_n_writes,
             scores_cache: RwLock::new(None),
             store_wrapper: Some(store_wrapper),
         })

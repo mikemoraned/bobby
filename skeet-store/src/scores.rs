@@ -92,7 +92,6 @@ impl SkeetStore {
             .write_options(self.write_options())
             .execute()
             .await?;
-        self.compact_if_needed().await?;
         Ok(())
     }
 

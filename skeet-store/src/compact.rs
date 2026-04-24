@@ -1,5 +1,3 @@
-use std::sync::atomic::Ordering;
-
 use lancedb::table::{CompactionOptions, OptimizeAction};
 use tracing::{info, instrument};
 
@@ -94,7 +92,6 @@ impl super::SkeetStore {
             info!(?after, "scores_table optimization complete");
         }
 
-        self.writes_since_compact.store(0, Ordering::Relaxed);
         Ok(())
     }
 
@@ -125,13 +122,4 @@ impl super::SkeetStore {
         Ok(health::StoreHealth { tables })
     }
 
-    pub(crate) async fn compact_if_needed(&self) -> Result<(), StoreError> {
-        if let Some(threshold) = self.compact_every_n_writes {
-            let count = self.writes_since_compact.fetch_add(1, Ordering::Relaxed) + 1;
-            if count >= threshold {
-                self.compact().await?;
-            }
-        }
-        Ok(())
-    }
 }
