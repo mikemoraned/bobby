@@ -45,6 +45,61 @@ struct ScoringContext<'a> {
     concurrency: usize,
 }
 
+/// A staging buffer of images to be scored together in one parallel dispatch.
+struct Batch {
+    ids: Vec<ImageId>,
+    images: Vec<DynamicImage>,
+}
+
+impl Batch {
+    fn new() -> Self {
+        Self {
+            ids: Vec::new(),
+            images: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, id: ImageId, image: DynamicImage) {
+        self.ids.push(id);
+        self.images.push(image);
+    }
+
+    fn len(&self) -> usize {
+        self.ids.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
+
+    async fn dispatch(&mut self, ctx: &ScoringContext<'_>, acc: &mut TickAccumulator) {
+        let results: Vec<_> = stream::iter(self.images.iter())
+            .map(|image| refine_image(ctx.agent, image))
+            .buffer_unordered(ctx.concurrency)
+            .collect()
+            .await;
+
+        for (id, result) in self.ids.drain(..).zip(results) {
+            match result {
+                Ok(score) => {
+                    info!(image_id = %id, %score, "refined");
+                    acc.pending_scores.push((id, score, ctx.model_version.clone()));
+                }
+                Err(e) => {
+                    let reason = match &e {
+                        RefineError::ImageEncoding(_) => "ImageEncoding",
+                        RefineError::Completion(_) => "Completion",
+                        RefineError::ParseScore(_) => "ParseScore",
+                    };
+                    error!(image_id = %id, error = %e, "failed to refine");
+                    *acc.errors.entry(reason.to_string()).or_default() += 1;
+                }
+            }
+        }
+        self.images.clear();
+    }
+}
+
 /// Mutable state accumulated within a single tick.
 struct TickAccumulator {
     pending_scores: Vec<(ImageId, Score, ModelVersion)>,
@@ -57,6 +112,21 @@ impl TickAccumulator {
             pending_scores: Vec::new(),
             errors: HashMap::new(),
         }
+    }
+
+    /// Merge this tick's error counts into a running cross-tick total.
+    fn merge_errors_into(&self, totals: &mut HashMap<String, u64>) {
+        for (reason, count) in &self.errors {
+            *totals.entry(reason.clone()).or_default() += count;
+        }
+    }
+
+    /// Extract scores as f64 observations for the histogram.
+    fn scores(&self) -> Vec<f64> {
+        self.pending_scores
+            .iter()
+            .map(|(_, s, _)| f64::from(f32::from(*s)))
+            .collect()
     }
 }
 
@@ -108,8 +178,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let started = Instant::now();
 
         let mut acc = TickAccumulator::new();
-        let mut batch_ids = Vec::new();
-        let mut batch_images = Vec::new();
+        let mut batch = Batch::new();
 
         for image_id in &unscored_ids {
             if started.elapsed() >= budget {
@@ -117,41 +186,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             match store.get_by_id(image_id).await? {
-                Some(stored) => {
-                    batch_ids.push(image_id.clone());
-                    batch_images.push(stored.image);
-                }
-                None => {
-                    error!(image_id = %image_id, "image not found in store");
-                }
+                Some(stored) => batch.push(image_id.clone(), stored.image),
+                None => error!(image_id = %image_id, "image not found in store"),
             }
 
-            // When we have a full batch (or budget is about to expire), dispatch in parallel
-            if batch_ids.len() >= ctx.concurrency || started.elapsed() >= budget {
-                dispatch_batch(&ctx, &mut batch_ids, &mut batch_images, &mut acc).await;
+            if batch.len() >= ctx.concurrency || started.elapsed() >= budget {
+                batch.dispatch(&ctx, &mut acc).await;
             }
         }
 
-        // Dispatch any remaining images in the last partial batch
-        if !batch_ids.is_empty() {
-            dispatch_batch(&ctx, &mut batch_ids, &mut batch_images, &mut acc).await;
+        if !batch.is_empty() {
+            batch.dispatch(&ctx, &mut acc).await;
         }
 
-        // Accumulate this tick's errors into the running totals
-        for (reason, count) in &acc.errors {
-            *total_errors.entry(reason.clone()).or_default() += count;
-        }
+        acc.merge_errors_into(&mut total_errors);
 
-        // Collect scores for the histogram before the upsert consumes the vec
-        let tick_scores: Vec<f64> = acc
-            .pending_scores
-            .iter()
-            .map(|(_, s, _)| f64::from(f32::from(*s)))
-            .collect();
+        let tick_scores = acc.scores();
         let scored = acc.pending_scores.len();
         total_scored += scored as u64;
 
-        // Batch-save all scores in one write
         if !acc.pending_scores.is_empty() {
             store.batch_upsert_scores(&acc.pending_scores).await?;
             let remaining = unscored_ids.len() - scored;
@@ -160,36 +213,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         metrics.emit(total_unscored, total_scored, &total_errors, &tick_scores);
     }
-}
-
-async fn dispatch_batch(
-    ctx: &ScoringContext<'_>,
-    batch_ids: &mut Vec<ImageId>,
-    batch_images: &mut Vec<DynamicImage>,
-    acc: &mut TickAccumulator,
-) {
-    let results: Vec<_> = stream::iter(batch_images.iter())
-        .map(|image| refine_image(ctx.agent, image))
-        .buffer_unordered(ctx.concurrency)
-        .collect()
-        .await;
-
-    for (id, result) in batch_ids.drain(..).zip(results) {
-        match result {
-            Ok(score) => {
-                info!(image_id = %id, %score, "refined");
-                acc.pending_scores.push((id, score, ctx.model_version.clone()));
-            }
-            Err(e) => {
-                let reason = match &e {
-                    RefineError::ImageEncoding(_) => "ImageEncoding",
-                    RefineError::Completion(_) => "Completion",
-                    RefineError::ParseScore(_) => "ParseScore",
-                };
-                error!(image_id = %id, error = %e, "failed to refine");
-                *acc.errors.entry(reason.to_string()).or_default() += 1;
-            }
-        }
-    }
-    batch_images.clear();
 }
