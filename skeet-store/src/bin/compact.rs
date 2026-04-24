@@ -21,7 +21,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    shared::tracing::init("info");
+    let _guard = shared::tracing::init_with_file("info", "compact");
 
     let args = Args::parse();
     let store = args.store.open_store("compact").await?;
