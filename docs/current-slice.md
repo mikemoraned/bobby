@@ -91,6 +91,12 @@ OTEL_EXPORTER_OTLP_HEADERS=op://Dev/bobby-grafanacloud-oltp-headers/password
     * add `imagePullPolicy: IfNotPresent` — correct behaviour for immutable tags (no unnecessary re-pulls on pod restart)
 * [x] in `just/cluster.just`, change each `cluster-deploy-*` target to pipe through `envsubst` before applying: `IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/<name>.yaml | kubectl apply -f -` — all non-image changes in the YAML are still applied, and the tag is pinned to the exact pushed commit
 
+#### Add git hash to traces and metrics
+
+* [x] ensure that git-hash, as software version, is added to all traces and metrics as metadata
+    * do this in an OTEL-standard way e.g. anything that corresponds to a `version` or similar
+    * the intent is to allow all metrics and traces to be filtered in Grafana Cloud by what has been deployed, so that I know that a metric came from a particular version of the software
+
 ##### Observations
 
 ###### 24th Apr

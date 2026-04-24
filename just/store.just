@@ -1,4 +1,4 @@
-LOCAL_OTEL_RESOURCE_ATTRS := "OTEL_RESOURCE_ATTRIBUTES=deployment.environment=local"
+LOCAL_OTEL_RESOURCE_ATTRS := "OTEL_RESOURCE_ATTRIBUTES=deployment.environment=local,service.version=" + GIT_HASH
 
 generate-sse-c-key:
     op item create --vault Dev --title hom-bobby-r2-sse-c-key --category password "password=$(openssl rand -base64 32)" \

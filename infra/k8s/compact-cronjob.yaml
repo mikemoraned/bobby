@@ -69,6 +69,6 @@ spec:
                 - name: OTEL_SERVICE_NAME
                   value: "compact"
                 - name: OTEL_RESOURCE_ATTRIBUTES
-                  value: "deployment.environment=hetzner"
+                  value: "deployment.environment=hetzner,service.version=${IMAGE_TAG}"
                 - name: RUST_LOG
                   value: "info"
