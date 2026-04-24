@@ -38,6 +38,28 @@ struct Args {
     concurrency: usize,
 }
 
+/// Static configuration for scoring images — shared across all ticks.
+struct ScoringContext<'a> {
+    agent: &'a RefineAgent,
+    model_version: &'a ModelVersion,
+    concurrency: usize,
+}
+
+/// Mutable state accumulated within a single tick.
+struct TickAccumulator {
+    pending_scores: Vec<(ImageId, Score, ModelVersion)>,
+    errors: HashMap<String, u64>,
+}
+
+impl TickAccumulator {
+    fn new() -> Self {
+        Self {
+            pending_scores: Vec::new(),
+            errors: HashMap::new(),
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _guard = shared::tracing::init_with_file(
@@ -54,6 +76,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let store = args.store.open_store("live_refine").await?;
     let client = create_client(&args.openai_api_key);
     let agent = build_agent(&client, model.model_name.as_str(), model.prompt.as_str());
+
+    let ctx = ScoringContext {
+        agent: &agent,
+        model_version: &model_version,
+        concurrency: args.concurrency,
+    };
 
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(args.interval_secs));
 
@@ -79,11 +107,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let budget = std::time::Duration::from_secs(args.interval_secs);
         let started = Instant::now();
 
-        // Fetch images, then dispatch OpenAI calls in parallel batches
-        let mut pending_scores = Vec::new();
+        let mut acc = TickAccumulator::new();
         let mut batch_ids = Vec::new();
         let mut batch_images = Vec::new();
-        let mut tick_errors: HashMap<String, u64> = HashMap::new();
 
         for image_id in &unscored_ids {
             if started.elapsed() >= budget {
@@ -101,32 +127,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // When we have a full batch (or budget is about to expire), dispatch in parallel
-            if batch_ids.len() >= args.concurrency || started.elapsed() >= budget {
-                dispatch_batch(&agent, &mut batch_ids, &mut batch_images, &model_version, args.concurrency, &mut pending_scores, &mut tick_errors).await;
+            if batch_ids.len() >= ctx.concurrency || started.elapsed() >= budget {
+                dispatch_batch(&ctx, &mut batch_ids, &mut batch_images, &mut acc).await;
             }
         }
 
         // Dispatch any remaining images in the last partial batch
         if !batch_ids.is_empty() {
-            dispatch_batch(&agent, &mut batch_ids, &mut batch_images, &model_version, args.concurrency, &mut pending_scores, &mut tick_errors).await;
+            dispatch_batch(&ctx, &mut batch_ids, &mut batch_images, &mut acc).await;
         }
 
         // Accumulate this tick's errors into the running totals
-        for (reason, count) in &tick_errors {
+        for (reason, count) in &acc.errors {
             *total_errors.entry(reason.clone()).or_default() += count;
         }
 
         // Collect scores for the histogram before the upsert consumes the vec
-        let tick_scores: Vec<f64> = pending_scores
+        let tick_scores: Vec<f64> = acc
+            .pending_scores
             .iter()
             .map(|(_, s, _)| f64::from(f32::from(*s)))
             .collect();
-        let scored = pending_scores.len();
+        let scored = acc.pending_scores.len();
         total_scored += scored as u64;
 
         // Batch-save all scores in one write
-        if !pending_scores.is_empty() {
-            store.batch_upsert_scores(&pending_scores).await?;
+        if !acc.pending_scores.is_empty() {
+            store.batch_upsert_scores(&acc.pending_scores).await?;
             let remaining = unscored_ids.len() - scored;
             info!(scored, remaining, "batch-saved scores");
         }
@@ -135,19 +162,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn dispatch_batch(
-    agent: &RefineAgent,
+    ctx: &ScoringContext<'_>,
     batch_ids: &mut Vec<ImageId>,
     batch_images: &mut Vec<DynamicImage>,
-    model_version: &ModelVersion,
-    concurrency: usize,
-    pending_scores: &mut Vec<(ImageId, Score, ModelVersion)>,
-    errors_out: &mut HashMap<String, u64>,
+    acc: &mut TickAccumulator,
 ) {
     let results: Vec<_> = stream::iter(batch_images.iter())
-        .map(|image| refine_image(agent, image))
-        .buffer_unordered(concurrency)
+        .map(|image| refine_image(ctx.agent, image))
+        .buffer_unordered(ctx.concurrency)
         .collect()
         .await;
 
@@ -155,7 +178,7 @@ async fn dispatch_batch(
         match result {
             Ok(score) => {
                 info!(image_id = %id, %score, "refined");
-                pending_scores.push((id, score, model_version.clone()));
+                acc.pending_scores.push((id, score, ctx.model_version.clone()));
             }
             Err(e) => {
                 let reason = match &e {
@@ -164,7 +187,7 @@ async fn dispatch_batch(
                     RefineError::ParseScore(_) => "ParseScore",
                 };
                 error!(image_id = %id, error = %e, "failed to refine");
-                *errors_out.entry(reason.to_string()).or_default() += 1;
+                *acc.errors.entry(reason.to_string()).or_default() += 1;
             }
         }
     }
