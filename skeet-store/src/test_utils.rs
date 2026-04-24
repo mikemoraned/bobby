@@ -39,7 +39,7 @@ pub fn make_record_at(
 }
 
 pub async fn open_temp_store(dir: &tempfile::TempDir) -> SkeetStore {
-    SkeetStore::open(dir.path().to_str().expect("valid path"), vec![], None)
+    SkeetStore::open(dir.path().to_str().expect("valid path"), vec![], None, "test")
         .await
         .expect("open store")
 }

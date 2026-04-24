@@ -1,4 +1,5 @@
 #![warn(clippy::all, clippy::nursery)]
+mod appraisals;
 mod args;
 mod arrow_utils;
 mod compact;
@@ -7,7 +8,7 @@ pub mod health;
 mod lancedb_utils;
 mod open;
 mod paging;
-mod appraisals;
+mod r2_metrics;
 mod schema;
 mod scores;
 mod stored;
@@ -25,9 +26,10 @@ pub use stored::{StoredImage, StoredImageSummary};
 pub use summary::SkeetStoreSummary;
 pub use types::{DiscoveredAt, ImageId, ImageRecord, InvalidImageId, OriginalAt, SkeetId, Zone};
 
-use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 
+use lance_io::object_store::WrappingObjectStore;
 use tokio::sync::RwLock;
 
 use arrow_array::{
@@ -39,6 +41,9 @@ use lancedb::query::QueryBase;
 use tracing::instrument;
 
 use arrow_utils::{encode_image_as_png, typed_column};
+use lance::dataset::{WriteMode, WriteParams};
+use lance_io::object_store::ObjectStoreParams;
+use lancedb::table::WriteOptions;
 use lancedb_utils::execute_query;
 use schema::{images_v6_schema, validate_v1_schema};
 use stored::{batches_to_stored_images, batches_to_summaries};
@@ -52,9 +57,24 @@ pub struct SkeetStore {
     pub(crate) writes_since_compact: AtomicU64,
     pub(crate) compact_every_n_writes: Option<u64>,
     pub(crate) scores_cache: RwLock<Option<scores::ScoresCache>>,
+    pub(crate) store_wrapper: Option<Arc<dyn WrappingObjectStore>>,
 }
 
 impl SkeetStore {
+    /// Build `WriteOptions` that include the R2 metrics wrapper, if configured.
+    pub(crate) fn write_options(&self) -> WriteOptions {
+        WriteOptions {
+            lance_write_params: self.store_wrapper.as_ref().map(|wrapper| WriteParams {
+                mode: WriteMode::Append,
+                store_params: Some(ObjectStoreParams {
+                    object_store_wrapper: Some(wrapper.clone()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+        }
+    }
+
     #[instrument(skip(self, record), fields(image_id = %record.image_id, skeet_id = %record.skeet_id))]
     pub async fn add(&self, record: &ImageRecord) -> Result<(), StoreError> {
         let schema = images_v6_schema();
@@ -85,7 +105,11 @@ impl SkeetStore {
             ],
         )?;
 
-        self.images_table.add(vec![batch]).execute().await?;
+        self.images_table
+            .add(vec![batch])
+            .write_options(self.write_options())
+            .execute()
+            .await?;
         self.compact_if_needed().await?;
 
         Ok(())
@@ -194,7 +218,11 @@ impl SkeetStore {
             ],
         )?;
 
-        self.validate_table.add(vec![batch]).execute().await?;
+        self.validate_table
+            .add(vec![batch])
+            .write_options(self.write_options())
+            .execute()
+            .await?;
 
         let query = self
             .validate_table

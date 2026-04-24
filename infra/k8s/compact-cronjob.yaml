@@ -53,5 +53,7 @@ spec:
                     secretKeyRef:
                       name: bobby-sse-c-key
                       key: password
+                - name: OTEL_RESOURCE_ATTRIBUTES
+                  value: "deployment.environment=hetzner"
                 - name: RUST_LOG
                   value: "info"

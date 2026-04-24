@@ -52,10 +52,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
 
-    let source = SkeetStore::open(&args.source_store_path, vec![], None).await?;
+    let source = SkeetStore::open(&args.source_store_path, vec![], None, "redrive_source").await?;
     info!(path = %args.source_store_path, "opened source store");
 
-    let target = args.target.open_store().await?;
+    let target = args.target.open_store("redrive").await?;
     target.validate().await?;
     info!("target store validation passed");
 

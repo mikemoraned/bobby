@@ -85,7 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let store = Arc::new(
         args.store
-            .open_store()
+            .open_store("feed")
             .await
             .expect("failed to open store at startup"),
     );

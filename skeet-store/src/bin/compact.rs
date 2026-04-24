@@ -24,7 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     shared::tracing::init("info");
 
     let args = Args::parse();
-    let store = args.store.open_store().await?;
+    let store = args.store.open_store("compact").await?;
 
     let health = store.storage_health().await?;
     health.print_report();

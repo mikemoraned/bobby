@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
 
-    let store = args.store.open_store().await?;
+    let store = args.store.open_store("export_image").await?;
     let stored = store
         .get_by_id(&args.image_id)
         .await?

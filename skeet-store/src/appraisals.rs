@@ -49,7 +49,11 @@ impl SkeetStore {
             ],
         )?;
 
-        self.skeet_appraisal_table.add(vec![batch]).execute().await?;
+        self.skeet_appraisal_table
+            .add(vec![batch])
+            .write_options(self.write_options())
+            .execute()
+            .await?;
         Ok(())
     }
 
@@ -113,7 +117,11 @@ impl SkeetStore {
             ],
         )?;
 
-        self.image_appraisal_table.add(vec![batch]).execute().await?;
+        self.image_appraisal_table
+            .add(vec![batch])
+            .write_options(self.write_options())
+            .execute()
+            .await?;
         Ok(())
     }
 

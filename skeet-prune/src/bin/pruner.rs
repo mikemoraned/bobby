@@ -67,13 +67,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("text detection models validated");
     }
 
-    let store = args.store.open_store().await?;
+    let store = args.store.open_store("pruner").await?;
     store.validate().await?;
     info!("storage validation passed");
 
     let fallback = match &args.fallback_local_store {
         Some(path) => {
-            let fallback_store = SkeetStore::open(path, vec![], None).await?;
+            let fallback_store = SkeetStore::open(path, vec![], None, "pruner").await?;
             info!(path = %path, "fallback local store opened");
             Some(fallback_store)
         }
@@ -86,8 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (image_tx, mut image_rx) = mpsc::channel::<ImageResult>(100);
 
     let counters = Arc::new(PipelineCounters::default());
-    let channels =
-        ChannelMonitors::new(firehose_tx.clone(), meta_tx.clone(), image_tx.clone());
+    let channels = ChannelMonitors::new(firehose_tx.clone(), meta_tx.clone(), image_tx.clone());
 
     let meta_http = http.clone();
     let firehose_counters = Arc::clone(&counters);

@@ -43,7 +43,11 @@ impl SkeetStore {
             ],
         )?;
 
-        self.scores_table.add(vec![batch]).execute().await?;
+        self.scores_table
+            .add(vec![batch])
+            .write_options(self.write_options())
+            .execute()
+            .await?;
         Ok(())
     }
 
@@ -83,7 +87,11 @@ impl SkeetStore {
             ],
         )?;
 
-        self.scores_table.add(vec![batch]).execute().await?;
+        self.scores_table
+            .add(vec![batch])
+            .write_options(self.write_options())
+            .execute()
+            .await?;
         self.compact_if_needed().await?;
         Ok(())
     }

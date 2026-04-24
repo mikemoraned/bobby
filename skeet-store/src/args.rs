@@ -64,11 +64,12 @@ impl StoreArgs {
     }
 
     #[instrument(skip(self), fields(store_path = %self.store_path))]
-    pub async fn open_store(&self) -> Result<SkeetStore, StoreError> {
+    pub async fn open_store(&self, cli_name: &str) -> Result<SkeetStore, StoreError> {
         SkeetStore::open(
             &self.store_path,
             self.storage_options(),
             self.compact_option(),
+            cli_name,
         )
         .await
     }

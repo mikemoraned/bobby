@@ -90,7 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
 
-    let store = args.store.open_store().await?;
+    let store = args.store.open_store("eval").await?;
     let categories = args.categories.map(RejectionCategories::from);
     let prune_config = PruneConfig::from_file(&args.config_path, categories)?;
     let detector = FaceDetector::from_bundled_weights();

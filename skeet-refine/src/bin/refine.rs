@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model_version = model.version();
     info!(model_name = %model.model_name, %model_version, "loaded model");
 
-    let store = args.store.open_store().await?;
+    let store = args.store.open_store("refine").await?;
     let client = create_client(&args.openai_api_key);
     let agent = build_agent(&client, model.model_name.as_str(), model.prompt.as_str());
 

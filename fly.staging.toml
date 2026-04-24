@@ -9,7 +9,9 @@ app = "skeet-feed --store-path s3://hom-bobby/encrypted-store --hostname bobby-s
 
 [env]
 RUST_LOG = "skeet_feed=info,skeet_store=info"
+OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf"
 OTEL_SERVICE_NAME = "skeet-feed"
+OTEL_RESOURCE_ATTRIBUTES = "deployment.environment=fly"
 
 [http_service]
 processes = ["app"]

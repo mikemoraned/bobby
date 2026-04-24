@@ -1,4 +1,6 @@
 use opentelemetry::trace::TracerProvider;
+use opentelemetry_otlp::MetricExporter;
+use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::SdkTracerProvider;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::filter::Targets;
@@ -26,6 +28,37 @@ impl Drop for OtelGuard {
             eprintln!("OpenTelemetry shutdown error: {e}");
         }
     }
+}
+
+/// Guard that shuts down the OpenTelemetry metrics provider on drop.
+pub struct MetricsGuard {
+    provider: SdkMeterProvider,
+}
+
+impl Drop for MetricsGuard {
+    fn drop(&mut self) {
+        if let Err(e) = self.provider.shutdown() {
+            eprintln!("OpenTelemetry metrics shutdown error: {e}");
+        }
+    }
+}
+
+/// Try to initialize an OpenTelemetry OTLP metrics provider.
+///
+/// Sets the global meter provider. Returns `None` (with a warning) if
+/// `OTEL_EXPORTER_OTLP_ENDPOINT` is not set.
+pub fn try_init_metrics() -> Option<MetricsGuard> {
+    if std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_err() {
+        tracing::warn!("OTEL_EXPORTER_OTLP_ENDPOINT not set, OpenTelemetry metrics disabled");
+        return None;
+    }
+
+    let exporter = MetricExporter::builder().with_http().build().ok()?;
+    let reader = PeriodicReader::builder(exporter).build();
+    let provider = SdkMeterProvider::builder().with_reader(reader).build();
+
+    opentelemetry::global::set_meter_provider(provider.clone());
+    Some(MetricsGuard { provider })
 }
 
 /// Try to initialize an OpenTelemetry OTLP tracing layer.
@@ -71,7 +104,7 @@ pub fn init(default_filter: &str) {
 }
 
 /// Initialize tracing with a daily rolling file appender, stderr output,
-/// and optional OpenTelemetry.
+/// and optional OpenTelemetry (traces + metrics).
 ///
 /// The returned guards must be held for the lifetime of the program.
 pub fn init_with_file(default_filter: &str, filename: &str) -> TracingGuard {
@@ -95,17 +128,21 @@ pub fn init_with_file(default_filter: &str, filename: &str) -> TracingGuard {
         .with(otel_layer)
         .init();
 
+    let metrics_guard = try_init_metrics();
+
     TracingGuard {
         _file_guard: Some(file_guard),
         _otel_guard: otel_guard,
+        _metrics_guard: metrics_guard,
     }
 }
 
 /// Holds guards for tracing infrastructure (file appender + optional OpenTelemetry).
 ///
 /// Must be held for the lifetime of the program to ensure logs are flushed
-/// and the OTLP exporter shuts down cleanly.
+/// and the OTLP exporters shut down cleanly.
 pub struct TracingGuard {
     _file_guard: Option<WorkerGuard>,
     _otel_guard: Option<OtelGuard>,
+    _metrics_guard: Option<MetricsGuard>,
 }

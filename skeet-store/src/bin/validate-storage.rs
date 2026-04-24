@@ -17,7 +17,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
 
-    let store = args.store.open_store().await?;
+    let store = args.store.open_store("validate_storage").await?;
     store.validate().await?;
 
     info!("storage validation passed");

@@ -16,7 +16,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     shared::tracing::init("info");
 
     let args = Args::parse();
-    let store = args.store.open_store().await?;
+    let store = args.store.open_store("summarise").await?;
 
     info!("generating summary");
     let summary = store.summarise().await?;

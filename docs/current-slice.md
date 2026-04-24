@@ -38,7 +38,7 @@ OTEL_EXPORTER_OTLP_HEADERS=op://Dev/bobby-grafanacloud-oltp-headers/password
         * add a `just` target to run it via `op run` with the Grafana Cloud env vars
         * still use standard opentelemetry apis; no grafana-specific code
     * [x] if that works, update env files for Hetzner and fly.io deployments — should be env var changes only, no code changes
-* [ ] implement a `WrappingObjectStore` to count R2 operations per CLI
+* [x] implement a `WrappingObjectStore` to count R2 operations per CLI
     * this should log a metric for every particular S3 API operation used
     * ideally this should easily map to R2 Class A or Class B actions
     * the outcome I want is a graph over time of operations per-cli so I can see which cli is using the most operations, and how those split out per operation for a particular cli
