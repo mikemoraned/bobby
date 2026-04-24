@@ -3,7 +3,7 @@ use image::DynamicImage;
 use shared::ModelVersion;
 use tracing::instrument;
 
-use crate::arrow_utils::{encode_image_as_png, micros_to_datetime, typed_column};
+use crate::arrow_utils::{micros_to_datetime, typed_column};
 use crate::types::{DiscoveredAt, ImageId, ImageRecord, OriginalAt, SkeetId, Zone};
 use crate::StoreError;
 
@@ -11,14 +11,6 @@ pub struct StoredImage {
     pub summary: StoredImageSummary,
     pub image: DynamicImage,
     pub annotated_image: DynamicImage,
-}
-
-impl StoredImage {
-    pub fn content_matches(&self, other: &Self) -> Result<bool, StoreError> {
-        let self_bytes = encode_image_as_png(&self.image)?;
-        let other_bytes = encode_image_as_png(&other.image)?;
-        Ok(self_bytes == other_bytes)
-    }
 }
 
 impl From<StoredImage> for ImageRecord {

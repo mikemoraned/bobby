@@ -604,34 +604,6 @@ async fn validate_succeeds_on_healthy_store() {
 }
 
 #[tokio::test]
-async fn list_all_by_most_recent_orders_newest_first() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = open_temp_store(&dir).await;
-
-    let old = make_record_at(
-        "old",
-        100,
-        0,
-        0,
-        DiscoveredAt::new(Utc::now() - chrono::Duration::hours(2)),
-    );
-    let new = make_record_at(
-        "new",
-        200,
-        0,
-        0,
-        DiscoveredAt::new(Utc::now()),
-    );
-    store.add(&old).await.unwrap();
-    store.add(&new).await.unwrap();
-
-    let result = store.list_all_by_most_recent().await.unwrap();
-    assert_eq!(result.len(), 2);
-    assert_eq!(result[0].summary.image_id, new.image_id);
-    assert_eq!(result[1].summary.image_id, old.image_id);
-}
-
-#[tokio::test]
 async fn list_scored_summaries_rejects_excessive_limit() {
     let dir = tempfile::tempdir().unwrap();
     let store = open_temp_store(&dir).await;
@@ -705,24 +677,6 @@ async fn list_scored_summaries_filters_by_max_age() {
         .await
         .unwrap();
     assert_eq!(scored_all.len(), 2);
-}
-
-#[tokio::test]
-async fn content_matches_identical_and_different() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = open_temp_store(&dir).await;
-
-    let r1 = make_record("cm1");
-    let r3 = make_record_at("cm2", 0, 255, 0, DiscoveredAt::now());
-    store.add(&r1).await.unwrap();
-    store.add(&r3).await.unwrap();
-
-    let img1 = store.get_by_id(&r1.image_id).await.unwrap().unwrap();
-    let img1_again = store.get_by_id(&r1.image_id).await.unwrap().unwrap();
-    let img3 = store.get_by_id(&r3.image_id).await.unwrap().unwrap();
-
-    assert!(img1.content_matches(&img1_again).unwrap());
-    assert!(!img1.content_matches(&img3).unwrap());
 }
 
 #[tokio::test]

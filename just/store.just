@@ -38,12 +38,6 @@ image-metadata-dump-fallback image_id:
 at-metadata-dump at_uri:
     cargo run --quiet --release --bin at-metadata-dump -- --at-uri {{ at_uri }}
 
-redrive-r2:
-    {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file bobby-local.env -- cargo run --quiet --release --bin redrive -- --source-store-path {{ FALLBACK_STORE }} --store-path {{ R2_STORE }} --mode upload-and-delete
-
-redrive-local-to-r2:
-    {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file bobby-local.env -- cargo run --quiet --release --bin redrive -- --source-store-path {{ STORE }} --store-path {{ R2_STORE }} --mode upload --most-recent-first
-
 abort-multipart-uploads:
     {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file bobby-local.env -- cargo run --quiet --release --bin abort-multipart-uploads -- --store-path {{ R2_STORE }}
 
