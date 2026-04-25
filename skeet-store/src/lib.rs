@@ -15,6 +15,8 @@ mod stored;
 mod summary;
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod test_utils;
+pub mod tempo;
+pub mod trace_analysis;
 mod types;
 
 pub use appraisals::Appraisal;

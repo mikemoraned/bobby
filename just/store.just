@@ -89,20 +89,19 @@ eval-r2-text:
 otel-test:
     OTEL_SERVICE_NAME=otel-test op run --env-file bobby-grafana-otel.env -- cargo run --quiet --release --bin otel-test
 
-# Tempo spike: search for recent skeet-live-refine traces (TraceQL, last hour)
-tempo-search:
-    op run --env-file bobby-grafana-tempo.env -- sh -c \
-        'curl -s -u "$TEMPO_USER:$TEMPO_TOKEN" \
-        "${TEMPO_URL}/api/search?q=%7Bresource.service.name%3D%22skeet-live-refine%22%7D&limit=5" | jq .'
+trace-summary service="skeet-live-refine" span="list_unscored_image_ids_for_version" sample="10" lookback="60":
+    op run --env-file bobby-grafana-otel.env -- cargo run --quiet --release --bin trace-summary -- \
+        --service {{ service }} --span {{ span }} --sample {{ sample }} --lookback-minutes {{ lookback }}
 
-# Tempo spike: search for traces containing a specific span name
-tempo-search-span span_name:
-    op run --env-file bobby-grafana-tempo.env -- sh -c \
+# Capture Tempo API responses as test fixtures (run once, commit the results)
+capture-search-fixture service="skeet-live-refine":
+    op run --env-file bobby-grafana-otel.env -- sh -c \
         'curl -s -u "$TEMPO_USER:$TEMPO_TOKEN" \
-        "${TEMPO_URL}/api/search?q=%7Bresource.service.name%3D%22skeet-live-refine%22+%26%26+name%3D%22{{ span_name }}%22%7D&limit=5" | jq .'
+        "${TEMPO_URL}/api/search?q=%7Bresource.service.name%3D%22{{ service }}%22%7D&limit=5" \
+        | jq . > skeet-store/tests/fixtures/tempo_search_response.json'
 
-# Tempo spike: fetch a full trace by ID and show span events
-tempo-fetch trace_id:
-    op run --env-file bobby-grafana-tempo.env -- sh -c \
+capture-trace-fixture trace_id:
+    op run --env-file bobby-grafana-otel.env -- sh -c \
         'curl -s -u "$TEMPO_USER:$TEMPO_TOKEN" \
-        "${TEMPO_URL}/api/traces/{{ trace_id }}" | jq .'
+        "${TEMPO_URL}/api/traces/{{ trace_id }}" \
+        | jq . > skeet-store/tests/fixtures/tempo_trace_response.json'

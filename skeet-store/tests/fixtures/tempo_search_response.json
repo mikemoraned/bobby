@@ -1,0 +1,254 @@
+{
+  "traces": [
+    {
+      "traceID": "38dc215c00d82f3a404e602e866b8c3a",
+      "rootServiceName": "skeet-live-refine",
+      "rootTraceName": "schedule_ranges",
+      "startTimeUnixNano": "1777124508496841775",
+      "spanSet": {
+        "spans": [
+          {
+            "spanID": "926d4918cdc4dc91",
+            "startTimeUnixNano": "1777124508496841775",
+            "durationNanos": "30680",
+            "attributes": [
+              {
+                "key": "service.name",
+                "value": {
+                  "stringValue": "skeet-live-refine"
+                }
+              }
+            ]
+          }
+        ],
+        "matched": 1
+      },
+      "spanSets": [
+        {
+          "spans": [
+            {
+              "spanID": "926d4918cdc4dc91",
+              "startTimeUnixNano": "1777124508496841775",
+              "durationNanos": "30680",
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "skeet-live-refine"
+                  }
+                }
+              ]
+            }
+          ],
+          "matched": 1
+        }
+      ],
+      "serviceStats": {
+        "skeet-live-refine": {
+          "spanCount": 1
+        }
+      }
+    },
+    {
+      "traceID": "1eb61e17fe3894c97c216c39b518e956",
+      "rootServiceName": "skeet-live-refine",
+      "rootTraceName": "schedule_ranges",
+      "startTimeUnixNano": "1777124508325837116",
+      "spanSet": {
+        "spans": [
+          {
+            "spanID": "5434085fffa849d6",
+            "startTimeUnixNano": "1777124508325837116",
+            "durationNanos": "281362",
+            "attributes": [
+              {
+                "key": "service.name",
+                "value": {
+                  "stringValue": "skeet-live-refine"
+                }
+              }
+            ]
+          }
+        ],
+        "matched": 1
+      },
+      "spanSets": [
+        {
+          "spans": [
+            {
+              "spanID": "5434085fffa849d6",
+              "startTimeUnixNano": "1777124508325837116",
+              "durationNanos": "281362",
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "skeet-live-refine"
+                  }
+                }
+              ]
+            }
+          ],
+          "matched": 1
+        }
+      ],
+      "serviceStats": {
+        "skeet-live-refine": {
+          "spanCount": 1
+        }
+      }
+    },
+    {
+      "traceID": "3066999653ef0fc5bb5567fe20b94ffc",
+      "rootServiceName": "skeet-live-refine",
+      "rootTraceName": "schedule_ranges",
+      "startTimeUnixNano": "1777124505519736804",
+      "spanSet": {
+        "spans": [
+          {
+            "spanID": "a64493a3ea438506",
+            "startTimeUnixNano": "1777124505519736804",
+            "durationNanos": "10920",
+            "attributes": [
+              {
+                "key": "service.name",
+                "value": {
+                  "stringValue": "skeet-live-refine"
+                }
+              }
+            ]
+          }
+        ],
+        "matched": 1
+      },
+      "spanSets": [
+        {
+          "spans": [
+            {
+              "spanID": "a64493a3ea438506",
+              "startTimeUnixNano": "1777124505519736804",
+              "durationNanos": "10920",
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "skeet-live-refine"
+                  }
+                }
+              ]
+            }
+          ],
+          "matched": 1
+        }
+      ],
+      "serviceStats": {
+        "skeet-live-refine": {
+          "spanCount": 1
+        }
+      }
+    },
+    {
+      "traceID": "52c5fbb01b23d1b9e4fef4875394224",
+      "rootServiceName": "skeet-live-refine",
+      "rootTraceName": "schedule_ranges",
+      "startTimeUnixNano": "1777124505516536344",
+      "spanSet": {
+        "spans": [
+          {
+            "spanID": "d9bcf50f1270155f",
+            "startTimeUnixNano": "1777124505516536344",
+            "durationNanos": "8480",
+            "attributes": [
+              {
+                "key": "service.name",
+                "value": {
+                  "stringValue": "skeet-live-refine"
+                }
+              }
+            ]
+          }
+        ],
+        "matched": 1
+      },
+      "spanSets": [
+        {
+          "spans": [
+            {
+              "spanID": "d9bcf50f1270155f",
+              "startTimeUnixNano": "1777124505516536344",
+              "durationNanos": "8480",
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "skeet-live-refine"
+                  }
+                }
+              ]
+            }
+          ],
+          "matched": 1
+        }
+      ],
+      "serviceStats": {
+        "skeet-live-refine": {
+          "spanCount": 1
+        }
+      }
+    },
+    {
+      "traceID": "109ca73fd82600000bcbda17a7da19a2",
+      "rootServiceName": "skeet-live-refine",
+      "rootTraceName": "schedule_ranges",
+      "startTimeUnixNano": "1777124505509258017",
+      "spanSet": {
+        "spans": [
+          {
+            "spanID": "886b9423ab10cf86",
+            "startTimeUnixNano": "1777124505509258017",
+            "durationNanos": "19960",
+            "attributes": [
+              {
+                "key": "service.name",
+                "value": {
+                  "stringValue": "skeet-live-refine"
+                }
+              }
+            ]
+          }
+        ],
+        "matched": 1
+      },
+      "spanSets": [
+        {
+          "spans": [
+            {
+              "spanID": "886b9423ab10cf86",
+              "startTimeUnixNano": "1777124505509258017",
+              "durationNanos": "19960",
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "skeet-live-refine"
+                  }
+                }
+              ]
+            }
+          ],
+          "matched": 1
+        }
+      ],
+      "serviceStats": {
+        "skeet-live-refine": {
+          "spanCount": 1
+        }
+      }
+    }
+  ],
+  "metrics": {
+    "inspectedBytes": "77556",
+    "completedJobs": 1,
+    "totalJobs": 3
+  }
+}

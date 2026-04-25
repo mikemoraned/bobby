@@ -19,6 +19,9 @@ lancedb = { version = "0.27", features = ["aws"] }
 object_store = "0.12"
 opentelemetry = { workspace = true }
 rand = "0.9"
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 shared = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

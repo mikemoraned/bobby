@@ -118,16 +118,22 @@ The goal is to ground optimisation decisions in real data (actual query plans, c
         2. fetch one full trace by ID: `GET /api/traces/{traceID}`
         3. confirm that query plan text appears in span events
     * [x] example saved in `spans-example.json`
-* [ ] if spike successful:
-    * [ ] add Tempo read credentials (endpoint + token) to `bobby-grafana-otel.env` as 1Password refs
-    * [ ] write a cli, in `skeet-store` which can:
+* [x] if spike successful:
+    * [x] add Tempo read credentials (endpoint + token) to `bobby-grafana-otel.env` as 1Password refs
+    * [x] write a cli, in `skeet-store` which can:
         1. Find a sample (e.g. 10) of traces within a time window which contain a call or calls to any `SkeetStore` method
         2. Extract call hierarchy and any plans that were logged as events on the span
         3. Summarise this textually in a way which will be understandable by a person and a reasonable LLM
             * a particular focus should be on things which affect the cost of a query e.g. which columns were loaded and how many rows were loaded
-    * [ ] delete example saved in `spans-example.json` as shouldn't be needed anymore
-    * [ ] remove any other Justfile rules or files we created for the spike e.g. `tempo-search`
+        * implemented in `skeet-store/src/tempo.rs` + `src/bin/trace-summary.rs`; run via `just trace-summary`
+    * [x] delete example saved in `spans-example.json` as shouldn't be needed anymore
+    * [x] remove any other Justfile rules or files we created for the spike e.g. `tempo-search`
+    * [x] add fixture-based tests to guard against parsing regressions (e.g. `traceID` vs `traceId`)
+        * add a `capture-trace-fixtures` just target (uses `bobby-grafana-otel.env`) that saves a real search response and one full trace response to `skeet-store/tests/fixtures/`; run once and commit
+        * inline unit tests in `tempo.rs` using `include_str!` over the fixtures: verify deserialization succeeds and key fields (e.g. `trace_id`) are non-empty
+        * inline unit tests in `trace_analysis.rs` using hardcoded plan strings (no fixture needed): cover full-scan detection, indexed-query detection, and slow-query event extraction
     * [ ] if needed, we can update `SkeetStore` to attach (via log/span entry) more useful data about query cost related metadata
+        * [ ] replace bespoke plan string parsing in `trace_analysis.rs` with a typed `QueryPlan: Serialize + Deserialize` struct defined in `lancedb_utils.rs`; parse the raw `explain_plan` output once at log time, emit as JSON in the `plan` event attribute, deserialize in `trace_analysis.rs` — removes `extract_field` / `plan_summary` string hacks
 
 ##### Observations
 

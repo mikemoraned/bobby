@@ -28,6 +28,10 @@ Read whichever are relevant before starting work:
 - `@docs/next-slices.md` — upcoming slices
 - `@docs/completed-slices.md` — summary of completed slices
 
+## Shell Commands
+
+Never re-issue a build or test command if one is already running or has just completed. If a command is taking a while, wait for it rather than spawning duplicates.
+
 ## Security
 
 Never generate shell commands that capture secrets in a variable — always use `op run --env-file` patterns so credentials flow through the process environment without touching the LLM context.
