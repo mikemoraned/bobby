@@ -142,7 +142,21 @@ The outcome of this should be that we only incur the cost of updating the in-mem
 
 #### Idea: Switch to notification-listening queue for live-refine
 
-* [ ] rather than polling the remote store for recently-updated images that have been pruned, the `pruner` and `live-refine` clis can communicate via a notification queue that says when an image candidate has been found.
+Rather than polling the remote store for recently-updated images that have been pruned, the `pruner` and `live-refine` clis can communicate via a notification queue that says when an image candidate has been found.
+
+We'll do this in stages:
+* within `skeet-refine`:
+    * [ ] first refactor the parts of `live-refine` that to do the polling to be behind a `ImageCandidateSource` trait which produces `ImageCandidate` structs. Call this `R2PollingImageCandidateSource`.
+    * [ ] also create a `ImageCandidateSink` trait which can consume `ImageCandidate`, but does not yet have any implementations
+    * [ ] set up a local `NATS JetStream` system:
+        * add to prerequisites
+        * add commands to start/stop it locally
+    * [ ] create an implementation of `ImageCandidateSource` and `ImageCandidateSink` which can send/receive from a NATS instance using `async-nats` library
+    * [ ] update `live-refine` so that it can either use the polling or NATS-based source, based on a cli option
+* within `skeet-prune`:
+    * [ ] make it optionally (via cli option) able to send a `ImageCandidate` to a NATS instance using `ImageCandidateSink` impl, after it has successfully saved it in `SkeetStore`
+        * make it so that these sends are fire-and-forget e.g. they fail, it should be logged, but it shouldn't fail the stage or the pruner
+* [ ] add setup to install and run a NATS instance insider the k8s cluster, and wire up skeet-prune and live-refine to use it by default
 
 #### Idea: put in place some sort of caching of Lancedb R2 lookups
 
