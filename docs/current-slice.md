@@ -109,9 +109,11 @@ I am using Grafana Cloud and there will be traces that correspond to things like
 The goal is to ground optimisation decisions in real data (actual query plans, column projections, scan behaviour) rather than just textual analysis of code.
 
 * [ ] quick spike to check the data is available at all
-    * create a Grafana Cloud service account token with traces:read scope (if not already done)
-    * store the Tempo endpoint URL and token in 1Password
-    * use curl + jq to:
+    * [x] create a Grafana Cloud service account token with traces:read scope (if not already done)
+    * [x] store the Tempo endpoint URL and token in 1Password
+        * `bobby-grafanacloud-tempo-url` contains endpoint url in the `password` field
+        * `bobby-grafanacloud-tempo-token` contains token in the `password` field
+    * [ ] use curl + jq to:
         1. search for traces: `GET /api/search` with TraceQL `{resource.service.name="skeet-live-refine"}`
         2. fetch one full trace by ID: `GET /api/traces/{traceID}`
         3. confirm that query plan text appears in span events
