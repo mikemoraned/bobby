@@ -17,6 +17,12 @@ pub async fn run(
     let mut status = status::Status::new(log_interval, 100, counters, channels);
 
     while let Some(result) = rx.recv().await {
+        if status.is_time_to_log()
+            && let Ok(counts) = store.fragment_counts().await
+        {
+            status.update_fragment_counts(counts);
+        }
+
         match result {
             ImageResult::Post { image_count } => {
                 status.record_post(image_count);

@@ -142,7 +142,7 @@ The goal is to ground optimisation decisions in real data (actual query plans, c
     * record `range.end - range.start` for `get_range`; sum of ranges for `get_ranges`; payload size for `put`/`put_opts`
     * for `get`/`get_opts`/`head` either skip (no bytes signal without consuming the response) or record the resulting `ObjectMeta::size` if cheap to obtain
     * goal: distinguish "many tiny page-header range reads" (unindexed scans needing per-page I/O) from "few large blob reads" (multi-MB image fetches) — a bytes/op ratio in Grafana makes this immediate
-* [ ] emit a per-table fragment-count gauge so we can see if compaction is keeping up
+* [x] emit a per-table fragment-count gauge so we can see if compaction is keeping up
     * new metric `lance.table.fragments` — `Gauge<u64>` with label `table` ∈ {`images`, `scores`, `skeet_appraisal`, `image_appraisal`, `validate`}
     * source the value from `Table::stats()` (already a lightweight manifest read; called at startup in `open.rs`)
     * emit once per `live-refine` tick (and same cadence in `skeet-prune` / wherever cheap), not per query

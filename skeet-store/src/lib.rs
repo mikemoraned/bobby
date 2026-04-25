@@ -10,6 +10,7 @@ mod open;
 mod paging;
 mod r2_metrics;
 mod schema;
+pub mod store_metrics;
 mod scores;
 mod stored;
 mod summary;
@@ -25,6 +26,7 @@ pub use compact::CompactTarget;
 pub use error::StoreError;
 pub use shared::{Appraiser, Band, ModelVersion, Score};
 pub use stored::{StoredImage, StoredImageSummary, StoredOriginal};
+pub use store_metrics::StoreMetrics;
 pub use summary::SkeetStoreSummary;
 pub use types::{DiscoveredAt, ImageId, ImageRecord, InvalidImageId, OriginalAt, SkeetId, Zone};
 
@@ -46,7 +48,10 @@ use lance::dataset::{WriteMode, WriteParams};
 use lance_io::object_store::ObjectStoreParams;
 use lancedb::table::WriteOptions;
 use lancedb_utils::execute_query;
-use schema::{images_v6_schema, validate_v1_schema};
+use schema::{
+    IMAGE_APPRAISAL_TABLE_NAME, SCORE_TABLE_NAME, SKEET_APPRAISAL_TABLE_NAME, TABLE_NAME,
+    VALIDATE_TABLE_NAME, images_v6_schema, validate_v1_schema,
+};
 use stored::{batches_to_original_images, batches_to_stored_images, batches_to_summaries};
 
 pub struct SkeetStore {
@@ -60,6 +65,23 @@ pub struct SkeetStore {
 }
 
 impl SkeetStore {
+    /// Return the fragment count for each table. Cheap: reads only the manifest.
+    pub async fn fragment_counts(&self) -> Result<Vec<(&'static str, u64)>, StoreError> {
+        let tables: &[(&'static str, &lancedb::Table)] = &[
+            (TABLE_NAME, &self.images_table),
+            (SCORE_TABLE_NAME, &self.scores_table),
+            (SKEET_APPRAISAL_TABLE_NAME, &self.skeet_appraisal_table),
+            (IMAGE_APPRAISAL_TABLE_NAME, &self.image_appraisal_table),
+            (VALIDATE_TABLE_NAME, &self.validate_table),
+        ];
+        let mut counts = Vec::with_capacity(tables.len());
+        for (name, table) in tables {
+            let stats = table.stats().await?;
+            counts.push((*name, stats.fragment_stats.num_fragments as u64));
+        }
+        Ok(counts)
+    }
+
     /// Build `WriteOptions` that include the R2 metrics wrapper, if configured.
     pub(crate) fn write_options(&self) -> WriteOptions {
         WriteOptions {

@@ -9,7 +9,7 @@ use shared::{ModelVersion, Score};
 use skeet_refine::metrics::LiveRefineMetrics;
 use skeet_refine::model::load_model;
 use skeet_refine::refining::{build_agent, create_client, refine_image, RefineAgent};
-use skeet_store::{ImageId, StoreArgs};
+use skeet_store::{ImageId, StoreArgs, StoreMetrics};
 use tracing::{error, info};
 
 #[derive(Parser)]
@@ -173,6 +173,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(args.interval_secs));
 
     let mut metrics = LiveRefineMetrics::new();
+    let store_metrics = StoreMetrics::new(opentelemetry::global::meter("lance"));
     let mut totals = RunningTotals::new();
 
     loop {
@@ -233,5 +234,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         metrics.emit(totals.unscored, totals.scored, &totals.errors, &tick_scores);
+
+        if let Ok(counts) = store.fragment_counts().await {
+            store_metrics.record_fragment_counts(&counts);
+        }
     }
 }
