@@ -74,30 +74,42 @@ impl std::fmt::Display for CountingObjectStore {
 }
 
 impl CountingObjectStore {
-    fn labels(&self, operation: &'static str, r2_class: &'static str) -> [KeyValue; 4] {
+    fn labels(
+        &self,
+        location: &Path,
+        operation: &'static str,
+        r2_class: &'static str,
+    ) -> [KeyValue; 5] {
         [
             KeyValue::new("operation", operation),
             KeyValue::new("r2_class", r2_class),
             KeyValue::new("cli", self.cli_name.clone()),
             KeyValue::new("store_prefix", self.store_prefix.clone()),
+            KeyValue::new("table", table_from_path(location)),
         ]
     }
 
-    fn record(&self, operation: &'static str, r2_class: &'static str) {
-        self.counter.add(1, &self.labels(operation, r2_class));
+    fn record(&self, location: &Path, operation: &'static str, r2_class: &'static str) {
+        self.counter.add(1, &self.labels(location, operation, r2_class));
     }
 
-    fn record_bytes(&self, operation: &'static str, r2_class: &'static str, bytes: u64) {
-        self.counter.add(1, &self.labels(operation, r2_class));
+    fn record_bytes(
+        &self,
+        location: &Path,
+        operation: &'static str,
+        r2_class: &'static str,
+        bytes: u64,
+    ) {
+        self.counter.add(1, &self.labels(location, operation, r2_class));
         self.bytes_counter
-            .add(bytes, &self.labels(operation, r2_class));
+            .add(bytes, &self.labels(location, operation, r2_class));
     }
 }
 
 #[async_trait]
 impl object_store::ObjectStore for CountingObjectStore {
     async fn put(&self, location: &Path, payload: PutPayload) -> OSResult<PutResult> {
-        self.record_bytes("put", "A", payload.content_length() as u64);
+        self.record_bytes(location, "put", "A", payload.content_length() as u64);
         self.inner.put(location, payload).await
     }
 
@@ -107,12 +119,12 @@ impl object_store::ObjectStore for CountingObjectStore {
         payload: PutPayload,
         opts: PutOptions,
     ) -> OSResult<PutResult> {
-        self.record_bytes("put", "A", payload.content_length() as u64);
+        self.record_bytes(location, "put", "A", payload.content_length() as u64);
         self.inner.put_opts(location, payload, opts).await
     }
 
     async fn put_multipart(&self, location: &Path) -> OSResult<Box<dyn MultipartUpload>> {
-        self.record("put_multipart", "A");
+        self.record(location, "put_multipart", "A");
         self.inner.put_multipart(location).await
     }
 
@@ -121,22 +133,22 @@ impl object_store::ObjectStore for CountingObjectStore {
         location: &Path,
         opts: PutMultipartOptions,
     ) -> OSResult<Box<dyn MultipartUpload>> {
-        self.record("put_multipart", "A");
+        self.record(location, "put_multipart", "A");
         self.inner.put_multipart_opts(location, opts).await
     }
 
     async fn get(&self, location: &Path) -> OSResult<GetResult> {
-        self.record("get", "B");
+        self.record(location, "get", "B");
         self.inner.get(location).await
     }
 
     async fn get_opts(&self, location: &Path, options: GetOptions) -> OSResult<GetResult> {
-        self.record("get", "B");
+        self.record(location, "get", "B");
         self.inner.get_opts(location, options).await
     }
 
     async fn get_range(&self, location: &Path, range: Range<u64>) -> OSResult<Bytes> {
-        self.record_bytes("get_range", "B", bytes_for_range(&range));
+        self.record_bytes(location, "get_range", "B", bytes_for_range(&range));
         self.inner.get_range(location, range).await
     }
 
@@ -145,17 +157,17 @@ impl object_store::ObjectStore for CountingObjectStore {
         location: &Path,
         ranges: &[Range<u64>],
     ) -> OSResult<Vec<Bytes>> {
-        self.record_bytes("get_ranges", "B", bytes_for_ranges(ranges));
+        self.record_bytes(location, "get_ranges", "B", bytes_for_ranges(ranges));
         self.inner.get_ranges(location, ranges).await
     }
 
     async fn head(&self, location: &Path) -> OSResult<ObjectMeta> {
-        self.record("head", "B");
+        self.record(location, "head", "B");
         self.inner.head(location).await
     }
 
     async fn delete(&self, location: &Path) -> OSResult<()> {
-        self.record("delete", "A");
+        self.record(location, "delete", "A");
         self.inner.delete(location).await
     }
 
@@ -168,7 +180,8 @@ impl object_store::ObjectStore for CountingObjectStore {
     }
 
     fn list(&self, prefix: Option<&Path>) -> BoxStream<'static, OSResult<ObjectMeta>> {
-        self.record("list", "A");
+        let empty = Path::from("");
+        self.record(prefix.unwrap_or(&empty), "list", "A");
         self.inner.list(prefix)
     }
 
@@ -177,32 +190,34 @@ impl object_store::ObjectStore for CountingObjectStore {
         prefix: Option<&Path>,
         offset: &Path,
     ) -> BoxStream<'static, OSResult<ObjectMeta>> {
-        self.record("list", "A");
+        let empty = Path::from("");
+        self.record(prefix.unwrap_or(&empty), "list", "A");
         self.inner.list_with_offset(prefix, offset)
     }
 
     async fn list_with_delimiter(&self, prefix: Option<&Path>) -> OSResult<ListResult> {
-        self.record("list", "A");
+        let empty = Path::from("");
+        self.record(prefix.unwrap_or(&empty), "list", "A");
         self.inner.list_with_delimiter(prefix).await
     }
 
     async fn copy(&self, from: &Path, to: &Path) -> OSResult<()> {
-        self.record("copy", "A");
+        self.record(from, "copy", "A");
         self.inner.copy(from, to).await
     }
 
     async fn rename(&self, from: &Path, to: &Path) -> OSResult<()> {
-        self.record("rename", "A");
+        self.record(from, "rename", "A");
         self.inner.rename(from, to).await
     }
 
     async fn copy_if_not_exists(&self, from: &Path, to: &Path) -> OSResult<()> {
-        self.record("copy_if_not_exists", "A");
+        self.record(from, "copy_if_not_exists", "A");
         self.inner.copy_if_not_exists(from, to).await
     }
 
     async fn rename_if_not_exists(&self, from: &Path, to: &Path) -> OSResult<()> {
-        self.record("rename_if_not_exists", "A");
+        self.record(from, "rename_if_not_exists", "A");
         self.inner.rename_if_not_exists(from, to).await
     }
 }
@@ -213,6 +228,13 @@ const fn bytes_for_range(range: &Range<u64>) -> u64 {
 
 fn bytes_for_ranges(ranges: &[Range<u64>]) -> u64 {
     ranges.iter().map(bytes_for_range).sum()
+}
+
+fn table_from_path(location: &Path) -> String {
+    location
+        .parts()
+        .find(|part| part.as_ref().ends_with(".lance"))
+        .map_or_else(|| "unknown".to_string(), |part| part.as_ref().to_string())
 }
 
 #[cfg(test)]
@@ -255,6 +277,27 @@ mod tests {
                 }
             })
             .sum()
+    }
+
+    #[test]
+    fn table_from_path_extracts_lance_segment() {
+        assert_eq!(
+            table_from_path(&Path::from("encrypted-store/images_v6.lance/data/abc.lance")),
+            "images_v6.lance"
+        );
+    }
+
+    #[test]
+    fn table_from_path_falls_back_to_unknown_when_no_lance_segment() {
+        assert_eq!(
+            table_from_path(&Path::from("encrypted-store/data/abc.arrow")),
+            "unknown"
+        );
+    }
+
+    #[test]
+    fn table_from_path_falls_back_to_unknown_for_empty_path() {
+        assert_eq!(table_from_path(&Path::from("")), "unknown");
     }
 
     #[test]
