@@ -140,23 +140,21 @@ Ultimately it'd be good for this to be more of a push-on-change approach, where 
 
 The outcome of this should be that we only incur the cost of updating the in-memory cache when something has changed.
 
-#### Idea: Switch to notification-listening queue for live-refine
+#### Idea: reduce cost of polling in live-refine
 
-Rather than polling the remote store for recently-updated images that have been pruned, the `pruner` and `live-refine` clis can communicate via a notification queue that says when an image candidate has been found.
+The dominant R2 cost in `live-refine` comes from `list_unscored_image_ids_for_version` (a full scan of both `images` and `scores` tables, generating many `get`/`get_range` calls) and `get_originals_by_ids` (fetching ~4MB images). Both are paid every poll tick regardless of whether any new images have arrived.
+
+`SkeetStore` will expose a `version_snapshot` as part of "Idea: Only update feed cache on version change". We can use the `images` table version from that snapshot as a cheap early-abort: if the table version hasn't changed since the last tick, no new images were committed and the expensive scan can be skipped entirely. `table.version()` is already used in `cached_scores()` and is a lightweight manifest read — not a scan.
 
 We'll do this in stages:
-* within `skeet-refine`:
-    * [ ] first refactor the parts of `live-refine` that to do the polling to be behind a `ImageCandidateSource` trait which produces `ImageCandidate` structs. Call this `R2PollingImageCandidateSource`.
-    * [ ] also create a `ImageCandidateSink` trait which can consume `ImageCandidate`, but does not yet have any implementations
-    * [ ] set up a local `NATS JetStream` system:
-        * add to prerequisites
-        * add commands to start/stop it locally
-    * [ ] create an implementation of `ImageCandidateSource` and `ImageCandidateSink` which can send/receive from a NATS instance using `async-nats` library
-    * [ ] update `live-refine` so that it can either use the polling or NATS-based source, based on a cli option
-* within `skeet-prune`:
-    * [ ] make it optionally (via cli option) able to send a `ImageCandidate` to a NATS instance using `ImageCandidateSink` impl, after it has successfully saved it in `SkeetStore`
-        * make it so that these sends are fire-and-forget e.g. they fail, it should be logged, but it shouldn't fail the stage or the pruner
-* [ ] add setup to install and run a NATS instance insider the k8s cluster, and wire up skeet-prune and live-refine to use it by default
+* [ ] (prerequisite) "Idea: Only update feed cache on version change" is implemented, giving us `version_snapshot` on `SkeetStore`
+* within `skeet-refine`, separate polling from dispatch:
+    * [ ] extract the poll-and-fetch step from `live_refine.rs` into a `PollingImageSource` struct in `skeet-refine/src/`:
+        * holds `store: Arc<SkeetStore>`, `model_version: ModelVersion`, and `last_images_version: Option<String>` as state between ticks
+        * exposes an async `fetch(&mut self) -> Result<Vec<(ImageId, DynamicImage)>, ...>` method
+        * on each call: fetch `version_snapshot()`, extract the `images` table version, and return `Ok(vec![])` immediately if unchanged since last call
+        * if changed: run `list_unscored_image_ids_for_version` + `get_originals_by_ids`, update `last_images_version`, and return the candidates
+    * [ ] update `live_refine.rs` main loop to call `source.fetch()` instead of doing the query inline; the dispatch half (batching, `buffer_unordered` scoring, `batch_upsert_scores`) does not change
 
 #### Idea: put in place some sort of caching of Lancedb R2 lookups
 
