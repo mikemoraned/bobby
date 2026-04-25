@@ -30,7 +30,10 @@ impl SkeetStore {
             .execute()
             .await?;
 
-        let store_wrapper = Arc::new(R2MetricsWrapper::new(cli_name));
+        let store_wrapper = Arc::new(R2MetricsWrapper::new(
+            cli_name,
+            opentelemetry::global::meter("r2"),
+        ));
         let read_params = ReadParams {
             store_options: Some(ObjectStoreParams {
                 object_store_wrapper: Some(store_wrapper.clone()),

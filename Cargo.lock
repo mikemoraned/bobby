@@ -10720,6 +10720,7 @@ dependencies = [
  "md5 0.7.0",
  "object_store",
  "opentelemetry",
+ "opentelemetry_sdk",
  "proptest",
  "rand 0.9.2",
  "reqwest 0.12.28",

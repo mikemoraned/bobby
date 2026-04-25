@@ -137,7 +137,7 @@ The goal is to ground optimisation decisions in real data (actual query plans, c
 
 ##### Add more detailed metrics
 
-* [ ] add a bytes counter to `R2MetricsWrapper` alongside the existing `r2.operations` counter
+* [x] add a bytes counter to `R2MetricsWrapper` alongside the existing `r2.operations` counter
     * new metric `r2.bytes` — `Counter<u64>` with the same label set (`cli`, `store_prefix`, `operation`, `r2_class`)
     * record `range.end - range.start` for `get_range`; sum of ranges for `get_ranges`; payload size for `put`/`put_opts`
     * for `get`/`get_opts`/`head` either skip (no bytes signal without consuming the response) or record the resulting `ObjectMeta::size` if cheap to obtain

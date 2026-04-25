@@ -19,6 +19,13 @@ just prerequisites
 
 We follow a Walking Skeleton approach: incremental end-to-end slices.
 
+### Test-Driven Development
+
+When doing TDD, always keep the code compiling at every step:
+1. Write a stub that compiles but returns a wrong/trivial value (e.g. `0`, `false`, `""`)
+2. Write tests asserting the correct behaviour — they should **fail** (wrong value, not compile error)
+3. Implement correctly — tests should now pass
+
 ## Reference Docs
 
 Read whichever are relevant before starting work:
