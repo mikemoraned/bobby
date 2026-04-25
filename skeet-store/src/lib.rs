@@ -145,15 +145,10 @@ impl SkeetStore {
         if image_ids.is_empty() {
             return Ok(vec![]);
         }
-        let id_list = image_ids
-            .iter()
-            .map(|id| format!("'{id}'"))
-            .collect::<Vec<_>>()
-            .join(", ");
         let query = self
             .images_table
             .query()
-            .only_if(format!("image_id IN ({id_list})"));
+            .only_if(id_in_list_filter(image_ids));
         let batches = execute_query(&query, "get_by_ids").await?;
         batches_to_stored_images(&batches)
     }
@@ -166,15 +161,10 @@ impl SkeetStore {
         if image_ids.is_empty() {
             return Ok(vec![]);
         }
-        let id_list = image_ids
-            .iter()
-            .map(|id| format!("'{id}'"))
-            .collect::<Vec<_>>()
-            .join(", ");
         let query = self
             .images_table
             .query()
-            .only_if(format!("image_id IN ({id_list})"))
+            .only_if(id_in_list_filter(image_ids))
             .select(lancedb::query::Select::columns(&[
                 "image_id",
                 "skeet_id",
@@ -314,6 +304,15 @@ impl SkeetStore {
         Ok(id_times.into_iter().map(|(id, _)| id).collect())
     }
 
+}
+
+fn id_in_list_filter(image_ids: &[ImageId]) -> String {
+    let id_list = image_ids
+        .iter()
+        .map(|id| format!("'{id}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("image_id IN ({id_list})")
 }
 
 #[cfg(test)]

@@ -8,7 +8,7 @@ use image::DynamicImage;
 use shared::{ModelVersion, Score};
 use skeet_refine::metrics::LiveRefineMetrics;
 use skeet_refine::model::load_model;
-use skeet_refine::refining::{RefineError, build_agent, create_client, refine_image, RefineAgent};
+use skeet_refine::refining::{build_agent, create_client, refine_image, RefineAgent};
 use skeet_store::{ImageId, StoreArgs};
 use tracing::{error, info};
 
@@ -86,13 +86,8 @@ impl Batch {
                     acc.pending_scores.push((id, score, ctx.model_version.clone()));
                 }
                 Err(e) => {
-                    let reason = match &e {
-                        RefineError::ImageEncoding(_) => "ImageEncoding",
-                        RefineError::Completion(_) => "Completion",
-                        RefineError::ParseScore(_) => "ParseScore",
-                    };
                     error!(image_id = %id, error = %e, "failed to refine");
-                    *acc.errors.entry(reason.to_string()).or_default() += 1;
+                    *acc.errors.entry(e.as_label().to_string()).or_default() += 1;
                 }
             }
         }
@@ -147,7 +142,7 @@ impl TickAccumulator {
     fn scores(&self) -> Vec<f64> {
         self.pending_scores
             .iter()
-            .map(|(_, s, _)| f64::from(f32::from(*s)))
+            .map(|(_, s, _)| f64::from(*s))
             .collect()
     }
 }
@@ -226,14 +221,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         totals.absorb_tick(unscored_ids.len() as u64, &acc);
 
-        let tick_scores = acc.scores();
         let scored = acc.pending_scores.len();
-
-        if !acc.pending_scores.is_empty() {
+        let tick_scores = if scored > 0 {
+            let scores = acc.scores();
             store.batch_upsert_scores(&acc.pending_scores).await?;
             let remaining = unscored_ids.len() - scored;
             info!(scored, remaining, "batch-saved scores");
-        }
+            scores
+        } else {
+            vec![]
+        };
 
         metrics.emit(totals.unscored, totals.scored, &totals.errors, &tick_scores);
     }

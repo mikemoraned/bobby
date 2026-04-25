@@ -22,6 +22,12 @@ impl From<Score> for f32 {
     }
 }
 
+impl From<Score> for f64 {
+    fn from(score: Score) -> Self {
+        Self::from(score.0)
+    }
+}
+
 impl std::fmt::Display for Score {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:.2}", self.0)

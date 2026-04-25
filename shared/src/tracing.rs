@@ -53,7 +53,13 @@ pub fn try_init_metrics() -> Option<MetricsGuard> {
         return None;
     }
 
-    let exporter = MetricExporter::builder().with_http().build().ok()?;
+    let exporter = match MetricExporter::builder().with_http().build() {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!("Failed to build OTel metric exporter: {e}");
+            return None;
+        }
+    };
     let reader = PeriodicReader::builder(exporter).build();
     let provider = SdkMeterProvider::builder().with_reader(reader).build();
 

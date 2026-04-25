@@ -24,6 +24,16 @@ pub enum RefineError {
     ParseScore(String),
 }
 
+impl RefineError {
+    pub const fn as_label(&self) -> &'static str {
+        match self {
+            Self::ImageEncoding(_) => "ImageEncoding",
+            Self::Completion(_) => "Completion",
+            Self::ParseScore(_) => "ParseScore",
+        }
+    }
+}
+
 fn encode_image_base64(image: &DynamicImage) -> Result<String, RefineError> {
     let mut buf = Cursor::new(Vec::new());
     image.write_to(&mut buf, image::ImageFormat::Png)?;

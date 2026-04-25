@@ -14,11 +14,7 @@ use opentelemetry::{KeyValue, metrics::Counter};
 
 /// Implements [`WrappingObjectStore`] to count R2 API operations via OTel metrics.
 ///
-/// Each call increments a `r2.operations` counter with attributes:
-/// - `operation` — the S3 method (get, head, put, delete, list, copy, rename)
-/// - `r2_class` — "A" (write/list) or "B" (read)
-/// - `cli` — the name of the CLI binary using the store
-/// - `store_prefix` — the object store path prefix (identifies the table)
+/// R2 billing class "A" covers writes and lists; class "B" covers reads.
 #[derive(Debug)]
 pub struct R2MetricsWrapper {
     cli_name: String,
@@ -70,12 +66,12 @@ impl std::fmt::Display for CountingObjectStore {
 }
 
 impl CountingObjectStore {
-    fn record(&self, operation: &str, r2_class: &str) {
+    fn record(&self, operation: &'static str, r2_class: &'static str) {
         self.counter.add(
             1,
             &[
-                KeyValue::new("operation", operation.to_string()),
-                KeyValue::new("r2_class", r2_class.to_string()),
+                KeyValue::new("operation", operation),
+                KeyValue::new("r2_class", r2_class),
                 KeyValue::new("cli", self.cli_name.clone()),
                 KeyValue::new("store_prefix", self.store_prefix.clone()),
             ],
@@ -186,12 +182,12 @@ impl object_store::ObjectStore for CountingObjectStore {
     }
 
     async fn copy_if_not_exists(&self, from: &Path, to: &Path) -> OSResult<()> {
-        self.record("copy", "A");
+        self.record("copy_if_not_exists", "A");
         self.inner.copy_if_not_exists(from, to).await
     }
 
     async fn rename_if_not_exists(&self, from: &Path, to: &Path) -> OSResult<()> {
-        self.record("rename", "A");
+        self.record("rename_if_not_exists", "A");
         self.inner.rename_if_not_exists(from, to).await
     }
 }
