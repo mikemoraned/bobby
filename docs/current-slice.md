@@ -192,6 +192,7 @@ Every poll tick, `live-refine` runs `list_unscored_image_ids_for_version`, which
 `SkeetStore` will expose a `version_snapshot` as part of "Idea: Only update feed cache on version change". We can use the `images` table version from that snapshot as a cheap early-abort: if the table version hasn't changed since the last tick, no new images were committed and the expensive scan can be skipped entirely. `table.version()` is already used in `cached_scores()` and is a lightweight manifest read — not a scan.
 
 We'll do this in stages:
+* [ ] (observation) emit an OTel gauge from `SkeetStore` reporting the observed `version` for each table (label `table` ∈ {`images`, `scores`, ...}), updated on each access. This lets us see in Grafana how often the `images` table version actually changes per minute — if it changes every tick, the early-abort optimization gives no benefit and we should reconsider before building it.
 * [ ] (prerequisite) "Idea: Only update feed cache on version change" is implemented, giving us `version_snapshot` on `SkeetStore`
 * within `skeet-refine`, separate polling from dispatch:
     * [ ] extract the poll-and-fetch step from `live_refine.rs` into a `PollingImageSource` struct in `skeet-refine/src/`:
@@ -200,6 +201,27 @@ We'll do this in stages:
         * on each call: fetch `version_snapshot()`, extract the `images` table version, and return `Ok(vec![])` immediately if unchanged since last call
         * if changed: run `list_unscored_image_ids_for_version` + `get_originals_by_ids`, update `last_images_version`, and return the candidates
     * [ ] update `live_refine.rs` main loop to call `source.fetch()` instead of doing the query inline; the dispatch half (batching, `buffer_unordered` scoring, `batch_upsert_scores`) does not change
+
+#### Idea: tie R2 metrics to current trace (exemplars)
+
+The R2 metrics emitted by `R2MetricsWrapper` are not currently linked to any trace. Ideally each `counter.add(...)` would carry an OTel exemplar with the originating `trace_id`/`span_id`, so a spike in R2 ops in Grafana could be clicked through to the exact `SkeetStore` method span that caused it. Rust OTel SDK 0.31 attaches exemplars automatically from `Context::current()` — no API changes needed at the call site.
+
+**Blocker: context propagation through lancedb/datafusion.** `tokio::spawn` does not carry tracing context into spawned tasks, and lancedb/datafusion spawn their own tasks for query execution. By the time the wrapper's `record()` runs, `Context::current()` is empty.
+
+**Per-call wrapper workaround (writes only).** `write_options()` in `lib.rs:64` is called per-call inside an `#[instrument]`'d method, so `Context::current()` is correct at that point. We could capture it into a per-call `ContextualR2Wrapper`, then re-attach inside `record()`. Works cleanly for writes — but writes are <1% of our R2 cost.
+
+**Read path: no per-query injection in lancedb 0.27.** Verified by reading the lancedb source:
+* `QueryExecutionOptions` only exposes `max_batch_length` and `timeout` (`query.rs:582`)
+* `ExecutableQuery` trait has no read-params hook (`query.rs:621`)
+* `OpenTableBuilder.lance_read_params()` is the only `ReadParams` injection point (`table.rs:164`) — set once at table-open time
+* Workaround would be re-opening the table per query (one extra `list_indices` + manifest GET per call) — likely not worth it
+
+**Upstream context:** two open lancedb issues exist around `WrappingObjectStore` ergonomics — both about hoisting the wrapper to *connection* level, not per-query:
+* [lancedb#3072](https://github.com/lancedb/lancedb/issues/3072) — Allow custom object store at connect time (open, quiet)
+* [lancedb#3106](https://github.com/lancedb/lancedb/issues/3106) — Pluggable caching layer; maintainer endorses `WrappingObjectStore` as the right hook and supports connection-level inheritance
+* No issues exist for per-query injection, OTel context propagation, or observability through the data path. We'd be the first to ask.
+
+**Decision:** deferred. The pragmatic alternative — using the existing `store_prefix` (table name) label plus time-window correlation in Grafana, combined with the trace-summary tool — is good enough to ground cost-reduction work. Revisit if exemplar correlation becomes a recurring need, in which case file an upstream issue for per-query `object_store_wrapper` first.
 
 #### Idea: put in place some sort of caching of Lancedb R2 lookups
 
