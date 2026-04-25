@@ -147,6 +147,12 @@ The goal is to ground optimisation decisions in real data (actual query plans, c
     * source the value from `Table::stats()` (already a lightweight manifest read; called at startup in `open.rs`)
     * emit once per `live-refine` tick (and same cadence in `skeet-prune` / wherever cheap), not per query
     * goal: detect compaction drift directly — if `images` fragments climb past the 25 Apr baseline of 66, the cron job is not keeping up and the cost of every full scan grows with it
+* [ ] add a `table` label to `r2.operations` (and `r2.bytes`) by parsing the per-call `location: &Path`
+    * today `WrappingObjectStore::wrap()` is invoked once at connect time, so `store_prefix` is effectively a constant per-CLI (`s3$hom-bobby`) — useless for breaking R2 traffic down by table
+    * the per-call `location` argument carries the actual path, e.g. `encrypted-store/images_v6.lance/data/xxx.lance` or `encrypted-store/images_score_v2.lance/_versions/123.manifest`
+    * extract the first path segment ending in `.lance` (e.g. `images_v6.lance`) and emit it as a `table` label on every `record()` call; fall back to `unknown` if no segment matches
+    * goal: in Grafana, group `r2_operations_total` by `(table, operation)` for a given `cli` to confirm — concretely — that `images_v6.lance` is the dominant burst source and which operations dominate within it
+    * note: the `store_prefix` label can stay (still useful as a sanity check that the wrapper is wired) but `table` becomes the primary grouping dimension
 
 
 ##### Observations
