@@ -97,6 +97,22 @@ OTEL_EXPORTER_OTLP_HEADERS=op://Dev/bobby-grafanacloud-oltp-headers/password
     * do this in an OTEL-standard way e.g. anything that corresponds to a `version` or similar
     * the intent is to allow all metrics and traces to be filtered in Grafana Cloud by what has been deployed, so that I know that a metric came from a particular version of the software
 
+#### Use Grafana API to extract Trace data
+
+I am using Grafana Cloud and there will be traces that correspond to things like `list_unscored_image_ids_for_version` which are objects of posssible optimisation. There should also be lancedb query plans attached to these spans (as many spans are slow and we log plans on slow queries). 
+
+There should be API's can we use to extract representative traces and use these as data to answer questions about what is loaded or not in these query chains. I'd like to to ground any decisions we make in real data as opposed to just textual analysis of code. I am fine if we write some analysis cli's to pull down that data from an API.
+
+* [ ] quick spike to check the data is available at all (e.g. a curl etc to check data is available)
+    * ...
+* [ ] if spike successful:
+    * [ ] write a cli, in `skeet-store` which can:
+        1. Find a sample (e.g. 10) of traces within a time window which contain a call or calls to any `SkeetStore` method
+        2. Extract call hierarchy and any plans that were logged on the span
+        3. Summarise this textually in a way which will be understandable by a person and a reasonable LLM
+            * a particular focus should be on things which affect the cost of a query e.g. which columns were loaded and how many rows were loaded
+    * [ ] if needed, we can update `SkeetStore` to attach (via log/span entry) more useful data about query cost related metadata
+
 ##### Observations
 
 ###### 24th Apr
@@ -142,7 +158,7 @@ The outcome of this should be that we only incur the cost of updating the in-mem
 
 #### Idea: reduce cost of polling in live-refine
 
-The dominant R2 cost in `live-refine` comes from `list_unscored_image_ids_for_version` (a full scan of both `images` and `scores` tables, generating many `get`/`get_range` calls) and `get_originals_by_ids` (fetching ~4MB images). Both are paid every poll tick regardless of whether any new images have arrived.
+Every poll tick, `live-refine` runs `list_unscored_image_ids_for_version`, which scans both `images` and `scores` tables — reading LanceDB's arrow fragment files from R2 to filter IDs. This generates `get`/`get_range` calls even though no image blobs are fetched. If unscored IDs are found, `get_originals_by_ids` then fetches the actual image data (~4MB per image). The ID scans are paid every tick regardless of whether anything has changed.
 
 `SkeetStore` will expose a `version_snapshot` as part of "Idea: Only update feed cache on version change". We can use the `images` table version from that snapshot as a cheap early-abort: if the table version hasn't changed since the last tick, no new images were committed and the expensive scan can be skipped entirely. `table.version()` is already used in `cached_scores()` and is a lightweight manifest read — not a scan.
 
