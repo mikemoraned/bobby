@@ -108,15 +108,16 @@ I am using Grafana Cloud and there will be traces that correspond to things like
 
 The goal is to ground optimisation decisions in real data (actual query plans, column projections, scan behaviour) rather than just textual analysis of code.
 
-* [ ] quick spike to check the data is available at all
+* [x] quick spike to check the data is available at all
     * [x] create a Grafana Cloud service account token with traces:read scope (if not already done)
     * [x] store the Tempo endpoint URL and token in 1Password
         * `bobby-grafanacloud-tempo-url` contains endpoint url in the `password` field
-        * `bobby-grafanacloud-tempo-token` contains token in the `password` field
-    * [ ] use curl + jq to:
+        * `bobby-grafanacloud-tempo-token` contains token in the `password` field, and the username in the username field
+    * [x] use curl + jq to:
         1. search for traces: `GET /api/search` with TraceQL `{resource.service.name="skeet-live-refine"}`
         2. fetch one full trace by ID: `GET /api/traces/{traceID}`
         3. confirm that query plan text appears in span events
+    * [x] example saved in `spans-example.json`
 * [ ] if spike successful:
     * [ ] add Tempo read credentials (endpoint + token) to `bobby-grafana-otel.env` as 1Password refs
     * [ ] write a cli, in `skeet-store` which can:
@@ -124,6 +125,8 @@ The goal is to ground optimisation decisions in real data (actual query plans, c
         2. Extract call hierarchy and any plans that were logged as events on the span
         3. Summarise this textually in a way which will be understandable by a person and a reasonable LLM
             * a particular focus should be on things which affect the cost of a query e.g. which columns were loaded and how many rows were loaded
+    * [ ] delete example saved in `spans-example.json` as shouldn't be needed anymore
+    * [ ] remove any other Justfile rules or files we created for the spike e.g. `tempo-search`
     * [ ] if needed, we can update `SkeetStore` to attach (via log/span entry) more useful data about query cost related metadata
 
 ##### Observations
@@ -133,6 +136,13 @@ The goal is to ground optimisation decisions in real data (actual query plans, c
 The `skeet-feed` sends about 2.5K Class B operations. This kinda makes sense now in that there is a background job that refreshes once a minute. 
 
 `skeet-prune` and `skeet-live-refine` seems to both do a *lot* of `get` and `get_range` requests (both send up to 30K per minute of each, for a period of about 4 minutes each). During this time other operations like `head`,`list` and `put` are tiny (10's per minute) I can sort-of understand why live-refine might need to do a lot of gets to get an image (though would be good if it's not lots of requests), however I don't see why pruner would have to.
+
+###### 25th Apr
+
+Tempo spike confirmed query plan data is available in traces. Two slow queries observed on every `list_unscored_image_ids_for_version` tick:
+
+* `list_unscored:scored_ids` — 1.51s. Plan: `LanceRead` on `images_score_v2.lance`, projection `[image_id]`, 4 fragments, uses `ScalarIndexQuery` on `model_version_idx`. Slow despite the index.
+* `list_all_image_ids_by_most_recent` — 2.04s. Plan: `LanceRead` on `images_v6.lance`, projection `[image_id, discovered_at]`, **66 fragments, no filter, no index** — full table scan every tick. This is almost certainly the dominant source of `get`/`get_range` R2 traffic from `skeet-live-refine`.
 
 #### Idea: Remove inline compaction in favour of the cron job
 

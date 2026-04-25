@@ -28,6 +28,10 @@ Read whichever are relevant before starting work:
 - `@docs/next-slices.md` — upcoming slices
 - `@docs/completed-slices.md` — summary of completed slices
 
+## Security
+
+Never generate shell commands that capture secrets in a variable — always use `op run --env-file` patterns so credentials flow through the process environment without touching the LLM context.
+
 ## Invariants / Style
 
 - **Models:** download to `models/` dir; document each in `docs/` (origin, purpose, rationale)
