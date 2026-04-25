@@ -135,6 +135,20 @@ The goal is to ground optimisation decisions in real data (actual query plans, c
     * [ ] if needed, we can update `SkeetStore` to attach (via log/span entry) more useful data about query cost related metadata
         * [ ] replace bespoke plan string parsing in `trace_analysis.rs` with a typed `QueryPlan: Serialize + Deserialize` struct defined in `lancedb_utils.rs`; parse the raw `explain_plan` output once at log time, emit as JSON in the `plan` event attribute, deserialize in `trace_analysis.rs` — removes `extract_field` / `plan_summary` string hacks
 
+##### Add more detailed metrics
+
+* [ ] add a bytes counter to `R2MetricsWrapper` alongside the existing `r2.operations` counter
+    * new metric `r2.bytes` — `Counter<u64>` with the same label set (`cli`, `store_prefix`, `operation`, `r2_class`)
+    * record `range.end - range.start` for `get_range`; sum of ranges for `get_ranges`; payload size for `put`/`put_opts`
+    * for `get`/`get_opts`/`head` either skip (no bytes signal without consuming the response) or record the resulting `ObjectMeta::size` if cheap to obtain
+    * goal: distinguish "many tiny page-header range reads" (unindexed scans needing per-page I/O) from "few large blob reads" (multi-MB image fetches) — a bytes/op ratio in Grafana makes this immediate
+* [ ] emit a per-table fragment-count gauge so we can see if compaction is keeping up
+    * new metric `lance.table.fragments` — `Gauge<u64>` with label `table` ∈ {`images`, `scores`, `skeet_appraisal`, `image_appraisal`, `validate`}
+    * source the value from `Table::stats()` (already a lightweight manifest read; called at startup in `open.rs`)
+    * emit once per `live-refine` tick (and same cadence in `skeet-prune` / wherever cheap), not per query
+    * goal: detect compaction drift directly — if `images` fragments climb past the 25 Apr baseline of 66, the cron job is not keeping up and the cost of every full scan grows with it
+
+
 ##### Observations
 
 ###### 24th Apr
@@ -149,6 +163,13 @@ Tempo spike confirmed query plan data is available in traces. Two slow queries o
 
 * `list_unscored:scored_ids` — 1.51s. Plan: `LanceRead` on `images_score_v2.lance`, projection `[image_id]`, 4 fragments, uses `ScalarIndexQuery` on `model_version_idx`. Slow despite the index.
 * `list_all_image_ids_by_most_recent` — 2.04s. Plan: `LanceRead` on `images_v6.lance`, projection `[image_id, discovered_at]`, **66 fragments, no filter, no index** — full table scan every tick. This is almost certainly the dominant source of `get`/`get_range` R2 traffic from `skeet-live-refine`.
+
+Checked the `compact` cron job to test the hypothesis that fragments were piling up. They are not — the cron is healthy (running every 10 min, completing in ~60–140s). The fragment count is **stuck at ~64 by design**: `skeet-store/src/compact.rs:50` sets `target_rows_per_fragment: 500` (low on purpose, because each row carries a ~2MB PNG blob and the lance default of 1M would OOM the compactor). Lance's planner only flags fragments with `physical_rows < 500` as candidates, so anything ≥500 rows is left alone forever. Each cron run merges only the small stragglers (e.g. "365 rows across 2 fragments" + "4 rows across 4 fragments") and lands back at ~64 fragments (mean=433, p50=500, p99=2022). Implications:
+
+* Compaction is **not the lever** — pushing `target_rows_per_fragment` up would re-introduce OOM risk.
+* The full scan in `list_all_image_ids_by_most_recent` will remain expensive as long as it scans every fragment.
+* Our `RECOMMEND: compact: 64 small fragments (>10 threshold)` health line is misleading — it uses lance's default smallness threshold, not our chosen 500. (Worth fixing separately.)
+* This makes the case stronger for both *Idea: reduce cost of polling in live-refine* (version-snapshot early-abort skips the scan when nothing changed) and *Idea: make `list_all_image_ids_by_most_recent` use `discovered_at_idx`* (let lance scan the index instead of every fragment).
 
 #### Idea: Remove inline compaction in favour of the cron job
 
@@ -201,6 +222,29 @@ We'll do this in stages:
         * on each call: fetch `version_snapshot()`, extract the `images` table version, and return `Ok(vec![])` immediately if unchanged since last call
         * if changed: run `list_unscored_image_ids_for_version` + `get_originals_by_ids`, update `last_images_version`, and return the candidates
     * [ ] update `live_refine.rs` main loop to call `source.fetch()` instead of doing the query inline; the dispatch half (batching, `buffer_unordered` scoring, `batch_upsert_scores`) does not change
+
+##### Variation: hold `last_discovered_at` and push it down as a filter
+
+The version-snapshot above is binary (changed / not changed). When the table *has* changed, we still scan every fragment looking for unscored ids. A finer variation: also remember the maximum `discovered_at` that `PollingImageSource` has seen scored, and pass it back into the store as a `WHERE discovered_at > last_discovered_at` filter on the next tick. This composes with *Idea: make `list_all_image_ids_by_most_recent` use `discovered_at_idx`* — that filter is exactly the predicate the BTree on `discovered_at` can satisfy. Result: when a tick does run, it pays a BTree range read instead of a 64-fragment scan.
+
+* [ ] extend `PollingImageSource` with `last_discovered_at: Option<DateTime<Utc>>` state, updated to the max `discovered_at` of the candidates returned each tick
+* [ ] add a `since: Option<DateTime<Utc>>` parameter to `list_unscored_image_ids_for_version` (and through to `list_all_image_ids_by_most_recent`) — when `Some`, push down a `discovered_at > <ts>` filter; when `None`, behave as today
+* [ ] handle the cold-start / restart case: in-memory state means a fresh pod takes one full scan to bootstrap `last_discovered_at`; that's acceptable, no persistence needed
+
+**Edge case to think through before building:** if scoring an image fails (e.g. `Completion`/`ParseScore` errors in `LiveRefineMetrics`), the image stays unscored but its `discovered_at` is in the past — a strictly-monotonic `last_discovered_at` cutoff would never retry it. Mitigations: (a) only advance `last_discovered_at` to the max `discovered_at` of *successfully scored* images, leaving stragglers in-window; or (b) keep the cutoff but run a periodic full reconciliation pass (e.g. once an hour) to catch dropped images. (a) is simpler and probably sufficient.
+
+#### Idea: make `list_all_image_ids_by_most_recent` use `discovered_at_idx`
+
+The query in `lib.rs:286-307` selects `[image_id, discovered_at]` with no `WHERE`, no `ORDER BY`, and no `LIMIT`. The trace plan confirms lance falls back to a full `LanceRead` over all 64 fragments — even though a `discovered_at_idx` BTree exists (created in `open.rs:87-95`). That index already contains both columns the projection needs, so a covering index scan is possible in principle.
+
+The opportunity: with the fragment count pinned at ~64 by the deliberate `target_rows_per_fragment=500` setting (see 25 Apr observation), per-tick full scans will not get cheaper through compaction. Routing this query through the index instead of the data files is the only way to reduce the per-fragment R2 ops *without* changing the polling cadence. Combined with *Idea: reduce cost of polling in live-refine*, this would mean: when a tick *does* run, it pays index cost (one or two get_range per BTree page) instead of fragment cost (per-fragment overhead × 64).
+
+* [ ] confirm via a local repro or trace that adding `ORDER BY discovered_at DESC` (and ideally a `LIMIT` matching the realistic per-tick batch) lets lance plan a `ScalarIndexQuery` on `discovered_at_idx` instead of `LanceRead` on the data files
+    * lancedb query API: `query.order_by(...)` / `query.limit(...)` — needs verifying; the rust API surface for `order_by` may not be exposed directly and might require `nearest_to`-style helpers or a SQL filter
+    * if lancedb's rust API does not expose `ORDER BY`, fall back to relying on the `WHERE discovered_at > <cutoff>` form (covered by the BTree) and then sorting in-process
+* [ ] adjust the call site in `scores.rs:127` so callers pass through the desired ordering/limit without `list_all_image_ids_by_most_recent` having to load every row
+    * `list_unscored_image_ids_for_version` is the only caller; it currently sorts the entire table by `discovered_at` so it can prefer recent unscored images — but it doesn't actually need every id, only the most-recent-N unscored
+* [ ] verify in the trace plan that the new shape uses the index (look for `ScalarIndexQuery(discovered_at_idx)` or similar in `explain_plan`) and that R2 op counts during the tick drop accordingly
 
 #### Idea: tie R2 metrics to current trace (exemplars)
 
