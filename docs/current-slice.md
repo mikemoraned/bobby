@@ -99,16 +99,27 @@ OTEL_EXPORTER_OTLP_HEADERS=op://Dev/bobby-grafanacloud-oltp-headers/password
 
 #### Use Grafana API to extract Trace data
 
-I am using Grafana Cloud and there will be traces that correspond to things like `list_unscored_image_ids_for_version` which are objects of posssible optimisation. There should also be lancedb query plans attached to these spans (as many spans are slow and we log plans on slow queries). 
+I am using Grafana Cloud and there will be traces that correspond to things like `list_unscored_image_ids_for_version` which are objects of possible optimisation. There should also be lancedb query plans attached to these spans as tracing events (not span attributes).
 
-There should be API's can we use to extract representative traces and use these as data to answer questions about what is loaded or not in these query chains. I'd like to to ground any decisions we make in real data as opposed to just textual analysis of code. I am fine if we write some analysis cli's to pull down that data from an API.
+**How plan data gets into traces:** `execute_query` in `lancedb_utils.rs` calls `explain_plan(true)` and logs the result via `debug!`/`warn!`. These are tracing *events* (child items of a span), forwarded to Tempo by `tracing_opentelemetry`. Key implications:
+* You can't filter by plan content in TraceQL search (TraceQL filters on span attributes, not event fields)
+* You *can* see the plan once you fetch the full trace — events appear inside the span
+* Only plans on queries exceeding 100ms (`SLOW_QUERY_THRESHOLD`) are logged at `warn` level. Faster queries use `debug!`, and whether those reach Tempo depends on the RUST_LOG / default filter level. If the default is `info`, only slow query plans will be present.
 
-* [ ] quick spike to check the data is available at all (e.g. a curl etc to check data is available)
-    * ...
+The goal is to ground optimisation decisions in real data (actual query plans, column projections, scan behaviour) rather than just textual analysis of code.
+
+* [ ] quick spike to check the data is available at all
+    * create a Grafana Cloud service account token with traces:read scope (if not already done)
+    * store the Tempo endpoint URL and token in 1Password
+    * use curl + jq to:
+        1. search for traces: `GET /api/search` with TraceQL `{resource.service.name="skeet-live-refine"}`
+        2. fetch one full trace by ID: `GET /api/traces/{traceID}`
+        3. confirm that query plan text appears in span events
 * [ ] if spike successful:
+    * [ ] add Tempo read credentials (endpoint + token) to `bobby-grafana-otel.env` as 1Password refs
     * [ ] write a cli, in `skeet-store` which can:
         1. Find a sample (e.g. 10) of traces within a time window which contain a call or calls to any `SkeetStore` method
-        2. Extract call hierarchy and any plans that were logged on the span
+        2. Extract call hierarchy and any plans that were logged as events on the span
         3. Summarise this textually in a way which will be understandable by a person and a reasonable LLM
             * a particular focus should be on things which affect the cost of a query e.g. which columns were loaded and how many rows were loaded
     * [ ] if needed, we can update `SkeetStore` to attach (via log/span entry) more useful data about query cost related metadata
