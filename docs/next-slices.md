@@ -1,6 +1,24 @@
 # Next Slices
 
-## Slice 17: reducing unintentional bias
+## Slice 17: improving prune and refine quality
+
+### Target: prune
+
+I'm still seeing some examples (e.g. examples/v2:de210c2970ed76cf79c27d8cd557214a.png) where the text-detection should ideally be excluding them. I think we can exclude these images by looking at overlap between the text bounding boxes and the 3x3 grid of zones and looking at some features:
+1. what %-age of a Zone is taken up by text-boxes (unioned area)?
+2. how many Zones have at least some %-age of text-box area?
+
+We can then exclude any images that have > threshold %-age in any Zone, and > number threshold of Zones.
+
+### Target: refine
+
+...
+
+### Tasks
+
+TBC
+
+## Slice 18: reducing unintentional bias
 
 ### Target
 
