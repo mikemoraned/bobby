@@ -345,14 +345,3 @@ The R2 metrics emitted by `R2MetricsWrapper` are not currently linked to any tra
 
 **Decision:** deferred. The pragmatic alternative — using the existing `store_prefix` (table name) label plus time-window correlation in Grafana, combined with the trace-summary tool — is good enough to ground cost-reduction work. Revisit if exemplar correlation becomes a recurring need, in which case file an upstream issue for per-query `object_store_wrapper` first.
 
-#### Idea: put in place some sort of caching of Lancedb R2 lookups
-
-* [ ] ...
-
-#### Idea: run LLM models in batch mode
-
-* [ ] ...
-
-#### Idea: run a local model inside k8s cluster (via ollama)
-
-* [ ] ...
