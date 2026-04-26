@@ -66,3 +66,50 @@ The current skin-detection method in `lib.rs` (Kovac/Peer/Solina 2003 RGB rules 
 #### Guardrails
 - [ ] Keep the per-Fitzpatrick-bucket eval as a checked-in test or bench so future changes can't silently regress fairness
 - [ ] Update the doc-comment on `detect_skin` to honestly describe what the method does and its known limitations
+
+## Slice 19: replay-based regression testing
+
+### Target
+
+Catch performance and cost regressions before they reach production. The motivating incident is the 26 Apr R2 Class A blowup (see `docs/current-slice.md`): a one-line change in `bc59e99` 10×'d the pruner's LIST rate against R2 and was only caught after deploy by reading Grafana graphs. The shape we want: capture real input traffic for a few minutes, replay the pipeline against a local backend, snapshot the resulting OTel counters, fail the test when any counter moves outside an expected band.
+
+This is **not** deterministic simulation testing in the FoundationDB/TigerBeetle sense — no fake runtime, no concurrency exploration, no fault injection. Just: capture → replay → snapshot → diff.
+
+What it catches:
+* R2 op-count regressions (the 26 Apr incident)
+* Queue-depth regressions (assert p99 of the depth gauge stays low)
+* Throughput cliffs (events processed per simulated minute)
+* Anything else expressible as an OTel metric
+
+Out of scope:
+* LLM cost regressions
+* Concurrency bugs that would need a real DST framework
+* Behaviours that only emerge under load longer than the fixture
+
+### Tasks
+
+#### Phase 1: replay infrastructure for pruner
+
+* [ ] make the firehose source pluggable: `firehose::connect` currently returns a concrete `JetstreamReceiver`. Refactor the pipeline to accept any `Stream<Item = JetstreamEvent>` so a JSONL-backed source can drop in
+* [ ] add a `capture` CLI that, for a given `--duration`:
+    * records firehose events to `tests/fixtures/<name>/firehose.jsonl`
+    * snapshots the live R2 store to a tarball at `tests/fixtures/<name>/store.tar`
+    * records image HTTP GETs to `tests/fixtures/<name>/images/`
+    * keep fixtures small enough to commit; if they grow past a few MB, move to git-lfs or an R2 fixtures bucket
+* [ ] write a `replay_pruner` integration test that:
+    * extracts the store tarball into a tempdir
+    * opens the store via `file://` (existing `StoreArgs::open_store` path) wrapped in `R2MetricsWrapper` — the wrapper produces cost-equivalent counts against local disk
+    * serves recorded image responses via [`wiremock`](https://github.com/LukeMathWalker/wiremock-rs)
+    * drives the JSONL stream into the pluggable firehose source
+    * runs until the stream ends, then `force_flush()`s the OTel meter and serialises all counters/gauges (the `InMemoryMetricExporter` pattern in `store_metrics.rs` already shows the shape)
+* [ ] assert via a checked-in `expected-metrics.json` with explicit per-counter ranges (e.g. `r2.operations{operation="list"}: 60..120`). Prefer this over `insta`-style auto-blessing — clearer failure messages, no risk of someone blessing a 10× regression by reflex
+* [ ] wire into `just test` so it runs in CI
+
+#### Phase 2: extend to live-refine
+
+* [ ] record OpenAI API responses keyed by request hash for the fixture window (wiremock or [`rvcr`](https://github.com/ChorusOne/rvcr))
+* [ ] write `replay_live_refine` mirroring the pruner test, asserting both R2 ops and OpenAI request counts
+
+#### Maintenance
+
+* [ ] document how and when to refresh fixtures and the expected-metrics baseline — only when fixtures no longer represent production (e.g. firehose schema change, store schema change), not on every behaviour change
