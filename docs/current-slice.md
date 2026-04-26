@@ -84,8 +84,8 @@ Short-term workaround tasks:
   Re-renders `pruner-deployment.yaml` through `envsubst` with the supplied tag and `kubectl apply`s — keeps `image:` and `OTEL_RESOURCE_ATTRIBUTES.service.version` in sync. **Don't use `kubectl set image` for this**: it only updates the image field, leaving `service.version` pointing at the previous tag, so metrics in Grafana keep reporting the old version even though a different binary is running.
 * [x] verify in Grafana that `r2_operations_total{cli="pruner",operation="list"}` drops back to the ~16/min baseline within a few minutes
 * [x] verify the `image` stage `pipeline.depth` gauge drops back to ~0
-* [ ] (optional) same rollback for `live-refine` if its contribution is still material once pruner is rolled back: `just cluster-rollback-live-refine cb840de`
-* [ ] roll forward again once the long-term fix below is built — `just cluster-rollback-pruner <new-short-hash>` (or re-run `just cluster-deploy-pruner` from the new HEAD)
+* [-] (optional) same rollback for `live-refine` if its contribution is still material once pruner is rolled back: `just cluster-rollback-live-refine cb840de`
+* [-] roll forward again once the long-term fix below is built — `just cluster-rollback-pruner <new-short-hash>` (or re-run `just cluster-deploy-pruner` from the new HEAD)
 
 Long-term fixes:
 
