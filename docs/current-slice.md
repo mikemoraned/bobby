@@ -287,8 +287,9 @@ Every poll tick, `live-refine` runs `list_unscored_image_ids_for_version`, which
 `SkeetStore` will expose a `version_snapshot` as part of "Idea: Only update feed cache on version change". We can use the `images` table version from that snapshot as a cheap early-abort: if the table version hasn't changed since the last tick, no new images were committed and the expensive scan can be skipped entirely. `table.version()` is already used in `cached_scores()` and is a lightweight manifest read — not a scan.
 
 We'll do this in stages:
-* [ ] (observation) emit an OTel gauge from `SkeetStore` reporting the observed `version` for each table (label `table` ∈ {`images`, `scores`, ...}), updated on each access. This lets us see in Grafana how often the `images` table version actually changes per minute — if it changes every tick, the early-abort optimization gives no benefit and we should reconsider before building it.
-* [ ] (prerequisite) "Idea: Only update feed cache on version change" is implemented, giving us `version_snapshot` on `SkeetStore`
+* [x] (observation) emit an OTel gauge from `SkeetStore` reporting the observed `version` for each table (label `table` ∈ {`images`, `scores`, ...}), updated on each access. This lets us see in Grafana how often the `images` table version actually changes per minute — if it changes every tick, the early-abort optimization gives no benefit and we should reconsider before building it.
+* [ ] implement a dashboard/panel in Grafana that shows how version changes over time for each table
+* [x] (prerequisite) "Idea: Only update feed cache on version change" is implemented, giving us `version_snapshot` on `SkeetStore`
 * within `skeet-refine`, separate polling from dispatch:
     * [ ] extract the poll-and-fetch step from `live_refine.rs` into a `PollingImageSource` struct in `skeet-refine/src/`:
         * holds `store: Arc<SkeetStore>`, `model_version: ModelVersion`, and `last_images_version: Option<String>` as state between ticks

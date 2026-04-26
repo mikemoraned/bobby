@@ -28,12 +28,11 @@ impl SkeetStore {
     /// representation.
     #[instrument(skip(self))]
     pub async fn version_snapshot(&self) -> Result<HashSet<Version>, StoreError> {
-        let mut snapshot = HashSet::with_capacity(self.tables.len());
-        for (name, table) in &self.tables {
-            let tag = table.version().await?.to_string();
-            snapshot.insert(Version::new(*name, tag));
-        }
-        Ok(snapshot)
+        let versions = self.table_versions().await?;
+        Ok(versions
+            .into_iter()
+            .map(|(name, v)| Version::new(name, v.to_string()))
+            .collect())
     }
 }
 

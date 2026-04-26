@@ -72,6 +72,16 @@ pub struct SkeetStore {
 }
 
 impl SkeetStore {
+    /// Return the current version counter for each table. Cheap: reads only the cached manifest.
+    pub async fn table_versions(&self) -> Result<Vec<(&'static str, u64)>, StoreError> {
+        let mut versions = Vec::with_capacity(self.tables.len());
+        for (name, table) in &self.tables {
+            let v = table.version().await?;
+            versions.push((*name, v));
+        }
+        Ok(versions)
+    }
+
     /// Return the fragment count for each table.
     /// Cheap: reads only the cached manifest, no per-fragment or per-column I/O.
     pub async fn fragment_counts(&self) -> Result<Vec<(&'static str, u64)>, StoreError> {

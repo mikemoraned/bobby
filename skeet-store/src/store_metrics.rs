@@ -2,6 +2,7 @@ use opentelemetry::{KeyValue, metrics::Gauge};
 
 pub struct StoreMetrics {
     fragments: Gauge<u64>,
+    version: Gauge<u64>,
 }
 
 impl StoreMetrics {
@@ -12,6 +13,10 @@ impl StoreMetrics {
                 .with_description("Number of fragments per lance table")
                 .with_unit("fragments")
                 .build(),
+            version: meter
+                .u64_gauge("lance.table.version")
+                .with_description("Current version counter per lance table")
+                .build(),
         }
     }
 
@@ -19,6 +24,13 @@ impl StoreMetrics {
         for (table, count) in counts {
             self.fragments
                 .record(*count, &[KeyValue::new("table", table.to_string())]);
+        }
+    }
+
+    pub fn record_table_versions(&self, versions: &[(&str, u64)]) {
+        for (table, version) in versions {
+            self.version
+                .record(*version, &[KeyValue::new("table", table.to_string())]);
         }
     }
 }
@@ -42,7 +54,8 @@ mod tests {
         (metrics, provider, exporter)
     }
 
-    fn gauge_values(
+    fn gauge_values_for(
+        metric_name: &str,
         exporter: &InMemoryMetricExporter,
         provider: &SdkMeterProvider,
     ) -> Vec<(String, u64)> {
@@ -52,7 +65,7 @@ mod tests {
             .iter()
             .flat_map(|rm| rm.scope_metrics())
             .flat_map(|sm| sm.metrics())
-            .filter(|m| m.name() == "lance.table.fragments")
+            .filter(|m| m.name() == metric_name)
             .flat_map(|m| {
                 if let AggregatedMetrics::U64(MetricData::Gauge(g)) = m.data() {
                     g.data_points()
@@ -78,7 +91,7 @@ mod tests {
 
         metrics.record_fragment_counts(&[("images_v6", 64), ("images_score_v2", 4)]);
 
-        let values = gauge_values(&exporter, &provider);
+        let values = gauge_values_for("lance.table.fragments", &exporter, &provider);
         assert!(
             values.contains(&("images_v6".to_string(), 64)),
             "expected images_v6=64, got {values:?}"
@@ -86,6 +99,23 @@ mod tests {
         assert!(
             values.contains(&("images_score_v2".to_string(), 4)),
             "expected images_score_v2=4, got {values:?}"
+        );
+    }
+
+    #[test]
+    fn record_table_versions_emits_gauge_per_table() {
+        let (metrics, provider, exporter) = make_test_metrics();
+
+        metrics.record_table_versions(&[("images_v6", 42), ("images_score_v2", 7)]);
+
+        let values = gauge_values_for("lance.table.version", &exporter, &provider);
+        assert!(
+            values.contains(&("images_v6".to_string(), 42)),
+            "expected images_v6=42, got {values:?}"
+        );
+        assert!(
+            values.contains(&("images_score_v2".to_string(), 7)),
+            "expected images_score_v2=7, got {values:?}"
         );
     }
 }
