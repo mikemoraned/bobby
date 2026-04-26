@@ -4,7 +4,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use shared::{Rejection, RejectionCategory};
-use skeet_store::StoreMetrics;
 use tracing::info;
 
 use crate::metrics::PruneMetrics;
@@ -31,8 +30,6 @@ pub struct Status {
     counters: Arc<PipelineCounters>,
     channels: ChannelMonitors,
     metrics: PruneMetrics,
-    store_metrics: StoreMetrics,
-    fragment_counts: Vec<(&'static str, u64)>,
 }
 
 impl Status {
@@ -57,17 +54,7 @@ impl Status {
             counters,
             channels,
             metrics: PruneMetrics::new(),
-            store_metrics: StoreMetrics::new(opentelemetry::global::meter("lance")),
-            fragment_counts: vec![],
         }
-    }
-
-    pub fn is_time_to_log(&self) -> bool {
-        self.last_log.elapsed() >= self.log_interval
-    }
-
-    pub fn update_fragment_counts(&mut self, counts: Vec<(&'static str, u64)>) {
-        self.fragment_counts = counts;
     }
 
     pub fn record_post(&mut self, image_count: u64) {
@@ -219,6 +206,5 @@ impl Status {
             &self.category_counts,
             &self.sole_category_counts,
         );
-        self.store_metrics.record_fragment_counts(&self.fragment_counts);
     }
 }

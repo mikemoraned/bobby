@@ -1,7 +1,7 @@
 #![warn(clippy::all, clippy::nursery)]
 
 use clap::Parser;
-use skeet_store::{CompactTarget, StoreArgs};
+use skeet_store::{CompactTarget, StoreArgs, StoreMetrics};
 use tracing::info;
 
 #[derive(Parser)]
@@ -26,16 +26,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
     let store = args.store.open_store("compact").await?;
+    let store_metrics = StoreMetrics::new(opentelemetry::global::meter("lance"));
 
     let health = store.storage_health().await?;
     health.print_report();
 
     if args.check_only {
+        let counts = store.fragment_counts().await?;
+        store_metrics.record_fragment_counts(&counts);
         return Ok(());
     }
 
     if !health.needs_action() {
         info!("no compaction needed, skipping");
+        let counts = store.fragment_counts().await?;
+        store_metrics.record_fragment_counts(&counts);
         return Ok(());
     }
 
@@ -45,6 +50,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let health_after = store.storage_health().await?;
     health_after.print_report();
+
+    let counts = store.fragment_counts().await?;
+    store_metrics.record_fragment_counts(&counts);
 
     Ok(())
 }

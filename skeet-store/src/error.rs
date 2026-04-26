@@ -36,4 +36,7 @@ pub enum StoreError {
 
     #[error("limit {requested} exceeds maximum {maximum}")]
     LimitExceeded { requested: usize, maximum: usize },
+
+    #[error("cannot get fragment count for table '{table}': {reason}")]
+    CannotGetFragmentCount { table: String, reason: String },
 }

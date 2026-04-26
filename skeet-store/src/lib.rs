@@ -72,12 +72,19 @@ pub struct SkeetStore {
 }
 
 impl SkeetStore {
-    /// Return the fragment count for each table. Cheap: reads only the manifest.
+    /// Return the fragment count for each table.
+    /// Cheap: reads only the cached manifest, no per-fragment or per-column I/O.
     pub async fn fragment_counts(&self) -> Result<Vec<(&'static str, u64)>, StoreError> {
         let mut counts = Vec::with_capacity(self.tables.len());
         for (name, table) in &self.tables {
-            let stats = table.stats().await?;
-            counts.push((*name, stats.fragment_stats.num_fragments as u64));
+            let native = table
+                .as_native()
+                .ok_or_else(|| StoreError::CannotGetFragmentCount {
+                    table: (*name).to_string(),
+                    reason: "table is not a native LanceDB table".to_string(),
+                })?;
+            let count = native.count_fragments().await?;
+            counts.push((*name, count as u64));
         }
         Ok(counts)
     }
