@@ -75,7 +75,7 @@ Default `--status-interval-secs 30` for pruner, default `--interval-secs 60` for
 
 Short-term workaround tasks:
 
-* [ ] roll `pruner` back to the previous image tag — the per-hash tagging from `6a5010f` predates `cb840de`, so the image already exists in ghcr.io. No rebuild needed:
+* [x] roll `pruner` back to the previous image tag — the per-hash tagging from `6a5010f` predates `cb840de`, so the image already exists in ghcr.io. No rebuild needed:
 
   ```sh
   kubectl set image deployment/pruner pruner=ghcr.io/mikemoraned/bobby/pruner:cb840de
