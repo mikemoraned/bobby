@@ -96,7 +96,7 @@ Strategy: move fragment-count reporting out of the hot path entirely, and into t
 * [x] in `skeet-prune/src/save_stage.rs`, remove the `is_time_to_log()` / `fragment_counts` block (lines 20–24) entirely.
 * [x] in `skeet-prune/src/status.rs`, remove the `store_metrics` and `fragment_counts` fields, the `is_time_to_log()` and `update_fragment_counts()` methods, the `record_fragment_counts` call in `log_summary`, and the `StoreMetrics` import.
 * [x] in `skeet-refine/src/bin/live_refine.rs`, remove the `let store_metrics = ...` line and the `if let Ok(counts) = store.fragment_counts().await { ... }` block at the end of the loop, plus the `StoreMetrics` import.
-* [ ] redeploy `compact`, `pruner`, `live-refine` with the new short hash.
+* [x] redeploy `compact`, `pruner`, `live-refine` with the fix and seen no regressions
 
 Probes after the long-term fix is deployed:
 
