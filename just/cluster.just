@@ -69,6 +69,17 @@ cluster-deploy-live-refine:
 cluster-deploy-compact:
     IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/compact-cronjob.yaml | kubectl apply -f -
 
+# Re-render and re-apply with an explicit image tag, so both `image:` and
+# `service.version` in OTEL_RESOURCE_ATTRIBUTES are kept in sync. Use this to
+# roll forward or back to a specific previously-pushed image.
+cluster-rollback-pruner image_tag:
+    IMAGE_TAG={{ image_tag }} envsubst < infra/k8s/pruner-deployment.yaml | kubectl apply -f -
+    kubectl rollout status deployment pruner
+
+cluster-rollback-live-refine image_tag:
+    IMAGE_TAG={{ image_tag }} envsubst < infra/k8s/live-refine-deployment.yaml | kubectl apply -f -
+    kubectl rollout status deployment live-refine
+
 cluster-logs-compact:
     kubectl logs -l app=compact --tail=100 -f | lnav
 
