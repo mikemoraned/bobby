@@ -19,16 +19,22 @@ pub mod test_utils;
 pub mod tempo;
 pub mod trace_analysis;
 mod types;
+mod version;
 
 pub use appraisals::Appraisal;
 pub use args::StoreArgs;
 pub use compact::CompactTarget;
 pub use error::StoreError;
+pub use schema::{
+    IMAGE_APPRAISAL_TABLE_NAME, SCORE_TABLE_NAME, SKEET_APPRAISAL_TABLE_NAME, TABLE_NAME,
+    VALIDATE_TABLE_NAME,
+};
 pub use shared::{Appraiser, Band, ModelVersion, Score};
 pub use stored::{StoredImage, StoredImageSummary, StoredOriginal};
 pub use store_metrics::StoreMetrics;
 pub use summary::SkeetStoreSummary;
 pub use types::{DiscoveredAt, ImageId, ImageRecord, InvalidImageId, OriginalAt, SkeetId, Zone};
+pub use version::Version;
 
 use std::sync::Arc;
 
@@ -48,10 +54,7 @@ use lance::dataset::{WriteMode, WriteParams};
 use lance_io::object_store::ObjectStoreParams;
 use lancedb::table::WriteOptions;
 use lancedb_utils::execute_query;
-use schema::{
-    IMAGE_APPRAISAL_TABLE_NAME, SCORE_TABLE_NAME, SKEET_APPRAISAL_TABLE_NAME, TABLE_NAME,
-    VALIDATE_TABLE_NAME, images_v6_schema, validate_v1_schema,
-};
+use schema::{images_v6_schema, validate_v1_schema};
 use stored::{batches_to_original_images, batches_to_stored_images, batches_to_summaries};
 
 pub struct SkeetStore {
@@ -60,6 +63,10 @@ pub struct SkeetStore {
     validate_table: lancedb::Table,
     pub(crate) skeet_appraisal_table: lancedb::Table,
     pub(crate) image_appraisal_table: lancedb::Table,
+    /// All tables, paired with their canonical name. Source of truth for
+    /// per-table iteration (fragment counts, version snapshots). Populated in
+    /// `SkeetStore::open` so adding or removing a table is a single edit.
+    pub(crate) tables: Vec<(&'static str, lancedb::Table)>,
     pub(crate) scores_cache: RwLock<Option<scores::ScoresCache>>,
     pub(crate) store_wrapper: Option<Arc<dyn WrappingObjectStore>>,
 }
@@ -67,15 +74,8 @@ pub struct SkeetStore {
 impl SkeetStore {
     /// Return the fragment count for each table. Cheap: reads only the manifest.
     pub async fn fragment_counts(&self) -> Result<Vec<(&'static str, u64)>, StoreError> {
-        let tables: &[(&'static str, &lancedb::Table)] = &[
-            (TABLE_NAME, &self.images_table),
-            (SCORE_TABLE_NAME, &self.scores_table),
-            (SKEET_APPRAISAL_TABLE_NAME, &self.skeet_appraisal_table),
-            (IMAGE_APPRAISAL_TABLE_NAME, &self.image_appraisal_table),
-            (VALIDATE_TABLE_NAME, &self.validate_table),
-        ];
-        let mut counts = Vec::with_capacity(tables.len());
-        for (name, table) in tables {
+        let mut counts = Vec::with_capacity(self.tables.len());
+        for (name, table) in &self.tables {
             let stats = table.stats().await?;
             counts.push((*name, stats.fragment_stats.num_fragments as u64));
         }

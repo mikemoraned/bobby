@@ -196,19 +196,19 @@ The `compact` cron job already runs every 10 minutes against all tables. The `co
 
 Ultimately it'd be good for this to be more of a push-on-change approach, where a central cache is updated when something has changed about scoring or similar. However, for now, I think we can have a different approach i.e.
 
-* [ ] update `SkeetStore` to have a `version_snapshot` method which returns a `HashSet<Version>` where
+* [x] update `SkeetStore` to have a `version_snapshot` method which returns a `HashSet<Version>` where
     * `Version` is a struct with a `name` and `tag`
         * `name` is the name of the underlying table
         * `value` is an opaque identifier capturing the version of the table
     * this `value` should be a `String` to keep non-coupled to the underlying implementation, but which should be derived from the `version` of each underlying lancedb table
-* [ ] update the `skeet-feed` cache so that it still runs once a minute but functions as follows when it wants to test if cache needs updated:
+* [x] update the `skeet-feed` cache so that it still runs once a minute but functions as follows when it wants to test if cache needs updated:
     1. fetch `version_snapshot`
     2. filter `HashSet<Version>` down to only the `name`'s it depends to invalidate the cache:
         * so, for example, it is only a change in appraisals or image scores that should effect the cache; changes to images or skeets does not affect it
     3. (assuming this `HashSet<Version>` has been previously saved on the cache) compare those against what has just been found
     4. if they are different then proceed as now in invalidating and updating the cache
-* [ ] we can also remove the staleness check as this method should mean we don't need it anymore
-* [ ] all of the above should be down in a failing-test-first way as we are introducing more complexity here
+* [x] we can also remove the staleness check as this method should mean we don't need it anymore
+* [x] all of the above should be done in a failing-test-first way as we are introducing more complexity here
 
 The outcome of this should be that we only incur the cost of updating the in-memory cache when something has changed.
 

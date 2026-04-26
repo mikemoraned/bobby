@@ -175,12 +175,20 @@ impl SkeetStore {
         }
 
         info!(uri, "store opened");
+        let tables = vec![
+            (TABLE_NAME, images_table.clone()),
+            (SCORE_TABLE_NAME, scores_table.clone()),
+            (SKEET_APPRAISAL_TABLE_NAME, skeet_appraisal_table.clone()),
+            (IMAGE_APPRAISAL_TABLE_NAME, image_appraisal_table.clone()),
+            (VALIDATE_TABLE_NAME, validate_table.clone()),
+        ];
         Ok(Self {
             images_table,
             scores_table,
             validate_table,
             skeet_appraisal_table,
             image_appraisal_table,
+            tables,
             scores_cache: RwLock::new(None),
             store_wrapper: Some(store_wrapper),
         })

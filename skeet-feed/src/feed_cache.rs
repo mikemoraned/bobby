@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -6,16 +6,26 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::FromRequestHead;
-use skeet_store::{Appraisal, ImageId, Score, SkeetId, SkeetStore, StoredImageSummary};
+use skeet_store::{
+    Appraisal, IMAGE_APPRAISAL_TABLE_NAME, ImageId, SCORE_TABLE_NAME,
+    SKEET_APPRAISAL_TABLE_NAME, Score, SkeetId, SkeetStore, StoredImageSummary, Version,
+};
 use tokio::sync::RwLock;
-use tokio::time::Instant;
 use tower::{Layer, Service};
 use tracing::{info, warn};
 
-/// Maximum age of cached data before a request triggers a synchronous refresh.
-const MAX_CACHE_STALENESS: Duration = Duration::from_secs(5 * 60);
+/// Tables whose version changes should trigger a cache refresh.
+///
+/// The cached feed depends on scored images and manual appraisals; new images
+/// or skeets only become visible once they are scored, so the images and
+/// skeets tables are deliberately excluded.
+const RELEVANT_TABLES: &[&str] = &[
+    SCORE_TABLE_NAME,
+    SKEET_APPRAISAL_TABLE_NAME,
+    IMAGE_APPRAISAL_TABLE_NAME,
+];
 
-/// How often the background worker refreshes the cache.
+/// How often the background worker checks for version changes.
 const BACKGROUND_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 
 /// Cached feed data including scored summaries and manual appraisals.
@@ -28,8 +38,8 @@ pub struct CachedFeed {
 
 struct CacheEntry {
     feed: CachedFeed,
-    fetched_at: Instant,
     refreshed_at: DateTime<Utc>,
+    snapshot: HashSet<Version>,
 }
 
 pub struct FeedCache {
@@ -37,6 +47,14 @@ pub struct FeedCache {
     limit: usize,
     max_age_hours: u64,
     inner: RwLock<Option<CacheEntry>>,
+}
+
+/// Outcome of a `refresh_if_changed` call: whether the cache was actually
+/// refreshed or skipped because no relevant table version had moved.
+#[derive(Debug)]
+pub enum RefreshOutcome {
+    Unchanged,
+    Refreshed { entry_count: usize },
 }
 
 impl FeedCache {
@@ -53,18 +71,41 @@ impl FeedCache {
         {
             let guard = self.inner.read().await;
             if let Some(entry) = guard.as_ref() {
-                let staleness = entry.fetched_at.elapsed();
-                if staleness < MAX_CACHE_STALENESS {
-                    info!(staleness_secs = staleness.as_secs(), "serving from cache");
-                    return Ok(entry.feed.clone());
-                }
+                return Ok(entry.feed.clone());
             }
         }
-
         self.refresh().await
     }
 
     pub async fn refresh(&self) -> Result<CachedFeed, skeet_store::StoreError> {
+        let snapshot = self.store.version_snapshot().await?;
+        self.fetch_and_store(snapshot).await
+    }
+
+    /// Refresh only if the relevant subset of `version_snapshot` has changed
+    /// since the last refresh. Used by the background worker to avoid paying
+    /// the full fetch cost when no scoring or appraisal writes have landed.
+    pub async fn refresh_if_changed(&self) -> Result<RefreshOutcome, skeet_store::StoreError> {
+        let snapshot = self.store.version_snapshot().await?;
+        let needs_refresh = {
+            let guard = self.inner.read().await;
+            guard
+                .as_ref()
+                .is_none_or(|entry| relevant(&entry.snapshot) != relevant(&snapshot))
+        };
+        if !needs_refresh {
+            return Ok(RefreshOutcome::Unchanged);
+        }
+        let feed = self.fetch_and_store(snapshot).await?;
+        Ok(RefreshOutcome::Refreshed {
+            entry_count: feed.entries.len(),
+        })
+    }
+
+    async fn fetch_and_store(
+        &self,
+        snapshot: HashSet<Version>,
+    ) -> Result<CachedFeed, skeet_store::StoreError> {
         let entries = self
             .store
             .list_scored_summaries_by_score(self.limit, Some(self.max_age_hours))
@@ -101,8 +142,8 @@ impl FeedCache {
             let mut guard = self.inner.write().await;
             *guard = Some(CacheEntry {
                 feed,
-                fetched_at: Instant::now(),
                 refreshed_at: Utc::now(),
+                snapshot,
             });
         }
 
@@ -119,9 +160,12 @@ impl FeedCache {
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(BACKGROUND_REFRESH_INTERVAL).await;
-                match cache.refresh().await {
-                    Ok(feed) => {
-                        info!(count = feed.entries.len(), "background cache refresh complete");
+                match cache.refresh_if_changed().await {
+                    Ok(RefreshOutcome::Unchanged) => {
+                        info!("background cache refresh skipped — no relevant version change");
+                    }
+                    Ok(RefreshOutcome::Refreshed { entry_count }) => {
+                        info!(count = entry_count, "background cache refresh complete");
                     }
                     Err(e) => {
                         warn!(error = %e, "background cache refresh failed");
@@ -130,11 +174,13 @@ impl FeedCache {
             }
         });
     }
+}
 
-    pub async fn staleness(&self) -> Option<Duration> {
-        let guard = self.inner.read().await;
-        guard.as_ref().map(|entry| entry.fetched_at.elapsed())
-    }
+fn relevant(snapshot: &HashSet<Version>) -> HashSet<&Version> {
+    snapshot
+        .iter()
+        .filter(|v| RELEVANT_TABLES.iter().any(|t| *t == v.name))
+        .collect()
 }
 
 #[derive(Clone)]
@@ -199,8 +245,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use skeet_store::test_utils::{make_record, open_temp_store};
+    use shared::{Appraiser, Band};
     use skeet_store::ModelVersion;
+    use skeet_store::test_utils::{make_record, open_temp_store};
 
     async fn seed_store(store: &SkeetStore, suffix: &str, r: u8, score: f32) {
         let record = make_record(suffix, r, 0, 0);
@@ -225,36 +272,17 @@ mod tests {
         let cache = FeedCache::new(Arc::clone(&store), 10, 48);
         let result = cache.get().await.expect("get");
         assert_eq!(result.entries.len(), 1);
-        assert!(cache.staleness().await.is_some());
+        assert!(cache.refreshed_at().await.is_some());
     }
 
-    /// Populates a cache with one record, adds a second record, then advances
-    /// time by `advance_by`. Returns the length of the result from `get()` after
-    /// the time advance.
-    async fn cache_get_len_after_advance(advance_by: Duration) -> usize {
+    #[tokio::test]
+    async fn empty_store_returns_empty_cache() {
         let dir = tempfile::tempdir().expect("create temp dir");
         let store = Arc::new(open_temp_store(&dir).await);
-        seed_store(&store, "a", 10, 0.9).await;
 
         let cache = FeedCache::new(Arc::clone(&store), 10, 48);
-        cache.get().await.expect("first get");
-
-        seed_store(&store, "b", 20, 0.8).await;
-        tokio::time::advance(advance_by).await;
-
-        cache.get().await.expect("second get").entries.len()
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn cache_hit_returns_stale_data_within_window() {
-        let len = cache_get_len_after_advance(MAX_CACHE_STALENESS - Duration::from_secs(1)).await;
-        assert_eq!(len, 1);
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn cache_hit_refetches_data_outwith_window() {
-        let len = cache_get_len_after_advance(MAX_CACHE_STALENESS + Duration::from_secs(1)).await;
-        assert_eq!(len, 2);
+        let result = cache.get().await.expect("get");
+        assert!(result.entries.is_empty());
     }
 
     #[tokio::test]
@@ -271,25 +299,110 @@ mod tests {
         let refreshed = cache.refresh().await.expect("refresh");
         assert_eq!(refreshed.entries.len(), 2);
 
-        // subsequent get should return refreshed data
         let after = cache.get().await.expect("get after refresh");
         assert_eq!(after.entries.len(), 2);
     }
 
     #[tokio::test]
-    async fn empty_store_returns_empty_cache() {
+    async fn refresh_if_changed_populates_cold_cache() {
         let dir = tempfile::tempdir().expect("create temp dir");
         let store = Arc::new(open_temp_store(&dir).await);
+        seed_store(&store, "a", 10, 0.9).await;
 
         let cache = FeedCache::new(Arc::clone(&store), 10, 48);
+        let outcome = cache.refresh_if_changed().await.expect("refresh");
+        assert!(
+            matches!(outcome, RefreshOutcome::Refreshed { entry_count: 1 }),
+            "cold cache should refresh, got {outcome:?}"
+        );
+
         let result = cache.get().await.expect("get");
-        assert!(result.entries.is_empty());
+        assert_eq!(result.entries.len(), 1);
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn cache_refetches_at_exact_boundary() {
-        let len = cache_get_len_after_advance(MAX_CACHE_STALENESS).await;
-        assert_eq!(len, 2, "cache should refresh at exactly MAX_CACHE_STALENESS");
+    #[tokio::test]
+    async fn refresh_if_changed_skips_when_no_relevant_change() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let store = Arc::new(open_temp_store(&dir).await);
+        seed_store(&store, "a", 10, 0.9).await;
+
+        let cache = FeedCache::new(Arc::clone(&store), 10, 48);
+        cache.get().await.expect("first get");
+
+        // Add a new image but don't score it — this changes the images table
+        // version (irrelevant) but not the scores or appraisals tables.
+        let extra = make_record("b", 20, 0, 0);
+        store.add(&extra).await.expect("add image");
+
+        let outcome = cache.refresh_if_changed().await.expect("refresh");
+        assert!(
+            matches!(outcome, RefreshOutcome::Unchanged),
+            "irrelevant write should not trigger refresh, got {outcome:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn refresh_if_changed_refreshes_when_score_added() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let store = Arc::new(open_temp_store(&dir).await);
+        seed_store(&store, "a", 10, 0.9).await;
+
+        let cache = FeedCache::new(Arc::clone(&store), 10, 48);
+        cache.get().await.expect("first get");
+
+        seed_store(&store, "b", 20, 0.8).await;
+
+        let outcome = cache.refresh_if_changed().await.expect("refresh");
+        assert!(
+            matches!(outcome, RefreshOutcome::Refreshed { entry_count: 2 }),
+            "score upsert should trigger refresh, got {outcome:?}"
+        );
+
+        let after = cache.get().await.expect("get after refresh");
+        assert_eq!(after.entries.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn refresh_if_changed_refreshes_when_appraisal_added() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let store = Arc::new(open_temp_store(&dir).await);
+        seed_store(&store, "a", 10, 0.9).await;
+
+        let cache = FeedCache::new(Arc::clone(&store), 10, 48);
+        cache.get().await.expect("first get");
+
+        let appraiser = Appraiser::new_github("tester").expect("valid appraiser");
+        let skeet_id: SkeetId = "at://did:plc:abc/app.bsky.feed.post/cache_appraise"
+            .parse()
+            .expect("valid AT URI");
+        store
+            .set_skeet_band(&skeet_id, Band::HighQuality, &appraiser)
+            .await
+            .expect("set band");
+
+        let outcome = cache.refresh_if_changed().await.expect("refresh");
+        assert!(
+            matches!(outcome, RefreshOutcome::Refreshed { .. }),
+            "appraisal write should trigger refresh, got {outcome:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn refresh_if_changed_skips_after_consecutive_unchanged_calls() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let store = Arc::new(open_temp_store(&dir).await);
+        seed_store(&store, "a", 10, 0.9).await;
+
+        let cache = FeedCache::new(Arc::clone(&store), 10, 48);
+        cache.get().await.expect("first get");
+
+        for _ in 0..3 {
+            let outcome = cache.refresh_if_changed().await.expect("refresh");
+            assert!(
+                matches!(outcome, RefreshOutcome::Unchanged),
+                "expected Unchanged, got {outcome:?}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -304,23 +417,5 @@ mod tests {
         cache.get().await.expect("get");
         let refreshed = cache.refreshed_at().await;
         assert!(refreshed.is_some(), "refreshed_at should be Some after get");
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn staleness_increases_over_time() {
-        let dir = tempfile::tempdir().expect("create temp dir");
-        let store = Arc::new(open_temp_store(&dir).await);
-        seed_store(&store, "a", 10, 0.9).await;
-
-        let cache = FeedCache::new(Arc::clone(&store), 10, 48);
-        cache.get().await.expect("get");
-
-        tokio::time::advance(Duration::from_secs(30)).await;
-        let staleness = cache.staleness().await.expect("staleness should be Some");
-        assert!(
-            staleness >= Duration::from_secs(30),
-            "staleness should be at least 30s, got {:?}",
-            staleness,
-        );
     }
 }
