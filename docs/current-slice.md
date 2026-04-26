@@ -245,10 +245,6 @@ The goal is to ground optimisation decisions in real data (actual query plans, c
     * goal: in Grafana, group `r2_operations_total` by `(table, operation)` for a given `cli` to confirm — concretely — that `images_v6.lance` is the dominant burst source and which operations dominate within it
     * note: the `store_prefix` label can stay (still useful as a sanity check that the wrapper is wired) but `table` becomes the primary grouping dimension
 
-
-
-
-
 #### Idea: Remove inline compaction in favour of the cron job
 
 The `compact` cron job already runs every 10 minutes against all tables. The `compact_every_n_writes` mechanism duplicates this inline, blocking the save path and generating large GET/GET_RANGE bursts against R2 during each run.
