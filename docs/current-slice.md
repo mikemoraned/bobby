@@ -14,6 +14,98 @@ However, what I actually have, as of 19th Apr is:
 3. prune + live-refine: hetzner cluster running code: €10 or approx £8.7 on hetzner cluster
 4. feed + admin/appraising running on fly.io: $1 or approx £0.74 per month
 
+### Observations
+
+#### 24th Apr
+
+The `skeet-feed` sends about 2.5K Class B operations. This kinda makes sense now in that there is a background job that refreshes once a minute. 
+
+`skeet-prune` and `skeet-live-refine` seems to both do a *lot* of `get` and `get_range` requests (both send up to 30K per minute of each, for a period of about 4 minutes each). During this time other operations like `head`,`list` and `put` are tiny (10's per minute) I can sort-of understand why live-refine might need to do a lot of gets to get an image (though would be good if it's not lots of requests), however I don't see why pruner would have to.
+
+#### 25th Apr
+
+Tempo spike confirmed query plan data is available in traces. Two slow queries observed on every `list_unscored_image_ids_for_version` tick:
+
+* `list_unscored:scored_ids` — 1.51s. Plan: `LanceRead` on `images_score_v2.lance`, projection `[image_id]`, 4 fragments, uses `ScalarIndexQuery` on `model_version_idx`. Slow despite the index.
+* `list_all_image_ids_by_most_recent` — 2.04s. Plan: `LanceRead` on `images_v6.lance`, projection `[image_id, discovered_at]`, **66 fragments, no filter, no index** — full table scan every tick. This is almost certainly the dominant source of `get`/`get_range` R2 traffic from `skeet-live-refine`.
+
+Checked the `compact` cron job to test the hypothesis that fragments were piling up. They are not — the cron is healthy (running every 10 min, completing in ~60–140s). The fragment count is **stuck at ~64 by design**: `skeet-store/src/compact.rs:50` sets `target_rows_per_fragment: 500` (low on purpose, because each row carries a ~2MB PNG blob and the lance default of 1M would OOM the compactor). Lance's planner only flags fragments with `physical_rows < 500` as candidates, so anything ≥500 rows is left alone forever. Each cron run merges only the small stragglers (e.g. "365 rows across 2 fragments" + "4 rows across 4 fragments") and lands back at ~64 fragments (mean=433, p50=500, p99=2022). Implications:
+
+* Compaction is **not the lever** — pushing `target_rows_per_fragment` up would re-introduce OOM risk.
+* The full scan in `list_all_image_ids_by_most_recent` will remain expensive as long as it scans every fragment.
+* Our `RECOMMEND: compact: 64 small fragments (>10 threshold)` health line is misleading — it uses lance's default smallness threshold, not our chosen 500. (Worth fixing separately.)
+* This makes the case stronger for both *Idea: reduce cost of polling in live-refine* (version-snapshot early-abort skips the scan when nothing changed) and *Idea: make `list_all_image_ids_by_most_recent` use `discovered_at_idx`* (let lance scan the index instead of every fragment).
+
+#### 26th Apr
+
+##### R2 Class A + `list` operation usage regression
+
+Summary of issue / investigation:
+
+Observed in Grafana: large increase in Class A usage. Drilling per-CLI:
+* `pruner`: `list` operations spiked from a baseline of ~16/min to a steady ~250/min, with occasional bursts to ~350/min
+* `pruner`: `image` stage pipeline queue depth jumped from a typical 0 to regular spikes up to 60
+
+Deployed version: `1128a57c69acb6c1c7bbd70209eafce1f9983545`. Previously deployed: `cb840de2c9fb1146f8130d4794316cb7d05f67a7`. Commits in between (newest first):
+
+```
+1128a57 Add `table` label to r2.operations / r2.bytes via per-call path parsing
+bc59e99 Add lance.table.fragments gauge via SkeetStore::fragment_counts()
+a282968 Add r2.bytes counter to R2MetricsWrapper
+c69a4bf, c61ddb9, 2480e5a   docs-only edits to current-slice.md
+```
+
+Of the three code commits, only `bc59e99` adds new R2 traffic. `a282968` and `1128a57` only label/observe existing calls.
+
+**Root cause: `SkeetStore::fragment_counts()` is mis-described as cheap.** Added in `bc59e99` (`skeet-store/src/lib.rs`), the doc comment reads *"Cheap: reads only the manifest"* but the implementation calls `lancedb::Table::stats()` once per table × 5 tables. Reading lancedb 0.27 source (`lancedb-0.27.2/src/table.rs:2563`), `stats()` actually:
+
+1. `count_rows(None)`
+2. `list_indices()` → for each index, `index_statistics()` → `collect_regular_indices_statistics` opens `LanceIndexStore::from_dataset_for_existing` and calls `scalar::fetch_index_details` per index (LIST/HEAD per index uuid directory)
+3. `calculate_data_stats()` → for **every fragment, every column**: `FileFragment::storage_stats` → `open_readers` (file header GETs and HEAD/LIST per fragment dir)
+4. Per-fragment `physical_rows()`
+
+For `images_v6.lance` alone: ~64 fragments × multiple columns of opens, plus per-index stats for each scalar index (`discovered_at_idx`, `image_id_idx`). `images_score_v2.lance` adds `model_version_idx`, plus three more tables with their own indices.
+
+This call is invoked from two new sites:
+
+* **skeet-prune** (`save_stage.rs:19-24`): inside the `rx.recv()` loop, gated by `is_time_to_log()`. But `is_time_to_log` only flips back to false when `maybe_log()` runs, and that only fires from `record_post()` (the `Post` arm). Until the next `Post`, every `Classified`/`Rejected` arrival re-enters the `if`, and `fragment_counts().await` runs again. Worse, the `.await` blocks the receiver, so the `image` MPSC backs up — explaining the queue-depth spike.
+* **skeet-refine** (`live_refine.rs:237-239`): once per tick (default `--interval-secs 60`). Smaller impact than pruner but still adds 5 stats calls/min.
+
+Default `--status-interval-secs 30` for pruner, default `--interval-secs 60` for live-refine. Even the floor (one stats call/30s × 5 tables for pruner, plus 1/60s × 5 for live-refine) is plausibly the ~234 LIST/min delta observed.
+
+Short-term workaround tasks:
+
+* [ ] roll `pruner` back to the previous image tag — the per-hash tagging from `6a5010f` predates `cb840de`, so the image already exists in ghcr.io. No rebuild needed:
+
+  ```sh
+  kubectl set image deployment/pruner pruner=ghcr.io/mikemoraned/bobby/pruner:cb840de
+  kubectl rollout status deployment/pruner   # confirm new pod is Ready
+  ```
+
+  Manifests use `imagePullPolicy: IfNotPresent`; the new tag differs from the running one so k8s will pull `cb840de`.
+* [ ] verify in Grafana that `r2_operations_total{cli="pruner",operation="list"}` drops back to the ~16/min baseline within a few minutes
+* [ ] verify the `image` stage `pipeline.depth` gauge drops back to ~0
+* [ ] (optional) same rollback for `live-refine` if its contribution is still material once pruner is rolled back: `kubectl set image deployment/live-refine live-refine=ghcr.io/mikemoraned/bobby/live-refine:cb840de`
+* [ ] roll forward again once the long-term fix below is built — either `kubectl set image` to the new short hash, or re-run `just cluster-deploy-pruner`
+
+Long-term fixes:
+
+Strategy: move fragment-count reporting out of the hot path entirely, and into the `compact` cron job — fragment count is a compaction concern. Cron cadence is 10 min (`compact-cronjob.yaml:8`), which is the right resolution for a "compaction drift" gauge. Also fix the underlying cheapness assumption so any future hot-path use is safe.
+
+* [ ] in `skeet-store/src/lib.rs`, swap `table.stats().await?` → `table.count_fragments().await?` (lancedb 0.27 `table.rs:1762`). That just reads the cached `Dataset` manifest. Update the (currently false) "Cheap: reads only the manifest" comment to be accurate. The optimisation matters even at 10-min cadence — `stats()` triggers index-stats reads + per-fragment per-column `open_readers`.
+* [ ] in `skeet-store/src/bin/compact.rs`, construct `StoreMetrics` via `opentelemetry::global::meter("lance")`, call `store.fragment_counts().await?`, and `record_fragment_counts(&counts)` after the post-compact `storage_health` block. Emit **unconditionally** — even when `needs_action()` returns false and the binary exits early at line 38. Otherwise the gauge only updates after compactions actually run, which hides the drift signal we want to see *between* runs. The existing `TracingGuard` (held as `_guard` in `main`) flushes the `MetricsGuard` provider on drop before exit.
+* [ ] in `skeet-prune/src/save_stage.rs`, remove the `is_time_to_log()` / `fragment_counts` block (lines 20–24) entirely.
+* [ ] in `skeet-prune/src/status.rs`, remove the `store_metrics` and `fragment_counts` fields, the `is_time_to_log()` and `update_fragment_counts()` methods, the `record_fragment_counts` call in `log_summary`, and the `StoreMetrics` import.
+* [ ] in `skeet-refine/src/bin/live_refine.rs`, remove the `let store_metrics = ...` line and the `if let Ok(counts) = store.fragment_counts().await { ... }` block at the end of the loop, plus the `StoreMetrics` import.
+* [ ] redeploy `compact`, `pruner`, `live-refine` with the new short hash.
+
+Probes after the long-term fix is deployed:
+
+* `count_over_time(lance_table_fragments[15m])` should be ~5 (one emission per table per cron run, every 10 min)
+* `r2_operations_total{cli="pruner",operation="list"}` should stay at the ~16/min baseline
+* `r2_operations_total{cli="compact",operation="list"}` may rise slightly (one cheap manifest read per table per run) but should be negligible vs the cron's normal compaction traffic
+* `image` stage `pipeline.depth` gauge should stay at ~0 in steady state
+
 ### Tasks
 
 #### Get visibility on R2 usage
@@ -155,27 +247,8 @@ The goal is to ground optimisation decisions in real data (actual query plans, c
     * note: the `store_prefix` label can stay (still useful as a sanity check that the wrapper is wired) but `table` becomes the primary grouping dimension
 
 
-##### Observations
 
-###### 24th Apr
 
-The `skeet-feed` sends about 2.5K Class B operations. This kinda makes sense now in that there is a background job that refreshes once a minute. 
-
-`skeet-prune` and `skeet-live-refine` seems to both do a *lot* of `get` and `get_range` requests (both send up to 30K per minute of each, for a period of about 4 minutes each). During this time other operations like `head`,`list` and `put` are tiny (10's per minute) I can sort-of understand why live-refine might need to do a lot of gets to get an image (though would be good if it's not lots of requests), however I don't see why pruner would have to.
-
-###### 25th Apr
-
-Tempo spike confirmed query plan data is available in traces. Two slow queries observed on every `list_unscored_image_ids_for_version` tick:
-
-* `list_unscored:scored_ids` — 1.51s. Plan: `LanceRead` on `images_score_v2.lance`, projection `[image_id]`, 4 fragments, uses `ScalarIndexQuery` on `model_version_idx`. Slow despite the index.
-* `list_all_image_ids_by_most_recent` — 2.04s. Plan: `LanceRead` on `images_v6.lance`, projection `[image_id, discovered_at]`, **66 fragments, no filter, no index** — full table scan every tick. This is almost certainly the dominant source of `get`/`get_range` R2 traffic from `skeet-live-refine`.
-
-Checked the `compact` cron job to test the hypothesis that fragments were piling up. They are not — the cron is healthy (running every 10 min, completing in ~60–140s). The fragment count is **stuck at ~64 by design**: `skeet-store/src/compact.rs:50` sets `target_rows_per_fragment: 500` (low on purpose, because each row carries a ~2MB PNG blob and the lance default of 1M would OOM the compactor). Lance's planner only flags fragments with `physical_rows < 500` as candidates, so anything ≥500 rows is left alone forever. Each cron run merges only the small stragglers (e.g. "365 rows across 2 fragments" + "4 rows across 4 fragments") and lands back at ~64 fragments (mean=433, p50=500, p99=2022). Implications:
-
-* Compaction is **not the lever** — pushing `target_rows_per_fragment` up would re-introduce OOM risk.
-* The full scan in `list_all_image_ids_by_most_recent` will remain expensive as long as it scans every fragment.
-* Our `RECOMMEND: compact: 64 small fragments (>10 threshold)` health line is misleading — it uses lance's default smallness threshold, not our chosen 500. (Worth fixing separately.)
-* This makes the case stronger for both *Idea: reduce cost of polling in live-refine* (version-snapshot early-abort skips the scan when nothing changed) and *Idea: make `list_all_image_ids_by_most_recent` use `discovered_at_idx`* (let lance scan the index instead of every fragment).
 
 #### Idea: Remove inline compaction in favour of the cron job
 
