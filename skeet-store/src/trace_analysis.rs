@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::query_plan::QueryPlan;
 use crate::tempo::{Span, SpanEvent, Trace, TraceInfo};
 
 // ── Domain types ──────────────────────────────────────────────────────────────
@@ -7,7 +8,7 @@ use crate::tempo::{Span, SpanEvent, Trace, TraceInfo};
 struct SlowQuery {
     label: String,
     elapsed: String,
-    raw_plan: String,
+    plan: QueryPlan,
 }
 
 struct AnnotatedSpan<'a> {
@@ -76,8 +77,28 @@ fn annotate(spans: &[Span]) -> Vec<AnnotatedSpan<'_>> {
 fn extract_slow_query(event: &SpanEvent) -> Option<SlowQuery> {
     let label = event.attributes.get("label")?.as_str()?.to_owned();
     let elapsed = event.attributes.get("elapsed")?.as_str()?.to_owned();
-    let raw_plan = event.attributes.get("plan")?.as_str()?.to_owned();
-    Some(SlowQuery { label, elapsed, raw_plan })
+    let plan = QueryPlan {
+        table: non_empty_str(event, "plan.table"),
+        columns: non_empty_str(event, "plan.columns"),
+        num_fragments: event
+            .attributes
+            .get("plan.num_fragments")
+            .and_then(|v| v.as_i64())
+            .filter(|&n| n > 0)
+            .map(|n| n as u64),
+        full_filter: non_empty_str(event, "plan.full_filter"),
+        index: non_empty_str(event, "plan.index"),
+    };
+    Some(SlowQuery { label, elapsed, plan })
+}
+
+fn non_empty_str(event: &SpanEvent, key: &str) -> Option<String> {
+    event
+        .attributes
+        .get(key)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
 }
 
 // ── Rendering ─────────────────────────────────────────────────────────────────
@@ -144,7 +165,7 @@ fn render_tree(
                 "{indent}  [slow query] label={}  elapsed={}\n",
                 sq.label, sq.elapsed
             ));
-            let ps = plan_summary(&sq.raw_plan);
+            let ps = render_plan(&sq.plan, &indent);
             if !ps.is_empty() {
                 out.push_str(&ps);
                 out.push('\n');
@@ -159,53 +180,30 @@ fn render_tree(
     }
 }
 
-// ── Lance plan parsing ────────────────────────────────────────────────────────
-
-fn plan_summary(raw: &str) -> String {
+fn render_plan(plan: &QueryPlan, indent: &str) -> String {
     let mut out = Vec::new();
-    for line in raw.lines() {
-        let line = line.trim();
-        if line.starts_with("LanceRead:") {
-            if let Some(uri) = extract_field(line, "uri") {
-                let table = uri
-                    .split('/')
-                    .find(|s| s.ends_with(".lance"))
-                    .unwrap_or(uri);
-                out.push(format!("    table:     {table}"));
+    if let Some(table) = &plan.table {
+        out.push(format!("{indent}    table:     {table}"));
+    }
+    if let Some(cols) = &plan.columns {
+        out.push(format!("{indent}    columns:   {cols}"));
+    }
+    if let Some(n) = plan.num_fragments {
+        if plan.full_scan() {
+            out.push(format!(
+                "{indent}    fragments: {n}  *** FULL SCAN - no filter ***"
+            ));
+        } else {
+            out.push(format!("{indent}    fragments: {n}"));
+            if let Some(f) = &plan.full_filter {
+                out.push(format!("{indent}    filter:    {f}"));
             }
-            if let Some(proj) = extract_field(line, "projection") {
-                let cols = proj.trim_matches(|c| c == '[' || c == ']');
-                out.push(format!("    columns:   {cols}"));
-            }
-            let frags = extract_field(line, "num_fragments");
-            let filter = extract_field(line, "full_filter");
-            if let Some(n) = frags {
-                if matches!(filter, Some("--") | None) {
-                    out.push(format!("    fragments: {n}  *** FULL SCAN - no filter ***"));
-                } else if let Some(f) = filter {
-                    out.push(format!("    fragments: {n}"));
-                    out.push(format!("    filter:    {f}"));
-                }
-            }
-        } else if line.starts_with("ScalarIndexQuery:") {
-            out.push(format!("    index:     {line}"));
         }
     }
-    out.join("\n")
-}
-
-// Extract "key=value" from a Lance plan line (handles projection=[a, b] with inner commas).
-fn extract_field<'a>(line: &'a str, key: &str) -> Option<&'a str> {
-    let needle = format!("{key}=");
-    let pos = line.find(needle.as_str())?;
-    let rest = &line[pos + needle.len()..];
-    if rest.starts_with('[') {
-        let end = rest.find(']')?;
-        Some(&rest[..=end])
-    } else {
-        let end = rest.find(", ").unwrap_or(rest.len());
-        Some(&rest[..end])
+    if let Some(idx) = &plan.index {
+        out.push(format!("{indent}    index:     {idx}"));
     }
+    out.join("\n")
 }
 
 // ── Formatting ────────────────────────────────────────────────────────────────
@@ -227,58 +225,95 @@ mod tests {
     use super::*;
     use crate::tempo::{AttrValue, SpanEvent};
 
-    // Real plan strings captured from the 25th Apr spike
-    const FULL_SCAN_PLAN: &str = "LanceRead: uri=encrypted-store/images_v6.lance/data, projection=[image_id, discovered_at], num_fragments=66, range_before=None, range_after=None, row_id=false, row_addr=false, full_filter=--, refine_filter=--\n";
-    const INDEXED_PLAN: &str = "LanceRead: uri=encrypted-store/images_score_v2.lance/data, projection=[image_id], num_fragments=4, range_before=None, range_after=None, row_id=false, row_addr=false, full_filter=model_version = Utf8(\"ea219ee0\"), refine_filter=--\n  ScalarIndexQuery: query=[model_version = ea219ee0]@model_version_idx\n";
-
-    #[test]
-    fn plan_summary_flags_full_scan() {
-        let out = plan_summary(FULL_SCAN_PLAN);
-        assert!(out.contains("FULL SCAN"), "full scan flagged");
-        assert!(out.contains("images_v6.lance"), "table name extracted");
-        assert!(out.contains("image_id, discovered_at"), "columns extracted");
-        assert!(out.contains("66"), "fragment count extracted");
-        assert!(!out.contains("filter:"), "no filter line for full scan");
-    }
-
-    #[test]
-    fn plan_summary_shows_filter_and_index_for_indexed_query() {
-        let out = plan_summary(INDEXED_PLAN);
-        assert!(!out.contains("FULL SCAN"), "not flagged as full scan");
-        assert!(out.contains("ScalarIndexQuery"), "index shown");
-        assert!(out.contains("model_version"), "filter value shown");
-        assert!(out.contains("images_score_v2.lance"), "table name extracted");
-        assert!(out.contains("4"), "fragment count shown");
-    }
-
-    fn make_slow_query_event() -> SpanEvent {
+    fn make_full_scan_event() -> SpanEvent {
         let mut attrs = HashMap::new();
         attrs.insert("label".to_owned(), AttrValue::Str("list_unscored:scored_ids".to_owned()));
         attrs.insert("elapsed".to_owned(), AttrValue::Str("1.510759087s".to_owned()));
-        attrs.insert("plan".to_owned(), AttrValue::Str(FULL_SCAN_PLAN.to_owned()));
+        attrs.insert("plan.table".to_owned(), AttrValue::Str("images_v6.lance".to_owned()));
+        attrs.insert(
+            "plan.columns".to_owned(),
+            AttrValue::Str("image_id, discovered_at".to_owned()),
+        );
+        attrs.insert("plan.num_fragments".to_owned(), AttrValue::Int(66));
+        attrs.insert("plan.full_scan".to_owned(), AttrValue::Bool(true));
+        attrs.insert("plan.full_filter".to_owned(), AttrValue::Str(String::new()));
+        attrs.insert("plan.index".to_owned(), AttrValue::Str(String::new()));
         SpanEvent { name: "slow query".to_owned(), attributes: attrs }
     }
 
     #[test]
-    fn slow_query_extracted_from_well_formed_event() {
-        let event = make_slow_query_event();
-        let sq = extract_slow_query(&event).expect("should extract slow query");
+    fn slow_query_extracted_from_full_scan_attrs() {
+        let event = make_full_scan_event();
+        let sq = extract_slow_query(&event).expect("should extract");
         assert_eq!(sq.label, "list_unscored:scored_ids");
         assert_eq!(sq.elapsed, "1.510759087s");
-        assert!(sq.raw_plan.contains("LanceRead"));
+        assert_eq!(sq.plan.table.as_deref(), Some("images_v6.lance"));
+        assert_eq!(sq.plan.num_fragments, Some(66));
+        assert!(sq.plan.full_scan());
+        assert!(sq.plan.full_filter.is_none());
+        assert!(sq.plan.index.is_none());
+    }
+
+    // Disabled until the flat `plan.*` event attributes from `lancedb_utils.rs`
+    // are deployed and a fresh fixture is captured (`just capture-trace-fixtures`).
+    // The committed fixture still carries the legacy single `plan` string, so
+    // this assertion would fail today against real-but-stale data. Re-enable
+    // once new attributes are visible in production traces.
+    #[test]
+    #[ignore = "awaits redeploy + fresh fixture capture"]
+    fn slow_query_extracted_from_real_fixture() {
+        let trace = crate::tempo::trace_from_fixture_for_tests();
+        let event = trace
+            .spans
+            .iter()
+            .flat_map(|s| &s.events)
+            .find(|e| e.name == "slow query")
+            .expect("fixture has a slow query event");
+        let sq = extract_slow_query(event).expect("flat plan.* attrs present");
+        assert!(sq.plan.table.is_some(), "plan.table populated");
+        assert!(sq.plan.num_fragments.is_some(), "plan.num_fragments populated");
     }
 
     #[test]
     fn slow_query_returns_none_when_label_missing() {
-        let mut event = make_slow_query_event();
+        let mut event = make_full_scan_event();
         event.attributes.remove("label");
         assert!(extract_slow_query(&event).is_none());
     }
 
     #[test]
-    fn slow_query_returns_none_when_plan_missing() {
-        let mut event = make_slow_query_event();
-        event.attributes.remove("plan");
-        assert!(extract_slow_query(&event).is_none());
+    fn render_plan_flags_full_scan() {
+        let plan = QueryPlan {
+            table: Some("images_v6.lance".to_owned()),
+            columns: Some("image_id, discovered_at".to_owned()),
+            num_fragments: Some(66),
+            full_filter: None,
+            index: None,
+        };
+        let out = render_plan(&plan, "");
+        assert!(out.contains("FULL SCAN"));
+        assert!(out.contains("images_v6.lance"));
+        assert!(out.contains("66"));
+        assert!(!out.contains("filter:"));
+    }
+
+    #[test]
+    fn render_plan_shows_filter_and_index_for_indexed_query() {
+        let plan = QueryPlan {
+            table: Some("images_score_v2.lance".to_owned()),
+            columns: Some("image_id".to_owned()),
+            num_fragments: Some(4),
+            full_filter: Some("model_version = Utf8(\"ea219ee0\")".to_owned()),
+            index: Some(
+                "ScalarIndexQuery: query=[model_version = ea219ee0]@model_version_idx"
+                    .to_owned(),
+            ),
+        };
+        let out = render_plan(&plan, "");
+        assert!(!out.contains("FULL SCAN"));
+        assert!(out.contains("ScalarIndexQuery"));
+        assert!(out.contains("model_version"));
+        assert!(out.contains("images_score_v2.lance"));
+        assert!(out.contains("4"));
     }
 }

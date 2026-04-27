@@ -8,6 +8,7 @@ pub mod health;
 mod lancedb_utils;
 mod open;
 mod paging;
+pub mod query_plan;
 mod r2_metrics;
 mod schema;
 pub mod store_metrics;

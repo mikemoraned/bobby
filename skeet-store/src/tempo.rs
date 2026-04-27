@@ -87,6 +87,7 @@ struct OtlpKeyValue {
 struct OtlpValue {
     string_value: Option<String>,
     int_value: Option<String>,
+    bool_value: Option<bool>,
 }
 
 impl OtlpValue {
@@ -96,6 +97,9 @@ impl OtlpValue {
         }
         if let Some(i) = self.int_value.as_deref().and_then(|s| s.parse().ok()) {
             return Some(AttrValue::Int(i));
+        }
+        if let Some(b) = self.bool_value {
+            return Some(AttrValue::Bool(b));
         }
         None
     }
@@ -112,6 +116,7 @@ fn to_attr_map(kvs: Vec<OtlpKeyValue>) -> HashMap<String, AttrValue> {
 pub enum AttrValue {
     Str(String),
     Int(i64),
+    Bool(bool),
 }
 
 impl AttrValue {
@@ -121,6 +126,10 @@ impl AttrValue {
 
     pub const fn as_i64(&self) -> Option<i64> {
         if let Self::Int(n) = self { Some(*n) } else { None }
+    }
+
+    pub const fn as_bool(&self) -> Option<bool> {
+        if let Self::Bool(b) = self { Some(*b) } else { None }
     }
 }
 
@@ -208,13 +217,23 @@ impl TempoClient {
 }
 
 #[cfg(test)]
+const TRACE_FIXTURE_FOR_TESTS: &str =
+    include_str!("../tests/fixtures/tempo_trace_response.json");
+
+#[cfg(test)]
+pub(crate) fn trace_from_fixture_for_tests() -> Trace {
+    let resp: TraceResponse = serde_json::from_str(TRACE_FIXTURE_FOR_TESTS)
+        .expect("trace fixture should parse");
+    flatten_trace(resp)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
     const SEARCH_FIXTURE: &str =
         include_str!("../tests/fixtures/tempo_search_response.json");
-    const TRACE_FIXTURE: &str =
-        include_str!("../tests/fixtures/tempo_trace_response.json");
+    const TRACE_FIXTURE: &str = TRACE_FIXTURE_FOR_TESTS;
 
     #[test]
     fn search_response_deserialises() {
