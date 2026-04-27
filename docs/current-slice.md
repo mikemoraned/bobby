@@ -292,7 +292,8 @@ Every poll tick, `live-refine` runs `list_unscored_image_ids_for_version`, which
 
 We'll do this in stages:
 * [x] (observation) emit an OTel gauge from `SkeetStore` reporting the observed `version` for each table (label `table` ∈ {`images`, `scores`, ...}), updated on each access. This lets us see in Grafana how often the `images` table version actually changes per minute — if it changes every tick, the early-abort optimization gives no benefit and we should reconsider before building it.
-* [ ] implement a dashboard/panel in Grafana that shows how version changes over time for each table
+* [x] implement a dashboard/panel in Grafana that shows how version changes over time for each table
+    * **Result (27th Apr overnight):** `images_v6` has gaps of up to 40 minutes with no version change, more commonly ~6 minutes, and is frequently ≥2 minutes between changes. This confirms the early-abort is worth building — many ticks fire with no new images, each paying a full 64-fragment scan unnecessarily.
 * [x] (prerequisite) "Idea: Only update feed cache on version change" is implemented, giving us `version_snapshot` on `SkeetStore`
 * within `skeet-refine`, separate polling from dispatch:
     * [ ] extract the poll-and-fetch step from `live_refine.rs` into a `PollingImageSource` struct in `skeet-refine/src/`:
