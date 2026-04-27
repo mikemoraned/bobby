@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -16,6 +17,11 @@ pub struct QueryPlan {
     pub num_fragments: Option<u64>,
     pub full_filter: Option<String>,
     pub index: Option<String>,
+    /// Keys present in the plan that we don't pull out as structured fields.
+    /// Logged as a free-string suffix on the message — gives a heads-up if
+    /// datafusion's plan format grows new fields we should consider extracting.
+    /// Ordered (BTree) so the message is stable for tests and human eyes.
+    pub unknown_keys: BTreeSet<String>,
 }
 
 // Matches one `key=value` field, where `value` is either `[bracketed]`
@@ -38,10 +44,15 @@ impl QueryPlan {
                             plan.columns = Some(value.trim_matches(['[', ']']).to_owned());
                         }
                         "num_fragments" => plan.num_fragments = value.parse().ok(),
-                        "full_filter" if value != "--" => {
-                            plan.full_filter = Some(value.to_owned());
+                        "full_filter" => {
+                            // "--" is datafusion's sentinel for "no filter"
+                            if value != "--" {
+                                plan.full_filter = Some(value.to_owned());
+                            }
                         }
-                        _ => {}
+                        _ => {
+                            plan.unknown_keys.insert(key.to_owned());
+                        }
                     }
                 }
             } else if line.starts_with("ScalarIndexQuery:") {
@@ -77,6 +88,22 @@ mod tests {
         assert_eq!(plan.full_filter, None);
         assert_eq!(plan.index, None);
         assert!(plan.full_scan());
+    }
+
+    #[test]
+    fn unknown_keys_collects_unhandled_lance_read_fields() {
+        let plan = QueryPlan::parse(FULL_SCAN_PLAN);
+        let expected: BTreeSet<String> = [
+            "range_before",
+            "range_after",
+            "row_id",
+            "row_addr",
+            "refine_filter",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+        assert_eq!(plan.unknown_keys, expected);
     }
 
     #[test]

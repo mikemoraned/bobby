@@ -88,6 +88,7 @@ fn extract_slow_query(event: &SpanEvent) -> Option<SlowQuery> {
             .map(|n| n as u64),
         full_filter: non_empty_str(event, "plan.full_filter"),
         index: non_empty_str(event, "plan.index"),
+        unknown_keys: std::collections::BTreeSet::default(),
     };
     Some(SlowQuery { label, elapsed, plan })
 }
@@ -289,6 +290,7 @@ mod tests {
             num_fragments: Some(66),
             full_filter: None,
             index: None,
+            unknown_keys: std::collections::BTreeSet::default(),
         };
         let out = render_plan(&plan, "");
         assert!(out.contains("FULL SCAN"));
@@ -308,6 +310,7 @@ mod tests {
                 "ScalarIndexQuery: query=[model_version = ea219ee0]@model_version_idx"
                     .to_owned(),
             ),
+            unknown_keys: std::collections::BTreeSet::default(),
         };
         let out = render_plan(&plan, "");
         assert!(!out.contains("FULL SCAN"));

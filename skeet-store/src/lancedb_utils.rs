@@ -26,6 +26,12 @@ pub async fn execute_query(
     let full_filter = plan.full_filter.as_deref().unwrap_or("");
     let full_scan = plan.full_scan();
     let index = plan.index.as_deref().unwrap_or("");
+    let unknown_suffix = if plan.unknown_keys.is_empty() {
+        String::new()
+    } else {
+        let keys: Vec<&str> = plan.unknown_keys.iter().map(String::as_str).collect();
+        format!(" (unknown plan keys: {})", keys.join(", "))
+    };
 
     if elapsed > SLOW_QUERY_THRESHOLD {
         warn!(
@@ -37,7 +43,7 @@ pub async fn execute_query(
             plan.full_scan = full_scan,
             plan.full_filter = full_filter,
             plan.index = index,
-            "slow query"
+            "slow query{unknown_suffix}"
         );
     } else {
         debug!(
@@ -49,7 +55,7 @@ pub async fn execute_query(
             plan.full_scan = full_scan,
             plan.full_filter = full_filter,
             plan.index = index,
-            "query"
+            "query{unknown_suffix}"
         );
     }
 
