@@ -1,3 +1,7 @@
+use std::sync::LazyLock;
+
+use regex::Regex;
+
 /// Parsed shape of a lancedb `explain_plan` string.
 ///
 /// Lancedb's `explain_plan` returns datafusion's free-form `Display` output (no
@@ -14,28 +18,32 @@ pub struct QueryPlan {
     pub index: Option<String>,
 }
 
+// Matches one `key=value` field, where `value` is either `[bracketed]`
+// (allowing internal commas, as in `projection=[a, b]`) or anything up to the
+// next `, ` separator.
+static FIELD_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(\w+)=(\[[^\]]*\]|[^,]*)").expect("static regex"));
+
 impl QueryPlan {
     pub fn parse(raw: &str) -> Self {
         let mut plan = Self::default();
         for line in raw.lines() {
             let line = line.trim();
-            if line.starts_with("LanceRead:") {
-                if let Some(uri) = extract_field(line, "uri") {
-                    plan.table = uri
-                        .split('/')
-                        .find(|s| s.ends_with(".lance"))
-                        .map(str::to_owned);
+            if let Some(rest) = line.strip_prefix("LanceRead: ") {
+                for cap in FIELD_RE.captures_iter(rest) {
+                    let (_, [key, value]) = cap.extract();
+                    match key {
+                        "uri" => plan.table = lance_segment(value).map(str::to_owned),
+                        "projection" => {
+                            plan.columns = Some(value.trim_matches(['[', ']']).to_owned());
+                        }
+                        "num_fragments" => plan.num_fragments = value.parse().ok(),
+                        "full_filter" if value != "--" => {
+                            plan.full_filter = Some(value.to_owned());
+                        }
+                        _ => {}
+                    }
                 }
-                if let Some(proj) = extract_field(line, "projection") {
-                    plan.columns =
-                        Some(proj.trim_matches(|c| c == '[' || c == ']').to_owned());
-                }
-                plan.num_fragments =
-                    extract_field(line, "num_fragments").and_then(|s| s.parse().ok());
-                plan.full_filter = match extract_field(line, "full_filter") {
-                    Some("--") | None => None,
-                    Some(s) => Some(s.to_owned()),
-                };
             } else if line.starts_with("ScalarIndexQuery:") {
                 plan.index = Some(line.to_owned());
             }
@@ -48,19 +56,8 @@ impl QueryPlan {
     }
 }
 
-// Extract `key=value` from a Lance plan line; handles `projection=[a, b]` with
-// inner commas by treating `[…]` as a single value.
-fn extract_field<'a>(line: &'a str, key: &str) -> Option<&'a str> {
-    let needle = format!("{key}=");
-    let pos = line.find(needle.as_str())?;
-    let rest = &line[pos + needle.len()..];
-    if rest.starts_with('[') {
-        let end = rest.find(']')?;
-        Some(&rest[..=end])
-    } else {
-        let end = rest.find(", ").unwrap_or(rest.len());
-        Some(&rest[..end])
-    }
+fn lance_segment(uri: &str) -> Option<&str> {
+    uri.split('/').find(|s| s.ends_with(".lance"))
 }
 
 #[cfg(test)]
