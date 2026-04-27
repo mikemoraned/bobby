@@ -296,12 +296,12 @@ We'll do this in stages:
     * **Result (27th Apr overnight):** `images_v6` has gaps of up to 40 minutes with no version change, more commonly ~6 minutes, and is frequently ≥2 minutes between changes. This confirms the early-abort is worth building — many ticks fire with no new images, each paying a full 64-fragment scan unnecessarily.
 * [x] (prerequisite) "Idea: Only update feed cache on version change" is implemented, giving us `version_snapshot` on `SkeetStore`
 * within `skeet-refine`, separate polling from dispatch:
-    * [ ] extract the poll-and-fetch step from `live_refine.rs` into a `PollingImageSource` struct in `skeet-refine/src/`:
-        * holds `store: Arc<SkeetStore>`, `model_version: ModelVersion`, and `last_images_version: Option<String>` as state between ticks
-        * exposes an async `fetch(&mut self) -> Result<Vec<(ImageId, DynamicImage)>, ...>` method
-        * on each call: fetch `version_snapshot()`, extract the `images` table version, and return `Ok(vec![])` immediately if unchanged since last call
+    * [x] extract the poll-and-fetch step from `live_refine.rs` into a `PollingBatchSource` struct in `skeet-refine/src/polling.rs`:
+        * holds `store: Arc<SkeetStore>`, `model_version: ModelVersion`, and `last_images_version: Option<u64>` as state between ticks
+        * exposes an async `fetch(&mut self) -> Result<Batch, StoreError>` method; `Batch` is constructed via `From<Vec<StoredOriginal>>`
+        * on each call: fetch `table_versions()`, extract the `images` table version, and return an empty `Batch` immediately if unchanged since last call
         * if changed: run `list_unscored_image_ids_for_version` + `get_originals_by_ids`, update `last_images_version`, and return the candidates
-    * [ ] update `live_refine.rs` main loop to call `source.fetch()` instead of doing the query inline; the dispatch half (batching, `buffer_unordered` scoring, `batch_upsert_scores`) does not change
+    * [x] update `live_refine.rs` main loop to call `source.fetch()` instead of doing the query inline; dispatch is a single `dispatch(&mut candidates, ...)` call
 
 ##### Variation: hold `last_discovered_at` and push it down as a filter
 

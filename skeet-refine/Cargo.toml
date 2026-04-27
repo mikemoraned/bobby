@@ -27,6 +27,7 @@ tracing-subscriber = { workspace = true }
 build-support = { workspace = true }
 
 [dev-dependencies]
+skeet-store = { path = "../skeet-store", features = ["test-helpers"] }
 tempfile = { workspace = true }
 
 [[bin]]
