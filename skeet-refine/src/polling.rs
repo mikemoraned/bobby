@@ -1,42 +1,15 @@
 use std::sync::Arc;
 
-use image::DynamicImage;
-use skeet_store::{ImageId, ModelVersion, SkeetStore, StoreError, StoredOriginal, TABLE_NAME};
+use skeet_store::{DiscoveredAt, ModelVersion, SkeetStore, StoreError, TABLE_NAME};
 use tracing::info;
 
-/// A staging buffer of images to be scored together in one parallel dispatch.
-#[derive(Default)]
-pub struct Batch {
-    pub ids: Vec<ImageId>,
-    pub images: Vec<DynamicImage>,
-}
-
-impl Batch {
-    pub const fn len(&self) -> usize {
-        self.ids.len()
-    }
-
-    pub const fn is_empty(&self) -> bool {
-        self.ids.is_empty()
-    }
-}
-
-impl From<Vec<StoredOriginal>> for Batch {
-    fn from(originals: Vec<StoredOriginal>) -> Self {
-        let mut ids = Vec::with_capacity(originals.len());
-        let mut images = Vec::with_capacity(originals.len());
-        for s in originals {
-            ids.push(s.summary.image_id);
-            images.push(s.image);
-        }
-        Self { ids, images }
-    }
-}
+use crate::batch::Batch;
 
 pub struct PollingBatchSource {
     store: Arc<SkeetStore>,
     model_version: ModelVersion,
     last_images_version: Option<u64>,
+    last_discovered_at: Option<DiscoveredAt>,
 }
 
 impl PollingBatchSource {
@@ -45,6 +18,7 @@ impl PollingBatchSource {
             store,
             model_version,
             last_images_version: None,
+            last_discovered_at: None,
         }
     }
 
@@ -53,6 +27,10 @@ impl PollingBatchSource {
     /// Returns an empty `Batch` if the `images` table version hasn't changed since
     /// the last call — skipping the expensive full-table scan. On cold start
     /// (first call) always runs the scan regardless.
+    ///
+    /// Once a watermark exists (set by [`Self::commit`] after a prior tick), the
+    /// underlying scan pushes down a `discovered_at >= last_discovered_at`
+    /// filter so the oldest unscored straggler is always re-included.
     pub async fn fetch(&mut self) -> Result<Batch, StoreError> {
         let versions = self.store.table_versions().await?;
         let images_version = versions
@@ -66,7 +44,10 @@ impl PollingBatchSource {
 
         let unscored_ids = self
             .store
-            .list_unscored_image_ids_for_version(&self.model_version)
+            .list_unscored_image_ids_for_version(
+                &self.model_version,
+                self.last_discovered_at.as_ref(),
+            )
             .await?;
 
         self.last_images_version = images_version;
@@ -80,12 +61,25 @@ impl PollingBatchSource {
         let originals = self.store.get_originals_by_ids(&unscored_ids).await?;
         Ok(Batch::from(originals))
     }
+
+    /// Consume `batch` and advance the internal watermark using its completion
+    /// bookkeeping. Monotonic — earlier watermarks never roll the cutoff back.
+    pub fn commit(&mut self, batch: Batch) {
+        let Some(w) = batch.watermark() else {
+            return;
+        };
+        match &self.last_discovered_at {
+            Some(prev) if prev >= &w => {}
+            _ => self.last_discovered_at = Some(w),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use skeet_store::test_utils::{make_record, open_temp_store};
+    use chrono::TimeZone as _;
+    use skeet_store::test_utils::{make_record, make_record_at, open_temp_store};
 
     #[tokio::test]
     async fn cold_start_always_fetches() {
@@ -124,5 +118,138 @@ mod tests {
 
         let second = source.fetch().await.expect("second fetch");
         assert_eq!(second.len(), 2, "both images should be unscored");
+    }
+
+    #[tokio::test]
+    async fn batch_owns_discovered_at_per_candidate() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = Arc::new(open_temp_store(&dir).await);
+        let t = chrono::Utc.with_ymd_and_hms(2026, 4, 20, 0, 0, 0).unwrap();
+        let r = make_record_at("d1", 10, 0, 0, DiscoveredAt::new(t));
+        let id = r.image_id.clone();
+        store.add(&r).await.expect("add");
+
+        let mut source = PollingBatchSource::new(store, ModelVersion::from("v1"));
+        let batch = source.fetch().await.expect("fetch");
+        assert_eq!(batch.discovered_at(&id), Some(&DiscoveredAt::new(t)));
+    }
+
+    #[tokio::test]
+    async fn commit_fully_completed_batch_advances_to_max() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = Arc::new(open_temp_store(&dir).await);
+        let t_old = chrono::Utc.with_ymd_and_hms(2026, 4, 1, 0, 0, 0).unwrap();
+        let t_new = chrono::Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap();
+        let r_old = make_record_at("ok_old", 10, 0, 0, DiscoveredAt::new(t_old));
+        let r_new = make_record_at("ok_new", 20, 0, 0, DiscoveredAt::new(t_new));
+        store.add(&r_old).await.expect("add");
+        store.add(&r_new).await.expect("add");
+
+        let mut source = PollingBatchSource::new(store.clone(), ModelVersion::from("v1"));
+        let mut first = source.fetch().await.expect("first fetch");
+        assert_eq!(first.len(), 2);
+        first.mark_completed(&r_old.image_id);
+        first.mark_completed(&r_new.image_id);
+        source.commit(first);
+
+        assert_eq!(
+            source.last_discovered_at.as_ref(),
+            Some(&DiscoveredAt::new(t_new)),
+            "fully-completed → watermark = max of batch"
+        );
+    }
+
+    #[tokio::test]
+    async fn commit_with_straggler_advances_to_oldest_uncompleted() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = Arc::new(open_temp_store(&dir).await);
+        let t_old = chrono::Utc.with_ymd_and_hms(2026, 4, 1, 0, 0, 0).unwrap();
+        let t_mid = chrono::Utc.with_ymd_and_hms(2026, 4, 15, 0, 0, 0).unwrap();
+        let t_new = chrono::Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap();
+        let r_old = make_record_at("s_old", 10, 0, 0, DiscoveredAt::new(t_old));
+        let r_mid = make_record_at("s_mid", 20, 0, 0, DiscoveredAt::new(t_mid));
+        let r_new = make_record_at("s_new", 30, 0, 0, DiscoveredAt::new(t_new));
+        store.add(&r_old).await.expect("add");
+        store.add(&r_mid).await.expect("add");
+        store.add(&r_new).await.expect("add");
+
+        let mut source = PollingBatchSource::new(store.clone(), ModelVersion::from("v1"));
+        let mut first = source.fetch().await.expect("first fetch");
+        assert_eq!(first.len(), 3);
+        // Old + new succeed; mid fails (e.g. ParseScore error).
+        first.mark_completed(&r_old.image_id);
+        first.mark_completed(&r_new.image_id);
+        source.commit(first);
+
+        assert_eq!(
+            source.last_discovered_at.as_ref(),
+            Some(&DiscoveredAt::new(t_mid)),
+            "watermark = min(uncompleted) so the straggler re-appears"
+        );
+    }
+
+    #[tokio::test]
+    async fn straggler_reappears_on_next_fetch_after_commit() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = Arc::new(open_temp_store(&dir).await);
+        let t_mid = chrono::Utc.with_ymd_and_hms(2026, 4, 15, 0, 0, 0).unwrap();
+        let t_new = chrono::Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap();
+        let r_mid = make_record_at("re_mid", 20, 0, 0, DiscoveredAt::new(t_mid));
+        let r_new = make_record_at("re_new", 30, 0, 0, DiscoveredAt::new(t_new));
+        store.add(&r_mid).await.expect("add");
+        store.add(&r_new).await.expect("add");
+
+        let mut source = PollingBatchSource::new(store.clone(), ModelVersion::from("v1"));
+        let mut first = source.fetch().await.expect("first fetch");
+        assert_eq!(first.len(), 2);
+        first.mark_completed(&r_new.image_id); // mid stays uncompleted
+        source.commit(first);
+
+        // Add a row that bumps the table version so the early-abort doesn't fire.
+        let t_extra = chrono::Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap();
+        let r_extra = make_record_at("re_extra", 40, 0, 0, DiscoveredAt::new(t_extra));
+        store.add(&r_extra).await.expect("add");
+
+        let second = source.fetch().await.expect("second fetch");
+        // mid is still unscored; extra is brand new; new is already scored. But
+        // we never actually called batch_upsert_scores, so list_unscored sees
+        // nothing as scored — so mid + extra + new (still ≥ t_mid) all return.
+        // What we're really asserting: mid is in the next batch, i.e. straggler
+        // re-appears once the version-snapshot early-abort releases.
+        assert!(
+            second.discovered_at(&r_mid.image_id).is_some(),
+            "the uncompleted straggler must re-appear"
+        );
+    }
+
+    #[tokio::test]
+    async fn commit_is_monotonic_with_constructed_batches() {
+        // Watermark is computed from the batch only — exercise commit
+        // without going through a store fetch by constructing batches by hand.
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = Arc::new(open_temp_store(&dir).await);
+        let mut source = PollingBatchSource::new(store, ModelVersion::from("v1"));
+
+        let t_late = chrono::Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap();
+        let t_early = chrono::Utc.with_ymd_and_hms(2026, 4, 1, 0, 0, 0).unwrap();
+        let id_late = make_record_at("late", 10, 0, 0, DiscoveredAt::new(t_late)).image_id;
+        let id_early = make_record_at("early", 20, 0, 0, DiscoveredAt::new(t_early)).image_id;
+
+        let mut b1 = Batch::with_entry(id_late.clone(), DiscoveredAt::new(t_late));
+        b1.mark_completed(&id_late);
+        source.commit(b1);
+        assert_eq!(
+            source.last_discovered_at.as_ref(),
+            Some(&DiscoveredAt::new(t_late))
+        );
+
+        // Don't mark — watermark would be t_early.
+        let b2 = Batch::with_entry(id_early, DiscoveredAt::new(t_early));
+        source.commit(b2);
+        assert_eq!(
+            source.last_discovered_at.as_ref(),
+            Some(&DiscoveredAt::new(t_late)),
+            "earlier watermark must not roll the cutoff back"
+        );
     }
 }

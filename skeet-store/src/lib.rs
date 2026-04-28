@@ -323,14 +323,23 @@ impl SkeetStore {
     }
 
     #[instrument(skip(self))]
-    pub async fn list_all_image_ids_by_most_recent(&self) -> Result<Vec<ImageId>, StoreError> {
-        let query = self
+    pub async fn list_all_image_ids_by_most_recent(
+        &self,
+        since: Option<&DiscoveredAt>,
+    ) -> Result<Vec<ImageId>, StoreError> {
+        let mut query = self
             .images_table
             .query()
             .select(lancedb::query::Select::columns(&[
                 "image_id",
                 "discovered_at",
             ]));
+        if let Some(ts) = since {
+            let cutoff_us = ts.timestamp_micros();
+            query = query.only_if(format!(
+                "discovered_at >= arrow_cast({cutoff_us}, 'Timestamp(Microsecond, Some(\"UTC\"))')"
+            ));
+        }
         let batches = execute_query(&query, "list_all_image_ids_by_most_recent").await?;
 
         let mut id_times = Vec::new();

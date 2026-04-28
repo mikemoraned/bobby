@@ -193,7 +193,7 @@ async fn list_unscored_returns_images_without_scores() {
         .unwrap();
 
     let unscored = store
-        .list_unscored_image_ids_for_version(&mv)
+        .list_unscored_image_ids_for_version(&mv, None)
         .await
         .unwrap();
     assert_eq!(unscored.len(), 2);
@@ -218,11 +218,64 @@ async fn list_unscored_includes_images_scored_with_different_version() {
         .unwrap();
 
     let unscored = store
-        .list_unscored_image_ids_for_version(&new_mv)
+        .list_unscored_image_ids_for_version(&new_mv, None)
         .await
         .unwrap();
     assert_eq!(unscored.len(), 1);
     assert!(unscored.contains(&r1.image_id));
+}
+
+#[tokio::test]
+async fn list_unscored_with_since_filter_returns_only_newer() {
+    use chrono::TimeZone as _;
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let t_old = chrono::Utc.with_ymd_and_hms(2026, 4, 1, 0, 0, 0).unwrap();
+    let t_mid = chrono::Utc.with_ymd_and_hms(2026, 4, 15, 0, 0, 0).unwrap();
+    let t_new = chrono::Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap();
+
+    let r_old = make_record_at("old", 10, 0, 0, DiscoveredAt::new(t_old));
+    let r_mid = make_record_at("mid", 20, 0, 0, DiscoveredAt::new(t_mid));
+    let r_new = make_record_at("new", 30, 0, 0, DiscoveredAt::new(t_new));
+    store.add(&r_old).await.unwrap();
+    store.add(&r_mid).await.unwrap();
+    store.add(&r_new).await.unwrap();
+
+    let mv = test_model_version();
+    let cutoff = DiscoveredAt::new(t_mid);
+    let unscored = store
+        .list_unscored_image_ids_for_version(&mv, Some(&cutoff))
+        .await
+        .unwrap();
+
+    assert_eq!(unscored.len(), 2, "rows at or after cutoff");
+    assert!(unscored.contains(&r_new.image_id));
+    assert!(unscored.contains(&r_mid.image_id), "cutoff is inclusive");
+    assert!(!unscored.contains(&r_old.image_id));
+}
+
+#[tokio::test]
+async fn list_all_image_ids_with_since_filter_returns_only_newer() {
+    use chrono::TimeZone as _;
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let t_old = chrono::Utc.with_ymd_and_hms(2026, 4, 1, 0, 0, 0).unwrap();
+    let t_new = chrono::Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap();
+
+    let r_old = make_record_at("all_old", 10, 0, 0, DiscoveredAt::new(t_old));
+    let r_new = make_record_at("all_new", 30, 0, 0, DiscoveredAt::new(t_new));
+    store.add(&r_old).await.unwrap();
+    store.add(&r_new).await.unwrap();
+
+    let cutoff = DiscoveredAt::new(t_new);
+    let ids = store
+        .list_all_image_ids_by_most_recent(Some(&cutoff))
+        .await
+        .unwrap();
+    assert_eq!(ids.len(), 1);
+    assert!(ids.contains(&r_new.image_id));
 }
 
 #[tokio::test]

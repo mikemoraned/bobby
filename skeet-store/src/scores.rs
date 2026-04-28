@@ -123,8 +123,9 @@ impl SkeetStore {
     pub async fn list_unscored_image_ids_for_version(
         &self,
         model_version: &ModelVersion,
+        since: Option<&crate::DiscoveredAt>,
     ) -> Result<Vec<ImageId>, StoreError> {
-        let all_ids = self.list_all_image_ids_by_most_recent().await?;
+        let all_ids = self.list_all_image_ids_by_most_recent(since).await?;
 
         let version_str = model_version.to_string();
         let scored_query = self

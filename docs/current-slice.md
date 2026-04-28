@@ -305,13 +305,26 @@ We'll do this in stages:
 
 ##### Variation: hold `last_discovered_at` and push it down as a filter
 
-The version-snapshot above is binary (changed / not changed). When the table *has* changed, we still scan every fragment looking for unscored ids. A finer variation: also remember the maximum `discovered_at` that `PollingImageSource` has seen scored, and pass it back into the store as a `WHERE discovered_at > last_discovered_at` filter on the next tick. This composes with *Idea: make `list_all_image_ids_by_most_recent` use `discovered_at_idx`* — that filter is exactly the predicate the BTree on `discovered_at` can satisfy. Result: when a tick does run, it pays a BTree range read instead of a 64-fragment scan.
+The version-snapshot above is binary (changed / not changed). When the table *has* changed, we still scan every fragment looking for unscored ids. A finer variation: also remember the maximum `discovered_at` that `PollingBatchSource` has seen successfully scored, and pass it back into the store as a `WHERE discovered_at > last_discovered_at` filter on the next tick. This composes with *Idea: make `list_all_image_ids_by_most_recent` use `discovered_at_idx`* — that filter is exactly the predicate the BTree on `discovered_at` can satisfy. Result: when a tick does run, it pays a BTree range read instead of a 64-fragment scan.
 
-* [ ] extend `PollingImageSource` with `last_discovered_at: Option<DateTime<Utc>>` state, updated to the max `discovered_at` of the candidates returned each tick
-* [ ] add a `since: Option<DateTime<Utc>>` parameter to `list_unscored_image_ids_for_version` (and through to `list_all_image_ids_by_most_recent`) — when `Some`, push down a `discovered_at > <ts>` filter; when `None`, behave as today
-* [ ] handle the cold-start / restart case: in-memory state means a fresh pod takes one full scan to bootstrap `last_discovered_at`; that's acceptable, no persistence needed
+Naming/type notes (cross-checked with `skeet-refine/src/polling.rs` + `skeet-store/src/types.rs`):
+* the existing struct is `PollingBatchSource` (not `PollingImageSource`); state is held there
+* the timestamp newtype in this codebase is `DiscoveredAt` (wraps `DateTime<Utc>`); use that for the cutoff
+* `Batch` currently exposes only `ids` + `images` — it needs to carry per-candidate `DiscoveredAt` plus per-id completion bookkeeping internally, so the live-refine loop reports completions back through the batch object itself
 
-**Edge case to think through before building:** if scoring an image fails (e.g. `Completion`/`ParseScore` errors in `LiveRefineMetrics`), the image stays unscored but its `discovered_at` is in the past — a strictly-monotonic `last_discovered_at` cutoff would never retry it. Mitigations: (a) only advance `last_discovered_at` to the max `discovered_at` of *successfully scored* images, leaving stragglers in-window; or (b) keep the cutoff but run a periodic full reconciliation pass (e.g. once an hour) to catch dropped images. (a) is simpler and probably sufficient.
+Edge case (decided): if scoring fails (e.g. `Completion`/`ParseScore` errors), the image stays unscored but its `discovered_at` is in the past — a strictly-monotonic cutoff would never retry it. We'll go with **option (a): only advance the watermark up to but not past the oldest unscored image in the batch**, leaving stragglers in-window. (Considered (b): keep the cutoff but run a periodic full-reconciliation pass — rejected as more complex for no extra correctness.)
+
+Watermark rule (computed inside `Batch` at commit time):
+* if every batch member was marked completed → watermark = `max(discovered_at)` of all members (we've fully processed them)
+* if any batch member was not marked completed → watermark = `min(discovered_at)` of the not-completed members (advancing past those would lose them)
+
+The store-side filter must be **inclusive (`discovered_at >= since`)** so the oldest-not-completed member is re-fetched on the next tick. (Already-scored members caught by the same filter are then weeded out by `list_unscored_image_ids_for_version`'s scored-id join — i.e. inclusive `>=` is safe even when the watermark sits on a completed boundary.)
+
+* [x] add a `since: Option<DiscoveredAt>` parameter to `list_unscored_image_ids_for_version` (threading through to `list_all_image_ids_by_most_recent`) — when `Some`, push down a `discovered_at >= <ts>` filter on the `images` table query; when `None`, behave as today. TDD: add a store-level test that adds rows with two timestamps and asserts the `since` form returns only the newer subset (and includes the boundary row).
+* [x] extend `Batch` (in `skeet-refine/src/polling.rs`) with private `discovered_at_by_id: HashMap<ImageId, DiscoveredAt>` (sourced from `StoredOriginal::summary::discovered_at` in `From<Vec<StoredOriginal>>`) and `completed: HashSet<ImageId>` plus a public `mark_completed(&id)` method. The live-refine loop calls `batch.mark_completed(&id)` for each successfully scored candidate during dispatch.
+* [x] extend `PollingBatchSource` with `last_discovered_at: Option<DiscoveredAt>` state and a `commit(&mut self, batch: Batch)` method that consumes the batch, computes the watermark as above, and advances `last_discovered_at` (monotonically — never goes backwards). `fetch()` passes `self.last_discovered_at.clone()` as the `since` arg. Tests: (1) cold start with `None` returns full scan; (2) after `commit` of a fully-completed batch, next `fetch` skips already-scored items via the watermark; (3) after `commit` of a batch with stragglers, the oldest straggler is the watermark and re-appears on the next tick; (4) `commit` is monotonic — earlier watermarks don't roll back.
+* [x] in `live_refine.rs`, drive the loop as: `let mut batch = source.fetch().await?;` → dispatch, calling `batch.mark_completed(&id)` for each successful scoring → `store.batch_upsert_scores(...)` → `source.commit(batch)`. Errors leave that id un-marked, so the watermark won't advance past it.
+* [x] cold-start / restart behaviour: in-memory state means a fresh pod takes one full scan to bootstrap `last_discovered_at` — acceptable, no persistence needed.
 
 #### Idea: make `list_all_image_ids_by_most_recent` use `discovered_at_idx`
 

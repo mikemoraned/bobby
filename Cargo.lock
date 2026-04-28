@@ -10679,10 +10679,12 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "build-support",
+ "chrono",
  "clap",
  "futures",
  "image",
  "opentelemetry",
+ "proptest",
  "rig-core",
  "serde",
  "serde_json",

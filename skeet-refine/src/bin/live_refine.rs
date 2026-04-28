@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use clap::Parser;
-use futures::stream::{self, StreamExt};
 use shared::{ModelVersion, Score};
+use skeet_refine::batch::Batch;
 use skeet_refine::metrics::LiveRefineMetrics;
 use skeet_refine::model::load_model;
-use skeet_refine::polling::{Batch, PollingBatchSource};
+use skeet_refine::polling::PollingBatchSource;
 use skeet_refine::refining::{build_agent, create_client, refine_image, RefineAgent};
 use skeet_store::{ImageId, StoreArgs, StoreMetrics};
 use tracing::{error, info};
@@ -45,25 +45,22 @@ struct ScoringContext<'a> {
 }
 
 async fn dispatch(batch: &mut Batch, ctx: &ScoringContext<'_>, acc: &mut TickAccumulator) {
-    let results: Vec<_> = stream::iter(batch.images.iter())
-        .map(|image| refine_image(ctx.agent, image))
-        .buffer_unordered(ctx.concurrency)
-        .collect()
+    let agent = ctx.agent;
+    let outcomes = batch
+        .score_with(ctx.concurrency, move |img| async move {
+            refine_image(agent, &img).await
+        })
         .await;
 
-    for (id, result) in batch.ids.drain(..).zip(results) {
-        match result {
-            Ok(score) => {
-                info!(image_id = %id, %score, "refined");
-                acc.pending_scores.push((id, score, ctx.model_version.clone()));
-            }
-            Err(e) => {
-                error!(image_id = %id, error = %e, "failed to refine");
-                *acc.errors.entry(e.as_label().to_string()).or_default() += 1;
-            }
-        }
+    for (id, score) in outcomes.successes {
+        info!(image_id = %id, %score, "refined");
+        acc.pending_scores
+            .push((id, score, ctx.model_version.clone()));
     }
-    batch.images.clear();
+    for (id, e) in outcomes.failures {
+        error!(image_id = %id, error = %e, "failed to refine");
+        *acc.errors.entry(e.as_label().to_string()).or_default() += 1;
+    }
 }
 
 /// Running totals accumulated across all ticks, used to drive OTel metrics.
@@ -151,13 +148,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         interval.tick().await;
 
-        let candidates = source.fetch().await?;
+        let mut candidates = source.fetch().await?;
         if candidates.is_empty() {
             continue;
         }
 
         let unscored_count = candidates.len() as u64;
-        let mut candidates = candidates;
         let mut acc = TickAccumulator::new();
         dispatch(&mut candidates, &ctx, &mut acc).await;
 
@@ -173,6 +169,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             vec![]
         };
+        source.commit(candidates);
 
         metrics.emit(totals.unscored, totals.scored, &totals.errors, &tick_scores);
 
