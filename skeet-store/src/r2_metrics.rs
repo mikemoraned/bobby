@@ -79,13 +79,14 @@ impl CountingObjectStore {
         location: &Path,
         operation: &'static str,
         r2_class: &'static str,
-    ) -> [KeyValue; 5] {
+    ) -> [KeyValue; 6] {
         [
             KeyValue::new("operation", operation),
             KeyValue::new("r2_class", r2_class),
             KeyValue::new("cli", self.cli_name.clone()),
             KeyValue::new("store_prefix", self.store_prefix.clone()),
             KeyValue::new("table", table_from_path(location)),
+            KeyValue::new("kind", kind_from_path(location)),
         ]
     }
 
@@ -237,6 +238,27 @@ fn table_from_path(location: &Path) -> String {
         .map_or_else(|| "unknown".to_string(), |part| part.as_ref().to_string())
 }
 
+/// Classify the path segment immediately after the `<table>.lance/` directory.
+///
+/// Returns one of: `data`, `_indices`, `_versions`, `_transactions`, `manifest`
+/// (for top-level `.manifest` files inside the `.lance/` dir), or `other`.
+fn kind_from_path(location: &Path) -> &'static str {
+    let mut parts = location.parts();
+    while let Some(part) = parts.next() {
+        if part.as_ref().ends_with(".lance") {
+            return parts.next().map_or("other", |next| match next.as_ref() {
+                "data" => "data",
+                "_indices" => "_indices",
+                "_versions" => "_versions",
+                "_transactions" => "_transactions",
+                s if s.ends_with(".manifest") => "manifest",
+                _ => "other",
+            });
+        }
+    }
+    "other"
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,6 +320,85 @@ mod tests {
     #[test]
     fn table_from_path_falls_back_to_unknown_for_empty_path() {
         assert_eq!(table_from_path(&Path::from("")), "unknown");
+    }
+
+    #[test]
+    fn kind_from_path_data_segment() {
+        assert_eq!(
+            kind_from_path(&Path::from("encrypted-store/images_v6.lance/data/abc.lance")),
+            "data"
+        );
+    }
+
+    #[test]
+    fn kind_from_path_indices_segment() {
+        assert_eq!(
+            kind_from_path(&Path::from(
+                "encrypted-store/images_score_v2.lance/_indices/uuid-abc/index.idx"
+            )),
+            "_indices"
+        );
+    }
+
+    #[test]
+    fn kind_from_path_versions_segment() {
+        assert_eq!(
+            kind_from_path(&Path::from(
+                "encrypted-store/images_score_v2.lance/_versions/123.manifest"
+            )),
+            "_versions"
+        );
+    }
+
+    #[test]
+    fn kind_from_path_transactions_segment() {
+        assert_eq!(
+            kind_from_path(&Path::from(
+                "encrypted-store/images_v6.lance/_transactions/0-abc.txn"
+            )),
+            "_transactions"
+        );
+    }
+
+    #[test]
+    fn kind_from_path_top_level_manifest_file() {
+        assert_eq!(
+            kind_from_path(&Path::from(
+                "encrypted-store/images_v6.lance/_latest.manifest"
+            )),
+            "manifest"
+        );
+    }
+
+    #[test]
+    fn kind_from_path_unknown_segment_is_other() {
+        assert_eq!(
+            kind_from_path(&Path::from(
+                "encrypted-store/images_v6.lance/something_unexpected/x"
+            )),
+            "other"
+        );
+    }
+
+    #[test]
+    fn kind_from_path_no_lance_segment_is_other() {
+        assert_eq!(
+            kind_from_path(&Path::from("encrypted-store/data/abc.arrow")),
+            "other"
+        );
+    }
+
+    #[test]
+    fn kind_from_path_empty_path_is_other() {
+        assert_eq!(kind_from_path(&Path::from("")), "other");
+    }
+
+    #[test]
+    fn kind_from_path_lance_segment_with_no_child_is_other() {
+        assert_eq!(
+            kind_from_path(&Path::from("encrypted-store/images_v6.lance")),
+            "other"
+        );
     }
 
     #[test]

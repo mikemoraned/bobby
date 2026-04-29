@@ -395,7 +395,7 @@ The R2 metrics emitted by `R2MetricsWrapper` are not currently linked to any tra
 
 Today `table_from_path` (`r2_metrics.rs:233`) extracts only the first `.lance` segment. Reads to `images_score_v2.lance/data/...`, `images_score_v2.lance/_indices/...`, `images_score_v2.lance/_versions/...`, and manifest files all roll up to the same `table` value. With the 30th-Apr finding that spikes hit `images_score_v2.lance` at ~20K `get`+`get_range`/min, we can't currently tell whether that's data-fragment reads, index-uuid lookups, or manifest churn — each points at a different fix.
 
-* [ ] add a `kind` label to `r2.operations` and `r2.bytes`, derived from the path segment immediately after the `<table>.lance/` directory: `data` / `_indices` / `_versions` / `_transactions` / `manifest` (top-level `.manifest` files) / `other`. Inline unit tests covering each path shape.
+* [x] add a `kind` label to `r2.operations` and `r2.bytes`, derived from the path segment immediately after the `<table>.lance/` directory: `data` / `_indices` / `_versions` / `_transactions` / `manifest` (top-level `.manifest` files) / `other`. Inline unit tests covering each path shape.
 * [ ] re-pull the per-`(table, kind, operation)` breakdown for a spike minute on `images_score_v2.lance` to localise the cost source within the table; record the result in Observations.
 
 #### Idea: reduce scores-table read amplification on upsert
