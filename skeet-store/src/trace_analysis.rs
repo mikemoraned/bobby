@@ -83,7 +83,7 @@ fn extract_slow_query(event: &SpanEvent) -> Option<SlowQuery> {
         num_fragments: event
             .attributes
             .get("plan.num_fragments")
-            .and_then(|v| v.as_i64())
+            .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
             .filter(|&n| n > 0)
             .map(|n| n as u64),
         full_filter: non_empty_str(event, "plan.full_filter"),
@@ -268,13 +268,7 @@ mod tests {
         assert!(sq.plan.index.is_none());
     }
 
-    // Disabled until the flat `plan.*` event attributes from `lancedb_utils.rs`
-    // are deployed and a fresh fixture is captured (`just capture-trace-fixtures`).
-    // The committed fixture still carries the legacy single `plan` string, so
-    // this assertion would fail today against real-but-stale data. Re-enable
-    // once new attributes are visible in production traces.
     #[test]
-    #[ignore = "awaits redeploy + fresh fixture capture"]
     fn slow_query_extracted_from_real_fixture() {
         let trace = crate::tempo::trace_from_fixture_for_tests();
         let event = trace

@@ -1,18 +1,18 @@
 {
   "traces": [
     {
-      "traceID": "bb92033bf74efbcf3d3f74823cea0bb",
+      "traceID": "e681194368f202a2ba5d8b98612d215b",
       "rootServiceName": "skeet-live-refine",
       "rootTraceName": "list_unscored_image_ids_for_version",
-      "startTimeUnixNano": "1777464946829218217",
-      "durationMs": 3726,
+      "startTimeUnixNano": "1777501967791867417",
+      "durationMs": 2595,
       "spanSet": {
         "spans": [
           {
-            "spanID": "31382be68f2ba620",
+            "spanID": "876a175272baf703",
             "name": "list_unscored_image_ids_for_version",
-            "startTimeUnixNano": "1777464946829218217",
-            "durationNanos": "3726808487",
+            "startTimeUnixNano": "1777501967791867417",
+            "durationNanos": "2595804205",
             "attributes": [
               {
                 "key": "service.name",
@@ -29,10 +29,10 @@
         {
           "spans": [
             {
-              "spanID": "31382be68f2ba620",
+              "spanID": "876a175272baf703",
               "name": "list_unscored_image_ids_for_version",
-              "startTimeUnixNano": "1777464946829218217",
-              "durationNanos": "3726808487",
+              "startTimeUnixNano": "1777501967791867417",
+              "durationNanos": "2595804205",
               "attributes": [
                 {
                   "key": "service.name",
@@ -48,23 +48,23 @@
       ],
       "serviceStats": {
         "skeet-live-refine": {
-          "spanCount": 49
+          "spanCount": 48
         }
       }
     },
     {
-      "traceID": "a27202f35eee061e70c43d750222cdc3",
+      "traceID": "1cd7521d8b441da3b7ebcf2bd6e49f7e",
       "rootServiceName": "skeet-live-refine",
       "rootTraceName": "list_unscored_image_ids_for_version",
-      "startTimeUnixNano": "1777464766547215908",
-      "durationMs": 4289,
+      "startTimeUnixNano": "1777501847873453211",
+      "durationMs": 3661,
       "spanSet": {
         "spans": [
           {
-            "spanID": "18aad66bc851454c",
+            "spanID": "78a647c7c4056f95",
             "name": "list_unscored_image_ids_for_version",
-            "startTimeUnixNano": "1777464766547215908",
-            "durationNanos": "4289067826",
+            "startTimeUnixNano": "1777501847873453211",
+            "durationNanos": "3661348757",
             "attributes": [
               {
                 "key": "service.name",
@@ -81,10 +81,10 @@
         {
           "spans": [
             {
-              "spanID": "18aad66bc851454c",
+              "spanID": "78a647c7c4056f95",
               "name": "list_unscored_image_ids_for_version",
-              "startTimeUnixNano": "1777464766547215908",
-              "durationNanos": "4289067826",
+              "startTimeUnixNano": "1777501847873453211",
+              "durationNanos": "3661348757",
               "attributes": [
                 {
                   "key": "service.name",
@@ -100,23 +100,23 @@
       ],
       "serviceStats": {
         "skeet-live-refine": {
-          "spanCount": 47
+          "spanCount": 45
         }
       }
     },
     {
-      "traceID": "ed157dbcb530855dfb4fca6848a23d82",
+      "traceID": "15a404c0d774756c65a77af3c5fc1b71",
       "rootServiceName": "skeet-live-refine",
       "rootTraceName": "list_unscored_image_ids_for_version",
-      "startTimeUnixNano": "1777464646212750983",
-      "durationMs": 2269,
+      "startTimeUnixNano": "1777501787760072480",
+      "durationMs": 2590,
       "spanSet": {
         "spans": [
           {
-            "spanID": "c28f083432e3ab87",
+            "spanID": "a7b88c8264945e30",
             "name": "list_unscored_image_ids_for_version",
-            "startTimeUnixNano": "1777464646212750983",
-            "durationNanos": "2269272194",
+            "startTimeUnixNano": "1777501787760072480",
+            "durationNanos": "2590557867",
             "attributes": [
               {
                 "key": "service.name",
@@ -133,10 +133,62 @@
         {
           "spans": [
             {
-              "spanID": "c28f083432e3ab87",
+              "spanID": "a7b88c8264945e30",
               "name": "list_unscored_image_ids_for_version",
-              "startTimeUnixNano": "1777464646212750983",
-              "durationNanos": "2269272194",
+              "startTimeUnixNano": "1777501787760072480",
+              "durationNanos": "2590557867",
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "skeet-live-refine"
+                  }
+                }
+              ]
+            }
+          ],
+          "matched": 1
+        }
+      ],
+      "serviceStats": {
+        "skeet-live-refine": {
+          "spanCount": 48
+        }
+      }
+    },
+    {
+      "traceID": "a6b870e21e9d331660c28cb730d43194",
+      "rootServiceName": "skeet-live-refine",
+      "rootTraceName": "list_unscored_image_ids_for_version",
+      "startTimeUnixNano": "1777501727607875035",
+      "durationMs": 3439,
+      "spanSet": {
+        "spans": [
+          {
+            "spanID": "d5850d0c6c71ac7c",
+            "name": "list_unscored_image_ids_for_version",
+            "startTimeUnixNano": "1777501727607875035",
+            "durationNanos": "3439185156",
+            "attributes": [
+              {
+                "key": "service.name",
+                "value": {
+                  "stringValue": "skeet-live-refine"
+                }
+              }
+            ]
+          }
+        ],
+        "matched": 1
+      },
+      "spanSets": [
+        {
+          "spans": [
+            {
+              "spanID": "d5850d0c6c71ac7c",
+              "name": "list_unscored_image_ids_for_version",
+              "startTimeUnixNano": "1777501727607875035",
+              "durationNanos": "3439185156",
               "attributes": [
                 {
                   "key": "service.name",
@@ -155,62 +207,10 @@
           "spanCount": 46
         }
       }
-    },
-    {
-      "traceID": "1d500c12984ffba4eba3e7a986611e2c",
-      "rootServiceName": "skeet-live-refine",
-      "rootTraceName": "list_unscored_image_ids_for_version",
-      "startTimeUnixNano": "1777464286456585653",
-      "durationMs": 3980,
-      "spanSet": {
-        "spans": [
-          {
-            "spanID": "fe6cc02f60b3e463",
-            "name": "list_unscored_image_ids_for_version",
-            "startTimeUnixNano": "1777464286456585653",
-            "durationNanos": "3980955745",
-            "attributes": [
-              {
-                "key": "service.name",
-                "value": {
-                  "stringValue": "skeet-live-refine"
-                }
-              }
-            ]
-          }
-        ],
-        "matched": 1
-      },
-      "spanSets": [
-        {
-          "spans": [
-            {
-              "spanID": "fe6cc02f60b3e463",
-              "name": "list_unscored_image_ids_for_version",
-              "startTimeUnixNano": "1777464286456585653",
-              "durationNanos": "3980955745",
-              "attributes": [
-                {
-                  "key": "service.name",
-                  "value": {
-                    "stringValue": "skeet-live-refine"
-                  }
-                }
-              ]
-            }
-          ],
-          "matched": 1
-        }
-      ],
-      "serviceStats": {
-        "skeet-live-refine": {
-          "spanCount": 47
-        }
-      }
     }
   ],
   "metrics": {
-    "inspectedBytes": "500199",
+    "inspectedBytes": "388757",
     "completedJobs": 3,
     "totalJobs": 3
   }
