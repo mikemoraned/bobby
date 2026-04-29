@@ -305,7 +305,7 @@ We'll do this in stages:
 
 ##### Variation: hold `last_discovered_at` and push it down as a filter
 
-The version-snapshot above is binary (changed / not changed). When the table *has* changed, we still scan every fragment looking for unscored ids. A finer variation: also remember the maximum `discovered_at` that `PollingBatchSource` has seen successfully scored, and pass it back into the store as a `WHERE discovered_at > last_discovered_at` filter on the next tick. This composes with *Idea: make `list_all_image_ids_by_most_recent` use `discovered_at_idx`* — that filter is exactly the predicate the BTree on `discovered_at` can satisfy. Result: when a tick does run, it pays a BTree range read instead of a 64-fragment scan.
+The version-snapshot above is binary (changed / not changed). When the table *has* changed, we still scan every fragment looking for unscored ids. A finer variation: also remember the maximum `discovered_at` that `PollingBatchSource` has seen successfully scored, and pass it back into the store as a `WHERE discovered_at > last_discovered_at` filter on the next tick. That filter is exactly the predicate the `discovered_at_idx` BTree (created in `open.rs:90-98`) can satisfy, and the projection `[image_id, discovered_at]` is covered by the index — so when a tick does run, it should pay a BTree range read instead of a 64-fragment scan.
 
 Naming/type notes (cross-checked with `skeet-refine/src/polling.rs` + `skeet-store/src/types.rs`):
 * the existing struct is `PollingBatchSource` (not `PollingImageSource`); state is held there
@@ -325,19 +325,7 @@ The store-side filter must be **inclusive (`discovered_at >= since`)** so the ol
 * [x] extend `PollingBatchSource` with `last_discovered_at: Option<DiscoveredAt>` state and a `commit(&mut self, batch: Batch)` method that consumes the batch, computes the watermark as above, and advances `last_discovered_at` (monotonically — never goes backwards). `fetch()` passes `self.last_discovered_at.clone()` as the `since` arg. Tests: (1) cold start with `None` returns full scan; (2) after `commit` of a fully-completed batch, next `fetch` skips already-scored items via the watermark; (3) after `commit` of a batch with stragglers, the oldest straggler is the watermark and re-appears on the next tick; (4) `commit` is monotonic — earlier watermarks don't roll back.
 * [x] in `live_refine.rs`, drive the loop as: `let mut batch = source.fetch().await?;` → dispatch, calling `batch.mark_completed(&id)` for each successful scoring → `store.batch_upsert_scores(...)` → `source.commit(batch)`. Errors leave that id un-marked, so the watermark won't advance past it.
 * [x] cold-start / restart behaviour: in-memory state means a fresh pod takes one full scan to bootstrap `last_discovered_at` — acceptable, no persistence needed.
-
-#### Idea: make `list_all_image_ids_by_most_recent` use `discovered_at_idx`
-
-The query in `lib.rs:286-307` selects `[image_id, discovered_at]` with no `WHERE`, no `ORDER BY`, and no `LIMIT`. The trace plan confirms lance falls back to a full `LanceRead` over all 64 fragments — even though a `discovered_at_idx` BTree exists (created in `open.rs:87-95`). That index already contains both columns the projection needs, so a covering index scan is possible in principle.
-
-The opportunity: with the fragment count pinned at ~64 by the deliberate `target_rows_per_fragment=500` setting (see 25 Apr observation), per-tick full scans will not get cheaper through compaction. Routing this query through the index instead of the data files is the only way to reduce the per-fragment R2 ops *without* changing the polling cadence. Combined with *Idea: reduce cost of polling in live-refine*, this would mean: when a tick *does* run, it pays index cost (one or two get_range per BTree page) instead of fragment cost (per-fragment overhead × 64).
-
-* [ ] confirm via a local repro or trace that adding `ORDER BY discovered_at DESC` (and ideally a `LIMIT` matching the realistic per-tick batch) lets lance plan a `ScalarIndexQuery` on `discovered_at_idx` instead of `LanceRead` on the data files
-    * lancedb query API: `query.order_by(...)` / `query.limit(...)` — needs verifying; the rust API surface for `order_by` may not be exposed directly and might require `nearest_to`-style helpers or a SQL filter
-    * if lancedb's rust API does not expose `ORDER BY`, fall back to relying on the `WHERE discovered_at > <cutoff>` form (covered by the BTree) and then sorting in-process
-* [ ] adjust the call site in `scores.rs:127` so callers pass through the desired ordering/limit without `list_all_image_ids_by_most_recent` having to load every row
-    * `list_unscored_image_ids_for_version` is the only caller; it currently sorts the entire table by `discovered_at` so it can prefer recent unscored images — but it doesn't actually need every id, only the most-recent-N unscored
-* [ ] verify in the trace plan that the new shape uses the index (look for `ScalarIndexQuery(discovered_at_idx)` or similar in `explain_plan`) and that R2 op counts during the tick drop accordingly
+* [ ] verify in a real trace that when `since` is set, lance picks a `ScalarIndexQuery` on `discovered_at_idx` rather than a full `LanceRead` over the 64 fragments, and that R2 op counts per tick drop accordingly. Easiest after the flat-attribute trace work above is validated end-to-end — look for `plan.index = discovered_at_idx` (or equivalent) on `list_all_image_ids_by_most_recent` spans. If lance still picks `LanceRead` despite the predicate, revisit by trying `ORDER BY discovered_at DESC` + `LIMIT` to coax the planner; cold-start ticks (`since = None`) are expected to full-scan once per pod.
 
 #### Idea: tie R2 metrics to current trace (exemplars)
 
