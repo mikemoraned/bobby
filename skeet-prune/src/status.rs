@@ -53,7 +53,7 @@ impl Status {
             started_at: Instant::now(),
             counters,
             channels,
-            metrics: PruneMetrics::new(),
+            metrics: PruneMetrics::new(&opentelemetry::global::meter("skeet_prune")),
         }
     }
 

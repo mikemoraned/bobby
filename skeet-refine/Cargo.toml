@@ -28,6 +28,7 @@ build-support = { workspace = true }
 
 [dev-dependencies]
 chrono = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
 proptest = { workspace = true }
 skeet-store = { path = "../skeet-store", features = ["test-helpers"] }
 tempfile = { workspace = true }

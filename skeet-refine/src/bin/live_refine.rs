@@ -1,15 +1,15 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use clap::Parser;
-use shared::{ModelVersion, Score};
+use shared::ModelVersion;
 use skeet_refine::batch::Batch;
 use skeet_refine::metrics::LiveRefineMetrics;
 use skeet_refine::model::load_model;
 use skeet_refine::polling::PollingBatchSource;
 use skeet_refine::refining::{build_agent, create_client, refine_image, RefineAgent};
-use skeet_store::{ImageId, StoreArgs, StoreMetrics};
-use tracing::{error, info};
+use skeet_refine::tick::{RunningTotals, TickAccumulator};
+use skeet_store::{StoreArgs, StoreMetrics};
+use tracing::info;
 
 #[derive(Parser)]
 #[command(
@@ -51,68 +51,7 @@ async fn dispatch(batch: &mut Batch, ctx: &ScoringContext<'_>, acc: &mut TickAcc
             refine_image(agent, &img).await
         })
         .await;
-
-    for (id, score) in outcomes.successes {
-        info!(image_id = %id, %score, "refined");
-        acc.pending_scores
-            .push((id, score, ctx.model_version.clone()));
-    }
-    for (id, e) in outcomes.failures {
-        error!(image_id = %id, error = %e, "failed to refine");
-        *acc.errors.entry(e.as_label().to_string()).or_default() += 1;
-    }
-}
-
-/// Running totals accumulated across all ticks, used to drive OTel metrics.
-struct RunningTotals {
-    unscored: u64,
-    scored: u64,
-    errors: HashMap<String, u64>,
-}
-
-impl RunningTotals {
-    fn new() -> Self {
-        Self {
-            unscored: 0,
-            scored: 0,
-            errors: HashMap::new(),
-        }
-    }
-
-    fn absorb_tick(&mut self, unscored_count: u64, acc: &TickAccumulator) {
-        self.unscored += unscored_count;
-        self.scored += acc.pending_scores.len() as u64;
-        acc.merge_errors_into(&mut self.errors);
-    }
-}
-
-/// Mutable state accumulated within a single tick.
-struct TickAccumulator {
-    pending_scores: Vec<(ImageId, Score, ModelVersion)>,
-    errors: HashMap<String, u64>,
-}
-
-impl TickAccumulator {
-    fn new() -> Self {
-        Self {
-            pending_scores: Vec::new(),
-            errors: HashMap::new(),
-        }
-    }
-
-    fn merge_errors_into(&self, totals: &mut HashMap<String, u64>) {
-        for (reason, count) in &self.errors {
-            *totals.entry(reason.clone()).or_default() += count;
-        }
-    }
-
-    /// Extract scores as f64 observations for the histogram.
-    fn scores(&self) -> Vec<f64> {
-        self.pending_scores
-            .iter()
-            .map(|(_, s, _)| f64::from(*s))
-            .collect()
-    }
+    acc.record_outcomes(outcomes, ctx.model_version);
 }
 
 #[tokio::main]
@@ -141,7 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(args.interval_secs));
     let mut source = PollingBatchSource::new(store.clone(), model_version.clone());
 
-    let mut metrics = LiveRefineMetrics::new();
+    let mut metrics = LiveRefineMetrics::new(&opentelemetry::global::meter("skeet_live_refine"));
     let store_metrics = StoreMetrics::new(opentelemetry::global::meter("lance"));
     let mut totals = RunningTotals::new();
 
@@ -159,15 +98,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         totals.absorb_tick(unscored_count, &acc);
 
-        let scored = acc.pending_scores.len();
-        let tick_scores = if scored > 0 {
+        let tick_scores = if acc.pending_scores.is_empty() {
+            vec![]
+        } else {
             let scores = acc.scores();
             store.batch_upsert_scores(&acc.pending_scores).await?;
-            let remaining = unscored_count as usize - scored;
-            info!(scored, remaining, "batch-saved scores");
+            info!(
+                scored = acc.pending_scores.len(),
+                remaining = acc.remaining(unscored_count),
+                "batch-saved scores"
+            );
             scores
-        } else {
-            vec![]
         };
         source.commit(candidates);
 

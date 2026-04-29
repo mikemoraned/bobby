@@ -299,6 +299,176 @@ mod tests {
         assert!(!out.contains("filter:"));
     }
 
+    fn make_span(span_id: &str, parent: Option<&str>, name: &str, duration_ns: u64) -> Span {
+        Span {
+            span_id: span_id.to_owned(),
+            parent_span_id: parent.map(str::to_owned),
+            name: name.to_owned(),
+            duration_ns,
+            attributes: HashMap::new(),
+            events: vec![],
+        }
+    }
+
+    #[test]
+    fn fmt_ns_picks_unit_at_each_threshold() {
+        // < 1ms → ns
+        assert_eq!(fmt_ns(0), "0ns");
+        assert_eq!(fmt_ns(999_999), "999999ns");
+        // 1ms exactly → ms
+        assert_eq!(fmt_ns(1_000_000), "1ms");
+        assert_eq!(fmt_ns(999_999_999), "1000ms");
+        // 1s exactly → s
+        assert_eq!(fmt_ns(1_000_000_000), "1.00s");
+        assert_eq!(fmt_ns(2_500_000_000), "2.50s");
+    }
+
+    #[test]
+    fn annotate_filters_non_slow_events_only() {
+        let mut span = make_span("a", None, "x", 100);
+        let mut slow_attrs = HashMap::new();
+        slow_attrs.insert("label".to_owned(), AttrValue::Str("L".to_owned()));
+        slow_attrs.insert("elapsed".to_owned(), AttrValue::Str("1s".to_owned()));
+        span.events.push(SpanEvent {
+            name: "slow query".to_owned(),
+            attributes: slow_attrs,
+        });
+        span.events.push(SpanEvent {
+            name: "other".to_owned(),
+            attributes: HashMap::new(),
+        });
+        let spans = vec![span];
+        let ann = annotate(&spans);
+        assert_eq!(ann.len(), 1);
+        assert_eq!(ann[0].slow_queries.len(), 1, "only the slow-query event should produce a SlowQuery");
+    }
+
+    #[test]
+    fn extract_slow_query_drops_zero_num_fragments() {
+        let mut attrs = HashMap::new();
+        attrs.insert("label".to_owned(), AttrValue::Str("L".to_owned()));
+        attrs.insert("elapsed".to_owned(), AttrValue::Str("1s".to_owned()));
+        attrs.insert("plan.num_fragments".to_owned(), AttrValue::Int(0));
+        let event = SpanEvent { name: "slow query".to_owned(), attributes: attrs };
+        let sq = extract_slow_query(&event).expect("should extract");
+        assert!(
+            sq.plan.num_fragments.is_none(),
+            "num_fragments=0 must be filtered out (boundary: n > 0)"
+        );
+    }
+
+    #[test]
+    fn summarise_includes_root_metadata_and_renders_tree() {
+        let info = TraceInfo {
+            trace_id: "abcdef0123456789".to_owned(),
+            root_service_name: "skeet-live-refine".to_owned(),
+            root_trace_name: "tick".to_owned(),
+            start_time_unix_nano: "0".to_owned(),
+        };
+        let trace = Trace {
+            spans: vec![
+                make_span("root", None, "tick", 2_500_000_000),
+                make_span("child", Some("root"), "fetch", 1_000_000_000),
+            ],
+        };
+        let out = summarise(&info, &trace);
+        // Header carries truncated trace id, formatted duration, service/trace name
+        assert!(out.contains("abcdef01"), "first 8 chars of trace_id: {out}");
+        assert!(out.contains("2.50s"), "fmt_ns of root duration: {out}");
+        assert!(out.contains("skeet-live-refine/tick"), "service/name header: {out}");
+        // Children render
+        assert!(out.contains("fetch"), "child span name appears: {out}");
+    }
+
+    #[test]
+    fn summarise_treats_orphans_as_roots() {
+        // Span "child" claims parent "missing" which is NOT in the trace —
+        // it should still appear in the rendered output as a root.
+        let info = TraceInfo {
+            trace_id: "x".to_owned(),
+            root_service_name: "s".to_owned(),
+            root_trace_name: "t".to_owned(),
+            start_time_unix_nano: "0".to_owned(),
+        };
+        let trace = Trace {
+            spans: vec![make_span("child", Some("missing"), "orphan", 100)],
+        };
+        let out = summarise(&info, &trace);
+        assert!(out.contains("orphan"), "orphan span should render as a root: {out}");
+    }
+
+    #[test]
+    fn render_tree_collapses_runs_of_same_name_siblings() {
+        // Three sibling children with the same name should collapse to "3 ×".
+        let spans = vec![
+            make_span("p", None, "parent", 1_000_000),
+            make_span("c1", Some("p"), "leaf", 100),
+            make_span("c2", Some("p"), "leaf", 200),
+            make_span("c3", Some("p"), "leaf", 300),
+        ];
+        let info = TraceInfo {
+            trace_id: "x".to_owned(),
+            root_service_name: "s".to_owned(),
+            root_trace_name: "t".to_owned(),
+            start_time_unix_nano: "0".to_owned(),
+        };
+        let out = summarise(&info, &Trace { spans });
+        assert!(out.contains("3 × leaf"), "collapse run of siblings: {out}");
+        assert!(out.contains("600ns"), "totals across the run: {out}");
+    }
+
+    #[test]
+    fn render_tree_emits_each_singleton_sibling_once() {
+        // Differently-named siblings must each render exactly once and
+        // never get the "× ×" collapse prefix.
+        let spans = vec![
+            make_span("p", None, "parent", 1_000_000),
+            make_span("c1", Some("p"), "alpha", 100),
+            make_span("c2", Some("p"), "beta", 200),
+        ];
+        let info = TraceInfo {
+            trace_id: "x".to_owned(),
+            root_service_name: "s".to_owned(),
+            root_trace_name: "t".to_owned(),
+            start_time_unix_nano: "0".to_owned(),
+        };
+        let out = summarise(&info, &Trace { spans });
+        assert_eq!(out.matches("alpha").count(), 1);
+        assert_eq!(out.matches("beta").count(), 1);
+        assert!(!out.contains("× alpha"));
+        assert!(!out.contains("× beta"));
+    }
+
+    #[test]
+    fn render_tree_indents_children_deeper_than_parents() {
+        // Verifies depth+1 recursion: child line must have more leading spaces than parent.
+        let spans = vec![
+            make_span("p", None, "outer", 1_000_000),
+            make_span("c", Some("p"), "inner", 500),
+        ];
+        let info = TraceInfo {
+            trace_id: "x".to_owned(),
+            root_service_name: "s".to_owned(),
+            root_trace_name: "t".to_owned(),
+            start_time_unix_nano: "0".to_owned(),
+        };
+        let out = summarise(&info, &Trace { spans });
+        let outer_indent = out
+            .lines()
+            .find(|l| l.contains("outer"))
+            .map(|l| l.len() - l.trim_start().len())
+            .expect("outer rendered");
+        let inner_indent = out
+            .lines()
+            .find(|l| l.contains("inner"))
+            .map(|l| l.len() - l.trim_start().len())
+            .expect("inner rendered");
+        assert!(
+            inner_indent > outer_indent,
+            "child must be indented deeper than parent (outer={outer_indent}, inner={inner_indent})"
+        );
+    }
+
     #[test]
     fn render_plan_shows_filter_and_index_for_indexed_query() {
         let plan = QueryPlan {

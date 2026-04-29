@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use opentelemetry::{
     KeyValue,
-    metrics::{Counter, Histogram},
+    metrics::{Counter, Histogram, Meter},
 };
 
 /// OTel metrics emitted by skeet-live-refine at the end of each poll tick.
@@ -18,16 +18,8 @@ pub struct LiveRefineMetrics {
     prev_errors: HashMap<String, u64>,
 }
 
-impl Default for LiveRefineMetrics {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl LiveRefineMetrics {
-    pub fn new() -> Self {
-        let meter = opentelemetry::global::meter("skeet_live_refine");
-
+    pub fn new(meter: &Meter) -> Self {
         Self {
             images_unscored: meter
                 .u64_counter("skeet_live_refine.images.unscored")
@@ -89,5 +81,131 @@ impl LiveRefineMetrics {
         for &score in tick_scores {
             self.scores_hist.record(score, &[]);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use opentelemetry::metrics::MeterProvider;
+    use opentelemetry_sdk::metrics::{
+        InMemoryMetricExporter, SdkMeterProvider,
+        data::{AggregatedMetrics, MetricData},
+    };
+
+    fn make_test_metrics() -> (LiveRefineMetrics, SdkMeterProvider, InMemoryMetricExporter) {
+        let exporter = InMemoryMetricExporter::default();
+        let provider = SdkMeterProvider::builder()
+            .with_periodic_exporter(exporter.clone())
+            .build();
+        let metrics = LiveRefineMetrics::new(&provider.meter("skeet_live_refine"));
+        (metrics, provider, exporter)
+    }
+
+    fn counter_total(
+        provider: &SdkMeterProvider,
+        exporter: &InMemoryMetricExporter,
+        metric: &str,
+        attr: Option<(&str, &str)>,
+    ) -> u64 {
+        provider.force_flush().unwrap();
+        let metrics = exporter.get_finished_metrics().unwrap();
+        let mut total = 0;
+        for rm in &metrics {
+            for sm in rm.scope_metrics() {
+                for m in sm.metrics() {
+                    if m.name() != metric {
+                        continue;
+                    }
+                    if let AggregatedMetrics::U64(MetricData::Sum(s)) = m.data() {
+                        for dp in s.data_points() {
+                            let matches = attr.is_none_or(|(k, v)| {
+                                dp.attributes()
+                                    .any(|kv| kv.key.as_str() == k && kv.value.as_str() == v)
+                            });
+                            if matches {
+                                total += dp.value();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        exporter.reset();
+        total
+    }
+
+    fn histogram_count(
+        provider: &SdkMeterProvider,
+        exporter: &InMemoryMetricExporter,
+        metric: &str,
+    ) -> u64 {
+        provider.force_flush().unwrap();
+        let metrics = exporter.get_finished_metrics().unwrap();
+        let mut total = 0;
+        for rm in &metrics {
+            for sm in rm.scope_metrics() {
+                for m in sm.metrics() {
+                    if m.name() != metric {
+                        continue;
+                    }
+                    if let AggregatedMetrics::F64(MetricData::Histogram(h)) = m.data() {
+                        for dp in h.data_points() {
+                            total += dp.count();
+                        }
+                    }
+                }
+            }
+        }
+        exporter.reset();
+        total
+    }
+
+    #[test]
+    fn unscored_and_scored_counters_advance_only_on_increase() {
+        let (mut metrics, provider, exporter) = make_test_metrics();
+        metrics.emit(5, 3, &HashMap::new(), &[]);
+        // Same totals → no advance.
+        metrics.emit(5, 3, &HashMap::new(), &[]);
+        // Bump.
+        metrics.emit(8, 5, &HashMap::new(), &[]);
+        assert_eq!(counter_total(&provider, &exporter, "skeet_live_refine.images.unscored", None), 8);
+        // Need a fresh provider read after reset for second metric.
+        let (mut metrics2, provider2, exporter2) = make_test_metrics();
+        metrics2.emit(5, 3, &HashMap::new(), &[]);
+        metrics2.emit(5, 3, &HashMap::new(), &[]);
+        metrics2.emit(8, 5, &HashMap::new(), &[]);
+        assert_eq!(counter_total(&provider2, &exporter2, "skeet_live_refine.images.scored", None), 5);
+    }
+
+    #[test]
+    fn error_counter_emits_per_reason_delta() {
+        let (mut metrics, provider, exporter) = make_test_metrics();
+        let mut errs: HashMap<String, u64> = HashMap::new();
+        errs.insert("Completion".to_string(), 2);
+        errs.insert("ParseScore".to_string(), 1);
+        metrics.emit(0, 0, &errs, &[]);
+        metrics.emit(0, 0, &errs, &[]); // no advance
+        errs.insert("Completion".to_string(), 5);
+        metrics.emit(0, 0, &errs, &[]);
+        assert_eq!(
+            counter_total(&provider, &exporter, "skeet_live_refine.images.errors", Some(("reason", "Completion"))),
+            5
+        );
+        let (mut m2, p2, e2) = make_test_metrics();
+        let mut errs2: HashMap<String, u64> = HashMap::new();
+        errs2.insert("ParseScore".to_string(), 1);
+        m2.emit(0, 0, &errs2, &[]);
+        assert_eq!(
+            counter_total(&p2, &e2, "skeet_live_refine.images.errors", Some(("reason", "ParseScore"))),
+            1
+        );
+    }
+
+    #[test]
+    fn histogram_records_one_observation_per_tick_score() {
+        let (mut metrics, provider, exporter) = make_test_metrics();
+        metrics.emit(0, 0, &HashMap::new(), &[0.1, 0.5, 0.9]);
+        assert_eq!(histogram_count(&provider, &exporter, "skeet_live_refine.scores"), 3);
     }
 }
