@@ -16,11 +16,15 @@ pub struct QueryPlan {
     pub columns: Option<String>,
     pub num_fragments: Option<u64>,
     pub full_filter: Option<String>,
+    pub refine_filter: Option<String>,
+    pub range_before: Option<String>,
+    pub range_after: Option<String>,
+    pub row_id: bool,
+    pub row_addr: bool,
     pub index: Option<String>,
-    /// Keys present in the plan that we don't pull out as structured fields.
-    /// Logged as a free-string suffix on the message — gives a heads-up if
-    /// datafusion's plan format grows new fields we should consider extracting.
-    /// Ordered (BTree) so the message is stable for tests and human eyes.
+    /// Keys present in the plan that we don't recognise. Logged on a separate
+    /// warn line — heads-up that datafusion's format has grown a new field we
+    /// should consider extracting. Ordered (BTree) so the message is stable.
     pub unknown_keys: BTreeSet<String>,
 }
 
@@ -44,12 +48,12 @@ impl QueryPlan {
                             plan.columns = Some(value.trim_matches(['[', ']']).to_owned());
                         }
                         "num_fragments" => plan.num_fragments = value.parse().ok(),
-                        "full_filter" => {
-                            // "--" is datafusion's sentinel for "no filter"
-                            if value != "--" {
-                                plan.full_filter = Some(value.to_owned());
-                            }
-                        }
+                        "full_filter" => plan.full_filter = non_sentinel_filter(value),
+                        "refine_filter" => plan.refine_filter = non_sentinel_filter(value),
+                        "range_before" => plan.range_before = non_sentinel_range(value),
+                        "range_after" => plan.range_after = non_sentinel_range(value),
+                        "row_id" => plan.row_id = value == "true",
+                        "row_addr" => plan.row_addr = value == "true",
                         _ => {
                             plan.unknown_keys.insert(key.to_owned());
                         }
@@ -71,6 +75,16 @@ fn lance_segment(uri: &str) -> Option<&str> {
     uri.split('/').find(|s| s.ends_with(".lance"))
 }
 
+// "--" is datafusion's sentinel for "no filter".
+fn non_sentinel_filter(value: &str) -> Option<String> {
+    (value != "--").then(|| value.to_owned())
+}
+
+// "None" is datafusion's textual representation of an absent range.
+fn non_sentinel_range(value: &str) -> Option<String> {
+    (value != "None").then(|| value.to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,23 +100,29 @@ mod tests {
         assert_eq!(plan.columns.as_deref(), Some("image_id, discovered_at"));
         assert_eq!(plan.num_fragments, Some(66));
         assert_eq!(plan.full_filter, None);
+        assert_eq!(plan.refine_filter, None);
+        assert_eq!(plan.range_before, None);
+        assert_eq!(plan.range_after, None);
+        assert!(!plan.row_id);
+        assert!(!plan.row_addr);
         assert_eq!(plan.index, None);
         assert!(plan.full_scan());
     }
 
     #[test]
-    fn unknown_keys_collects_unhandled_lance_read_fields() {
+    fn standard_lance_read_fields_are_not_classed_as_unknown() {
+        // All five standard noise fields appear in FULL_SCAN_PLAN; none should leak into unknown_keys.
         let plan = QueryPlan::parse(FULL_SCAN_PLAN);
-        let expected: BTreeSet<String> = [
-            "range_before",
-            "range_after",
-            "row_id",
-            "row_addr",
-            "refine_filter",
-        ]
-        .into_iter()
-        .map(str::to_owned)
-        .collect();
+        assert!(plan.unknown_keys.is_empty(), "got: {:?}", plan.unknown_keys);
+    }
+
+    #[test]
+    fn unknown_keys_flags_genuinely_new_fields() {
+        // Synthetic plan with a field datafusion doesn't currently emit — the parser
+        // should surface it so we notice the format has grown.
+        let raw = "LanceRead: uri=encrypted-store/images_v6.lance/data, projection=[image_id], num_fragments=1, mystery_key=foo, full_filter=--\n";
+        let plan = QueryPlan::parse(raw);
+        let expected: BTreeSet<String> = ["mystery_key"].into_iter().map(str::to_owned).collect();
         assert_eq!(plan.unknown_keys, expected);
     }
 
@@ -116,11 +136,29 @@ mod tests {
             plan.full_filter.as_deref(),
             Some("model_version = Utf8(\"ea219ee0\")")
         );
+        assert_eq!(plan.refine_filter, None);
+        assert_eq!(plan.range_before, None);
+        assert_eq!(plan.range_after, None);
+        assert!(!plan.row_id);
+        assert!(!plan.row_addr);
         assert_eq!(
             plan.index.as_deref(),
             Some("ScalarIndexQuery: query=[model_version = ea219ee0]@model_version_idx")
         );
         assert!(!plan.full_scan());
+    }
+
+    #[test]
+    fn parses_non_default_standard_fields() {
+        // Hand-built plan exercising the non-default branches: a real refine_filter,
+        // numeric ranges, and row_id/row_addr=true.
+        let raw = "LanceRead: uri=encrypted-store/x.lance/data, projection=[image_id], num_fragments=1, range_before=Some(0..10), range_after=Some(20..30), row_id=true, row_addr=true, full_filter=--, refine_filter=score > 0.5\n";
+        let plan = QueryPlan::parse(raw);
+        assert_eq!(plan.refine_filter.as_deref(), Some("score > 0.5"));
+        assert_eq!(plan.range_before.as_deref(), Some("Some(0..10)"));
+        assert_eq!(plan.range_after.as_deref(), Some("Some(20..30)"));
+        assert!(plan.row_id);
+        assert!(plan.row_addr);
     }
 
     #[test]

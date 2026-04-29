@@ -87,6 +87,19 @@ fn extract_slow_query(event: &SpanEvent) -> Option<SlowQuery> {
             .filter(|&n| n > 0)
             .map(|n| n as u64),
         full_filter: non_empty_str(event, "plan.full_filter"),
+        refine_filter: non_empty_str(event, "plan.refine_filter"),
+        range_before: non_empty_str(event, "plan.range_before"),
+        range_after: non_empty_str(event, "plan.range_after"),
+        row_id: event
+            .attributes
+            .get("plan.row_id")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        row_addr: event
+            .attributes
+            .get("plan.row_addr")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
         index: non_empty_str(event, "plan.index"),
         unknown_keys: std::collections::BTreeSet::default(),
     };
@@ -289,6 +302,11 @@ mod tests {
             columns: Some("image_id, discovered_at".to_owned()),
             num_fragments: Some(66),
             full_filter: None,
+            refine_filter: None,
+            range_before: None,
+            range_after: None,
+            row_id: false,
+            row_addr: false,
             index: None,
             unknown_keys: std::collections::BTreeSet::default(),
         };
@@ -476,6 +494,11 @@ mod tests {
             columns: Some("image_id".to_owned()),
             num_fragments: Some(4),
             full_filter: Some("model_version = Utf8(\"ea219ee0\")".to_owned()),
+            refine_filter: None,
+            range_before: None,
+            range_after: None,
+            row_id: false,
+            row_addr: false,
             index: Some(
                 "ScalarIndexQuery: query=[model_version = ea219ee0]@model_version_idx"
                     .to_owned(),

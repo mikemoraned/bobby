@@ -24,14 +24,20 @@ pub async fn execute_query(
     let columns = plan.columns.as_deref().unwrap_or("");
     let num_fragments = plan.num_fragments.unwrap_or(0);
     let full_filter = plan.full_filter.as_deref().unwrap_or("");
+    let refine_filter = plan.refine_filter.as_deref().unwrap_or("");
+    let range_before = plan.range_before.as_deref().unwrap_or("");
+    let range_after = plan.range_after.as_deref().unwrap_or("");
     let full_scan = plan.full_scan();
     let index = plan.index.as_deref().unwrap_or("");
-    let unknown_suffix = if plan.unknown_keys.is_empty() {
-        String::new()
-    } else {
+
+    if !plan.unknown_keys.is_empty() {
         let keys: Vec<&str> = plan.unknown_keys.iter().map(String::as_str).collect();
-        format!(" (unknown plan keys: {})", keys.join(", "))
-    };
+        warn!(
+            %label,
+            unknown_keys = keys.join(","),
+            "lance plan has unrecognized fields"
+        );
+    }
 
     if elapsed > SLOW_QUERY_THRESHOLD {
         warn!(
@@ -42,8 +48,13 @@ pub async fn execute_query(
             plan.num_fragments = num_fragments,
             plan.full_scan = full_scan,
             plan.full_filter = full_filter,
+            plan.refine_filter = refine_filter,
+            plan.range_before = range_before,
+            plan.range_after = range_after,
+            plan.row_id = plan.row_id,
+            plan.row_addr = plan.row_addr,
             plan.index = index,
-            "slow query{unknown_suffix}"
+            "slow query"
         );
     } else {
         debug!(
@@ -54,8 +65,13 @@ pub async fn execute_query(
             plan.num_fragments = num_fragments,
             plan.full_scan = full_scan,
             plan.full_filter = full_filter,
+            plan.refine_filter = refine_filter,
+            plan.range_before = range_before,
+            plan.range_after = range_after,
+            plan.row_id = plan.row_id,
+            plan.row_addr = plan.row_addr,
             plan.index = index,
-            "query{unknown_suffix}"
+            "query"
         );
     }
 
