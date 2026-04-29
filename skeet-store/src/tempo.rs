@@ -264,7 +264,7 @@ mod tests {
             .spans
             .iter()
             .flat_map(|s| &s.events)
-            .filter(|e| e.name == "slow query")
+            .filter(|e| e.name.starts_with("slow query"))
             .count();
         assert_eq!(slow_query_count, 2, "both slow query events preserved");
     }
