@@ -36,6 +36,30 @@ Checked the `compact` cron job to test the hypothesis that fragments were piling
 * Our `RECOMMEND: compact: 64 small fragments (>10 threshold)` health line is misleading — it uses lance's default smallness threshold, not our chosen 500. (Worth fixing separately.)
 * This makes the case stronger for both *Idea: reduce cost of polling in live-refine* (version-snapshot early-abort skips the scan when nothing changed) and *Idea: make `list_all_image_ids_by_most_recent` use `discovered_at_idx`* (let lance scan the index instead of every fragment).
 
+#### 30th Apr
+
+##### Watermark verification: traces (29th Apr) + R2 ops (28th Apr)
+
+Verifying the `since`/watermark optimisation in *Idea: reduce cost of polling in live-refine* (introduced in commit `eb4e0be`, deployed 2026-04-28 17:36–17:40).
+
+**Trace evidence (29th Apr, via `just trace-summary skeet-live-refine list_all_image_ids_by_most_recent`):** all 10 sampled `list_all_image_ids_by_most_recent` spans show the planner picking `ScalarIndexQuery` on `discovered_at_idx`, with the watermark pushed down as `discovered_at >= TimestampMicrosecond(...)`. The `fragments: 67` field in the plan is the table total — actual `read_fragment` calls visible in the child `DatasetRecordBatchStream` spans are typically 2–5 per query, confirming index pruning works. Span wall time is still ~1.3–1.9s, but that cost lives in the index lookup itself (the sibling `list_unscored:scored_ids` query against `model_version_idx` shows similar 1.2–2.6s) — not in fragment scans.
+
+**R2 op evidence (28th Apr, comparing 208 min before deploy to 220 min after):**
+
+| metric | before | after | Δ |
+|---|---|---|---|
+| mean `get` / min | 905 | 629 | -30% |
+| **median `get` / min** | **275** | **47** | **-83%** |
+| mean `get_range` / min | 685 | 579 | -16% |
+| spike count (>10K/min) | 7 min / 2 events | 6 min / 2 events | ~same |
+| peak ops / min | 48K | 45K | ~same |
+
+The watermark did exactly what it was meant to do *on the idle path*: median-minute `get` collapsed 6× as ticks where `images` table version + watermark say "nothing new" no longer fire the listing scan. Background `get` total (≤1K/min minutes) dropped 43K → 9K, a 78% cut.
+
+Spikes are unchanged because they're a different workload — image-fetch (`get_originals_by_ids` pulling ~4MB PNG blobs), which only runs when unscored candidates exist. The watermark suppresses the polling scan, not the scoring work.
+
+**Implication for next optimisation thread:** spikes are 22–24K `get` + 22–24K `get_range` simultaneously (~1:1 ratio), 1.3–1.7h apart. Whether the dominant cost is "many tiny page-header range reads" vs "few large blob reads" should now be visible in `r2.bytes` per spike-minute (counter already in place). That choice points at different optimisations and is its own thread, not part of this slice's verification.
+
 #### 26th Apr
 
 ##### R2 Class A + `list` operation usage regression
@@ -325,7 +349,7 @@ The store-side filter must be **inclusive (`discovered_at >= since`)** so the ol
 * [x] extend `PollingBatchSource` with `last_discovered_at: Option<DiscoveredAt>` state and a `commit(&mut self, batch: Batch)` method that consumes the batch, computes the watermark as above, and advances `last_discovered_at` (monotonically — never goes backwards). `fetch()` passes `self.last_discovered_at.clone()` as the `since` arg. Tests: (1) cold start with `None` returns full scan; (2) after `commit` of a fully-completed batch, next `fetch` skips already-scored items via the watermark; (3) after `commit` of a batch with stragglers, the oldest straggler is the watermark and re-appears on the next tick; (4) `commit` is monotonic — earlier watermarks don't roll back.
 * [x] in `live_refine.rs`, drive the loop as: `let mut batch = source.fetch().await?;` → dispatch, calling `batch.mark_completed(&id)` for each successful scoring → `store.batch_upsert_scores(...)` → `source.commit(batch)`. Errors leave that id un-marked, so the watermark won't advance past it.
 * [x] cold-start / restart behaviour: in-memory state means a fresh pod takes one full scan to bootstrap `last_discovered_at` — acceptable, no persistence needed.
-* [ ] verify in a real trace that when `since` is set, lance picks a `ScalarIndexQuery` on `discovered_at_idx` rather than a full `LanceRead` over the 64 fragments, and that R2 op counts per tick drop accordingly. Easiest after the flat-attribute trace work above is validated end-to-end — look for `plan.index = discovered_at_idx` (or equivalent) on `list_all_image_ids_by_most_recent` spans. If lance still picks `LanceRead` despite the predicate, revisit by trying `ORDER BY discovered_at DESC` + `LIMIT` to coax the planner; cold-start ticks (`since = None`) are expected to full-scan once per pod.
+* [x] verify in a real trace that when `since` is set, lance picks a `ScalarIndexQuery` on `discovered_at_idx` rather than a full `LanceRead` over the 64 fragments, and that R2 op counts per tick drop accordingly. **Verified 30th Apr — see Observations.** Trace plans show `ScalarIndexQuery` on `discovered_at_idx` on every sampled span (only 2–5 actual `read_fragment` calls per query, not 67). R2 ops: median `get`/min dropped 275 → 47 (-83%) on idle ticks. Spikes unchanged because they're image-fetch, not polling-scan — separate optimisation thread.
 
 #### Idea: tie R2 metrics to current trace (exemplars)
 
