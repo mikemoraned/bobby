@@ -58,7 +58,26 @@ The watermark did exactly what it was meant to do *on the idle path*: median-min
 
 Spikes are unchanged because they're a different workload — image-fetch (`get_originals_by_ids` pulling ~4MB PNG blobs), which only runs when unscored candidates exist. The watermark suppresses the polling scan, not the scoring work.
 
-**Implication for next optimisation thread:** spikes are 22–24K `get` + 22–24K `get_range` simultaneously (~1:1 ratio), 1.3–1.7h apart. Whether the dominant cost is "many tiny page-header range reads" vs "few large blob reads" should now be visible in `r2.bytes` per spike-minute (counter already in place). That choice points at different optimisations and is its own thread, not part of this slice's verification.
+Spikes are 22–24K `get` + 22–24K `get_range` simultaneously (~1:1 ratio), 1.3–1.7h apart. Diagnosed below.
+
+##### Spike-cost diagnosis (30th Apr, follow-up)
+
+Pulled `r2.bytes / r2.operations` per minute and per-`(table, operation)` ops from Grafana. Two clear observations:
+
+1. **Spike `get_range` averages ~1.0 KiB/op** (consistent across all 16 spike minutes either side of the deploy). Idle minutes typically 4–8 KiB/op. The earlier framing was "many tiny page reads" vs "few large blob reads" — the data lands firmly on **many tiny page reads**. *(Caveat: our wrapper records bytes for `get_range` and `put` only — `get` bytes aren't captured because we'd need to consume the response. From the ops counters we know spike-minute `get` ops match `get_range` ~1:1, but their byte size is unknown.)*
+
+2. **The spike is on `images_score_v2.lance`, not `images_v6.lance`.** Per-table breakdown of the 19:19–19:20 spike (40K ops/min total): `images_score_v2.lance / get`: 20,234, `get_range`: 19,700; `images_v6.lance / get`: 53, `get_range`: 1. Confirmed across all 8 top spike minutes in the 7-hour window — every one is dominated by `images_score_v2.lance` at 20–24K `get` + 20–24K `get_range`, with `images_v6.lance` contributing <1%. That points at `batch_upsert_scores` (the upsert-merge has to read existing scores) or its read-side companion `cached_scores` rebuilding.
+
+3. **Window totals (before vs after deploy) reinforce both points:**
+
+   | table | before (208 min) | after (220 min) | Δ |
+   |---|---|---|---|
+   | `images_v6.lance` | 43,413 | 7,108 | **-84%** |
+   | `images_score_v2.lance` | 292,477 | 263,621 | -10% |
+
+   The watermark cut `images_v6.lance` ops 6× as designed. But `images_score_v2.lance` was already ~7× more expensive than `images_v6.lance` *before* the watermark, and is ~37× more expensive after — so the elephant in the room was always the scores table; the watermark just exposed it more starkly.
+
+Both observations re-frame the spike-cost problem and feed two new ideas (below): adding a `kind` sub-label to disambiguate within a table, and investigating scores-table read amplification.
 
 #### 26th Apr
 
@@ -371,4 +390,25 @@ The R2 metrics emitted by `R2MetricsWrapper` are not currently linked to any tra
 * No issues exist for per-query injection, OTel context propagation, or observability through the data path. We'd be the first to ask.
 
 **Decision:** deferred. The pragmatic alternative — using the existing `store_prefix` (table name) label plus time-window correlation in Grafana, combined with the trace-summary tool — is good enough to ground cost-reduction work. Revisit if exemplar correlation becomes a recurring need, in which case file an upstream issue for per-query `object_store_wrapper` first.
+
+#### Idea: add a `kind` sub-label to R2 metrics
+
+Today `table_from_path` (`r2_metrics.rs:233`) extracts only the first `.lance` segment. Reads to `images_score_v2.lance/data/...`, `images_score_v2.lance/_indices/...`, `images_score_v2.lance/_versions/...`, and manifest files all roll up to the same `table` value. With the 30th-Apr finding that spikes hit `images_score_v2.lance` at ~20K `get`+`get_range`/min, we can't currently tell whether that's data-fragment reads, index-uuid lookups, or manifest churn — each points at a different fix.
+
+* [ ] add a `kind` label to `r2.operations` and `r2.bytes`, derived from the path segment immediately after the `<table>.lance/` directory: `data` / `_indices` / `_versions` / `_transactions` / `manifest` (top-level `.manifest` files) / `other`. Inline unit tests covering each path shape.
+* [ ] re-pull the per-`(table, kind, operation)` breakdown for a spike minute on `images_score_v2.lance` to localise the cost source within the table; record the result in Observations.
+
+#### Idea: reduce scores-table read amplification on upsert
+
+The 30th-Apr per-table breakdown shows spike-minute R2 cost lives almost entirely on `images_score_v2.lance` (>99% of the 40K ops/min spike), not on the image-data table. Image-fetch batching is already done; that is *not* where the cost is. Likely culprits, in order of suspicion:
+
+1. `batch_upsert_scores` — the merge-on-write needs to read existing rows to detect duplicates by `image_id`; lance does this via the `image_id_idx` plus per-fragment data reads to confirm matches.
+2. `cached_scores` rebuilding — when the `scores` table version changes (which the upsert itself causes), the next consumer rebuild re-reads.
+
+Steps depend on the `kind` breakdown above, but candidates:
+
+* [ ] confirm whether the spike is dominated by `_indices/` reads (index-lookup amplification) or `data/` reads (per-fragment row checks) — answered by *Idea: add a `kind` sub-label*.
+* [ ] if index-dominated: investigate whether we can issue a single bulk index lookup per upsert batch instead of per-row.
+* [ ] if data-dominated: revisit the `target_rows_per_fragment` knob for `images_score_v2.lance` — it carries small score rows (no PNG blobs), so the 500-row cap that protects `images_v6.lance` from OOM may be unnecessarily small here. Larger fragments → fewer per-row data-page touches.
+* [ ] consider switching to insert-only (append a new score row per image rather than upsert) if the merge step is itself the dominant cost; depends on whether downstream readers can tolerate multiple score rows per (image, version) pair.
 
