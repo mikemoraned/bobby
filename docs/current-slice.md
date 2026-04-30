@@ -79,6 +79,23 @@ Pulled `r2.bytes / r2.operations` per minute and per-`(table, operation)` ops fr
 
 Both observations re-frame the spike-cost problem and feed two new ideas (below): adding a `kind` sub-label to disambiguate within a table, and investigating scores-table read amplification.
 
+##### Spike-cost localisation by `kind` (30th Apr, after `kind` label deployed)
+
+`kind` label deployed; pulled per-`(table, kind, operation)` rates from Grafana for the 5 highest spike minutes (`metrics_dumps/live_refine operations total by table, kind & operation-…2026-04-30 12_24_58.csv`). Pattern is consistent — every spike is **~99%+ `images_score_v2.lance / _versions / {get, get_range}`**, split roughly 1:1:
+
+| time (UTC) | total ops/min | `_versions` (% of total) | `_indices` | `data` | other |
+|---|---|---|---|---|---|
+| 01:45 | 43,629 | 43,294 (99%) | 63 | 25 | 247 |
+| 11:11 | 41,900 | 41,701 (100%) | 7 | 17 | 175 |
+| 11:10 | 41,900 | 41,701 (100%) | 7 | 17 | 175 |
+| 11:09 | 41,850 | 41,693 (100%) | 13 | 11 | 133 |
+| 10:03 | 41,818 | 41,590 (99%) | 57 | 13 | 157 |
+
+Implications for *Idea: reduce scores-table read amplification on upsert*:
+* It is **not index amplification** (`_indices` is rounding error) and **not per-fragment data reads** (`data` is rounding error).
+* It is **manifest churn**: the scores table is at `_versions/N.manifest` files being read repeatedly. `get`/`get_range` ~1:1 fits "list-or-head a version, then range-read manifest bytes."
+* Direction shifts toward: how `batch_upsert_scores` (and its `cached_scores` reader counterpart) interact with manifests. Either the writer is producing many version bumps per batch (each a new manifest), or the reader is re-resolving versions per row. Either way the next step is to instrument or read the lance write path to confirm where the manifest reads originate.
+
 #### 26th Apr
 
 ##### R2 Class A + `list` operation usage regression
@@ -396,7 +413,7 @@ The R2 metrics emitted by `R2MetricsWrapper` are not currently linked to any tra
 Today `table_from_path` (`r2_metrics.rs:233`) extracts only the first `.lance` segment. Reads to `images_score_v2.lance/data/...`, `images_score_v2.lance/_indices/...`, `images_score_v2.lance/_versions/...`, and manifest files all roll up to the same `table` value. With the 30th-Apr finding that spikes hit `images_score_v2.lance` at ~20K `get`+`get_range`/min, we can't currently tell whether that's data-fragment reads, index-uuid lookups, or manifest churn — each points at a different fix.
 
 * [x] add a `kind` label to `r2.operations` and `r2.bytes`, derived from the path segment immediately after the `<table>.lance/` directory: `data` / `_indices` / `_versions` / `_transactions` / `manifest` (top-level `.manifest` files) / `other`. Inline unit tests covering each path shape.
-* [ ] re-pull the per-`(table, kind, operation)` breakdown for a spike minute on `images_score_v2.lance` to localise the cost source within the table; record the result in Observations.
+* [x] re-pull the per-`(table, kind, operation)` breakdown for a spike minute on `images_score_v2.lance` to localise the cost source within the table; record the result in Observations. **Result: ~99% of every spike is `_versions/{get,get_range}` — see Observations.**
 
 #### Idea: reduce scores-table read amplification on upsert
 
@@ -407,8 +424,9 @@ The 30th-Apr per-table breakdown shows spike-minute R2 cost lives almost entirel
 
 Steps depend on the `kind` breakdown above, but candidates:
 
-* [ ] confirm whether the spike is dominated by `_indices/` reads (index-lookup amplification) or `data/` reads (per-fragment row checks) — answered by *Idea: add a `kind` sub-label*.
-* [ ] if index-dominated: investigate whether we can issue a single bulk index lookup per upsert batch instead of per-row.
-* [ ] if data-dominated: revisit the `target_rows_per_fragment` knob for `images_score_v2.lance` — it carries small score rows (no PNG blobs), so the 500-row cap that protects `images_v6.lance` from OOM may be unnecessarily small here. Larger fragments → fewer per-row data-page touches.
-* [ ] consider switching to insert-only (append a new score row per image rather than upsert) if the merge step is itself the dominant cost; depends on whether downstream readers can tolerate multiple score rows per (image, version) pair.
+* [x] confirm whether the spike is dominated by `_indices/` reads (index-lookup amplification) or `data/` reads (per-fragment row checks) — answered by *Idea: add a `kind` sub-label*. **Result: neither — ~99% is `_versions/{get,get_range}` (manifest reads). See Observations 30th Apr.**
+* [-] if index-dominated: investigate whether we can issue a single bulk index lookup per upsert batch instead of per-row. *Not applicable — `_indices` is <1% of spike traffic.*
+* [-] if data-dominated: revisit the `target_rows_per_fragment` knob for `images_score_v2.lance`. *Not applicable — `data` is <1% of spike traffic.*
+* [ ] (revised) localise the manifest-read amplification: instrument or step-debug `batch_upsert_scores` to see whether each batch generates many lance commits (each producing a new `_versions/N.manifest`), and/or whether the `merge_insert` flow re-resolves the version per row. The 1:1 `get`/`get_range` ratio is consistent with "list/head versions, then range-read manifest bytes" repeated per row or per fragment.
+* [ ] consider switching to insert-only (append a new score row per image rather than upsert) if the merge step itself drives manifest churn; depends on whether downstream readers can tolerate multiple score rows per (image, version) pair.
 
