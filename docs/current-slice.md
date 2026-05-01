@@ -313,6 +313,32 @@ The goal is to ground optimisation decisions in real data (actual query plans, c
     * record wall-clock around the inner-store delegate call in each wrapper method (`get`, `get_opts`, `get_range`, `get_ranges`, `head`, `list*`, `put*`, `delete*`)
     * goal: distinguish "spike is many requests" from "spike is slow requests"; gives a baseline for any future infra change (e.g. evaluating SSE-C contribution, or comparing prefixes/regions). Confirmed (1st May, by reading `object_store` 0.12.5 + `lance-io` 4.0.0 source) that SSE-C does not defeat lance's or object_store's range-coalescing layers, so SSE-C is not a likely cost driver — but per-op latency is still useful as a general debugging tool independent of the SSE-C question.
 
+##### Get visibility of R2 metrics from Cloudflare in my Grafana metrics
+
+Intent:
+
+Pull R2 operation and storage metrics directly from Cloudflare's GraphQL Analytics API and push them into the same Grafana Cloud tenant we already use, so Cloudflare's ground truth sits alongside our in-app `r2.operations` / `r2.bytes` counters on the same dashboards. The motivation is twofold: (a) validate that the in-app `R2MetricsWrapper` numbers match Cloudflare's billing-aligned counts, and (b) any gap between the two reveals R2 traffic that isn't going through the wrapper (e.g. paths we missed, side-channels). Cost correlation with deploys then falls out for free, since `service.version` (git hash) is already on every other metric in the tenant.
+
+Design decisions:
+* New crate `cloudflare-exporter` with a single `sync` CLI
+* Source: Cloudflare GraphQL Analytics API, datasets `r2OperationsAdaptiveGroups` (Class A/B counts dimensioned by `actionType`, `bucketName`) and `r2StorageAdaptiveGroups` (`payloadSize`, `objectCount`). 31-day retention, ~5-min ingestion lag.
+* Sink: OTLP push via the existing `shared::tracing` setup — delta-temporality sums for operation counts, gauges for storage. No new auth path, no Prometheus scrape endpoint to host.
+* Schedule: k8s CronJob, once per minute. Default window queries `[now − 6min, now − 5min]` so we always read settled data; `--from`/`--to` flags override for ad-hoc runs.
+* Label parity with `r2_metrics.rs` (`bucket`, plus `action_type` / equivalent of our `operation`) so a Grafana panel can show Cloudflare-truth vs in-app counters with `join` on the same dimensions.
+* Grafana Cloud Mimir's 2h out-of-order window comfortably absorbs once-a-minute writes; no tenant config change needed.
+* Caveat: Cloudflare's API does **not** expose path-prefix (`data/` vs `_versions/` vs `_indices/`) — that detail still only exists in our in-app `kind` label. Cloudflare gives bucket-level totals only.
+
+Tasks:
+
+* [ ] provision a Cloudflare API token scoped `Account Analytics: Read`; store it in 1Password as `bobby-cloudflare-api-token` (and the account tag as `bobby-cloudflare-account-tag`)
+* [ ] scaffold a new `cloudflare-exporter` crate in the workspace; add the corresponding `cloudflare-exporter.env` (1Password refs for the API token, account tag, and the existing Grafana Cloud OTLP env vars)
+* [ ] implement `cloudflare.rs`: typed GraphQL client for `r2OperationsAdaptiveGroups` (group by `actionType`, `bucketName`) and `r2StorageAdaptiveGroups`. One integration test behind `op run` that hits the real API and asserts the response shape (kept small; gated like other live-API tests)
+* [ ] implement `otlp.rs`: emit operation counts as OTel delta `Counter<u64>` (one observation per `(bucket, action_type)` per window) and storage as `Gauge<u64>`. Reuse `shared::tracing` for provider setup so `service.version` flows through automatically
+* [ ] wire `sync` CLI (clap): `--from`, `--to` overrides, default to `[now − 6min, now − 5min]`. Capture invocations in the Justfile (`just cloudflare-sync`), running through `op run --env-file cloudflare-exporter.env`
+* [ ] add a k8s CronJob manifest in `infra/k8s/` (once per minute, same image-tag pattern as the rest — `${IMAGE_TAG}` + `envsubst`); add a `cluster-deploy-cloudflare-exporter` just target
+* [ ] verify in Grafana that a `cloudflare_r2_operations_total` (or whatever metric name we settle on) series appears with the expected labels and the per-minute count is non-zero
+* [ ] build a Grafana panel that overlays Cloudflare-truth vs the in-app `r2_operations_total` for the same `bucket`, so a divergence is visually obvious — the comparison that actually validates this work
+
 #### Idea: Remove inline compaction in favour of the cron job
 
 The `compact` cron job already runs every 10 minutes against all tables. The `compact_every_n_writes` mechanism duplicates this inline, blocking the save path and generating large GET/GET_RANGE bursts against R2 during each run.
