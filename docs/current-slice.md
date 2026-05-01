@@ -441,6 +441,11 @@ Three fixes, ranked. They compose — none substitutes for another.
         .await?;
     ```
     Build one Arrow `RecordBatch` covering all rows, wrap in a `RecordBatchReader`, run a single `merge_insert`. Drop the `delete()`+`add()` pair. `merge_insert` retries on conflict by default — keep that. TDD: extend `store_tests::batch_upsert_scores_*` tests to assert the table version increments by exactly 1 per call regardless of batch size.
+
+    **Post-deploy verification (Grafana):** compare a spike window before and after the deploy.
+    * `r2_operations_total{table="images_score_v2.lance", kind="_versions"}` rate — should drop substantially during spike minutes. Pre-deploy spikes were ~20K `get` + 20K `get_range` per minute on `_versions`; each scoring batch now writes 1 manifest instead of N+1, so the writer side shrinks by ~N×. Reader-side `_versions` reads (Strong-mode manifest resolves) are unchanged by this fix, so some `_versions` traffic will remain — see fix (3).
+    * Spike peak ops/min (`r2_operations_total` summed across all kinds for `images_score_v2.lance`) — expect the ceiling to fall. Pre-deploy peak was ~40K ops/min; post-deploy should be meaningfully lower if batch sizes are typically >2.
+    * `r2_operations_total{kind="_versions"}` trend between spikes — should be flat or slowly rising rather than climbing steeply, since fewer manifests are written per scoring cycle. If it still drifts up, that points at fix (2) (prune) being needed even more urgently.
 * [ ] **(2) Add `OptimizeAction::Prune` to the compact cron** — without it, `_versions/` grows unbounded. Two options:
     * swap each `OptimizeAction::Compact` + `Index` pair for a single `OptimizeAction::All` (which is `compact_files` + `cleanup_old_versions(7d)` + `optimize_indices`), or
     * add an explicit third `OptimizeAction::Prune { older_than: Some(Duration::from_secs(3600)), delete_unverified: false, error_if_tagged_old_versions: false }` step.
