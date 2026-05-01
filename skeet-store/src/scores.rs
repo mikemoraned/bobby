@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use arrow_array::{Float32Array, RecordBatch, StringArray};
+use arrow_array::{Float32Array, RecordBatch, RecordBatchIterator, StringArray};
 use lancedb::query::QueryBase;
 use tracing::{debug, info, instrument};
 
@@ -60,12 +60,6 @@ impl SkeetStore {
             return Ok(());
         }
 
-        for (image_id, _, _) in scores {
-            self.scores_table
-                .delete(&format!("image_id = '{image_id}'"))
-                .await?;
-        }
-
         let schema = images_score_v2_schema();
         let image_ids: Vec<String> = scores.iter().map(|(id, _, _)| id.to_string()).collect();
         let score_vals: Vec<f32> = scores.iter().map(|(_, s, _)| f32::from(*s)).collect();
@@ -87,11 +81,11 @@ impl SkeetStore {
             ],
         )?;
 
-        self.scores_table
-            .add(vec![batch])
-            .write_options(self.write_options())
-            .execute()
-            .await?;
+        let reader = RecordBatchIterator::new(vec![Ok(batch)], schema);
+        let mut builder = self.scores_table.merge_insert(&["image_id"]);
+        builder.when_matched_update_all(None);
+        builder.when_not_matched_insert_all();
+        builder.execute(Box::new(reader)).await?;
         Ok(())
     }
 

@@ -456,6 +456,36 @@ async fn scores_cache_invalidated_after_batch_upsert() {
     .await;
 }
 
+#[tokio::test]
+async fn batch_upsert_scores_version_increments_by_one() {
+    let f = setup_cache_test("batch_version").await;
+    let mv = test_model_version();
+
+    let version_before = f.store.scores_table.version().await.unwrap();
+    f.store
+        .batch_upsert_scores(&[
+            (
+                f.r1.image_id.clone(),
+                Score::new(0.6).expect("valid"),
+                mv.clone(),
+            ),
+            (
+                f.r2.image_id.clone(),
+                Score::new(0.9).expect("valid"),
+                mv.clone(),
+            ),
+            (
+                make_record("batch_version_extra").image_id.clone(),
+                Score::new(0.3).expect("valid"),
+                mv.clone(),
+            ),
+        ])
+        .await
+        .unwrap();
+    let version_after = f.store.scores_table.version().await.unwrap();
+    assert_eq!(version_after - version_before, 1, "batch_upsert_scores must produce exactly one commit regardless of batch size");
+}
+
 fn test_appraiser() -> Appraiser {
     Appraiser::new_github("testuser").expect("valid appraiser")
 }
