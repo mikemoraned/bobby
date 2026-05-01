@@ -1,5 +1,6 @@
 use std::ops::Range;
 use std::sync::Arc;
+use std::time::Instant;
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -10,7 +11,7 @@ use object_store::{
     GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, PutMultipartOptions,
     PutOptions, PutPayload, PutResult, Result as OSResult,
 };
-use opentelemetry::{KeyValue, metrics::Counter};
+use opentelemetry::{KeyValue, metrics::{Counter, Histogram}};
 
 /// Implements [`WrappingObjectStore`] to count R2 API operations via OTel metrics.
 ///
@@ -20,6 +21,7 @@ pub struct R2MetricsWrapper {
     cli_name: String,
     counter: Counter<u64>,
     bytes_counter: Counter<u64>,
+    duration_histogram: Histogram<f64>,
 }
 
 impl R2MetricsWrapper {
@@ -34,10 +36,19 @@ impl R2MetricsWrapper {
             .with_description("Bytes transferred in R2 object store operations by type and CLI")
             .with_unit("bytes")
             .build();
+        let duration_histogram = meter
+            .f64_histogram("r2.duration")
+            .with_description("Wall-clock duration of R2 object store operations in seconds")
+            .with_unit("s")
+            .with_boundaries(vec![
+                0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+            ])
+            .build();
         Self {
             cli_name: cli_name.to_string(),
             counter,
             bytes_counter,
+            duration_histogram,
         }
     }
 }
@@ -52,6 +63,7 @@ impl WrappingObjectStore for R2MetricsWrapper {
             inner: original,
             counter: self.counter.clone(),
             bytes_counter: self.bytes_counter.clone(),
+            duration_histogram: self.duration_histogram.clone(),
             cli_name: self.cli_name.clone(),
             store_prefix: store_prefix.to_string(),
         })
@@ -63,6 +75,7 @@ struct CountingObjectStore {
     inner: Arc<dyn object_store::ObjectStore>,
     counter: Counter<u64>,
     bytes_counter: Counter<u64>,
+    duration_histogram: Histogram<f64>,
     cli_name: String,
     store_prefix: String,
 }
@@ -74,44 +87,76 @@ impl std::fmt::Display for CountingObjectStore {
 }
 
 impl CountingObjectStore {
-    fn labels(
+    fn recorder(
         &self,
         location: &Path,
         operation: &'static str,
         r2_class: &'static str,
-    ) -> [KeyValue; 6] {
-        [
-            KeyValue::new("operation", operation),
-            KeyValue::new("r2_class", r2_class),
-            KeyValue::new("cli", self.cli_name.clone()),
-            KeyValue::new("store_prefix", self.store_prefix.clone()),
-            KeyValue::new("table", table_from_path(location)),
-            KeyValue::new("kind", kind_from_path(location)),
-        ]
+    ) -> MetricsRecorder<'_> {
+        MetricsRecorder::new(
+            &self.counter,
+            &self.bytes_counter,
+            &self.duration_histogram,
+            [
+                KeyValue::new("operation", operation),
+                KeyValue::new("r2_class", r2_class),
+                KeyValue::new("cli", self.cli_name.clone()),
+                KeyValue::new("store_prefix", self.store_prefix.clone()),
+                KeyValue::new("table", table_from_path(location)),
+                KeyValue::new("kind", kind_from_path(location)),
+            ],
+        )
+    }
+}
+
+struct MetricsRecorder<'a> {
+    counter: &'a Counter<u64>,
+    bytes_counter: &'a Counter<u64>,
+    duration_histogram: &'a Histogram<f64>,
+    labels: [KeyValue; 6],
+    bytes: Option<u64>,
+    start: Instant,
+}
+
+impl<'a> MetricsRecorder<'a> {
+    fn new(
+        counter: &'a Counter<u64>,
+        bytes_counter: &'a Counter<u64>,
+        duration_histogram: &'a Histogram<f64>,
+        labels: [KeyValue; 6],
+    ) -> Self {
+        Self {
+            counter,
+            bytes_counter,
+            duration_histogram,
+            labels,
+            bytes: None,
+            start: Instant::now(),
+        }
     }
 
-    fn record(&self, location: &Path, operation: &'static str, r2_class: &'static str) {
-        self.counter.add(1, &self.labels(location, operation, r2_class));
+    const fn add_bytes(mut self, bytes: u64) -> Self {
+        self.bytes = Some(bytes);
+        self
     }
 
-    fn record_bytes(
-        &self,
-        location: &Path,
-        operation: &'static str,
-        r2_class: &'static str,
-        bytes: u64,
-    ) {
-        self.counter.add(1, &self.labels(location, operation, r2_class));
-        self.bytes_counter
-            .add(bytes, &self.labels(location, operation, r2_class));
+    fn completed(self) {
+        let elapsed = self.start.elapsed().as_secs_f64();
+        self.counter.add(1, &self.labels);
+        if let Some(bytes) = self.bytes {
+            self.bytes_counter.add(bytes, &self.labels);
+        }
+        self.duration_histogram.record(elapsed, &self.labels);
     }
 }
 
 #[async_trait]
 impl object_store::ObjectStore for CountingObjectStore {
     async fn put(&self, location: &Path, payload: PutPayload) -> OSResult<PutResult> {
-        self.record_bytes(location, "put", "A", payload.content_length() as u64);
-        self.inner.put(location, payload).await
+        let recorder = self.recorder(location, "put", "A").add_bytes(payload.content_length() as u64);
+        let result = self.inner.put(location, payload).await;
+        recorder.completed();
+        result
     }
 
     async fn put_opts(
@@ -120,13 +165,17 @@ impl object_store::ObjectStore for CountingObjectStore {
         payload: PutPayload,
         opts: PutOptions,
     ) -> OSResult<PutResult> {
-        self.record_bytes(location, "put", "A", payload.content_length() as u64);
-        self.inner.put_opts(location, payload, opts).await
+        let recorder = self.recorder(location, "put", "A").add_bytes(payload.content_length() as u64);
+        let result = self.inner.put_opts(location, payload, opts).await;
+        recorder.completed();
+        result
     }
 
     async fn put_multipart(&self, location: &Path) -> OSResult<Box<dyn MultipartUpload>> {
-        self.record(location, "put_multipart", "A");
-        self.inner.put_multipart(location).await
+        let recorder = self.recorder(location, "put_multipart", "A");
+        let result = self.inner.put_multipart(location).await;
+        recorder.completed();
+        result
     }
 
     async fn put_multipart_opts(
@@ -134,23 +183,31 @@ impl object_store::ObjectStore for CountingObjectStore {
         location: &Path,
         opts: PutMultipartOptions,
     ) -> OSResult<Box<dyn MultipartUpload>> {
-        self.record(location, "put_multipart", "A");
-        self.inner.put_multipart_opts(location, opts).await
+        let recorder = self.recorder(location, "put_multipart", "A");
+        let result = self.inner.put_multipart_opts(location, opts).await;
+        recorder.completed();
+        result
     }
 
     async fn get(&self, location: &Path) -> OSResult<GetResult> {
-        self.record(location, "get", "B");
-        self.inner.get(location).await
+        let recorder = self.recorder(location, "get", "B");
+        let result = self.inner.get(location).await;
+        recorder.completed();
+        result
     }
 
     async fn get_opts(&self, location: &Path, options: GetOptions) -> OSResult<GetResult> {
-        self.record(location, "get", "B");
-        self.inner.get_opts(location, options).await
+        let recorder = self.recorder(location, "get", "B");
+        let result = self.inner.get_opts(location, options).await;
+        recorder.completed();
+        result
     }
 
     async fn get_range(&self, location: &Path, range: Range<u64>) -> OSResult<Bytes> {
-        self.record_bytes(location, "get_range", "B", bytes_for_range(&range));
-        self.inner.get_range(location, range).await
+        let recorder = self.recorder(location, "get_range", "B").add_bytes(bytes_for_range(&range));
+        let result = self.inner.get_range(location, range).await;
+        recorder.completed();
+        result
     }
 
     async fn get_ranges(
@@ -158,18 +215,24 @@ impl object_store::ObjectStore for CountingObjectStore {
         location: &Path,
         ranges: &[Range<u64>],
     ) -> OSResult<Vec<Bytes>> {
-        self.record_bytes(location, "get_ranges", "B", bytes_for_ranges(ranges));
-        self.inner.get_ranges(location, ranges).await
+        let recorder = self.recorder(location, "get_ranges", "B").add_bytes(bytes_for_ranges(ranges));
+        let result = self.inner.get_ranges(location, ranges).await;
+        recorder.completed();
+        result
     }
 
     async fn head(&self, location: &Path) -> OSResult<ObjectMeta> {
-        self.record(location, "head", "B");
-        self.inner.head(location).await
+        let recorder = self.recorder(location, "head", "B");
+        let result = self.inner.head(location).await;
+        recorder.completed();
+        result
     }
 
     async fn delete(&self, location: &Path) -> OSResult<()> {
-        self.record(location, "delete", "A");
-        self.inner.delete(location).await
+        let recorder = self.recorder(location, "delete", "A");
+        let result = self.inner.delete(location).await;
+        recorder.completed();
+        result
     }
 
     fn delete_stream<'a>(
@@ -182,8 +245,10 @@ impl object_store::ObjectStore for CountingObjectStore {
 
     fn list(&self, prefix: Option<&Path>) -> BoxStream<'static, OSResult<ObjectMeta>> {
         let empty = Path::from("");
-        self.record(prefix.unwrap_or(&empty), "list", "A");
-        self.inner.list(prefix)
+        let recorder = self.recorder(prefix.unwrap_or(&empty), "list", "A");
+        let result = self.inner.list(prefix);
+        recorder.completed();
+        result
     }
 
     fn list_with_offset(
@@ -192,34 +257,46 @@ impl object_store::ObjectStore for CountingObjectStore {
         offset: &Path,
     ) -> BoxStream<'static, OSResult<ObjectMeta>> {
         let empty = Path::from("");
-        self.record(prefix.unwrap_or(&empty), "list", "A");
-        self.inner.list_with_offset(prefix, offset)
+        let recorder = self.recorder(prefix.unwrap_or(&empty), "list", "A");
+        let result = self.inner.list_with_offset(prefix, offset);
+        recorder.completed();
+        result
     }
 
     async fn list_with_delimiter(&self, prefix: Option<&Path>) -> OSResult<ListResult> {
         let empty = Path::from("");
-        self.record(prefix.unwrap_or(&empty), "list", "A");
-        self.inner.list_with_delimiter(prefix).await
+        let recorder = self.recorder(prefix.unwrap_or(&empty), "list", "A");
+        let result = self.inner.list_with_delimiter(prefix).await;
+        recorder.completed();
+        result
     }
 
     async fn copy(&self, from: &Path, to: &Path) -> OSResult<()> {
-        self.record(from, "copy", "A");
-        self.inner.copy(from, to).await
+        let recorder = self.recorder(from, "copy", "A");
+        let result = self.inner.copy(from, to).await;
+        recorder.completed();
+        result
     }
 
     async fn rename(&self, from: &Path, to: &Path) -> OSResult<()> {
-        self.record(from, "rename", "A");
-        self.inner.rename(from, to).await
+        let recorder = self.recorder(from, "rename", "A");
+        let result = self.inner.rename(from, to).await;
+        recorder.completed();
+        result
     }
 
     async fn copy_if_not_exists(&self, from: &Path, to: &Path) -> OSResult<()> {
-        self.record(from, "copy_if_not_exists", "A");
-        self.inner.copy_if_not_exists(from, to).await
+        let recorder = self.recorder(from, "copy_if_not_exists", "A");
+        let result = self.inner.copy_if_not_exists(from, to).await;
+        recorder.completed();
+        result
     }
 
     async fn rename_if_not_exists(&self, from: &Path, to: &Path) -> OSResult<()> {
-        self.record(from, "rename_if_not_exists", "A");
-        self.inner.rename_if_not_exists(from, to).await
+        let recorder = self.recorder(from, "rename_if_not_exists", "A");
+        let result = self.inner.rename_if_not_exists(from, to).await;
+        recorder.completed();
+        result
     }
 }
 
@@ -280,6 +357,25 @@ mod tests {
         let meter = provider.meter("r2");
         let wrapper = R2MetricsWrapper::new("test-cli", meter);
         (wrapper, provider, exporter)
+    }
+
+    fn total_duration_count(exporter: &InMemoryMetricExporter, provider: &SdkMeterProvider) -> u64 {
+        provider.force_flush().unwrap();
+        let metrics = exporter.get_finished_metrics().unwrap();
+        metrics
+            .iter()
+            .flat_map(|rm| rm.scope_metrics())
+            .flat_map(|sm| sm.metrics())
+            .filter(|m| m.name() == "r2.duration")
+            .flat_map(|m| {
+                use opentelemetry_sdk::metrics::data::{AggregatedMetrics, MetricData};
+                if let AggregatedMetrics::F64(MetricData::Histogram(hist)) = m.data() {
+                    hist.data_points().map(|dp| dp.count()).collect::<Vec<_>>()
+                } else {
+                    vec![]
+                }
+            })
+            .sum()
     }
 
     fn total_bytes(exporter: &InMemoryMetricExporter, provider: &SdkMeterProvider) -> u64 {
@@ -477,5 +573,22 @@ mod tests {
             .unwrap();
 
         assert_eq!(total_bytes(&exporter, &provider), 17);
+    }
+
+    #[tokio::test]
+    async fn get_range_records_duration() {
+        let (wrapper, provider, exporter) = make_test_wrapper();
+        let inner = Arc::new(InMemory::new());
+        let store = wrapper.wrap("test", inner.clone());
+        let path = Path::from("test-object");
+        inner
+            .put(&path, Bytes::from(vec![0u8; 100]).into())
+            .await
+            .unwrap();
+
+        store.get_range(&path, 0u64..50u64).await.unwrap();
+        store.get_range(&path, 50u64..100u64).await.unwrap();
+
+        assert_eq!(total_duration_count(&exporter, &provider), 2);
     }
 }
