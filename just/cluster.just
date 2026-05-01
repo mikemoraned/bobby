@@ -69,6 +69,9 @@ cluster-deploy-live-refine:
 cluster-deploy-compact:
     IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/compact-cronjob.yaml | kubectl apply -f -
 
+cluster-deploy-cloudflare-exporter:
+    IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/cloudflare-exporter-cronjob.yaml | kubectl apply -f -
+
 # Re-render and re-apply with an explicit image tag, so both `image:` and
 # `service.version` in OTEL_RESOURCE_ATTRIBUTES are kept in sync. Use this to
 # roll forward or back to a specific previously-pushed image.
@@ -82,6 +85,9 @@ cluster-rollback-live-refine image_tag:
 
 cluster-logs-compact:
     kubectl logs -l app=compact --tail=100 -f | lnav
+
+cluster-logs-cloudflare-exporter:
+    kubectl logs -l app=cloudflare-exporter --tail=100 -f | lnav
 
 cluster-deploy-all: push-pruner push-live-refine push-compact cluster-deploy-pruner cluster-deploy-live-refine cluster-deploy-compact
 

@@ -5,6 +5,7 @@ import 'just/store.just'
 import 'just/feed.just'
 import 'just/container.just'
 import 'just/cluster.just'
+import 'just/cloudflare.just'
 
 default:
     just --list
