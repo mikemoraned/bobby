@@ -330,7 +330,7 @@ Design decisions:
 
 Tasks:
 
-* [ ] provision a Cloudflare API token scoped `Account Analytics: Read`; store it in 1Password as `bobby-cloudflare-api-token` (and the account tag as `bobby-cloudflare-account-tag`)
+* [x] provision a Cloudflare API token scoped `Account Analytics: Read`; store it in 1Password as `bobby-cloudflare-analytics-token` (and the account tag as `bobby-cloudflare-account-tag`)
 * [ ] scaffold a new `cloudflare-exporter` crate in the workspace; add the corresponding `cloudflare-exporter.env` (1Password refs for the API token, account tag, and the existing Grafana Cloud OTLP env vars)
 * [ ] implement `cloudflare.rs`: typed GraphQL client for `r2OperationsAdaptiveGroups` (group by `actionType`, `bucketName`) and `r2StorageAdaptiveGroups`. One integration test behind `op run` that hits the real API and asserts the response shape (kept small; gated like other live-API tests)
 * [ ] implement `otlp.rs`: emit operation counts as OTel delta `Counter<u64>` (one observation per `(bucket, action_type)` per window) and storage as `Gauge<u64>`. Reuse `shared::tracing` for provider setup so `service.version` flows through automatically
