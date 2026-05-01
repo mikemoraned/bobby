@@ -417,16 +417,32 @@ Today `table_from_path` (`r2_metrics.rs:233`) extracts only the first `.lance` s
 
 #### Idea: reduce scores-table read amplification on upsert
 
-The 30th-Apr per-table breakdown shows spike-minute R2 cost lives almost entirely on `images_score_v2.lance` (>99% of the 40K ops/min spike), not on the image-data table. Image-fetch batching is already done; that is *not* where the cost is. Likely culprits, in order of suspicion:
+The 30th-Apr per-table breakdown shows spike-minute R2 cost lives almost entirely on `images_score_v2.lance` (>99% of the 40K ops/min spike), not on the image-data table. Image-fetch batching is already done; that is *not* where the cost is. Per-`kind` follow-up confirmed **~99% of every spike is `_versions/{get,get_range}`** — manifest reads, not index lookups, not data fragments. See Observations 30th Apr.
 
-1. `batch_upsert_scores` — the merge-on-write needs to read existing rows to detect duplicates by `image_id`; lance does this via the `image_id_idx` plus per-fragment data reads to confirm matches.
-2. `cached_scores` rebuilding — when the `scores` table version changes (which the upsert itself causes), the next consumer rebuild re-reads.
+Diagnosis (from lancedb 0.27 source review):
 
-Steps depend on the `kind` breakdown above, but candidates:
+1. **Write side: N+1 commits per batch.** `batch_upsert_scores` (`scores.rs:54-96`) does `delete()` in a loop (one per row in the batch) followed by a single `add()`. In lance, every `delete()` and every `add()` is its own commit and writes a fresh `_versions/N.manifest` (confirmed in `lancedb-0.27.2/src/table/delete.rs:24-35` — even a delete with predicate `"false"` increments the version). A batch of N rows → N+1 manifests.
+2. **Read side: every read resolves the latest manifest.** We open the DB with `read_consistency_interval(Duration::ZERO)` (`open.rs:28`), which puts the wrapper in lancedb's *Strong* mode. In Strong mode every `Table::version()` and every read calls `refresh_latest` → `LIST _versions/` + manifest GET. The 1:1 `get`/`get_range` ratio in our spikes is exactly that pattern (R2 LIST shows up as a `get_range`-style op).
+3. **No version cleanup.** `compact.rs:60-95` runs `OptimizeAction::Compact` + `Index` only, never `OptimizeAction::Prune` / `cleanup_old_versions`. Old manifests accumulate forever, so every `LIST _versions/` walks more keys over time.
 
-* [x] confirm whether the spike is dominated by `_indices/` reads (index-lookup amplification) or `data/` reads (per-fragment row checks) — answered by *Idea: add a `kind` sub-label*. **Result: neither — ~99% is `_versions/{get,get_range}` (manifest reads). See Observations 30th Apr.**
-* [-] if index-dominated: investigate whether we can issue a single bulk index lookup per upsert batch instead of per-row. *Not applicable — `_indices` is <1% of spike traffic.*
-* [-] if data-dominated: revisit the `target_rows_per_fragment` knob for `images_score_v2.lance`. *Not applicable — `data` is <1% of spike traffic.*
-* [ ] (revised) localise the manifest-read amplification: instrument or step-debug `batch_upsert_scores` to see whether each batch generates many lance commits (each producing a new `_versions/N.manifest`), and/or whether the `merge_insert` flow re-resolves the version per row. The 1:1 `get`/`get_range` ratio is consistent with "list/head versions, then range-read manifest bytes" repeated per row or per fragment.
-* [ ] consider switching to insert-only (append a new score row per image rather than upsert) if the merge step itself drives manifest churn; depends on whether downstream readers can tolerate multiple score rows per (image, version) pair.
+Three fixes, ranked. They compose — none substitutes for another.
+
+* [ ] **(1) Replace the delete-loop in `batch_upsert_scores` with `merge_insert`** — collapses N+1 commits to 1 per batch. The lancedb `Table::update` doc explicitly recommends this pattern over per-row loops. Approximate shape:
+    ```rust
+    self.scores_table
+        .merge_insert(&["image_id"])
+        .when_matched_update_all(None)
+        .when_not_matched_insert_all()
+        .execute(Box::new(reader_over(batch)))
+        .await?;
+    ```
+    Build one Arrow `RecordBatch` covering all rows, wrap in a `RecordBatchReader`, run a single `merge_insert`. Drop the `delete()`+`add()` pair. `merge_insert` retries on conflict by default — keep that. TDD: extend `store_tests::batch_upsert_scores_*` tests to assert the table version increments by exactly 1 per call regardless of batch size.
+* [ ] **(2) Add `OptimizeAction::Prune` to the compact cron** — without it, `_versions/` grows unbounded. Two options:
+    * swap each `OptimizeAction::Compact` + `Index` pair for a single `OptimizeAction::All` (which is `compact_files` + `cleanup_old_versions(7d)` + `optimize_indices`), or
+    * add an explicit third `OptimizeAction::Prune { older_than: Some(Duration::from_secs(3600)), delete_unverified: false, error_if_tagged_old_versions: false }` step.
+    Prefer the explicit form so we can tune `older_than` (1h is plenty given a 10-min cron — 7d is overkill and lets weeks of manifests accumulate between deploys). Verify via Grafana: post-deploy, `LIST` ops on `_versions/` for `cli=skeet-live-refine` should plateau rather than drift up.
+* [ ] **(3) Drop `read_consistency_interval(Duration::ZERO)`** — Strong mode is the wrong default for a system that does batch writes. Move to a small TTL (e.g. `Duration::from_secs(5)`) so reads can serve from lance's in-memory dataset cache between manifest resolves. Implications for `cached_scores` (which uses `version()` as the invalidation signal): with eventual consistency, `version()` may report a slightly-stale value. Either:
+    * accept up-to-5s staleness on the score cache (probably fine — the feed already polls on a coarser cadence), or
+    * replace `version()`-based invalidation with a time-based TTL on the cache itself, decoupling it from manifest resolution entirely.
+    This one is the most behaviour-changing and should land *after* (1) — once batches are single commits, the version-bump-per-batch frequency drops by ~Nx and Strong mode hurts a lot less, so the urgency is lower. Still worth doing for read-cost reduction outside of spikes.
 
