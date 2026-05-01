@@ -308,6 +308,10 @@ The goal is to ground optimisation decisions in real data (actual query plans, c
     * extract the first path segment ending in `.lance` (e.g. `images_v6.lance`) and emit it as a `table` label on every `record()` call; fall back to `unknown` if no segment matches
     * goal: in Grafana, group `r2_operations_total` by `(table, operation)` for a given `cli` to confirm — concretely — that `images_v6.lance` is the dominant burst source and which operations dominate within it
     * note: the `store_prefix` label can stay (still useful as a sanity check that the wrapper is wired) but `table` becomes the primary grouping dimension
+* [ ] add a per-op latency histogram to `R2MetricsWrapper` alongside `r2.operations` and `r2.bytes`
+    * new metric `r2.duration` — `Histogram<f64>` (seconds), same labels as the others (`cli`, `store_prefix`, `table`, `kind`, `operation`, `r2_class`)
+    * record wall-clock around the inner-store delegate call in each wrapper method (`get`, `get_opts`, `get_range`, `get_ranges`, `head`, `list*`, `put*`, `delete*`)
+    * goal: distinguish "spike is many requests" from "spike is slow requests"; gives a baseline for any future infra change (e.g. evaluating SSE-C contribution, or comparing prefixes/regions). Confirmed (1st May, by reading `object_store` 0.12.5 + `lance-io` 4.0.0 source) that SSE-C does not defeat lance's or object_store's range-coalescing layers, so SSE-C is not a likely cost driver — but per-op latency is still useful as a general debugging tool independent of the SSE-C question.
 
 #### Idea: Remove inline compaction in favour of the cron job
 
