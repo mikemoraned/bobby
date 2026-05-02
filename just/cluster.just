@@ -89,7 +89,7 @@ cluster-logs-compact:
 cluster-logs-cloudflare-exporter:
     kubectl logs -l app=cloudflare-exporter --tail=100 -f | lnav
 
-cluster-deploy-all: push-pruner push-live-refine push-compact cluster-deploy-pruner cluster-deploy-live-refine cluster-deploy-compact
+cluster-deploy-all: push-pruner push-live-refine push-compact push-cloudflare-exporter cluster-deploy-pruner cluster-deploy-live-refine cluster-deploy-compact cluster-deploy-cloudflare-exporter
 
 cluster-restart-all: cluster-restart-pruner cluster-restart-live-refine
 
