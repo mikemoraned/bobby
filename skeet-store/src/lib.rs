@@ -24,7 +24,6 @@ mod version;
 
 pub use appraisals::Appraisal;
 pub use args::StoreArgs;
-pub use compact::CompactTarget;
 pub use error::StoreError;
 pub use schema::{
     IMAGE_APPRAISAL_TABLE_NAME, SCORE_TABLE_NAME, SKEET_APPRAISAL_TABLE_NAME, TABLE_NAME,

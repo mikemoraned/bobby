@@ -2,24 +2,8 @@ use lancedb::table::{CompactionOptions, OptimizeAction};
 use tracing::{info, instrument};
 
 use crate::health;
+use crate::schema::TABLE_NAME;
 use crate::StoreError;
-
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
-pub enum CompactTarget {
-    All,
-    Images,
-    Scores,
-}
-
-impl CompactTarget {
-    const fn includes_images(self) -> bool {
-        matches!(self, Self::All | Self::Images)
-    }
-
-    const fn includes_scores(self) -> bool {
-        matches!(self, Self::All | Self::Scores)
-    }
-}
 
 // images_table stores ~2MB PNG blobs per row. Lance's compaction planner
 // treats any fragment with physical_rows < target_rows_per_fragment as a
@@ -37,50 +21,40 @@ impl CompactTarget {
 //    groups (~1GB), well within k8s memory limits
 //  - num_threads=1 ensures only one compaction task runs at a time
 //  - batch_size=64 limits the scanner read batch during compaction
-fn images_compact_options() -> CompactionOptions {
-    CompactionOptions {
-        num_threads: Some(1),
-        target_rows_per_fragment: 500,
-        batch_size: Some(64),
-        ..CompactionOptions::default()
-    }
-}
-
-// scores_table rows are small (image_id + f32 + model_version), so the
-// default target_rows_per_fragment (1M) is fine — memory is not a concern.
-fn scores_compact_options() -> CompactionOptions {
-    CompactionOptions {
-        num_threads: Some(1),
-        ..CompactionOptions::default()
+fn compact_options_for(name: &str) -> CompactionOptions {
+    if name == TABLE_NAME {
+        CompactionOptions {
+            num_threads: Some(1),
+            target_rows_per_fragment: 500,
+            batch_size: Some(64),
+            ..CompactionOptions::default()
+        }
+    } else {
+        // Other tables (scores, validate, appraisals) hold small rows — the
+        // default target_rows_per_fragment (1M) is fine, memory is not a concern.
+        CompactionOptions {
+            num_threads: Some(1),
+            ..CompactionOptions::default()
+        }
     }
 }
 
 impl super::SkeetStore {
-    /// All `(name, table, compact_options)` triples selected by `target`.
-    /// Single source of truth for which tables a maintenance op walks, and
-    /// the compaction options to use for each.
-    fn selected_tables(
+    /// All `(name, table, compact_options)` triples drawn from the
+    /// `SkeetStore::tables` registry. Single source of truth for which tables
+    /// a maintenance op walks.
+    fn maintenance_tables(
         &self,
-        target: CompactTarget,
     ) -> Vec<(&'static str, &lancedb::Table, CompactionOptions)> {
-        let mut out = Vec::new();
-        if target.includes_images() {
-            out.push(("images_table", &self.images_table, images_compact_options()));
-        }
-        if target.includes_scores() {
-            out.push(("scores_table", &self.scores_table, scores_compact_options()));
-        }
-        out
+        self.tables
+            .iter()
+            .map(|(name, table)| (*name, table, compact_options_for(name)))
+            .collect()
     }
 
     #[instrument(skip(self))]
     pub async fn compact(&self) -> Result<(), StoreError> {
-        self.compact_table(CompactTarget::All).await
-    }
-
-    #[instrument(skip(self))]
-    pub async fn compact_table(&self, target: CompactTarget) -> Result<(), StoreError> {
-        for (name, table, options) in self.selected_tables(target) {
+        for (name, table, options) in self.maintenance_tables() {
             compact_and_reindex(name, table, options).await?;
         }
         Ok(())
@@ -92,9 +66,9 @@ impl super::SkeetStore {
     /// to never race an in-flight read, short enough to keep the active
     /// manifest count to a single R2 LIST page.
     #[instrument(skip(self))]
-    pub async fn prune_old_versions(&self, target: CompactTarget) -> Result<(), StoreError> {
+    pub async fn prune_old_versions(&self) -> Result<(), StoreError> {
         let older_than = chrono::Duration::hours(1);
-        for (name, table, _) in self.selected_tables(target) {
+        for (name, table, _) in self.maintenance_tables() {
             prune_versions(name, table, older_than).await?;
         }
         Ok(())
@@ -103,7 +77,7 @@ impl super::SkeetStore {
     pub async fn storage_health(&self) -> Result<health::StoreHealth, StoreError> {
         let mut tables = Vec::new();
 
-        for (name, table, _) in self.selected_tables(CompactTarget::All) {
+        for (name, table, _) in self.maintenance_tables() {
             let stats = table.stats().await?;
             let indices = table.list_indices().await?;
             let mut index_health = Vec::new();

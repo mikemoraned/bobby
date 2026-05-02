@@ -907,10 +907,7 @@ async fn compact_preserves_data() {
 async fn prune_old_versions_succeeds_on_empty_store() {
     let dir = tempfile::tempdir().unwrap();
     let store = open_temp_store(&dir).await;
-    store
-        .prune_old_versions(crate::CompactTarget::All)
-        .await
-        .unwrap();
+    store.prune_old_versions().await.unwrap();
 }
 
 #[tokio::test]
@@ -926,15 +923,61 @@ async fn prune_old_versions_preserves_data() {
         .await
         .unwrap();
 
-    store
-        .prune_old_versions(crate::CompactTarget::All)
-        .await
-        .unwrap();
+    store.prune_old_versions().await.unwrap();
 
     assert_eq!(store.count().await.unwrap(), 1);
     assert!(store.exists(&record.image_id).await.unwrap());
     let score = store.get_score(&record.image_id).await.unwrap();
     assert_eq!(score, Some((Score::new(0.8).expect("valid"), mv)));
+}
+
+#[tokio::test]
+async fn prune_old_versions_walks_all_tables() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    // Write to every table so each one has manifests that prune must visit.
+    let record = make_record("prune-all");
+    store.add(&record).await.unwrap();
+    let mv = test_model_version();
+    store
+        .upsert_score(&record.image_id, &Score::new(0.6).expect("valid"), &mv)
+        .await
+        .unwrap();
+    store.validate().await.unwrap();
+    store
+        .set_skeet_band(&record.skeet_id, Band::HighQuality, &test_appraiser())
+        .await
+        .unwrap();
+    store
+        .set_image_band(&record.image_id, Band::MediumLow, &test_appraiser())
+        .await
+        .unwrap();
+
+    // Sanity: registry covers all five tables.
+    let versions = store.table_versions().await.unwrap();
+    assert_eq!(versions.len(), 5);
+
+    store.prune_old_versions().await.unwrap();
+
+    // Data on every table is still readable after prune.
+    assert!(store.exists(&record.image_id).await.unwrap());
+    assert_eq!(
+        store.get_score(&record.image_id).await.unwrap(),
+        Some((Score::new(0.6).expect("valid"), mv))
+    );
+    let skeet_appraisal = store
+        .get_skeet_band(&record.skeet_id)
+        .await
+        .unwrap()
+        .expect("skeet appraisal preserved");
+    assert_eq!(skeet_appraisal.band, Band::HighQuality);
+    let image_appraisal = store
+        .get_image_band(&record.image_id)
+        .await
+        .unwrap()
+        .expect("image appraisal preserved");
+    assert_eq!(image_appraisal.band, Band::MediumLow);
 }
 
 #[tokio::test]

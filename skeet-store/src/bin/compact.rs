@@ -1,7 +1,7 @@
 #![warn(clippy::all, clippy::nursery)]
 
 use clap::Parser;
-use skeet_store::{CompactTarget, StoreArgs, StoreMetrics};
+use skeet_store::{StoreArgs, StoreMetrics};
 use tracing::info;
 
 #[derive(Parser)]
@@ -9,10 +9,6 @@ use tracing::info;
 struct Args {
     #[command(flatten)]
     store: StoreArgs,
-
-    /// Which table(s) to compact
-    #[arg(long, value_enum, default_value_t = CompactTarget::All)]
-    table: CompactTarget,
 
     /// Only check and report storage health, don't compact
     #[arg(long)]
@@ -38,8 +34,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if health.needs_action() {
-        info!(table = ?args.table, "starting compaction");
-        store.compact_table(args.table).await?;
+        info!("starting compaction");
+        store.compact().await?;
         info!("compaction finished");
         let health_after = store.storage_health().await?;
         health_after.print_report();
@@ -47,8 +43,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("no compaction needed, skipping");
     }
 
-    info!(table = ?args.table, "pruning old versions");
-    store.prune_old_versions(args.table).await?;
+    info!("pruning old versions");
+    store.prune_old_versions().await?;
     info!("prune finished");
 
     let counts = store.fragment_counts().await?;
