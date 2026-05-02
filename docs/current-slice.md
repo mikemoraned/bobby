@@ -36,193 +36,6 @@ Checked the `compact` cron job to test the hypothesis that fragments were piling
 * Our `RECOMMEND: compact: 64 small fragments (>10 threshold)` health line is misleading — it uses lance's default smallness threshold, not our chosen 500. (Worth fixing separately.)
 * This makes the case stronger for both *Idea: reduce cost of polling in live-refine* (version-snapshot early-abort skips the scan when nothing changed) and *Idea: make `list_all_image_ids_by_most_recent` use `discovered_at_idx`* (let lance scan the index instead of every fragment).
 
-#### 2nd May
-
-##### `compact` → `optimise` rename cutover (deployed ~18:40 UTC)
-
-Last `compact` cron run completed 19:36 UTC; first `optimise` cron run completed 19:47 UTC — no overlap. Verified via `OTEL_SERVICE_NAME=optimise` metrics in Grafana, `optimise starting` / `prune finished` log lines in `just cluster-logs-optimise`, and `lance_table_fragments` gauge (data file: `metrics_dumps/Lance Table Fragments by table & service_name-data-as-joinbyfield-2026-05-02 19_54_43.csv`).
-
-Fragment counts at cutover:
-
-| table | compact (last, 19:36) | optimise (first, 19:47) |
-|---|---|---|
-| `images_score_v2` | 1 | 2 |
-| `images_v6` | 69 | 70 |
-| `manual_image_appraisal_v1` | 667 | **1** |
-| `manual_skeet_appraisal_v1` | 47 | **1** |
-| `validate_v1` | 117 | **1** |
-
-The three previously-uncompacted tables (`manual_image_appraisal_v1`, `manual_skeet_appraisal_v1`, `validate_v1`) collapsed to 1 fragment each on the first `optimise` run, confirming the all-tables extension is working end-to-end. `images` and `scores` are stable (small delta from new writes between the two runs).
-
-##### Prune fix verification (`5ec2ad9`, deployed before 04:23 UTC)
-
-First cron run including the prune step ran 04:23–04:30 UTC. `just count-versions` (run at 12:51 UTC, ~9h post-deploy):
-
-```
-table                             manifests list_pages       oldest_h       newest_h
-images_v6                                22          1            0.9            0.0
-images_score_v2                          20          1            0.9            0.0
-manual_skeet_appraisal_v1                90          1          348.7            9.5
-manual_image_appraisal_v1               655          1          336.7            9.5
-validate_v1                              35          1          623.8           21.2
-```
-
-**Manifest counts collapsed**: `images_score_v2` 16461 → 20 (-99.9%), `images_v6` 12187 → 22 (-99.8%). All five tables fit in 1 R2 LIST page. The three appraisal/validate tables are unchanged — they're not in `selected_tables` (Follow-on item below).
-
-**R2 ops (data file: `metrics_dumps/prod r2 operations total by cli & r2_class-data-as-joinbyfield-2026-05-02 13_50_14.csv`, window 01:10–05:37 UTC):**
-
-| cli | pre-deploy spikes (B ops/min) | post-deploy spikes (B ops/min) |
-|---|---|---|
-| `live-refine` | 31,599 / 31,609 / 31,609 (02:01); 31,394 / 31,394 / 23,598 (02:39); 47,119 / 45,553 / 44,694 (01:31) | none > 300 |
-| `pruner` | 31,599 / 31,609 / 31,609 (02:01); 31,394 / 31,394 / 23,598 (02:39) | none > 100 |
-
-Pre-deploy, `live-refine` and `pruner` spike *simultaneously* on the same minutes — both pay the per-Strong-resolve LIST cost (17 pages on `images_score_v2`, 13 pages on `images_v6`) every read. Post-deploy, both tables resolve in 1 page and the spikes are gone.
-
-**Compact's first run was expensive but one-shot**: 04:23–04:30 cron showed elevated compact ops (A 12–17 ops/min, B 26K–72K ops/min) for ~7 min — the one-time cleanup of ~28K accumulated manifests across both tables. After that no compact entries appear in the metric stream up to 05:37, suggesting subsequent runs complete fast enough that the OTel batch exporter doesn't flush before pod termination (a metric-emission gap, not a behaviour problem; Grafana side, not lance).
-
-**Conclusions for "Idea: reduce scores-table read amplification on upsert":**
-
-1. **Fix (2) is the lever.** It eliminated >99% of spike-minute R2 traffic on its own. The 1st-May hypothesis ("the per-resolve floor is structurally high regardless of how many resolves happen") is confirmed.
-2. **Fix (1) `merge_insert` was correct but not load-bearing.** The 1st-May post-deploy data already showed it didn't reduce spikes; with prune in place, the writer-side commit count was never the bottleneck.
-3. **Fix (3) "drop Strong mode" priority drops.** The motivation was the 17-page LIST tax per resolve; with manifests at 1 page, Strong mode is much cheaper. Worth keeping in mind if costs creep back, but not urgent.
-4. **The cost wasn't unique to scores_v2.** `images_v6` resolves were ~13 pages and pruner spiked from the same source. The Idea title undersells the fix's scope — manifest pruning is a system-wide R2 cost-reduction lever, not a scores-table-specific one.
-
-**Per-`(table, kind)` confirmation** (data file: `metrics_dumps/live_refine operations total by table, kind & operation-data-as-joinbyfield-2026-05-02 14_03_15.csv`, 200 min pre + 68 min post):
-
-| kind | pre mean ops/min | post mean ops/min | reduction |
-|---|---|---|---|
-| `_versions` | 682.4 | 35.4 | **-94.8%** |
-| `data` | 170.1 | 33.3 | -80.4% |
-| `_indices` | 18.0 | 21.7 | ~unchanged |
-| `_transactions` | 0.8 | 0.7 | ~unchanged |
-
-The kind composition **inverted**. Worst pre-deploy spike (01:31, 47K ops/min): `images_score_v2.lance / _versions` = 42,372 (89.8%). Worst post-deploy minute (05:18, 320 ops/min): `images_v6.lance / data` = 168 (52.5%) — actual image bytes for scoring, the work we *want* to be doing. `_versions` is no longer the dominant kind in any post-deploy minute. Pre-deploy spike count (>5000 ops/min): 3; post-deploy: 0.
-
-This confirms the 30th-Apr diagnosis ("~99% of every spike is `_versions/{get,get_range}`") was load-bearing — pruning the manifests addressed the named cost source directly.
-
-#### 1st May
-
-##### merge_insert verification (1st May, deployed ~15:35)
-
-Two data files:
-* `metrics_dumps/r2 operations rate — images_score_v2.lance (_versions)-data-as-joinbyfield-2026-05-01 21_27_10.csv` — all services (`r2_operations_total{table="images_score_v2.lance", kind="_versions"}`)
-* `metrics_dumps/r2 operations rate — images_score_v2.lance (_versions)-data-as-joinbyfield-2026-05-01 21_41_44.csv` — live-refine only (same query + `service_name="skeet-live-refine"`)
-
-**Result: inconclusive — spikes return later in the post-deploy window.**
-
-Data files:
-* Short post-deploy window (15:35–18:31, 177 min): 0 spikes from live-refine — looked promising initially.
-* Extended window (08:42–20:42) from `metrics_dumps/r2 operations rate — images_score_v2.lance (_versions)-data-as-joinbyfield-2026-05-01 21_44_23.csv`:
-
-| metric | live-refine only — before (08:42–15:34, 413 min) | live-refine only — after (15:35–20:42, 308 min) |
-|---|---|---|
-| spike events (>10 ops/s) | 2 (08:46, 14:03) | 3 (18:44, 19:20, 20:02) |
-| spike event rate | 0.29 /hr | 0.58 /hr |
-| peak `get`+`get_range` | 181 ops/s | 183 ops/s |
-
-Spike intensity is unchanged (~180 ops/s, 3 min each), and the rate if anything increased. The first 3h post-deploy happened to be quiet (no large batches to score); once scoring activity resumed the spikes came back at the same scale.
-
-Adding two more metrics for the same window (`metrics_dumps/live_refine images scored per minute-data-2026-05-01 21_48_09.csv`, `metrics_dumps/live_refine R2 ops per scored image-data-2026-05-01 21_49_17.csv`) reveals the pattern clearly:
-
-| condition | scored / min | R2 ops / scored image | `_versions` ops/s |
-|---|---|---|---|
-| normal scoring (61 minutes) | 0.5–1.3 | ~50–140 | < 1 |
-| spike scoring (7 minutes) | 0.3–1.0 | **11,000–32,000** | ~180 |
-
-Scoring happens regularly across 68 minutes in the window, but spikes occur in only 7 of them (10%). The scoring *rate* is similar in both cases — the only thing that changes is R2 ops/image jumps 100–160×, entirely attributable to `_versions` reads. The first minute of each spike always shows 0 images scored (R2 ops/image = inf), meaning the burst precedes scoring output, consistent with the read phase of the scoring cycle (`list_unscored_image_ids_for_version` + `merge_insert`'s table scan) driving the cost, not the image fetch.
-
-What distinguishes the 10% of cycles that spike from the 90% that don't is not visible from these metrics alone — candidates are batch size, gap since last activity, or accumulated manifests making the `LIST _versions/` walk longer. But the 160× R2/image ratio shows the spike is a qualitatively different operating mode, not just a larger version of normal.
-
-**Why spikes persist despite merge_insert:** unknown from these metrics alone. What we *do* know (from the manifest count below) is that the floor for any single Strong-mode manifest resolve on `images_score_v2` is ~18 R2 ops (17 LIST pages + 1 manifest GET). So whatever causes some cycles to issue many resolves, each resolve is ~18× more expensive than it would be after pruning. We have not traced whether the multi-resolve loop comes from `list_unscored:scored_ids`, the `merge_insert` internals, or somewhere else — that's a separate investigation.
-
-**What this means for the remaining fixes:**
-
-* **(2) Prune** is still needed: old manifests accumulate regardless, making the `LIST _versions/` walk progressively more expensive — likely the reason some cycles spike and others don't (manifest count growing over uptime).
-* **(3) Drop Strong mode** is the primary lever for spike intensity: a TTL on manifest resolution would remove the per-read `LIST _versions/` + `GET` from both `list_unscored_image_ids_for_version` and the `merge_insert` scan, collapsing the 160× R2/image spike back toward the normal ~100 ops/image baseline.
-
-##### Manifest count measurement (1st May, via `just count-versions`)
-
-Added a small CLI (`skeet-store/src/bin/count-versions.rs`) that uses the AWS SDK to LIST `<table>.lance/_versions/` for every table and report manifest count plus the number of R2 LIST API pages required (R2 returns max 1000 keys per page).
-
-```
-table                             manifests list_pages       oldest_h       newest_h
---------------------------------------------------------------------------------------
-images_v6                             12187         13          337.1            0.1
-images_score_v2                       16461         17          337.1            0.1
-manual_skeet_appraisal_v1                80          1          333.0            6.5
-manual_image_appraisal_v1               745          1          335.5            4.9
-validate_v1                              35          1          608.1            5.4
-```
-
-**Findings:**
-* `images_score_v2` has **16,461 manifests requiring 17 R2 LIST pages** per `LIST _versions/` call. `images_v6` is similar (12,187 / 13 pages). The other three tables fit in 1 page.
-* The oldest manifest is 337 hours (≈14 days) old. There is currently no pruning at all — manifests accumulate from the moment a table is created.
-* This makes the pagination hypothesis no longer a hypothesis: every Strong-mode refresh on `images_score_v2` does ~17 LIST page fetches + 1 manifest GET = ~18 R2 ops minimum, before any data read. Normal scoring at ~50–140 R2 ops/image is consistent with a small number of these refreshes per cycle plus image fetch.
-* This does not yet explain why only 10% of cycles spike to ~180 ops/s — that requires something doing many refreshes in a tight loop during those cycles. But it confirms that the per-refresh cost is structurally high *because of unpruned manifests*, and pruning would lower the floor for every Strong-mode operation regardless of why the spike-loop happens.
-
-**Implication for fix order:** Prune (fix 2) is now the obvious first step — measurable baseline (16k+ manifests, 17 pages), measurable target (≤1 page after prune), and it lowers the floor for fix (3) when we get there. Setting `older_than: 1h` on the cron prune action would shrink the active manifest count to ≈10–20 (one cron run's worth at most cadences), bringing the LIST cost back to a single page.
-
-#### 30th Apr
-
-##### Watermark verification: traces (29th Apr) + R2 ops (28th Apr)
-
-Verifying the `since`/watermark optimisation in *Idea: reduce cost of polling in live-refine* (introduced in commit `eb4e0be`, deployed 2026-04-28 17:36–17:40).
-
-**Trace evidence (29th Apr, via `just trace-summary skeet-live-refine list_all_image_ids_by_most_recent`):** all 10 sampled `list_all_image_ids_by_most_recent` spans show the planner picking `ScalarIndexQuery` on `discovered_at_idx`, with the watermark pushed down as `discovered_at >= TimestampMicrosecond(...)`. The `fragments: 67` field in the plan is the table total — actual `read_fragment` calls visible in the child `DatasetRecordBatchStream` spans are typically 2–5 per query, confirming index pruning works. Span wall time is still ~1.3–1.9s, but that cost lives in the index lookup itself (the sibling `list_unscored:scored_ids` query against `model_version_idx` shows similar 1.2–2.6s) — not in fragment scans.
-
-**R2 op evidence (28th Apr, comparing 208 min before deploy to 220 min after):**
-
-| metric | before | after | Δ |
-|---|---|---|---|
-| mean `get` / min | 905 | 629 | -30% |
-| **median `get` / min** | **275** | **47** | **-83%** |
-| mean `get_range` / min | 685 | 579 | -16% |
-| spike count (>10K/min) | 7 min / 2 events | 6 min / 2 events | ~same |
-| peak ops / min | 48K | 45K | ~same |
-
-The watermark did exactly what it was meant to do *on the idle path*: median-minute `get` collapsed 6× as ticks where `images` table version + watermark say "nothing new" no longer fire the listing scan. Background `get` total (≤1K/min minutes) dropped 43K → 9K, a 78% cut.
-
-Spikes are unchanged because they're a different workload — image-fetch (`get_originals_by_ids` pulling ~4MB PNG blobs), which only runs when unscored candidates exist. The watermark suppresses the polling scan, not the scoring work.
-
-Spikes are 22–24K `get` + 22–24K `get_range` simultaneously (~1:1 ratio), 1.3–1.7h apart. Diagnosed below.
-
-##### Spike-cost diagnosis (30th Apr, follow-up)
-
-Pulled `r2.bytes / r2.operations` per minute and per-`(table, operation)` ops from Grafana. Two clear observations:
-
-1. **Spike `get_range` averages ~1.0 KiB/op** (consistent across all 16 spike minutes either side of the deploy). Idle minutes typically 4–8 KiB/op. The earlier framing was "many tiny page reads" vs "few large blob reads" — the data lands firmly on **many tiny page reads**. *(Caveat: our wrapper records bytes for `get_range` and `put` only — `get` bytes aren't captured because we'd need to consume the response. From the ops counters we know spike-minute `get` ops match `get_range` ~1:1, but their byte size is unknown.)*
-
-2. **The spike is on `images_score_v2.lance`, not `images_v6.lance`.** Per-table breakdown of the 19:19–19:20 spike (40K ops/min total): `images_score_v2.lance / get`: 20,234, `get_range`: 19,700; `images_v6.lance / get`: 53, `get_range`: 1. Confirmed across all 8 top spike minutes in the 7-hour window — every one is dominated by `images_score_v2.lance` at 20–24K `get` + 20–24K `get_range`, with `images_v6.lance` contributing <1%. That points at `batch_upsert_scores` (the upsert-merge has to read existing scores) or its read-side companion `cached_scores` rebuilding.
-
-3. **Window totals (before vs after deploy) reinforce both points:**
-
-   | table | before (208 min) | after (220 min) | Δ |
-   |---|---|---|---|
-   | `images_v6.lance` | 43,413 | 7,108 | **-84%** |
-   | `images_score_v2.lance` | 292,477 | 263,621 | -10% |
-
-   The watermark cut `images_v6.lance` ops 6× as designed. But `images_score_v2.lance` was already ~7× more expensive than `images_v6.lance` *before* the watermark, and is ~37× more expensive after — so the elephant in the room was always the scores table; the watermark just exposed it more starkly.
-
-Both observations re-frame the spike-cost problem and feed two new ideas (below): adding a `kind` sub-label to disambiguate within a table, and investigating scores-table read amplification.
-
-##### Spike-cost localisation by `kind` (30th Apr, after `kind` label deployed)
-
-`kind` label deployed; pulled per-`(table, kind, operation)` rates from Grafana for the 5 highest spike minutes (`metrics_dumps/live_refine operations total by table, kind & operation-…2026-04-30 12_24_58.csv`). Pattern is consistent — every spike is **~99%+ `images_score_v2.lance / _versions / {get, get_range}`**, split roughly 1:1:
-
-| time (UTC) | total ops/min | `_versions` (% of total) | `_indices` | `data` | other |
-|---|---|---|---|---|---|
-| 01:45 | 43,629 | 43,294 (99%) | 63 | 25 | 247 |
-| 11:11 | 41,900 | 41,701 (100%) | 7 | 17 | 175 |
-| 11:10 | 41,900 | 41,701 (100%) | 7 | 17 | 175 |
-| 11:09 | 41,850 | 41,693 (100%) | 13 | 11 | 133 |
-| 10:03 | 41,818 | 41,590 (99%) | 57 | 13 | 157 |
-
-Implications for *Idea: reduce scores-table read amplification on upsert*:
-* It is **not index amplification** (`_indices` is rounding error) and **not per-fragment data reads** (`data` is rounding error).
-* It is **manifest churn**: the scores table is at `_versions/N.manifest` files being read repeatedly. `get`/`get_range` ~1:1 fits "list-or-head a version, then range-read manifest bytes."
-* Direction shifts toward: how `batch_upsert_scores` (and its `cached_scores` reader counterpart) interact with manifests. Either the writer is producing many version bumps per batch (each a new manifest), or the reader is re-resolving versions per row. Either way the next step is to instrument or read the lance write path to confirm where the manifest reads originate.
-
-> **Forward-pointer (1st May):** Fix (1) below addressed the first horn (collapsed N+1 → 1 commit per batch), and was deployed — it did *not* measurably reduce spikes. The 1st-May manifest count (16k+ unpruned manifests on `images_score_v2`, 17 LIST pages per resolve) shows the dominant cost is the per-resolve floor, not how many commits the writer produces. See 1st May Observations.
 
 #### 26th Apr
 
@@ -292,6 +105,196 @@ Probes after the long-term fix is deployed:
 * `r2_operations_total{cli="pruner",operation="list"}` should stay at the ~16/min baseline
 * `r2_operations_total{cli="compact",operation="list"}` may rise slightly (one cheap manifest read per table per run) but should be negligible vs the cron's normal compaction traffic
 * `image` stage `pipeline.depth` gauge should stay at ~0 in steady state
+
+
+#### 30th Apr
+
+##### Watermark verification: traces (29th Apr) + R2 ops (28th Apr)
+
+Verifying the `since`/watermark optimisation in *Idea: reduce cost of polling in live-refine* (introduced in commit `eb4e0be`, deployed 2026-04-28 17:36–17:40).
+
+**Trace evidence (29th Apr, via `just trace-summary skeet-live-refine list_all_image_ids_by_most_recent`):** all 10 sampled `list_all_image_ids_by_most_recent` spans show the planner picking `ScalarIndexQuery` on `discovered_at_idx`, with the watermark pushed down as `discovered_at >= TimestampMicrosecond(...)`. The `fragments: 67` field in the plan is the table total — actual `read_fragment` calls visible in the child `DatasetRecordBatchStream` spans are typically 2–5 per query, confirming index pruning works. Span wall time is still ~1.3–1.9s, but that cost lives in the index lookup itself (the sibling `list_unscored:scored_ids` query against `model_version_idx` shows similar 1.2–2.6s) — not in fragment scans.
+
+**R2 op evidence (28th Apr, comparing 208 min before deploy to 220 min after):**
+
+| metric | before | after | Δ |
+|---|---|---|---|
+| mean `get` / min | 905 | 629 | -30% |
+| **median `get` / min** | **275** | **47** | **-83%** |
+| mean `get_range` / min | 685 | 579 | -16% |
+| spike count (>10K/min) | 7 min / 2 events | 6 min / 2 events | ~same |
+| peak ops / min | 48K | 45K | ~same |
+
+The watermark did exactly what it was meant to do *on the idle path*: median-minute `get` collapsed 6× as ticks where `images` table version + watermark say "nothing new" no longer fire the listing scan. Background `get` total (≤1K/min minutes) dropped 43K → 9K, a 78% cut.
+
+Spikes are unchanged because they're a different workload — image-fetch (`get_originals_by_ids` pulling ~4MB PNG blobs), which only runs when unscored candidates exist. The watermark suppresses the polling scan, not the scoring work.
+
+Spikes are 22–24K `get` + 22–24K `get_range` simultaneously (~1:1 ratio), 1.3–1.7h apart. Diagnosed below.
+
+##### Spike-cost diagnosis (30th Apr, follow-up)
+
+Pulled `r2.bytes / r2.operations` per minute and per-`(table, operation)` ops from Grafana. Two clear observations:
+
+1. **Spike `get_range` averages ~1.0 KiB/op** (consistent across all 16 spike minutes either side of the deploy). Idle minutes typically 4–8 KiB/op. The earlier framing was "many tiny page reads" vs "few large blob reads" — the data lands firmly on **many tiny page reads**. *(Caveat: our wrapper records bytes for `get_range` and `put` only — `get` bytes aren't captured because we'd need to consume the response. From the ops counters we know spike-minute `get` ops match `get_range` ~1:1, but their byte size is unknown.)*
+
+2. **The spike is on `images_score_v2.lance`, not `images_v6.lance`.** Per-table breakdown of the 19:19–19:20 spike (40K ops/min total): `images_score_v2.lance / get`: 20,234, `get_range`: 19,700; `images_v6.lance / get`: 53, `get_range`: 1. Confirmed across all 8 top spike minutes in the 7-hour window — every one is dominated by `images_score_v2.lance` at 20–24K `get` + 20–24K `get_range`, with `images_v6.lance` contributing <1%. That points at `batch_upsert_scores` (the upsert-merge has to read existing scores) or its read-side companion `cached_scores` rebuilding.
+
+3. **Window totals (before vs after deploy) reinforce both points:**
+
+   | table | before (208 min) | after (220 min) | Δ |
+   |---|---|---|---|
+   | `images_v6.lance` | 43,413 | 7,108 | **-84%** |
+   | `images_score_v2.lance` | 292,477 | 263,621 | -10% |
+
+   The watermark cut `images_v6.lance` ops 6× as designed. But `images_score_v2.lance` was already ~7× more expensive than `images_v6.lance` *before* the watermark, and is ~37× more expensive after — so the elephant in the room was always the scores table; the watermark just exposed it more starkly.
+
+Both observations re-frame the spike-cost problem and feed two new ideas (below): adding a `kind` sub-label to disambiguate within a table, and investigating scores-table read amplification.
+
+##### Spike-cost localisation by `kind` (30th Apr, after `kind` label deployed)
+
+`kind` label deployed; pulled per-`(table, kind, operation)` rates from Grafana for the 5 highest spike minutes (`metrics_dumps/live_refine operations total by table, kind & operation-…2026-04-30 12_24_58.csv`). Pattern is consistent — every spike is **~99%+ `images_score_v2.lance / _versions / {get, get_range}`**, split roughly 1:1:
+
+| time (UTC) | total ops/min | `_versions` (% of total) | `_indices` | `data` | other |
+|---|---|---|---|---|---|
+| 01:45 | 43,629 | 43,294 (99%) | 63 | 25 | 247 |
+| 11:11 | 41,900 | 41,701 (100%) | 7 | 17 | 175 |
+| 11:10 | 41,900 | 41,701 (100%) | 7 | 17 | 175 |
+| 11:09 | 41,850 | 41,693 (100%) | 13 | 11 | 133 |
+| 10:03 | 41,818 | 41,590 (99%) | 57 | 13 | 157 |
+
+Implications for *Idea: reduce scores-table read amplification on upsert*:
+* It is **not index amplification** (`_indices` is rounding error) and **not per-fragment data reads** (`data` is rounding error).
+* It is **manifest churn**: the scores table is at `_versions/N.manifest` files being read repeatedly. `get`/`get_range` ~1:1 fits "list-or-head a version, then range-read manifest bytes."
+* Direction shifts toward: how `batch_upsert_scores` (and its `cached_scores` reader counterpart) interact with manifests. Either the writer is producing many version bumps per batch (each a new manifest), or the reader is re-resolving versions per row. Either way the next step is to instrument or read the lance write path to confirm where the manifest reads originate.
+
+> **Forward-pointer (1st May):** Fix (1) below addressed the first horn (collapsed N+1 → 1 commit per batch), and was deployed — it did *not* measurably reduce spikes. The 1st-May manifest count (16k+ unpruned manifests on `images_score_v2`, 17 LIST pages per resolve) shows the dominant cost is the per-resolve floor, not how many commits the writer produces. See 1st May Observations.
+
+#### 1st May
+
+##### merge_insert verification (1st May, deployed ~15:35)
+
+Two data files:
+* `metrics_dumps/r2 operations rate — images_score_v2.lance (_versions)-data-as-joinbyfield-2026-05-01 21_27_10.csv` — all services (`r2_operations_total{table="images_score_v2.lance", kind="_versions"}`)
+* `metrics_dumps/r2 operations rate — images_score_v2.lance (_versions)-data-as-joinbyfield-2026-05-01 21_41_44.csv` — live-refine only (same query + `service_name="skeet-live-refine"`)
+
+**Result: inconclusive — spikes return later in the post-deploy window.**
+
+Data files:
+* Short post-deploy window (15:35–18:31, 177 min): 0 spikes from live-refine — looked promising initially.
+* Extended window (08:42–20:42) from `metrics_dumps/r2 operations rate — images_score_v2.lance (_versions)-data-as-joinbyfield-2026-05-01 21_44_23.csv`:
+
+| metric | live-refine only — before (08:42–15:34, 413 min) | live-refine only — after (15:35–20:42, 308 min) |
+|---|---|---|
+| spike events (>10 ops/s) | 2 (08:46, 14:03) | 3 (18:44, 19:20, 20:02) |
+| spike event rate | 0.29 /hr | 0.58 /hr |
+| peak `get`+`get_range` | 181 ops/s | 183 ops/s |
+
+Spike intensity is unchanged (~180 ops/s, 3 min each), and the rate if anything increased. The first 3h post-deploy happened to be quiet (no large batches to score); once scoring activity resumed the spikes came back at the same scale.
+
+Adding two more metrics for the same window (`metrics_dumps/live_refine images scored per minute-data-2026-05-01 21_48_09.csv`, `metrics_dumps/live_refine R2 ops per scored image-data-2026-05-01 21_49_17.csv`) reveals the pattern clearly:
+
+| condition | scored / min | R2 ops / scored image | `_versions` ops/s |
+|---|---|---|---|
+| normal scoring (61 minutes) | 0.5–1.3 | ~50–140 | < 1 |
+| spike scoring (7 minutes) | 0.3–1.0 | **11,000–32,000** | ~180 |
+
+Scoring happens regularly across 68 minutes in the window, but spikes occur in only 7 of them (10%). The scoring *rate* is similar in both cases — the only thing that changes is R2 ops/image jumps 100–160×, entirely attributable to `_versions` reads. The first minute of each spike always shows 0 images scored (R2 ops/image = inf), meaning the burst precedes scoring output, consistent with the read phase of the scoring cycle (`list_unscored_image_ids_for_version` + `merge_insert`'s table scan) driving the cost, not the image fetch.
+
+What distinguishes the 10% of cycles that spike from the 90% that don't is not visible from these metrics alone — candidates are batch size, gap since last activity, or accumulated manifests making the `LIST _versions/` walk longer. But the 160× R2/image ratio shows the spike is a qualitatively different operating mode, not just a larger version of normal.
+
+**Why spikes persist despite merge_insert:** unknown from these metrics alone. What we *do* know (from the manifest count below) is that the floor for any single Strong-mode manifest resolve on `images_score_v2` is ~18 R2 ops (17 LIST pages + 1 manifest GET). So whatever causes some cycles to issue many resolves, each resolve is ~18× more expensive than it would be after pruning. We have not traced whether the multi-resolve loop comes from `list_unscored:scored_ids`, the `merge_insert` internals, or somewhere else — that's a separate investigation.
+
+**What this means for the remaining fixes:**
+
+* **(2) Prune** is still needed: old manifests accumulate regardless, making the `LIST _versions/` walk progressively more expensive — likely the reason some cycles spike and others don't (manifest count growing over uptime).
+* **(3) Drop Strong mode** is the primary lever for spike intensity: a TTL on manifest resolution would remove the per-read `LIST _versions/` + `GET` from both `list_unscored_image_ids_for_version` and the `merge_insert` scan, collapsing the 160× R2/image spike back toward the normal ~100 ops/image baseline.
+
+##### Manifest count measurement (1st May, via `just count-versions`)
+
+Added a small CLI (`skeet-store/src/bin/count-versions.rs`) that uses the AWS SDK to LIST `<table>.lance/_versions/` for every table and report manifest count plus the number of R2 LIST API pages required (R2 returns max 1000 keys per page).
+
+```
+table                             manifests list_pages       oldest_h       newest_h
+--------------------------------------------------------------------------------------
+images_v6                             12187         13          337.1            0.1
+images_score_v2                       16461         17          337.1            0.1
+manual_skeet_appraisal_v1                80          1          333.0            6.5
+manual_image_appraisal_v1               745          1          335.5            4.9
+validate_v1                              35          1          608.1            5.4
+```
+
+**Findings:**
+* `images_score_v2` has **16,461 manifests requiring 17 R2 LIST pages** per `LIST _versions/` call. `images_v6` is similar (12,187 / 13 pages). The other three tables fit in 1 page.
+* The oldest manifest is 337 hours (≈14 days) old. There is currently no pruning at all — manifests accumulate from the moment a table is created.
+* This makes the pagination hypothesis no longer a hypothesis: every Strong-mode refresh on `images_score_v2` does ~17 LIST page fetches + 1 manifest GET = ~18 R2 ops minimum, before any data read. Normal scoring at ~50–140 R2 ops/image is consistent with a small number of these refreshes per cycle plus image fetch.
+* This does not yet explain why only 10% of cycles spike to ~180 ops/s — that requires something doing many refreshes in a tight loop during those cycles. But it confirms that the per-refresh cost is structurally high *because of unpruned manifests*, and pruning would lower the floor for every Strong-mode operation regardless of why the spike-loop happens.
+
+**Implication for fix order:** Prune (fix 2) is now the obvious first step — measurable baseline (16k+ manifests, 17 pages), measurable target (≤1 page after prune), and it lowers the floor for fix (3) when we get there. Setting `older_than: 1h` on the cron prune action would shrink the active manifest count to ≈10–20 (one cron run's worth at most cadences), bringing the LIST cost back to a single page.
+
+#### 2nd May
+
+##### `compact` → `optimise` rename cutover (deployed ~18:40 UTC)
+
+Last `compact` cron run completed 19:36 UTC; first `optimise` cron run completed 19:47 UTC — no overlap. Verified via `OTEL_SERVICE_NAME=optimise` metrics in Grafana, `optimise starting` / `prune finished` log lines in `just cluster-logs-optimise`, and `lance_table_fragments` gauge (data file: `metrics_dumps/Lance Table Fragments by table & service_name-data-as-joinbyfield-2026-05-02 19_54_43.csv`).
+
+Fragment counts at cutover:
+
+| table | compact (last, 19:36) | optimise (first, 19:47) |
+|---|---|---|
+| `images_score_v2` | 1 | 2 |
+| `images_v6` | 69 | 70 |
+| `manual_image_appraisal_v1` | 667 | **1** |
+| `manual_skeet_appraisal_v1` | 47 | **1** |
+| `validate_v1` | 117 | **1** |
+
+The three previously-uncompacted tables (`manual_image_appraisal_v1`, `manual_skeet_appraisal_v1`, `validate_v1`) collapsed to 1 fragment each on the first `optimise` run, confirming the all-tables extension is working end-to-end. `images` and `scores` are stable (small delta from new writes between the two runs).
+
+##### Prune fix verification (`5ec2ad9`, deployed before 04:23 UTC)
+
+First cron run including the prune step ran 04:23–04:30 UTC. `just count-versions` (run at 12:51 UTC, ~9h post-deploy):
+
+```
+table                             manifests list_pages       oldest_h       newest_h
+images_v6                                22          1            0.9            0.0
+images_score_v2                          20          1            0.9            0.0
+manual_skeet_appraisal_v1                90          1          348.7            9.5
+manual_image_appraisal_v1               655          1          336.7            9.5
+validate_v1                              35          1          623.8           21.2
+```
+
+**Manifest counts collapsed**: `images_score_v2` 16461 → 20 (-99.9%), `images_v6` 12187 → 22 (-99.8%). All five tables fit in 1 R2 LIST page. The three appraisal/validate tables are unchanged — they're not in `selected_tables` (Follow-on item below).
+
+**R2 ops (data file: `metrics_dumps/prod r2 operations total by cli & r2_class-data-as-joinbyfield-2026-05-02 13_50_14.csv`, window 01:10–05:37 UTC):**
+
+| cli | pre-deploy spikes (B ops/min) | post-deploy spikes (B ops/min) |
+|---|---|---|
+| `live-refine` | 31,599 / 31,609 / 31,609 (02:01); 31,394 / 31,394 / 23,598 (02:39); 47,119 / 45,553 / 44,694 (01:31) | none > 300 |
+| `pruner` | 31,599 / 31,609 / 31,609 (02:01); 31,394 / 31,394 / 23,598 (02:39) | none > 100 |
+
+Pre-deploy, `live-refine` and `pruner` spike *simultaneously* on the same minutes — both pay the per-Strong-resolve LIST cost (17 pages on `images_score_v2`, 13 pages on `images_v6`) every read. Post-deploy, both tables resolve in 1 page and the spikes are gone.
+
+**Compact's first run was expensive but one-shot**: 04:23–04:30 cron showed elevated compact ops (A 12–17 ops/min, B 26K–72K ops/min) for ~7 min — the one-time cleanup of ~28K accumulated manifests across both tables. After that no compact entries appear in the metric stream up to 05:37, suggesting subsequent runs complete fast enough that the OTel batch exporter doesn't flush before pod termination (a metric-emission gap, not a behaviour problem; Grafana side, not lance).
+
+**Conclusions for "Idea: reduce scores-table read amplification on upsert":**
+
+1. **Fix (2) is the lever.** It eliminated >99% of spike-minute R2 traffic on its own. The 1st-May hypothesis ("the per-resolve floor is structurally high regardless of how many resolves happen") is confirmed.
+2. **Fix (1) `merge_insert` was correct but not load-bearing.** The 1st-May post-deploy data already showed it didn't reduce spikes; with prune in place, the writer-side commit count was never the bottleneck.
+3. **Fix (3) "drop Strong mode" priority drops.** The motivation was the 17-page LIST tax per resolve; with manifests at 1 page, Strong mode is much cheaper. Worth keeping in mind if costs creep back, but not urgent.
+4. **The cost wasn't unique to scores_v2.** `images_v6` resolves were ~13 pages and pruner spiked from the same source. The Idea title undersells the fix's scope — manifest pruning is a system-wide R2 cost-reduction lever, not a scores-table-specific one.
+
+**Per-`(table, kind)` confirmation** (data file: `metrics_dumps/live_refine operations total by table, kind & operation-data-as-joinbyfield-2026-05-02 14_03_15.csv`, 200 min pre + 68 min post):
+
+| kind | pre mean ops/min | post mean ops/min | reduction |
+|---|---|---|---|
+| `_versions` | 682.4 | 35.4 | **-94.8%** |
+| `data` | 170.1 | 33.3 | -80.4% |
+| `_indices` | 18.0 | 21.7 | ~unchanged |
+| `_transactions` | 0.8 | 0.7 | ~unchanged |
+
+The kind composition **inverted**. Worst pre-deploy spike (01:31, 47K ops/min): `images_score_v2.lance / _versions` = 42,372 (89.8%). Worst post-deploy minute (05:18, 320 ops/min): `images_v6.lance / data` = 168 (52.5%) — actual image bytes for scoring, the work we *want* to be doing. `_versions` is no longer the dominant kind in any post-deploy minute. Pre-deploy spike count (>5000 ops/min): 3; post-deploy: 0.
+
+This confirms the 30th-Apr diagnosis ("~99% of every spike is `_versions/{get,get_range}`") was load-bearing — pruning the manifests addressed the named cost source directly.
+
 
 ### Tasks
 
