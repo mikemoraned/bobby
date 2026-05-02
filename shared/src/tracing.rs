@@ -2,11 +2,12 @@ use opentelemetry::trace::TracerProvider;
 use opentelemetry_otlp::MetricExporter;
 use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::SdkTracerProvider;
+use std::time::Duration;
 use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::Layer;
 use tracing_subscriber::filter::Targets;
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::*;
-use tracing_subscriber::Layer;
 
 fn targets_filter(default_filter: &str) -> Targets {
     std::env::var("RUST_LOG")
@@ -60,7 +61,9 @@ pub fn try_init_metrics() -> Option<MetricsGuard> {
             return None;
         }
     };
-    let reader = PeriodicReader::builder(exporter).build();
+    let reader = PeriodicReader::builder(exporter)
+        .with_interval(Duration::from_secs(5))
+        .build();
     let provider = SdkMeterProvider::builder().with_reader(reader).build();
 
     opentelemetry::global::set_meter_provider(provider.clone());
@@ -130,7 +133,11 @@ pub fn init_with_file(default_filter: &str, filename: &str) -> TracingGuard {
                 .with_writer(non_blocking)
                 .with_filter(filter.clone()),
         )
-        .with(fmt::layer().with_writer(std::io::stderr).with_filter(filter))
+        .with(
+            fmt::layer()
+                .with_writer(std::io::stderr)
+                .with_filter(filter),
+        )
         .with(otel_layer)
         .init();
 
