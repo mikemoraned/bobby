@@ -38,6 +38,22 @@ Checked the `compact` cron job to test the hypothesis that fragments were piling
 
 #### 2nd May
 
+##### `compact` → `optimise` rename cutover (deployed ~18:40 UTC)
+
+Last `compact` cron run completed 19:36 UTC; first `optimise` cron run completed 19:47 UTC — no overlap. Verified via `OTEL_SERVICE_NAME=optimise` metrics in Grafana, `optimise starting` / `prune finished` log lines in `just cluster-logs-optimise`, and `lance_table_fragments` gauge (data file: `metrics_dumps/Lance Table Fragments by table & service_name-data-as-joinbyfield-2026-05-02 19_54_43.csv`).
+
+Fragment counts at cutover:
+
+| table | compact (last, 19:36) | optimise (first, 19:47) |
+|---|---|---|
+| `images_score_v2` | 1 | 2 |
+| `images_v6` | 69 | 70 |
+| `manual_image_appraisal_v1` | 667 | **1** |
+| `manual_skeet_appraisal_v1` | 47 | **1** |
+| `validate_v1` | 117 | **1** |
+
+The three previously-uncompacted tables (`manual_image_appraisal_v1`, `manual_skeet_appraisal_v1`, `validate_v1`) collapsed to 1 fragment each on the first `optimise` run, confirming the all-tables extension is working end-to-end. `images` and `scores` are stable (small delta from new writes between the two runs).
+
 ##### Prune fix verification (`5ec2ad9`, deployed before 04:23 UTC)
 
 First cron run including the prune step ran 04:23–04:30 UTC. `just count-versions` (run at 12:51 UTC, ~9h post-deploy):
@@ -640,10 +656,10 @@ Three fixes, ranked. They compose — none substitutes for another.
     * **Implementation:** dropped `CompactTarget` entirely. `SkeetStore::compact` and `SkeetStore::prune_old_versions` now walk every entry in the `SkeetStore::tables` registry via a private `maintenance_tables()` helper, so adding a table is one edit (in `open.rs`). The compact CLI binary keeps `--check-only` but no longer takes `--table` — there's no operational use case for compacting a single table.
     * **Per-table compact options:** `compact_options_for(name)` returns the special `target_rows_per_fragment=500, batch_size=64` config only for the images table (PNG blobs). Every other table (scores, validate, skeet/image appraisal) gets the default `num_threads=1` config — small rows, no memory concern.
     * **Test:** added `prune_old_versions_walks_all_tables` — writes to all five tables, asserts `table_versions().len() == 5` (registry covers everything), then runs prune and verifies data on each table is preserved.
-* [ ] **Follow-on: rename `compact` → `optimise`.** Now that the binary does compact + index + prune, the name `compact` isn't correct. `optimise` mirrors lancedb's own vocabulary (`table.optimize()`, `OptimizeAction::{Compact,Index,Prune}`).
-    * [ ] Code: `skeet-store/src/compact.rs` → `optimise.rs`; `bin/compact.rs` → `bin/optimise.rs`; `mod compact` → `mod optimise` in `lib.rs`; `SkeetStore::compact()` → `optimise()`; rename `compact_succeeds_on_empty_store` / `compact_preserves_data` tests. Keep `compact_options_for`, `compact_and_reindex`, `prune_old_versions` — they're genuinely about compaction sub-step.
-    * [ ] Build/infra: `Dockerfile.compact` → `Dockerfile.optimise`; `infra/k8s/compact-cronjob.yaml` → `optimise-cronjob.yaml` (rename CronJob, container, image path, `OTEL_SERVICE_NAME`); update `just/container.just`, `just/cluster.just`, `just/store.just`.
-    * [ ] Cutover: `kubectl apply` is name-keyed, so deploying the new cron does *not* remove the old `compact` CronJob — it would keep firing every 10 min on a stale image. Order: deploy `optimise` cron → verify clean tick in Grafana → `kubectl delete cronjob compact`. Add a `cluster-undeploy-compact` recipe so the deletion is captured rather than ad-hoc.
+* [x] **Follow-on: rename `compact` → `optimise`.** Now that the binary does compact + index + prune, the name `compact` isn't correct. `optimise` mirrors lancedb's own vocabulary (`table.optimize()`, `OptimizeAction::{Compact,Index,Prune}`).
+    * [x] Code: `skeet-store/src/compact.rs` → `optimise.rs`; `bin/compact.rs` → `bin/optimise.rs`; `mod compact` → `mod optimise` in `lib.rs`; `SkeetStore::compact()` → `optimise()`; rename `compact_succeeds_on_empty_store` / `compact_preserves_data` tests. Keep `compact_options_for`, `compact_and_reindex`, `prune_old_versions` — they're genuinely about compaction sub-step.
+    * [x] Build/infra: `Dockerfile.compact` → `Dockerfile.optimise`; `infra/k8s/compact-cronjob.yaml` → `optimise-cronjob.yaml` (rename CronJob, container, image path, `OTEL_SERVICE_NAME`); update `just/container.just`, `just/cluster.just`, `just/store.just`.
+    * [x] Cutover: `kubectl apply` is name-keyed, so deploying the new cron does *not* remove the old `compact` CronJob — it would keep firing every 10 min on a stale image. Order: deploy `optimise` cron → verify clean tick in Grafana → `kubectl delete cronjob compact`. Add a `cluster-undeploy-compact` recipe so the deletion is captured rather than ad-hoc.
 
 * [ ] Re-run `just count-versions` on 3rd May (24h+) to confirm manifest counts stabilise around 20–30 per cron tick rather than drifting up.
 * [ ] **(3) Drop `read_consistency_interval(Duration::ZERO)`** — Strong mode is the wrong default for a system that does batch writes. Move to a small TTL (e.g. `Duration::from_secs(5)`) so reads can serve from lance's in-memory dataset cache between manifest resolves. Implications for `cached_scores` (which uses `version()` as the invalidation signal): with eventual consistency, `version()` may report a slightly-stale value. Either:
