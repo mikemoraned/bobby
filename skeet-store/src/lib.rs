@@ -2,7 +2,7 @@
 mod appraisals;
 mod args;
 mod arrow_utils;
-mod compact;
+mod optimise;
 mod error;
 pub mod health;
 mod lancedb_utils;

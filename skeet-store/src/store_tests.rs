@@ -876,17 +876,17 @@ async fn list_scored_summaries_filters_by_max_age() {
 }
 
 #[tokio::test]
-async fn compact_succeeds_on_empty_store() {
+async fn optimise_succeeds_on_empty_store() {
     let dir = tempfile::tempdir().unwrap();
     let store = open_temp_store(&dir).await;
-    store.compact().await.unwrap();
+    store.optimise().await.unwrap();
 }
 
 #[tokio::test]
-async fn compact_preserves_data() {
+async fn optimise_preserves_data() {
     let dir = tempfile::tempdir().unwrap();
     let store = open_temp_store(&dir).await;
-    let record = make_record("compact1");
+    let record = make_record("optimise1");
     store.add(&record).await.unwrap();
 
     let mv = test_model_version();
@@ -895,7 +895,7 @@ async fn compact_preserves_data() {
         .await
         .unwrap();
 
-    store.compact().await.unwrap();
+    store.optimise().await.unwrap();
 
     assert_eq!(store.count().await.unwrap(), 1);
     assert!(store.exists(&record.image_id).await.unwrap());

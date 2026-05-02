@@ -1,9 +1,9 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: compact
+  name: optimise
   labels:
-    app: compact
+    app: optimise
 spec:
   schedule: "*/10 * * * *"
   concurrencyPolicy: Forbid
@@ -15,16 +15,16 @@ spec:
       template:
         metadata:
           labels:
-            app: compact
+            app: optimise
         spec:
           restartPolicy: Never
           imagePullSecrets:
             - name: ghcr-pull-secret
           containers:
-            - name: compact
-              image: ghcr.io/mikemoraned/bobby/compact:${IMAGE_TAG}
+            - name: optimise
+              image: ghcr.io/mikemoraned/bobby/optimise:${IMAGE_TAG}
               imagePullPolicy: IfNotPresent
-              command: ["compact"]
+              command: ["optimise"]
               args:
                 - "--store-path"
                 - "s3://hom-bobby/encrypted-store"
@@ -67,7 +67,7 @@ spec:
                       name: bobby-grafana-oltp-headers
                       key: password
                 - name: OTEL_SERVICE_NAME
-                  value: "compact"
+                  value: "optimise"
                 - name: OTEL_RESOURCE_ATTRIBUTES
                   value: "deployment.environment=hetzner,service.version=${IMAGE_TAG}"
                 - name: RUST_LOG

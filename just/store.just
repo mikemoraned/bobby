@@ -50,17 +50,17 @@ summarise:
 summarise-r2:
     {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file bobby-local.env -- cargo run --quiet --release --bin summarise -- --store-path {{ R2_STORE }}
 
-compact table="all":
-    cargo run --quiet --release --bin compact -- --store-path {{ STORE }} --table {{ table }}
+optimise:
+    cargo run --quiet --release --bin optimise -- --store-path {{ STORE }}
 
-compact-check:
-    cargo run --quiet --release --bin compact -- --store-path {{ STORE }} --check-only
+optimise-check:
+    cargo run --quiet --release --bin optimise -- --store-path {{ STORE }} --check-only
 
-compact-r2 table="all":
-    {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file bobby-local.env -- cargo run --quiet --release --bin compact -- --store-path {{ R2_STORE }} --table {{ table }}
+optimise-r2:
+    {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file bobby-local.env -- cargo run --quiet --release --bin optimise -- --store-path {{ R2_STORE }}
 
-compact-r2-check:
-    {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file bobby-local.env -- cargo run --quiet --release --bin compact -- --store-path {{ R2_STORE }} --check-only
+optimise-r2-check:
+    {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file bobby-local.env -- cargo run --quiet --release --bin optimise -- --store-path {{ R2_STORE }} --check-only
 
 add-to-blocklist at_uri reason="manual":
     cargo run --quiet --release --bin add-to-blocklist -- "{{ at_uri }}" --reason "{{ reason }}"

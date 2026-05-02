@@ -66,8 +66,11 @@ cluster-deploy-pruner:
 cluster-deploy-live-refine:
     IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/live-refine-deployment.yaml | kubectl apply -f -
 
-cluster-deploy-compact:
-    IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/compact-cronjob.yaml | kubectl apply -f -
+cluster-deploy-optimise:
+    IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/optimise-cronjob.yaml | kubectl apply -f -
+
+cluster-undeploy-compact:
+    kubectl delete cronjob compact
 
 cluster-deploy-cloudflare-exporter:
     IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/cloudflare-exporter-cronjob.yaml | kubectl apply -f -
@@ -83,13 +86,13 @@ cluster-rollback-live-refine image_tag:
     IMAGE_TAG={{ image_tag }} envsubst < infra/k8s/live-refine-deployment.yaml | kubectl apply -f -
     kubectl rollout status deployment live-refine
 
-cluster-logs-compact:
-    kubectl logs -l app=compact --tail=100 -f | lnav
+cluster-logs-optimise:
+    kubectl logs -l app=optimise --tail=100 -f | lnav
 
 cluster-logs-cloudflare-exporter:
     kubectl logs -l app=cloudflare-exporter --tail=100 -f | lnav
 
-cluster-deploy-all: push-pruner push-live-refine push-compact push-cloudflare-exporter cluster-deploy-pruner cluster-deploy-live-refine cluster-deploy-compact cluster-deploy-cloudflare-exporter
+cluster-deploy-all: push-pruner push-live-refine push-optimise push-cloudflare-exporter cluster-deploy-pruner cluster-deploy-live-refine cluster-deploy-optimise cluster-deploy-cloudflare-exporter
 
 cluster-restart-all: cluster-restart-pruner cluster-restart-live-refine
 

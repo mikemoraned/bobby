@@ -53,7 +53,7 @@ impl super::SkeetStore {
     }
 
     #[instrument(skip(self))]
-    pub async fn compact(&self) -> Result<(), StoreError> {
+    pub async fn optimise(&self) -> Result<(), StoreError> {
         for (name, table, options) in self.maintenance_tables() {
             compact_and_reindex(name, table, options).await?;
         }
@@ -62,7 +62,7 @@ impl super::SkeetStore {
 
     /// Prune `_versions/` manifests older than 1h. Without this, manifests
     /// accumulate forever and every Strong-mode read pays a growing R2 LIST
-    /// cost. 1h is paired with the 10-min compact cron cadence — long enough
+    /// cost. 1h is paired with the 10-min optimise cron cadence — long enough
     /// to never race an in-flight read, short enough to keep the active
     /// manifest count to a single R2 LIST page.
     #[instrument(skip(self))]
