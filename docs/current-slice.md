@@ -449,8 +449,52 @@ Tasks:
 * [x] implement `otlp.rs`: emit operation counts as OTel `Counter<u64>` (one observation per `(bucket, action_type)` per window) and storage as `Gauge<u64>`. Reuse `shared::tracing` for provider setup so `service.version` flows through automatically
 * [x] wire `sync` CLI (clap): `--from`, `--to` overrides, default to `[now − 6min, now − 5min]`. Capture invocations in the Justfile (`just cloudflare-sync`), running through `op run --env-file cloudflare-exporter.env`
 * [x] add a k8s CronJob manifest in `infra/k8s/` (once per minute, same image-tag pattern as the rest — `${IMAGE_TAG}` + `envsubst`); add a `cluster-deploy-cloudflare-exporter` just target
-* [ ] verify in Grafana that a `cloudflare_r2_operations_total` (or whatever metric name we settle on) series appears with the expected labels and the per-minute count is non-zero
-* [ ] build a Grafana panel that overlays Cloudflare-truth vs the in-app `r2_operations_total` for the same `bucket`, so a divergence is visually obvious — the comparison that actually validates this work
+* [ ] verify in Grafana that a `cloudflare_r2_operations_total` (or whatever metric name we settle on) series appears with the expected labels and the per-minute count is non-zero (superseded by the migration below — verification happens against the `_prom_tmp` metric instead)
+* [ ] build a Grafana panel that overlays Cloudflare-truth vs the in-app `r2_operations_total` for the same `bucket`, so a divergence is visually obvious — the comparison that actually validates this work (deferred until Phase 2 of the migration below — done against the `_prom_tmp` metric)
+
+##### Migrate cloudflare-exporter from OTLP to Prometheus remote_write
+
+Intent:
+
+Cloudflare's R2 metrics are inherently delayed by ~5 minutes (the API only returns settled data). The current OTLP path stamps each sample at "now", so a Cloudflare value summarising 12:00–12:01 lands in Mimir at 12:06 — breaking minute-precise alignment with the in-app `r2_operations_total` metrics emitted by our own services. Since the primary use of Cloudflare data is *joining* it against in-app data on a shared timestamp dimension, that misalignment defeats the purpose. Prometheus remote_write carries an explicit per-sample `timestamp_ms` as a first-class public field — purpose-built for "external snapshot" pushes.
+
+Design decisions:
+
+* Switch cloudflare-exporter from OTLP to Prometheus remote_write. cloudflare-exporter becomes the only Prom-speaking service in bobby; the rest of the fleet stays on OTLP. Deliberate split: Cloudflare data is sourced externally and joined against our internal metrics, so timestamp accuracy outweighs protocol consistency.
+* Set `timestamp_ms = midpoint(from, to).timestamp_millis()` on every sample, so each Cloudflare value lands at ~5.5 min ago — accurate to the data window it summarises.
+* Use an existing `prometheus-remote-write` crate where one is usable; only hand-roll the protobuf (with `prost` + `snap`) if no suitable crate exists. Less unique code is better.
+* Per-series labels are just the data dimensions Cloudflare gives us: `bucket` (and `action_type` for operations). No `service_*` / `deployment_environment` labels — R2 is not a system we own, so there is no source-side service identity to attach. The exporter is just a courier; its own `service.version` is irrelevant to a metric describing an external system.
+* Mimir's out-of-order ingestion window (default 1–2h on Grafana Cloud) absorbs the 5-min backdating with room to spare.
+
+Migration plan — run new and old in parallel for ~a day, then retire old:
+
+Phase 1 — add the Prom path alongside OTLP, with a `_prom_tmp` suffix so series don't collide:
+
+* [ ] provision Grafana Cloud Prometheus remote_write endpoint + API key (Connections → Prometheus → "Send Metrics"); store as 1Password items `bobby-grafanacloud-prom-endpoint` (URL in `password`) and `bobby-grafanacloud-prom-auth` (`instance_id:api_key`, basic-auth pre-formatted, in `password`)
+* [ ] add the two new `OnePasswordItem` entries to `infra/k8s/onepassword-items.yaml`
+* [ ] add `cloudflare-exporter/src/prom.rs` — wraps the `prometheus-remote-write` crate (or hand-rolled `prost` + `snap` fallback). Builds `WriteRequest`, snappy-compresses, POSTs with basic auth
+* [ ] add `cloudflare-exporter/src/bin/sync_prom_tmp.rs` — same flow as `sync.rs` but routes to `prom::push` instead of an OTel meter; reuses `cloudflare.rs` unchanged
+* [ ] emit metrics with a temporary `_prom_tmp` suffix:
+    * `cloudflare_r2_operations_total_prom_tmp` (counter)
+    * `cloudflare_r2_storage_bytes_prom_tmp` (gauge)
+    * `cloudflare_r2_storage_objects_prom_tmp` (gauge)
+* [ ] add `cloudflare-exporter-prom-tmp.env` referencing the new 1Password items
+* [ ] add `infra/k8s/cloudflare-exporter-prom-tmp-cronjob.yaml` — same image as the OTLP cron, runs `sync_prom_tmp` once a minute
+* [ ] add just targets: `cloudflare-sync-prom-tmp` (local), `cluster-deploy-cloudflare-exporter-prom-tmp`, `cluster-logs-cloudflare-exporter-prom-tmp`; chain `push-cloudflare-exporter` + the new deploy target into `cluster-deploy-all`
+
+Phase 2 — verify alignment:
+
+* [ ] both crons run in parallel for ~a day
+* [ ] in Grafana, overlay `cloudflare_r2_operations_total_prom_tmp` against the in-app `r2_operations_total` on a shared time axis (per `bucket`); confirm they line up at the 1-minute resolution with no 5-min lag. This is the comparison the "verify in Grafana" tasks above were aiming at — the `_prom_tmp` metric is what actually makes minute-precise overlay possible
+
+Phase 3 — retire the OTLP path:
+
+* [ ] `kubectl delete cronjob cloudflare-exporter` to remove the OTLP cronjob from the cluster (deleting the manifest from the repo doesn't undeploy it)
+* [ ] delete `cloudflare-exporter/src/bin/sync.rs` and `cloudflare-exporter/src/otlp.rs`
+* [ ] delete `infra/k8s/cloudflare-exporter-cronjob.yaml`, `cloudflare-exporter.env`, and the `cluster-deploy-cloudflare-exporter` / `cluster-logs-cloudflare-exporter` just targets
+* [ ] rename `sync_prom_tmp` → `sync`; drop `_prom_tmp` suffix from metric names, manifest, env file, and just targets
+* [ ] `kubectl delete cronjob cloudflare-exporter-prom-tmp` — once the renamed manifest has been applied, the old tmp cronjob resource is orphaned in the cluster and needs to be removed by name (the rename creates a new `cloudflare-exporter` cronjob; `kubectl apply` won't touch the old one)
+* [ ] update any Grafana panels/alerts to point at the renamed metrics
 
 #### Idea: Remove inline compaction in favour of the cron job
 
