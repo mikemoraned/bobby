@@ -904,6 +904,40 @@ async fn compact_preserves_data() {
 }
 
 #[tokio::test]
+async fn prune_old_versions_succeeds_on_empty_store() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+    store
+        .prune_old_versions(crate::CompactTarget::All)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn prune_old_versions_preserves_data() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+    let record = make_record("prune1");
+    store.add(&record).await.unwrap();
+
+    let mv = test_model_version();
+    store
+        .upsert_score(&record.image_id, &Score::new(0.8).expect("valid"), &mv)
+        .await
+        .unwrap();
+
+    store
+        .prune_old_versions(crate::CompactTarget::All)
+        .await
+        .unwrap();
+
+    assert_eq!(store.count().await.unwrap(), 1);
+    assert!(store.exists(&record.image_id).await.unwrap());
+    let score = store.get_score(&record.image_id).await.unwrap();
+    assert_eq!(score, Some((Score::new(0.8).expect("valid"), mv)));
+}
+
+#[tokio::test]
 async fn summarise_returns_counts() {
     let dir = tempfile::tempdir().unwrap();
     let store = open_temp_store(&dir).await;

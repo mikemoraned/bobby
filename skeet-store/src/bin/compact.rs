@@ -37,19 +37,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    if !health.needs_action() {
+    if health.needs_action() {
+        info!(table = ?args.table, "starting compaction");
+        store.compact_table(args.table).await?;
+        info!("compaction finished");
+        let health_after = store.storage_health().await?;
+        health_after.print_report();
+    } else {
         info!("no compaction needed, skipping");
-        let counts = store.fragment_counts().await?;
-        store_metrics.record_fragment_counts(&counts);
-        return Ok(());
     }
 
-    info!(table = ?args.table, "starting compaction");
-    store.compact_table(args.table).await?;
-    info!("compaction finished");
-
-    let health_after = store.storage_health().await?;
-    health_after.print_report();
+    info!(table = ?args.table, "pruning old versions");
+    store.prune_old_versions(args.table).await?;
+    info!("prune finished");
 
     let counts = store.fragment_counts().await?;
     store_metrics.record_fragment_counts(&counts);
