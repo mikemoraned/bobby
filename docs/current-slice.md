@@ -36,6 +36,54 @@ Checked the `compact` cron job to test the hypothesis that fragments were piling
 * Our `RECOMMEND: compact: 64 small fragments (>10 threshold)` health line is misleading — it uses lance's default smallness threshold, not our chosen 500. (Worth fixing separately.)
 * This makes the case stronger for both *Idea: reduce cost of polling in live-refine* (version-snapshot early-abort skips the scan when nothing changed) and *Idea: make `list_all_image_ids_by_most_recent` use `discovered_at_idx`* (let lance scan the index instead of every fragment).
 
+#### 2nd May
+
+##### Prune fix verification (`5ec2ad9`, deployed before 04:23 UTC)
+
+First cron run including the prune step ran 04:23–04:30 UTC. `just count-versions` (run at 12:51 UTC, ~9h post-deploy):
+
+```
+table                             manifests list_pages       oldest_h       newest_h
+images_v6                                22          1            0.9            0.0
+images_score_v2                          20          1            0.9            0.0
+manual_skeet_appraisal_v1                90          1          348.7            9.5
+manual_image_appraisal_v1               655          1          336.7            9.5
+validate_v1                              35          1          623.8           21.2
+```
+
+**Manifest counts collapsed**: `images_score_v2` 16461 → 20 (-99.9%), `images_v6` 12187 → 22 (-99.8%). All five tables fit in 1 R2 LIST page. The three appraisal/validate tables are unchanged — they're not in `selected_tables` (Follow-on item below).
+
+**R2 ops (data file: `metrics_dumps/prod r2 operations total by cli & r2_class-data-as-joinbyfield-2026-05-02 13_50_14.csv`, window 01:10–05:37 UTC):**
+
+| cli | pre-deploy spikes (B ops/min) | post-deploy spikes (B ops/min) |
+|---|---|---|
+| `live-refine` | 31,599 / 31,609 / 31,609 (02:01); 31,394 / 31,394 / 23,598 (02:39); 47,119 / 45,553 / 44,694 (01:31) | none > 300 |
+| `pruner` | 31,599 / 31,609 / 31,609 (02:01); 31,394 / 31,394 / 23,598 (02:39) | none > 100 |
+
+Pre-deploy, `live-refine` and `pruner` spike *simultaneously* on the same minutes — both pay the per-Strong-resolve LIST cost (17 pages on `images_score_v2`, 13 pages on `images_v6`) every read. Post-deploy, both tables resolve in 1 page and the spikes are gone.
+
+**Compact's first run was expensive but one-shot**: 04:23–04:30 cron showed elevated compact ops (A 12–17 ops/min, B 26K–72K ops/min) for ~7 min — the one-time cleanup of ~28K accumulated manifests across both tables. After that no compact entries appear in the metric stream up to 05:37, suggesting subsequent runs complete fast enough that the OTel batch exporter doesn't flush before pod termination (a metric-emission gap, not a behaviour problem; Grafana side, not lance).
+
+**Conclusions for "Idea: reduce scores-table read amplification on upsert":**
+
+1. **Fix (2) is the lever.** It eliminated >99% of spike-minute R2 traffic on its own. The 1st-May hypothesis ("the per-resolve floor is structurally high regardless of how many resolves happen") is confirmed.
+2. **Fix (1) `merge_insert` was correct but not load-bearing.** The 1st-May post-deploy data already showed it didn't reduce spikes; with prune in place, the writer-side commit count was never the bottleneck.
+3. **Fix (3) "drop Strong mode" priority drops.** The motivation was the 17-page LIST tax per resolve; with manifests at 1 page, Strong mode is much cheaper. Worth keeping in mind if costs creep back, but not urgent.
+4. **The cost wasn't unique to scores_v2.** `images_v6` resolves were ~13 pages and pruner spiked from the same source. The Idea title undersells the fix's scope — manifest pruning is a system-wide R2 cost-reduction lever, not a scores-table-specific one.
+
+**Per-`(table, kind)` confirmation** (data file: `metrics_dumps/live_refine operations total by table, kind & operation-data-as-joinbyfield-2026-05-02 14_03_15.csv`, 200 min pre + 68 min post):
+
+| kind | pre mean ops/min | post mean ops/min | reduction |
+|---|---|---|---|
+| `_versions` | 682.4 | 35.4 | **-94.8%** |
+| `data` | 170.1 | 33.3 | -80.4% |
+| `_indices` | 18.0 | 21.7 | ~unchanged |
+| `_transactions` | 0.8 | 0.7 | ~unchanged |
+
+The kind composition **inverted**. Worst pre-deploy spike (01:31, 47K ops/min): `images_score_v2.lance / _versions` = 42,372 (89.8%). Worst post-deploy minute (05:18, 320 ops/min): `images_v6.lance / data` = 168 (52.5%) — actual image bytes for scoring, the work we *want* to be doing. `_versions` is no longer the dominant kind in any post-deploy minute. Pre-deploy spike count (>5000 ops/min): 3; post-deploy: 0.
+
+This confirms the 30th-Apr diagnosis ("~99% of every spike is `_versions/{get,get_range}`") was load-bearing — pruning the manifests addressed the named cost source directly.
+
 #### 1st May
 
 ##### merge_insert verification (1st May, deployed ~15:35)
@@ -376,6 +424,7 @@ The goal is to ground optimisation decisions in real data (actual query plans, c
     * new metric `r2.duration` — `Histogram<f64>` (seconds), same labels as the others (`cli`, `store_prefix`, `table`, `kind`, `operation`, `r2_class`)
     * record wall-clock around the inner-store delegate call in each wrapper method (`get`, `get_opts`, `get_range`, `get_ranges`, `head`, `list*`, `put*`, `delete*`)
     * goal: distinguish "spike is many requests" from "spike is slow requests"; gives a baseline for any future infra change (e.g. evaluating SSE-C contribution, or comparing prefixes/regions). Confirmed (1st May, by reading `object_store` 0.12.5 + `lance-io` 4.0.0 source) that SSE-C does not defeat lance's or object_store's range-coalescing layers, so SSE-C is not a likely cost driver — but per-op latency is still useful as a general debugging tool independent of the SSE-C question.
+* [ ] **Bug: short-lived `compact` pods drop OTel metrics on exit.** Observed 2nd May — only the long-running compact cron runs (~4–7 min, doing real work) emit `r2_operations_total` series; subsequent fast runs (post-prune-backlog, where there's little to do) leave Grafana gaps even though we know they ran (manifest count stays bounded). Hypothesis: the OTel periodic batch exporter has an export interval longer than the pod's lifetime, and the `TracingGuard` drop on `main` exit doesn't force a final flush. Fix likely lives in `shared::tracing` — either shorten the metrics export interval, or call `MeterProvider::force_flush()` (and trace equivalent) before returning from `main` in short-lived binaries (`compact`, `count-versions`, `cloudflare-exporter sync`). Until fixed, dashboards under-represent the activity of these binaries.
 
 ##### Get visibility of R2 metrics from Cloudflare in my Grafana metrics
 
@@ -538,12 +587,13 @@ Three fixes, ranked. They compose — none substitutes for another.
     * `_versions` ops/s during spikes still dominate at ~99%+ of the spike traffic — same shape as before.
 
     Why the prediction was wrong: either typical batch sizes were already small (so N+1 ≈ 1 and the writer-side saving is negligible), or the spikes were never write-driven in the first place. The 1st-May manifest measurement (16k+ manifests, 17 LIST pages) shows the per-resolve floor is structurally high regardless of how many resolves happen — pointing at fix (2) as the next lever.
-* [x] **(2) Add `OptimizeAction::Prune` to the compact cron** — without it, `_versions/` grows unbounded. Picked the explicit-third-step form (`OptimizeAction::Prune { older_than: Some(chrono::Duration::hours(1)), delete_unverified: None, error_if_tagged_old_versions: None }`) over `OptimizeAction::All` so `older_than` is tunable: 1h is plenty given the 10-min cron, where 7d would let weeks of manifests accumulate between deploys.
+* [ ] **(2) Add `OptimizeAction::Prune` to the compact cron** — without it, `_versions/` grows unbounded. Picked the explicit-third-step form (`OptimizeAction::Prune { older_than: Some(chrono::Duration::hours(1)), delete_unverified: None, error_if_tagged_old_versions: None }`) over `OptimizeAction::All` so `older_than` is tunable: 1h is plenty given the 10-min cron, where 7d would let weeks of manifests accumulate between deploys.
     * **Implementation:** added `SkeetStore::prune_old_versions(target)` (`skeet-store/src/compact.rs`). The compact binary now always calls it, regardless of `health.needs_action()` — manifests accumulate from writes whether or not fragments need merging, so prune cadence is decoupled from compaction cadence.
     * **Refactor:** introduced a `selected_tables(target)` helper that yields `(name, table, compact_options)` for `images`/`scores`. `compact_table`, `prune_old_versions`, and `storage_health` all walk this single source of truth via `compact_one` / `prune_one` free functions, removing the previous per-table copy-paste blocks.
     * **`delete_unverified: None` is safe** — it gates whether unreferenced *file* cleanup waits 7 days for in-progress writes to settle. Old *manifest* deletion uses `older_than` directly with no extra safeguard, so 1h pruning takes effect regardless. Setting it `Some(true)` while pruner/live-refine are actively writing would risk corruption.
     * Verify via Grafana post-deploy: `LIST` ops on `_versions/` for `cli=skeet-live-refine` should plateau rather than drift up; `just count-versions` should report ≤1 LIST page on `images_score_v2` and `images_v6`.
 * [ ] **Follow-on: extend compact + prune to all tables.** `CompactTarget::All` today covers only `images` + `scores`; `validate`, `skeet_appraisal`, `image_appraisal` are never compacted or pruned. Manifest counts on those are small (1st May: 35 / 80 / 745) but accumulate forever — same structural cost source as `images_score_v2`, just slower. Either widen `CompactTarget`/`selected_tables` to enumerate all five tables, or drive maintenance off the existing `SkeetStore::tables` registry so adding a table is one edit. Decide whether per-table compact options matter (probably not for the appraisal tables — small rows, default fine).
+* [ ] Re-run `just count-versions` on 3rd May (24h+) to confirm manifest counts stabilise around 20–30 per cron tick rather than drifting up.
 * [ ] **(3) Drop `read_consistency_interval(Duration::ZERO)`** — Strong mode is the wrong default for a system that does batch writes. Move to a small TTL (e.g. `Duration::from_secs(5)`) so reads can serve from lance's in-memory dataset cache between manifest resolves. Implications for `cached_scores` (which uses `version()` as the invalidation signal): with eventual consistency, `version()` may report a slightly-stale value. Either:
     * accept up-to-5s staleness on the score cache (probably fine — the feed already polls on a coarser cadence), or
     * replace `version()`-based invalidation with a time-based TTL on the cache itself, decoupling it from manifest resolution entirely.
