@@ -44,6 +44,8 @@ struct GraphQLResponse {
 #[derive(Deserialize)]
 struct GraphQLError {
     message: String,
+    #[serde(default)]
+    path: Vec<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -86,7 +88,7 @@ struct R2OpSum {
 #[derive(Deserialize)]
 struct R2StorGroup {
     dimensions: R2StorDimensions,
-    sum: R2StorSum,
+    max: R2StorMax,
 }
 
 #[derive(Deserialize)]
@@ -96,7 +98,7 @@ struct R2StorDimensions {
 }
 
 #[derive(Deserialize)]
-struct R2StorSum {
+struct R2StorMax {
     #[serde(rename = "payloadSize")]
     payload_size: u64,
     #[serde(rename = "objectCount")]
@@ -132,7 +134,7 @@ static QUERY: &str = r#"
             dimensions {
               bucketName
             }
-            sum {
+            max {
               payloadSize
               objectCount
             }
@@ -172,7 +174,19 @@ pub async fn fetch_r2_metrics(
     if let Some(errors) = response.errors {
         let msg = errors
             .into_iter()
-            .map(|e| e.message)
+            .map(|e| {
+                if e.path.is_empty() {
+                    e.message
+                } else {
+                    let path = e
+                        .path
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(".");
+                    format!("{} (path: {path})", e.message)
+                }
+            })
             .collect::<Vec<_>>()
             .join("; ");
         return Err(CloudflareError::GraphQL(msg));
@@ -204,8 +218,8 @@ pub async fn fetch_r2_metrics(
         .into_iter()
         .map(|g| R2StorageGroup {
             bucket_name: g.dimensions.bucket_name,
-            payload_size: g.sum.payload_size,
-            object_count: g.sum.object_count,
+            payload_size: g.max.payload_size,
+            object_count: g.max.object_count,
         })
         .collect();
 
