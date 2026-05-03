@@ -13,12 +13,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
-    cargo build --release --bin sync
+    cargo build --release --bin sync --bin sync_prom_tmp
 
 FROM debian:bookworm-slim AS runner
 LABEL org.opencontainers.image.source=https://github.com/mikemoraned/bobby
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /build/target/release/sync /usr/local/bin/sync
+COPY --from=builder /build/target/release/sync_prom_tmp /usr/local/bin/sync_prom_tmp
 
 CMD ["sync"]
