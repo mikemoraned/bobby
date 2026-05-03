@@ -524,6 +524,12 @@ Phase 2 — verify alignment:
 * [ ] both crons run in parallel for ~a day
 * [ ] in Grafana, overlay `cloudflare_r2_operations_total_prom_tmp` against the in-app `r2_operations_total` on a shared time axis (per `bucket`); confirm they line up at the 1-minute resolution with no 5-min lag. This is the comparison the "verify in Grafana" tasks above were aiming at — the `_prom_tmp` metric is what actually makes minute-precise overlay possible
 
+**Observations (3rd May):** compared `sync` (OTLP) vs `sync_prom_tmp` over the same ~3h window (`metrics_dumps/R2 operations per minute by action_type*.csv`):
+
+* **Magnitude differs ~3× on mean, ~9× on max** — OTLP `GetObject` mean=71/min, max=344; prom_tmp mean=235/min, max=2981. Same ratio on `ListObjects`.
+* **prom_tmp captures 11 action types vs OTLP's 3** — `HeadObject`, `DeleteObjects`, `HeadBucket`, `ListMultipartUploads`, `CompleteMultipartUpload`, `CreateMultipartUpload`, `UploadPart` are absent from OTLP.
+* **Root cause:** `sync` is a short-lived pod — the OTel `Counter` resets to zero on every start and emits exactly one delta per run. The OTLP exporter uses delta temporality with a "now" timestamp, so Mimir sees one data point per minute stamped at pod-exit time rather than at the time the operations occurred. The missing action types are likely a side-effect of the same: low-frequency types that happened to be zero in the specific 1-minute window each pod queried don't appear in the OTel output. The prom_tmp path queries the same Cloudflare data but timestamps each sample to the window midpoint — it is the ground truth. The magnitude difference confirms the OTLP path was undercounting.
+
 Phase 3 — retire the OTLP path:
 
 * [ ] `kubectl delete cronjob cloudflare-exporter` to remove the OTLP cronjob from the cluster
