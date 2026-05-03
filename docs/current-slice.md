@@ -506,7 +506,7 @@ Phase 1 — add the Prom path alongside OTLP, with a `_prom_tmp` suffix so serie
 * [x] add `infra/k8s/cloudflare-exporter-prom-tmp-cronjob.yaml` — same image as the OTLP cron, runs `sync_prom_tmp` once a minute
 * [x] add just targets: `cloudflare-sync-prom-tmp` (local), `cluster-deploy-cloudflare-exporter-prom-tmp`, `cluster-logs-cloudflare-exporter-prom-tmp`; chain `push-cloudflare-exporter` + the new deploy target into `cluster-deploy-all`
 
-* [ ] build and deploy the prom-tmp cron to the cluster:
+* [x] build and deploy the prom-tmp cron to the cluster:
     Apply the new 1Password items so the secrets are available:
     ```sh
     kubectl apply -f infra/k8s/onepassword-items.yaml
