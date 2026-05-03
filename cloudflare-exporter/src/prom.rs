@@ -46,10 +46,13 @@ pub async fn push(
         .send()
         .await?;
 
-    if !response.status().is_success() {
-        let status = response.status().as_u16();
-        let body = response.text().await.unwrap_or_default();
-        return Err(PromError::RemoteWrite(status, body));
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(PromError::RemoteWrite(status.as_u16(), body));
+    }
+    if !body.is_empty() {
+        tracing::warn!(status = status.as_u16(), body, "Mimir remote_write warning");
     }
 
     Ok(())
