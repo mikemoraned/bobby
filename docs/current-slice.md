@@ -506,6 +506,8 @@ Phase 1 — add the Prom path alongside OTLP, with a `_prom_tmp` suffix so serie
 * [x] add `infra/k8s/cloudflare-exporter-prom-tmp-cronjob.yaml` — same image as the OTLP cron, runs `sync_prom_tmp` once a minute
 * [x] add just targets: `cloudflare-sync-prom-tmp` (local), `cluster-deploy-cloudflare-exporter-prom-tmp`, `cluster-logs-cloudflare-exporter-prom-tmp`; chain `push-cloudflare-exporter` + the new deploy target into `cluster-deploy-all`
 
+**Storage metrics finding (3rd May):** `r2StorageAdaptiveGroups` has daily granularity — a 1-minute window always returns zero entries. The OTLP `sync` path had the same limitation (it emitted zero storage metrics silently). The GraphQL API only records storage snapshots once per day. The Cloudflare REST API (`GET /accounts/{account_id}/r2/buckets/{bucket_name}/usage`) returns a current point-in-time snapshot with no time-window constraint and is the right path for storage gauges. Tracked in Phase 4 below.
+
 Phase 2 — verify alignment:
 
 * [ ] both crons run in parallel for ~a day
@@ -519,6 +521,17 @@ Phase 3 — retire the OTLP path:
 * [ ] rename `sync_prom_tmp` → `sync`; drop `_prom_tmp` suffix from metric names, manifest, env file, and just targets
 * [ ] `kubectl delete cronjob cloudflare-exporter-prom-tmp` — once the renamed manifest has been applied, the old tmp cronjob resource is orphaned in the cluster and needs to be removed by name (the rename creates a new `cloudflare-exporter` cronjob; `kubectl apply` won't touch the old one)
 * [ ] update any Grafana panels/alerts to point at the renamed metrics
+
+Phase 4 — add REST-based storage metrics:
+
+The GraphQL `r2StorageAdaptiveGroups` dataset has daily granularity and is unsuitable for per-minute polling. The Cloudflare REST API returns a current point-in-time snapshot per bucket and is the right source for storage gauges.
+
+* [ ] rename `sync` → `sync_operations` (binary, env file, k8s manifest, just targets); `kubectl delete cronjob cloudflare-exporter` to remove the old-named resource from the cluster before applying the renamed manifest
+* [ ] add `cloudflare-exporter/src/bin/sync_storage.rs` — calls `GET /accounts/{account_id}/r2/buckets/{bucket_name}/usage` for each bucket (bucket list fetched via `GET /accounts/{account_id}/r2/buckets`); emits `cloudflare_r2_storage_bytes` and `cloudflare_r2_storage_objects` gauges via Prometheus remote_write with `timestamp_ms = now`
+* [ ] add `cloudflare-storage-exporter.env` referencing the existing 1Password items (`bobby-cloudflare-analytics-token`, `bobby-grafanacloud-prom-endpoint`, `bobby-grafanacloud-prom-auth`) — no account-tag needed as the REST API uses the token's account scope
+* [ ] add `infra/k8s/cloudflare-storage-exporter-cronjob.yaml` — runs `sync_storage` once per minute (current snapshot, not historical window)
+* [ ] add just targets: `cloudflare-sync-storage` (local), `cluster-deploy-cloudflare-storage-exporter`, `cluster-logs-cloudflare-storage-exporter`; add to `cluster-deploy-all`
+* [ ] verify in Grafana that `cloudflare_r2_storage_bytes` and `cloudflare_r2_storage_objects` appear with non-zero values and update each minute
 
 #### Idea: Remove inline compaction in favour of the cron job
 
