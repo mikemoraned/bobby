@@ -796,6 +796,8 @@ Three fixes, ranked. They compose — none substitutes for another.
 
 #### Idea: tune OpenAI model choice to be cheaper and have similar accuracy
 
+Intent:
+
 The current training regime is very simplistic in that we train it to maximise accuracy against the small set of manually chosen examples. The initial prompt (`SEED_PROMPT`) already gets these correct, and so we don't even iterate or tune anything further. Since we initially chose those small set of examples we have now manually appraised 685 examples.
 
 Now, the intent of this idea is not to necessarily optimise to improve accuracy on this wider dataset. Instead the intent is something like:
@@ -803,10 +805,72 @@ Now, the intent of this idea is not to necessarily optimise to improve accuracy 
 * given that safety, try to optimise for lower costs
 
 So, we should do something like, the following:
-* keeping the `train.rs` process mostly the same:
-    1. take the set of image appraisals, and split this into a test and train dataset, randomly. We might want to keep this small just for now e.g. 50 test and 50 train.
-    2. train the model prompt as-is on the training dataset
-    3. measure each round against the test dataset
-* given this more robust measurement method, make the model choice and parameters (if available) change-able, and evaluate against different models *with a bias towards cheaper models*
+* keeping the `train.rs` process mostly the same, but with a held-out test set:
+    1. take the set of image appraisals and split 80/20 into train/test, stratified by `Band`, then capture the chosen ID lists into a config file so the split stays frozen as more appraisals are added over time
+    2. inside the training loop, score on the **train** set and pick the best prompt by the train-set metric — do not peek at the test set during the loop
+    3. once training has chosen its best prompt, evaluate it once against the held-out **test** set — this is the comparable number across runs
+* given this more robust measurement method, make the model choice parameterisable and evaluate cheaper candidates, accepting only those that don't regress against baseline
 
 To emphasise: the intent of this is to find a cheaper model that still is good enough or better compared to the baseline current choice.
+
+Tasks:
+
+##### Phase 1 — refactors that introduce the new abilities, not yet wired into any deployed path
+
+* [ ] Scaffold a new workspace crate `eval` to hold shared evaluation primitives:
+    * lift `ConfusionMatrix` + `precision`/`recall`/`f1` out of `skeet-prune/src/bin/eval.rs:35-85`
+    * add `smartcore` as a dep — `nalgebra` and `ndarray` are already in `Cargo.lock` transitively, so this only adds `smartcore` itself plus a moderate compile-time hit. Verify with `cargo build -p eval`; flag if it adds more than a few seconds to a clean build
+    * re-export from smartcore: `roc_auc_score` and seeded random `train_test_split`
+    * hand-roll `stratified_split(scores, labels, ratio, seed)` that calls `train_test_split` once per `Band` value and concatenates (smartcore doesn't ship a stratified variant)
+    * hand-roll `pin_precision_at(scores, truth, target_precision) -> (threshold, recall)` — sweep thresholds; return the highest threshold whose precision ≥ target along with the recall there
+    * skip PR-AUC for now — not load-bearing under the pinned-precision rule; revisit only if ROC-AUC is too coarse during phase 4
+* [ ] Refactor `skeet-prune/src/bin/eval.rs` to use the new `eval` crate. No behaviour change — assert produced CSV is byte-identical to a pre-refactor snapshot
+* [ ] Define an `EvalResults` serde struct in the `eval` crate covering: `split_config_path`, `split_config_hash` (sha256 of the `eval-split.toml` content used), `model_version`, `model_name`, `precision`, `recall`, `f1`, `roc_auc`, threshold + recall at pinned precision, `tp/fp/tn/fn`, `input_tokens`, `output_tokens`, `cost_usd`. Round-trip test: write → read → assert eq
+* [ ] Add a new binary `skeet-refine/src/bin/capture_appraisals.rs` (and a `just capture-appraisals` recipe) that:
+    * loads all current image appraisals via `store.list_all_image_appraisals()`
+    * uses `eval::stratified_split` (Band-stratified, seeded) to produce two disjoint sets of `ImageId`
+    * writes `config/eval-split.toml` with: `seed` (provenance only), `captured_at`, `train = [image_id, ...]`, `test = [image_id, ...]`
+    * The generated ID lists are the durable artefact. Future eval/train runs **must** load this file and use its ID lists verbatim — they do not re-roll the split. This insulates evaluation from later growth in the appraisal set: more labels arriving over time cannot perturb the train/test partition once it is frozen. Labels (the `Band` for each ID) are still fetched fresh from the store at eval time, so corrections to existing labels do flow through
+* [ ] In `skeet-refine/src/refining.rs`, surface input + output token counts from the rig completion response alongside the score; callers ignore the new field for now (no behaviour change yet)
+* [ ] Add an OpenAI per-token `prices.toml` keyed on model name covering at least `gpt-4o` and `gpt-4o-mini`; expose `cost_for(model_name, input_tokens, output_tokens) -> f64` on the `eval` crate. Inline test asserts a known token-count → known $ figure
+* [ ] Parameterise the OpenAI model name in `skeet-refine/src/bin/train.rs`: replace the hardcoded `"gpt-4o"` literals at `bin/train.rs:135` and `:164` with a single `--model` CLI flag (default `"gpt-4o"`); the same value flows into both the scoring agent and the prompt-rewriting agent
+* [ ] Verify `rig`'s API exposes a temperature setting on the relevant agent / completion model; if so, set `temperature=0` on both `train.rs` completions for deterministic comparison; if not, capture the workaround inline
+* [ ] Phase-1 done when: `just train` and the existing `skeet-prune` eval recipe produce the same outputs as before, and the `eval` crate is in place but un-used by any new path
+
+##### Phase 2 — establish the current baseline measured against the appraised images
+
+* [ ] Run `just capture-appraisals` once against the current store; **commit** `config/eval-split.toml`. This is the frozen split that all later phases load — adding more appraisals after this point will not affect it. Re-capturing is a deliberate act that establishes a new baseline (re-run phase 2 onward)
+* [ ] Add a new binary `skeet-refine/src/bin/refine_eval.rs`:
+    * load `config/eval-split.toml` (the frozen split — phase 2 does not re-roll)
+    * fetch the listed `test` image IDs from the store (warn + abort if any are no longer present, so the test set never drifts silently)
+    * derive the binary label from `Band`: `band.is_visible_in_feed()` ⇒ positive class (matches the refine score's 0.5 threshold)
+    * load `config/refine.toml` as-is (no re-training in phase 2)
+    * score the held-out test set; capture per-call input/output tokens
+    * compute precision/recall/F1 at threshold 0.5, ROC-AUC, and the precision-pinned threshold (pinned to the baseline's own precision — this just records the threshold + recall + cost as the comparison target for later phases)
+    * record the loaded `eval-split.toml`'s path and content hash in the output
+    * write `config/eval-results-baseline.toml`; print a stdout summary
+* [ ] Add a `just refine-eval` recipe
+* [ ] Run once against production `refine.toml`; **commit** `config/eval-results-baseline.toml`. This is the frozen baseline phases 3 and 4 must not regress against
+* [ ] Sanity-check the recorded `cost_usd` against the Phase-1 LLM token metrics in Grafana (or the OpenAI org-costs API) for the equivalent time window — they should agree to within a few percent
+
+##### Phase 3 — train on the wider dataset; deploy if it doesn't regress
+
+* [ ] Extract the appraisal loader from `refine_eval.rs` into `skeet-refine/src/lib.rs` so `train.rs` can share it
+* [ ] Update `skeet-refine/src/bin/train.rs` to use the wider dataset:
+    * load `config/eval-split.toml` and use its `train` / `test` ID lists verbatim — the same partition as phase 2 (no re-rolling); refuse to run if the file's content hash differs from what phase 2 recorded
+    * inside the iterative loop: score on **train**, refine prompt using train results, pick the best prompt by **train** F1 — do not peek at the test set during the loop
+    * after the loop, score the chosen prompt on the held-out test set and write `config/eval-results-phase3.toml`
+    * keep `--model` defaulted to `gpt-4o` (no model swap in this phase)
+* [ ] Decide how to manage training cost: ~548 train examples × 10 iterations is ~5500 vision calls per training run. Pick one: reduce `--max-iterations`, subsample the train set per iteration, or accept the cost. Document the chosen approach and the resulting $ figure
+* [ ] Acceptance gate: read baseline precision from `eval-results-baseline.toml`; on the phase-3 test scores find the threshold giving precision ≥ baseline precision; read off recall there
+    * **Pass:** recall ≥ baseline recall (within a tolerance — bootstrap CI on the test set is the principled choice; 1pp absolute is the cheap-and-dirty fallback). Save the new `refine.toml`, deploy, and treat `eval-results-phase3.toml` as the new baseline for phase 4
+    * **Fail:** do not deploy. Investigate (label noise on misclassified images? insufficient iterations? prompt drift?). Phase 4 is gated on a successful phase 3
+* [ ] Commit the new `config/refine.toml` and `config/eval-results-phase3.toml` together so the deployed prompt and its accompanying eval are versioned in lockstep
+
+##### Phase 4 — evaluate cheaper model choices against the phase-3 baseline
+
+* [ ] Pick a small candidate list. Start with `gpt-4o-mini`. Optionally add 1–2 other OpenAI vision models cheaper than `gpt-4o`. Add each candidate's per-token price to `prices.toml` before running
+* [ ] For each candidate: run `train.rs --model <candidate>` against the same `config/eval-split.toml` used in phases 2–3 (the candidate is used as scorer *and* rewriter, per the agreed simplification). Save outputs as `config/eval-results-<candidate>.toml` (don't overwrite the phase-3 file)
+* [ ] Apply the acceptance gate against `eval-results-phase3.toml`: pin precision to phase-3 precision on the candidate's test scores; compare recall
+* [ ] Among accepted candidates (if any), pick the cheapest by `cost_usd` on the eval pass; update `config/refine.toml` to that candidate; deploy
+* [ ] If no candidate is accepted, capture the negative result inline (which model, observed precision, recall when pinned, observed cost) and move on. The pre-phase-4 `refine.toml` stays in place
