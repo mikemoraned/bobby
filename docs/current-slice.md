@@ -584,7 +584,7 @@ Live tokens / latency / errors per LLM call, useful operationally even before an
     * `gen_ai.client.operation.duration` — boundaries `[0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28, 2.56, 5.12, 10.24, 20.48, 40.96, 81.92]`, same attrs minus `token.type`, plus `error.type` on failure paths.
 * [x] set `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental` in the live-refine deployment manifest. Document in a comment in `llm_metrics.rs` that the GenAI semconv is currently in Development status and names may shift.
 * [x] in `bin/live_refine.rs::dispatch`, observe both histograms per-request inside the `score_with` closure (success and error paths) — *not* end-of-tick. The existing tick-aggregated `LiveRefineMetrics` counters stay as-is; they answer a different question (queue movement vs per-call performance).
-* [ ] one Grafana dashboard, four panels: tokens/min by `gen_ai_token_type` (`sum(rate(gen_ai_client_token_usage_sum[5m])) by (gen_ai_token_type)`), p50/p95/p99 latency, errors/min by `error_type`, mean tokens-per-request split input/output. Verified rendering with non-zero data = Phase 1 done.
+* [x] one Grafana dashboard, four panels: tokens/min by `gen_ai_token_type` (`sum(rate(gen_ai_client_token_usage_sum[5m])) by (gen_ai_token_type)`), p50/p95/p99 latency, errors/min by `error_type`, mean tokens-per-request split input/output. Verified rendering with non-zero data = Phase 1 done.
 
 Phase 2 — minimum real cost in Grafana (USD, daily, OpenAI-coupled):
 
