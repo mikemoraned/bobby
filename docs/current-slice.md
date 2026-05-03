@@ -566,10 +566,79 @@ As of 3rd May observability of LLM-related metrics, particularly related to what
 Note that I am using OpenAI right now, and so measures of real costs need to be coupled to them. However, I may move to others later, combine providers or even host my own models. So, this gives a bias of:
 * use standards or methods which are provider-neutral where possible, particularly for operational leading metrics
 * make it easy to plug in other providers later, particularly for lagging metrics tied to real costs
-    * so, for example, since my ultimate costs are in pounds, if I get billed in Euros (e.g. Mistral) and dollars (e.g. OpenAI) then any cost-related metrics should record a normalised pounds value as well as the billed currency (this may require lookups of third-part services for currency conversion data)
+    * so, for example, since my ultimate costs are in pounds, if I get billed in Euros (e.g. Mistral) and dollars (e.g. OpenAI) then any cost-related metrics should record a normalised pounds value as well as the billed currency (this may require lookups of third-party services for currency conversion data)
 
 Tasks:
-...
+
+Phased plan — each phase ships a standalone increment. Phase 1 + 2 are in-scope for this slice; further work is captured below as a future direction rather than committed phases.
+
+Phase 1 — minimum leading metrics from live-refine (OpenAI-only, semconv-named):
+
+Live tokens / latency / errors per LLM call, useful operationally even before any cross-validation against OpenAI's ground truth. Follows the OTel GenAI semantic conventions exactly — which means provider-neutral metric names from day one, even though we only have one provider today (it costs nothing extra).
+
+* [ ] in `skeet-refine/src/refining.rs`, switch from `agent.prompt(msg)` to `agent.completion(...)` so the typed `CompletionResponse<_>` carrying `.usage` is returned. Change `refine_image` to return `Result<(Score, rig::completion::Usage, Duration), RefineError>`.
+* [ ] add `LlmMetrics` (new `skeet-refine/src/llm_metrics.rs`) emitting two histograms following the OTel GenAI semconv:
+    * `gen_ai.client.token.usage` — bucket boundaries `[1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576, 4194304, 16777216, 67108864]`; attrs `gen_ai.token.type` ∈ {`input`, `output`}, `gen_ai.provider.name="openai"`, `gen_ai.request.model`, `gen_ai.operation.name="chat"`.
+    * `gen_ai.client.operation.duration` — boundaries `[0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28, 2.56, 5.12, 10.24, 20.48, 40.96, 81.92]`, same attrs minus `token.type`, plus `error.type` on failure paths.
+* [ ] set `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental` in the live-refine deployment manifest. Document in a comment in `llm_metrics.rs` that the GenAI semconv is currently in Development status and names may shift.
+* [ ] in `bin/live_refine.rs::dispatch`, observe both histograms per-request inside the `score_with` closure (success and error paths) — *not* end-of-tick. The existing tick-aggregated `LiveRefineMetrics` counters stay as-is; they answer a different question (queue movement vs per-call performance).
+* [ ] one Grafana dashboard, four panels: tokens/min by `gen_ai_token_type` (`sum(rate(gen_ai_client_token_usage_sum[5m])) by (gen_ai_token_type)`), p50/p95/p99 latency, errors/min by `error_type`, mean tokens-per-request split input/output. Verified rendering with non-zero data = Phase 1 done.
+
+Phase 2 — minimum real cost in Grafana (USD, daily, OpenAI-coupled):
+
+The smallest possible thing that answers "what is bobby costing me on OpenAI?". Deliberately skips the Usage API, currency normalisation, and the `prom.rs` refactor — all out of scope for this slice (see future direction below).
+
+* [ ] gating curl: with a freshly provisioned admin key, hit `/v1/organization/costs?start_time=…&bucket_width=1d&group_by[]=line_item&group_by[]=project_id` for the last 7 days. Confirm bobby's `project_id` shows up, line items match the OpenAI billing dashboard, and the response shape matches the cookbook docs. If anything's off, diagnose before writing code.
+* [ ] provision an OpenAI Admin API key (Cost & Usage read scope — different credential from `BOBBY_OPENAI_API_KEY` used by live-refine). Store in 1Password as `bobby-openai-admin-key`. Add to `infra/k8s/onepassword-items.yaml`.
+* [ ] scaffold an `openai-exporter` crate in the workspace. Copy `prom.rs` from `cloudflare-exporter` verbatim; do not factor out yet (deferred to future work).
+* [ ] `openai-exporter/src/openai.rs` — typed REST client for `GET /v1/organization/costs` only. One `#[ignore]`d integration test behind `op run`, mirroring the Cloudflare crate's `fetch_r2_metrics_real_api` test.
+* [ ] `openai-exporter/src/bin/sync_costs.rs` — daily cron, default window is yesterday (`[start_of_yesterday, start_of_today]`), `--from`/`--to` overrides; emits `openai_cost_usd_total{line_item, project_id}` counter with `timestamp_ms = midpoint(window)`.
+* [ ] `Dockerfile.openai-exporter`; `infra/k8s/openai-cost-exporter-cronjob.yaml` (daily, e.g. 01:00 UTC); `openai-exporter.env`; just targets `openai-sync-costs`, `cluster-deploy-openai-exporter`, `cluster-logs-openai-exporter`; chain into `cluster-deploy-all`.
+* [ ] one Grafana panel: cumulative `openai_cost_usd_total` over the last 30 days, broken down by `line_item`. Verify it matches the OpenAI billing dashboard within ~$0.01 — Phase 2 done.
+
+Future direction — captured, not committed:
+
+The Mimir-resident cost data from Phase 2 is the right shape for an *operational* snapshot — what is bobby costing me right now, with enough resolution to spot a spike. But anything involving cross-provider aggregation, currency normalisation, or long-term retention is a poor fit for a metrics store. The natural home for that is a small data lake on R2 using Iceberg via the R2 Data Catalog (queryable from DuckDB v1.3+), structured as a medallion:
+
+* **Bronze** — raw per-vendor cost data, written by each cost exporter alongside its Mimir push. Schema-per-vendor, partitioned by date, captures the unmodified API response (or as close as practical) so derivations stay re-derivable. FX rates from a source like frankfurter.app land in their own Bronze table for historical accuracy.
+* **Silver** — normalised, FX-converted unified schema (e.g. `{provider, date, line_item, project, cost_billed, currency_billed, cost_gbp, cost_usd}`). Built by a scheduled DuckDB job reading from Bronze.
+* **Gold** — time rollups (daily, monthly, by-provider, by-project) and any cross-provider totals for static cost reports.
+
+Why a lake rather than more Mimir recording rules for the cost-normalisation work:
+
+* Currency normalisation is a data-engineering concern, not an observability one — it belongs where you can audit and re-derive.
+* Bronze gives an audit trail decoupled from Mimir retention.
+* Removes the Grafana dependency for non-operational analytical questions — anything that speaks SQL (DuckDB CLI, a Jupyter notebook, a future-self one-off script) can query the lake.
+* When a second cost-emitting provider's exporter exists (Cloudflare R2 already qualifies; LLM providers beyond OpenAI later), Silver is the natural place to unify schemas — neutral ground rather than a renaming-then-recording-rule cascade in Mimir.
+
+Other directions worth keeping on the radar but not yet shaped into tasks:
+
+* **Cross-validate leading vs OpenAI ground truth.** Add a `sync_usage` binary to `openai-exporter` calling `/v1/organization/usage/completions` with `bucket_width=1m`, build a leading-vs-lagging overlay panel. That's the comparison that proves Phase 1's numbers and surfaces LLM call sites outside live-refine. Could also feed Bronze directly. See gotchas in the notes section below.
+* **Cost prediction from leading metrics.** A pricing table joined against Phase 1's token-rate metrics gives a live predicted-spend metric that would catch e.g. a runaway prompt before the daily Cost API confirms it the next day. Could live as a Mimir recording rule, or as a Silver-table derivation if the prediction is more useful as a daily report than a live panel.
+
+Notes preserved for future work:
+
+Findings from the research / design phase, useful regardless of which direction the post-Phase-2 work takes:
+
+* **OTel GenAI semconv quirks:**
+    * The required attribute is `gen_ai.provider.name`, not the older `gen_ai.system`. Spec was renamed.
+    * `gen_ai.client.operation.duration` is the *required* metric; `gen_ai.client.token.usage` is recommended.
+    * Spec is currently in Development status; opt-in via `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental` env var.
+    * `time_to_first_chunk` / `time_per_output_chunk` are streaming-only — not relevant to our non-streaming `agent.completion(...)` path, but would matter if we ever stream.
+* **OpenAI APIs:**
+    * Admin API key is a separate credential from project keys (different provisioning, different scope) — must be created explicitly.
+    * Costs API: `/v1/organization/costs`, `bucket_width=1d` is the *only* supported value; fields `amount.value`/`amount.currency`/`line_item`/`project_id`. Group by `line_item` and `project_id`.
+    * Usage API: `/v1/organization/usage/completions`, supports `1m`/`1h`/`1d`. Must pass `group_by[]=model&group_by[]=project_id` explicitly; otherwise those fields come back null. Pagination is cursor-based via `next_page`. Lag time before data settles is undocumented — measure empirically before setting any cron's lookback default.
+    * Useful response fields beyond the obvious: `input_cached_tokens` (separate from `input_tokens`, billed ~50% — important for any leading-vs-lagging reconciliation), `input_audio_tokens`, `output_audio_tokens`.
+    * API retention is undocumented — verify before relying on any backfill window.
+* **Currency / FX:**
+    * frankfurter.app is a free ECB-backed JSON FX API, no auth, daily granularity, immutable historic rates. Suitable as a Bronze-feeder cron.
+    * Keep billed currency separate from normalised currency in whichever store holds the canonical record: emit `cost_total{currency=…}` raw, derive GBP downstream. Lets you reconcile against the original invoice without ambiguity.
+* **Data-lake path on Grafana Cloud:**
+    * R2 Data Catalog (Iceberg) is currently in beta with no egress/op cost — favourable for our scale.
+    * The DuckDB Grafana plugin exists but is unsigned-only, and Grafana Cloud forbids unsigned plugins (no overrides). So lake-resident data isn't directly queryable from Grafana Cloud. If Grafana access is ever needed for analytical (non-operational) views, the realistic options are self-hosting Grafana, or fronting the lake with Athena/BigQuery — neither is needed for the lake to be useful on its own.
+* **Prior art:**
+    * Grafana Cloud's "OpenAI integration" is a Python in-process decorator, not a Prom exporter, not Rust. Validates the in-process approach for leading metrics but offers nothing reusable.
 
 #### Idea: Remove inline compaction in favour of the cron job
 
