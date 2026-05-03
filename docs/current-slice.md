@@ -794,3 +794,19 @@ Three fixes, ranked. They compose — none substitutes for another.
 * [x] Re-run `just count-versions` on 3rd May (24h+) to confirm manifest counts stabilise around 20–30 per cron tick rather than drifting up. **Result (3rd May, 12:56 UTC):** all 5 tables at 1 LIST page, manifests 7–29 — stable and within expected range. Pruning confirmed working across all tables.
 * [-] **(3) Drop `read_consistency_interval(Duration::ZERO)`** — deferred indefinitely. With manifests pruned to 1 LIST page, the per-resolve cost of Strong mode is now negligible. The behaviour change (staleness implications for `cached_scores`) isn't worth taking on until/unless costs climb again.
 
+#### Idea: tune OpenAI model choice to be cheaper and have similar accuracy
+
+The current training regime is very simplistic in that we train it to maximise accuracy against the small set of manually chosen examples. The initial prompt (`SEED_PROMPT`) already gets these correct, and so we don't even iterate or tune anything further. Since we initially chose those small set of examples we have now manually appraised 685 examples.
+
+Now, the intent of this idea is not to necessarily optimise to improve accuracy on this wider dataset. Instead the intent is something like:
+* put in place a more robust test framework that uses this larger set of examples
+* given that safety, try to optimise for lower costs
+
+So, we should do something like, the following:
+* keeping the `train.rs` process mostly the same:
+    1. take the set of image appraisals, and split this into a test and train dataset, randomly. We might want to keep this small just for now e.g. 50 test and 50 train.
+    2. train the model prompt as-is on the training dataset
+    3. measure each round against the test dataset
+* given this more robust measurement method, make the model choice and parameters (if available) change-able, and evaluate against different models *with a bias towards cheaper models*
+
+To emphasise: the intent of this is to find a cheaper model that still is good enough or better compared to the baseline current choice.
