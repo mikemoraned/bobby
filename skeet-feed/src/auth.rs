@@ -114,16 +114,17 @@ pub async fn auth_callback(
 
     // Exchange code for access token
     let client = config.build_client(&redirect_url);
-    let http_client = reqwest::Client::new();
+    let oauth_http_client = oauth2::reqwest::Client::new();
     let token_result = client
         .exchange_code(AuthorizationCode::new(query.code))
-        .request_async(&http_client)
+        .request_async(&oauth_http_client)
         .await
         .map_err(|e| cot::Error::internal(format!("token exchange failed: {e}")))?;
 
     let access_token = token_result.access_token().secret();
 
     // Fetch GitHub username
+    let http_client = reqwest::Client::new();
     let user_response = http_client
         .get(format!("{}/user", config.github_api_base_url))
         .header("authorization", format!("Bearer {access_token}"))

@@ -493,6 +493,7 @@ Migration plan — run new and old in parallel for ~a day, then retire old:
 
 Phase 1 — add the Prom path alongside OTLP, with a `_prom_tmp` suffix so series don't collide:
 
+* [x] **Prerequisite: upgrade reqwest workspace dependency from 0.12 → 0.13** so we can use `prometheus-reqwest-remote-write` (which requires reqwest 0.13). Run the full test suite after to catch any breaking changes.
 * [x] provision Grafana Cloud Prometheus remote_write endpoint + API key (Connections → Prometheus → "Send Metrics"); store as 1Password items `bobby-grafanacloud-prom-endpoint` (URL in `password`) and `bobby-grafanacloud-prom-auth` (`instance_id:api_key`, basic-auth pre-formatted, in `password`)
 * [ ] add the two new `OnePasswordItem` entries to `infra/k8s/onepassword-items.yaml`
 * [ ] add `cloudflare-exporter/src/prom.rs` — wraps the `prometheus-remote-write` crate (or hand-rolled `prost` + `snap` fallback). Builds `WriteRequest`, snappy-compresses, POSTs with basic auth
