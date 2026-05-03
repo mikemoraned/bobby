@@ -7,10 +7,15 @@ edition = "2024"
 name = "sync"
 path = "src/bin/sync.rs"
 
+[[bin]]
+name = "sync_prom_tmp"
+path = "src/bin/sync_prom_tmp.rs"
+
 [dependencies]
 chrono = { workspace = true }
 clap = { workspace = true }
 opentelemetry = { workspace = true }
+prometheus-reqwest-remote-write = "0.5"
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

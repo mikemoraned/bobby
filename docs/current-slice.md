@@ -495,16 +495,16 @@ Phase 1 — add the Prom path alongside OTLP, with a `_prom_tmp` suffix so serie
 
 * [x] **Prerequisite: upgrade reqwest workspace dependency from 0.12 → 0.13** so we can use `prometheus-reqwest-remote-write` (which requires reqwest 0.13). Run the full test suite after to catch any breaking changes.
 * [x] provision Grafana Cloud Prometheus remote_write endpoint + API key (Connections → Prometheus → "Send Metrics"); store as 1Password items `bobby-grafanacloud-prom-endpoint` (URL in `password`) and `bobby-grafanacloud-prom-auth` (`instance_id:api_key`, basic-auth pre-formatted, in `password`)
-* [ ] add the two new `OnePasswordItem` entries to `infra/k8s/onepassword-items.yaml`
-* [ ] add `cloudflare-exporter/src/prom.rs` — wraps the `prometheus-remote-write` crate (or hand-rolled `prost` + `snap` fallback). Builds `WriteRequest`, snappy-compresses, POSTs with basic auth
-* [ ] add `cloudflare-exporter/src/bin/sync_prom_tmp.rs` — same flow as `sync.rs` but routes to `prom::push` instead of an OTel meter; reuses `cloudflare.rs` unchanged
-* [ ] emit metrics with a temporary `_prom_tmp` suffix:
+* [x] add the two new `OnePasswordItem` entries to `infra/k8s/onepassword-items.yaml`
+* [x] add `cloudflare-exporter/src/prom.rs` — wraps the `prometheus-reqwest-remote-write` crate. Builds `WriteRequest`, snappy-compresses, POSTs with basic auth
+* [x] add `cloudflare-exporter/src/bin/sync_prom_tmp.rs` — same flow as `sync.rs` but routes to `prom::push` instead of an OTel meter; reuses `cloudflare.rs` unchanged
+* [x] emit metrics with a temporary `_prom_tmp` suffix:
     * `cloudflare_r2_operations_total_prom_tmp` (counter)
     * `cloudflare_r2_storage_bytes_prom_tmp` (gauge)
     * `cloudflare_r2_storage_objects_prom_tmp` (gauge)
-* [ ] add `cloudflare-exporter-prom-tmp.env` referencing the new 1Password items
-* [ ] add `infra/k8s/cloudflare-exporter-prom-tmp-cronjob.yaml` — same image as the OTLP cron, runs `sync_prom_tmp` once a minute
-* [ ] add just targets: `cloudflare-sync-prom-tmp` (local), `cluster-deploy-cloudflare-exporter-prom-tmp`, `cluster-logs-cloudflare-exporter-prom-tmp`; chain `push-cloudflare-exporter` + the new deploy target into `cluster-deploy-all`
+* [x] add `cloudflare-exporter-prom-tmp.env` referencing the new 1Password items
+* [x] add `infra/k8s/cloudflare-exporter-prom-tmp-cronjob.yaml` — same image as the OTLP cron, runs `sync_prom_tmp` once a minute
+* [x] add just targets: `cloudflare-sync-prom-tmp` (local), `cluster-deploy-cloudflare-exporter-prom-tmp`, `cluster-logs-cloudflare-exporter-prom-tmp`; chain `push-cloudflare-exporter` + the new deploy target into `cluster-deploy-all`
 
 Phase 2 — verify alignment:
 

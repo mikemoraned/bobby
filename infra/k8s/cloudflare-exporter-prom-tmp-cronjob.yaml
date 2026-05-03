@@ -1,0 +1,55 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cloudflare-exporter-prom-tmp
+  labels:
+    app: cloudflare-exporter-prom-tmp
+spec:
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: cloudflare-exporter-prom-tmp
+        spec:
+          restartPolicy: Never
+          imagePullSecrets:
+            - name: ghcr-pull-secret
+          containers:
+            - name: cloudflare-exporter-prom-tmp
+              image: ghcr.io/mikemoraned/bobby/cloudflare-exporter:${IMAGE_TAG}
+              imagePullPolicy: IfNotPresent
+              command: ["sync_prom_tmp"]
+              resources:
+                requests:
+                  memory: "64Mi"
+                limits:
+                  memory: "128Mi"
+              env:
+                - name: BOBBY_CLOUDFLARE_API_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: bobby-cloudflare-analytics-token
+                      key: password
+                - name: BOBBY_CLOUDFLARE_ACCOUNT_TAG
+                  valueFrom:
+                    secretKeyRef:
+                      name: bobby-cloudflare-account-tag
+                      key: password
+                - name: BOBBY_PROM_ENDPOINT
+                  valueFrom:
+                    secretKeyRef:
+                      name: bobby-grafanacloud-prom-endpoint
+                      key: password
+                - name: BOBBY_PROM_AUTH
+                  valueFrom:
+                    secretKeyRef:
+                      name: bobby-grafanacloud-prom-auth
+                      key: password
+                - name: RUST_LOG
+                  value: "info"
