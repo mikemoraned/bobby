@@ -526,11 +526,16 @@ Phase 2 — verify alignment:
 
 Phase 3 — retire the OTLP path:
 
-* [ ] `kubectl delete cronjob cloudflare-exporter` to remove the OTLP cronjob from the cluster (deleting the manifest from the repo doesn't undeploy it)
+* [ ] `kubectl delete cronjob cloudflare-exporter` to remove the OTLP cronjob from the cluster
+* [ ] `kubectl delete cronjob cloudflare-exporter-prom-tmp` to remove the tmp cronjob from the cluster
 * [ ] delete `cloudflare-exporter/src/bin/sync.rs` and `cloudflare-exporter/src/otlp.rs`
-* [ ] delete `infra/k8s/cloudflare-exporter-cronjob.yaml`, `cloudflare-exporter.env`, and the `cluster-deploy-cloudflare-exporter` / `cluster-logs-cloudflare-exporter` just targets
-* [ ] rename `sync_prom_tmp` → `sync`; drop `_prom_tmp` suffix from metric names, manifest, env file, and just targets
-* [ ] `kubectl delete cronjob cloudflare-exporter-prom-tmp` — once the renamed manifest has been applied, the old tmp cronjob resource is orphaned in the cluster and needs to be removed by name (the rename creates a new `cloudflare-exporter` cronjob; `kubectl apply` won't touch the old one)
+* [ ] rename `sync_prom_tmp` → `sync` in `Cargo.toml` (`[[bin]]` name and path) and in the Dockerfile
+* [ ] drop `_prom_tmp` suffix from metric names in `prom.rs`
+* [ ] rename `infra/k8s/cloudflare-exporter-prom-tmp-cronjob.yaml` → `cloudflare-exporter-cronjob.yaml`; update the CronJob name and app label to `cloudflare-exporter`; update the command to `sync`; the `--from`/`--to` shell args stay as-is (10-minute lookback window)
+* [ ] rename `cloudflare-exporter-prom-tmp.env` → `cloudflare-exporter.env`
+* [ ] delete `infra/k8s/cloudflare-exporter-cronjob.yaml` (old OTLP version), `cloudflare-exporter.env` (old OTLP version)
+* [ ] update just targets: rename `cloudflare-sync-prom-tmp` / `cloudflare-sync-prom-tmp-window` → `cloudflare-sync` / `cloudflare-sync-window`; rename `cluster-deploy-cloudflare-exporter-prom-tmp` / `cluster-logs-cloudflare-exporter-prom-tmp` → `cluster-deploy-cloudflare-exporter` / `cluster-logs-cloudflare-exporter`; remove old OTLP targets
+* [ ] `kubectl apply` the renamed manifest to create the new `cloudflare-exporter` cronjob
 * [ ] update any Grafana panels/alerts to point at the renamed metrics
 
 Phase 4 — add REST-based storage metrics:
