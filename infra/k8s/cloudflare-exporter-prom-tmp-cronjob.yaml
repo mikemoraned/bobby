@@ -24,7 +24,11 @@ spec:
             - name: cloudflare-exporter-prom-tmp
               image: ghcr.io/mikemoraned/bobby/cloudflare-exporter:${IMAGE_TAG}
               imagePullPolicy: IfNotPresent
-              command: ["sync_prom_tmp"]
+              command: ["/bin/sh", "-c"]
+              args:
+                - sync_prom_tmp
+                    --from $(date -u -d '11 minutes ago' '+%Y-%m-%dT%H:%M:%SZ')
+                    --to   $(date -u -d '1 minute ago'  '+%Y-%m-%dT%H:%M:%SZ')
               resources:
                 requests:
                   memory: "64Mi"

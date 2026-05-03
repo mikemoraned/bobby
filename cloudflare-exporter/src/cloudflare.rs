@@ -1,5 +1,19 @@
 use chrono::{DateTime, Utc};
 use reqwest::Client;
+
+pub fn one_minute_windows(
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+) -> Vec<(DateTime<Utc>, DateTime<Utc>)> {
+    let mut windows = Vec::new();
+    let mut cursor = from;
+    while cursor < to {
+        let next = (cursor + chrono::Duration::minutes(1)).min(to);
+        windows.push((cursor, next));
+        cursor = next;
+    }
+    windows
+}
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -232,6 +246,42 @@ pub async fn fetch_r2_metrics(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn ts(s: &str) -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(s).unwrap().into()
+    }
+
+    #[test]
+    fn single_minute_gives_one_window() {
+        let windows = one_minute_windows(ts("2026-01-01T00:00:00Z"), ts("2026-01-01T00:01:00Z"));
+        assert_eq!(windows.len(), 1);
+        assert_eq!(windows[0], (ts("2026-01-01T00:00:00Z"), ts("2026-01-01T00:01:00Z")));
+    }
+
+    #[test]
+    fn two_minutes_gives_two_windows() {
+        let windows = one_minute_windows(ts("2026-01-01T00:00:00Z"), ts("2026-01-01T00:02:00Z"));
+        assert_eq!(windows.len(), 2);
+        assert_eq!(windows[0], (ts("2026-01-01T00:00:00Z"), ts("2026-01-01T00:01:00Z")));
+        assert_eq!(windows[1], (ts("2026-01-01T00:01:00Z"), ts("2026-01-01T00:02:00Z")));
+    }
+
+    #[test]
+    fn each_window_has_distinct_midpoint() {
+        let windows = one_minute_windows(ts("2026-01-01T00:00:00Z"), ts("2026-01-01T00:03:00Z"));
+        let midpoints: Vec<i64> = windows
+            .iter()
+            .map(|(f, t)| (f.timestamp_millis() + t.timestamp_millis()) / 2)
+            .collect();
+        assert_eq!(
+            midpoints,
+            vec![
+                ts("2026-01-01T00:00:30Z").timestamp_millis(),
+                ts("2026-01-01T00:01:30Z").timestamp_millis(),
+                ts("2026-01-01T00:02:30Z").timestamp_millis(),
+            ]
+        );
+    }
 
     #[tokio::test]
     #[ignore = "requires live Cloudflare API credentials via BOBBY_CLOUDFLARE_API_TOKEN and BOBBY_CLOUDFLARE_ACCOUNT_TAG"]

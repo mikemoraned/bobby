@@ -46,30 +46,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let now = Utc::now();
     let from = args.from.unwrap_or_else(|| now - chrono::Duration::minutes(6));
     let to = args.to.unwrap_or_else(|| now - chrono::Duration::minutes(5));
-    let timestamp_ms = (from.timestamp_millis() + to.timestamp_millis()) / 2;
 
-    info!(%from, %to, "fetching Cloudflare R2 metrics");
+    info!(%from, %to, "syncing Cloudflare R2 metrics");
 
     let client = reqwest::Client::new();
-    let metrics =
-        cloudflare::fetch_r2_metrics(&client, &args.api_token, &args.account_tag, from, to)
-            .await?;
+    for (window_from, window_to) in cloudflare::one_minute_windows(from, to) {
+        let timestamp_ms = (window_from.timestamp_millis() + window_to.timestamp_millis()) / 2;
 
-    info!(
-        operations = metrics.operations.len(),
-        storage_entries = metrics.storage.len(),
-        "fetched Cloudflare R2 metrics"
-    );
+        let metrics = cloudflare::fetch_r2_metrics(
+            &client,
+            &args.api_token,
+            &args.account_tag,
+            window_from,
+            window_to,
+        )
+        .await?;
 
-    prom::push(
-        &client,
-        &args.prom_endpoint,
-        &args.prom_auth,
-        &metrics,
-        timestamp_ms,
-    )
-    .await?;
+        info!(
+            %window_from,
+            %window_to,
+            operations = metrics.operations.len(),
+            storage_entries = metrics.storage.len(),
+            "fetched and pushing"
+        );
 
-    info!("metrics pushed via Prometheus remote_write");
+        prom::push(
+            &client,
+            &args.prom_endpoint,
+            &args.prom_auth,
+            &metrics,
+            timestamp_ms,
+        )
+        .await?;
+    }
+
+    info!("all windows pushed via Prometheus remote_write");
     Ok(())
 }
+

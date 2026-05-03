@@ -506,6 +506,17 @@ Phase 1 — add the Prom path alongside OTLP, with a `_prom_tmp` suffix so serie
 * [x] add `infra/k8s/cloudflare-exporter-prom-tmp-cronjob.yaml` — same image as the OTLP cron, runs `sync_prom_tmp` once a minute
 * [x] add just targets: `cloudflare-sync-prom-tmp` (local), `cluster-deploy-cloudflare-exporter-prom-tmp`, `cluster-logs-cloudflare-exporter-prom-tmp`; chain `push-cloudflare-exporter` + the new deploy target into `cluster-deploy-all`
 
+* [ ] build and deploy the prom-tmp cron to the cluster:
+    Apply the new 1Password items so the secrets are available:
+    ```sh
+    kubectl apply -f infra/k8s/onepassword-items.yaml
+    ```
+    Then:
+    ```sh
+    just push-cloudflare-exporter
+    just cluster-deploy-cloudflare-exporter-prom-tmp
+    ```
+
 **Storage metrics finding (3rd May):** `r2StorageAdaptiveGroups` has daily granularity — a 1-minute window always returns zero entries. The OTLP `sync` path had the same limitation (it emitted zero storage metrics silently). The GraphQL API only records storage snapshots once per day. The Cloudflare REST API (`GET /accounts/{account_id}/r2/buckets/{bucket_name}/usage`) returns a current point-in-time snapshot with no time-window constraint and is the right path for storage gauges. Tracked in Phase 4 below.
 
 Phase 2 — verify alignment:
@@ -682,9 +693,6 @@ Three fixes, ranked. They compose — none substitutes for another.
     * [x] Build/infra: `Dockerfile.compact` → `Dockerfile.optimise`; `infra/k8s/compact-cronjob.yaml` → `optimise-cronjob.yaml` (rename CronJob, container, image path, `OTEL_SERVICE_NAME`); update `just/container.just`, `just/cluster.just`, `just/store.just`.
     * [x] Cutover: `kubectl apply` is name-keyed, so deploying the new cron does *not* remove the old `compact` CronJob — it would keep firing every 10 min on a stale image. Order: deploy `optimise` cron → verify clean tick in Grafana → `kubectl delete cronjob compact`. Add a `cluster-undeploy-compact` recipe so the deletion is captured rather than ad-hoc.
 
-* [ ] Re-run `just count-versions` on 3rd May (24h+) to confirm manifest counts stabilise around 20–30 per cron tick rather than drifting up.
-* [ ] **(3) Drop `read_consistency_interval(Duration::ZERO)`** — Strong mode is the wrong default for a system that does batch writes. Move to a small TTL (e.g. `Duration::from_secs(5)`) so reads can serve from lance's in-memory dataset cache between manifest resolves. Implications for `cached_scores` (which uses `version()` as the invalidation signal): with eventual consistency, `version()` may report a slightly-stale value. Either:
-    * accept up-to-5s staleness on the score cache (probably fine — the feed already polls on a coarser cadence), or
-    * replace `version()`-based invalidation with a time-based TTL on the cache itself, decoupling it from manifest resolution entirely.
-    This one is the most behaviour-changing and should land *after* (1) — once batches are single commits, the version-bump-per-batch frequency drops by ~Nx and Strong mode hurts a lot less, so the urgency is lower. Still worth doing for read-cost reduction outside of spikes.
+* [x] Re-run `just count-versions` on 3rd May (24h+) to confirm manifest counts stabilise around 20–30 per cron tick rather than drifting up. **Result (3rd May, 12:56 UTC):** all 5 tables at 1 LIST page, manifests 7–29 — stable and within expected range. Pruning confirmed working across all tables.
+* [-] **(3) Drop `read_consistency_interval(Duration::ZERO)`** — deferred indefinitely. With manifests pruned to 1 LIST page, the per-resolve cost of Strong mode is now negligible. The behaviour change (staleness implications for `cached_scores`) isn't worth taking on until/unless costs climb again.
 
