@@ -66,7 +66,7 @@ async fn score_examples(
         };
 
         match refine_image(agent, &image).await {
-            Ok(score) => {
+            Ok((score, _, _)) => {
                 let score_f32: f32 = score.into();
                 let correct = is_correct(example.exemplar, score_f32);
                 info!(

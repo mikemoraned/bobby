@@ -68,5 +68,7 @@ spec:
               value: "skeet-live-refine"
             - name: OTEL_RESOURCE_ATTRIBUTES
               value: "deployment.environment=hetzner,service.version=${IMAGE_TAG}"
+            - name: OTEL_SEMCONV_STABILITY_OPT_IN
+              value: "gen_ai_latest_experimental"
             - name: RUST_LOG
               value: "info"

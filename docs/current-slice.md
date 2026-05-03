@@ -578,12 +578,12 @@ Phase 1 — minimum leading metrics from live-refine (OpenAI-only, semconv-named
 
 Live tokens / latency / errors per LLM call, useful operationally even before any cross-validation against OpenAI's ground truth. Follows the OTel GenAI semantic conventions exactly — which means provider-neutral metric names from day one, even though we only have one provider today (it costs nothing extra).
 
-* [ ] in `skeet-refine/src/refining.rs`, switch from `agent.prompt(msg)` to `agent.completion(...)` so the typed `CompletionResponse<_>` carrying `.usage` is returned. Change `refine_image` to return `Result<(Score, rig::completion::Usage, Duration), RefineError>`.
-* [ ] add `LlmMetrics` (new `skeet-refine/src/llm_metrics.rs`) emitting two histograms following the OTel GenAI semconv:
+* [x] in `skeet-refine/src/refining.rs`, switch from `agent.prompt(msg)` to `agent.completion(...)` so the typed `CompletionResponse<_>` carrying `.usage` is returned. Change `refine_image` to return `Result<(Score, rig::completion::Usage, Duration), RefineError>`.
+* [x] add `LlmMetrics` (new `skeet-refine/src/llm_metrics.rs`) emitting two histograms following the OTel GenAI semconv:
     * `gen_ai.client.token.usage` — bucket boundaries `[1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576, 4194304, 16777216, 67108864]`; attrs `gen_ai.token.type` ∈ {`input`, `output`}, `gen_ai.provider.name="openai"`, `gen_ai.request.model`, `gen_ai.operation.name="chat"`.
     * `gen_ai.client.operation.duration` — boundaries `[0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28, 2.56, 5.12, 10.24, 20.48, 40.96, 81.92]`, same attrs minus `token.type`, plus `error.type` on failure paths.
-* [ ] set `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental` in the live-refine deployment manifest. Document in a comment in `llm_metrics.rs` that the GenAI semconv is currently in Development status and names may shift.
-* [ ] in `bin/live_refine.rs::dispatch`, observe both histograms per-request inside the `score_with` closure (success and error paths) — *not* end-of-tick. The existing tick-aggregated `LiveRefineMetrics` counters stay as-is; they answer a different question (queue movement vs per-call performance).
+* [x] set `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental` in the live-refine deployment manifest. Document in a comment in `llm_metrics.rs` that the GenAI semconv is currently in Development status and names may shift.
+* [x] in `bin/live_refine.rs::dispatch`, observe both histograms per-request inside the `score_with` closure (success and error paths) — *not* end-of-tick. The existing tick-aggregated `LiveRefineMetrics` counters stay as-is; they answer a different question (queue movement vs per-call performance).
 * [ ] one Grafana dashboard, four panels: tokens/min by `gen_ai_token_type` (`sum(rate(gen_ai_client_token_usage_sum[5m])) by (gen_ai_token_type)`), p50/p95/p99 latency, errors/min by `error_type`, mean tokens-per-request split input/output. Verified rendering with non-zero data = Phase 1 done.
 
 Phase 2 — minimum real cost in Grafana (USD, daily, OpenAI-coupled):

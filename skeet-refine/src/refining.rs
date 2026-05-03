@@ -1,12 +1,13 @@
 use std::io::Cursor;
+use std::time::{Duration, Instant};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use image::DynamicImage;
 use rig::agent::{Agent, AgentBuilder};
 use rig::client::CompletionClient;
-use rig::completion::message::{ImageDetail, ImageMediaType, Message, UserContent};
-use rig::completion::request::Prompt;
+use rig::completion::message::{AssistantContent, ImageDetail, ImageMediaType, Message, UserContent};
+use rig::completion::{Completion, Usage};
 use rig::one_or_many::OneOrMany;
 use rig::providers::openai;
 use shared::Score;
@@ -80,16 +81,34 @@ pub type RefineAgent = Agent<openai::completion::CompletionModel>;
 pub async fn refine_image(
     agent: &RefineAgent,
     image: &DynamicImage,
-) -> Result<Score, RefineError> {
+) -> Result<(Score, Usage, Duration), RefineError> {
     let msg = build_image_message(image)?;
 
+    let start = Instant::now();
     let response = agent
-        .prompt(msg)
+        .completion(msg, vec![])
+        .await
+        .map_err(|e| RefineError::Completion(e.to_string()))?
+        .send()
         .await
         .map_err(|e| RefineError::Completion(e.to_string()))?;
+    let duration = start.elapsed();
 
-    info!(response = %response, "LLM response");
-    parse_score(&response)
+    let text = response
+        .choice
+        .iter()
+        .find_map(|c| {
+            if let AssistantContent::Text(t) = c {
+                Some(t.text.clone())
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| RefineError::Completion("no text content in response".to_string()))?;
+
+    info!(response = %text, "LLM response");
+    let score = parse_score(&text)?;
+    Ok((score, response.usage, duration))
 }
 
 pub fn build_agent(

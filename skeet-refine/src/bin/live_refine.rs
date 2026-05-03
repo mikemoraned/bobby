@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 use clap::Parser;
 use shared::ModelVersion;
 use skeet_refine::batch::Batch;
+use skeet_refine::llm_metrics::LlmMetrics;
 use skeet_refine::metrics::LiveRefineMetrics;
 use skeet_refine::model::load_model;
 use skeet_refine::polling::PollingBatchSource;
@@ -40,15 +42,32 @@ struct Args {
 /// Static configuration for scoring images — shared across all ticks.
 struct ScoringContext<'a> {
     agent: &'a RefineAgent,
+    model_name: &'a str,
     model_version: &'a ModelVersion,
     concurrency: usize,
 }
 
-async fn dispatch(batch: &mut Batch, ctx: &ScoringContext<'_>, acc: &mut TickAccumulator) {
+async fn dispatch(
+    batch: &mut Batch,
+    ctx: &ScoringContext<'_>,
+    acc: &mut TickAccumulator,
+    llm_metrics: &LlmMetrics,
+) {
     let agent = ctx.agent;
+    let model_name = ctx.model_name;
     let outcomes = batch
         .score_with(ctx.concurrency, move |img| async move {
-            refine_image(agent, &img).await
+            let start = Instant::now();
+            match refine_image(agent, &img).await {
+                Ok((score, usage, duration)) => {
+                    llm_metrics.record_success(&usage, duration, model_name);
+                    Ok(score)
+                }
+                Err(e) => {
+                    llm_metrics.record_error(start.elapsed(), e.as_label(), model_name);
+                    Err(e)
+                }
+            }
         })
         .await;
     acc.record_outcomes(outcomes, ctx.model_version);
@@ -73,6 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let ctx = ScoringContext {
         agent: &agent,
+        model_name: model.model_name.as_str(),
         model_version: &model_version,
         concurrency: args.concurrency,
     };
@@ -81,6 +101,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut source = PollingBatchSource::new(store.clone(), model_version.clone());
 
     let mut metrics = LiveRefineMetrics::new(&opentelemetry::global::meter("skeet_live_refine"));
+    let llm_metrics = LlmMetrics::new(&opentelemetry::global::meter("gen_ai"));
     let store_metrics = StoreMetrics::new(opentelemetry::global::meter("lance"));
     let mut totals = RunningTotals::new();
 
@@ -94,7 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let unscored_count = candidates.len() as u64;
         let mut acc = TickAccumulator::new();
-        dispatch(&mut candidates, &ctx, &mut acc).await;
+        dispatch(&mut candidates, &ctx, &mut acc, &llm_metrics).await;
 
         totals.absorb_tick(unscored_count, &acc);
 

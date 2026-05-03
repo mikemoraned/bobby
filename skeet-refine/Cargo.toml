@@ -12,6 +12,7 @@ clap = { workspace = true }
 futures = "0.3"
 image = { workspace = true }
 opentelemetry = { workspace = true }
+opentelemetry-semantic-conventions = { version = "0.31.0", features = ["semconv_experimental"] }
 rig-core = "0.33"
 serde = { workspace = true }
 serde_json = { workspace = true }
