@@ -555,6 +555,17 @@ The GraphQL `r2StorageAdaptiveGroups` dataset has daily granularity and is unsui
 * [ ] add just targets: `cloudflare-sync-storage` (local), `cluster-deploy-cloudflare-storage-exporter`, `cluster-logs-cloudflare-storage-exporter`; add to `cluster-deploy-all`
 * [ ] verify in Grafana that `cloudflare_r2_storage_bytes` and `cloudflare_r2_storage_objects` appear with non-zero values and update each minute
 
+##### Get visibility of LLM-related metrics in my Grafana metrics
+
+Intent:
+
+As of 3rd May observability of LLM-related metrics, particularly related to what affects costs, is rudimentary or missing. What I'd like to have (in Grafana) is:
+* a lagging measure, but which is an actual measure of ground truth i.e. metrics sourced from OpenAI themselves that shows my current usage as measured on their side + a billing-focussed view. Ideally this would measure actual spend. This could perhaps be modelled after the Cloudflare R2 exporter. It's ok if these metrics aren't very granular or lagging as long as they measure actual reality of what is billed for.
+* a leading measure of things like model used, tokens sent, etc. this should be live an up-to-date down the the minute, and should be sent from anything which uses an LLM (right now, this is just `live-refine`). These metrics should be operationally-useful for non-cost usages (e.g. seeing failures or how latency etc varies over time or with token amount), but also should be able to be used to derive a cost prediction.
+
+Tasks:
+...
+
 #### Idea: Remove inline compaction in favour of the cron job
 
 The `compact` cron job already runs every 10 minutes against all tables. The `compact_every_n_writes` mechanism duplicates this inline, blocking the save path and generating large GET/GET_RANGE bursts against R2 during each run.
