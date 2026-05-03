@@ -561,7 +561,12 @@ Intent:
 
 As of 3rd May observability of LLM-related metrics, particularly related to what affects costs, is rudimentary or missing. What I'd like to have (in Grafana) is:
 * a lagging measure, but which is an actual measure of ground truth i.e. metrics sourced from OpenAI themselves that shows my current usage as measured on their side + a billing-focussed view. Ideally this would measure actual spend. This could perhaps be modelled after the Cloudflare R2 exporter. It's ok if these metrics aren't very granular or lagging as long as they measure actual reality of what is billed for.
-* a leading measure of things like model used, tokens sent, etc. this should be live an up-to-date down the the minute, and should be sent from anything which uses an LLM (right now, this is just `live-refine`). These metrics should be operationally-useful for non-cost usages (e.g. seeing failures or how latency etc varies over time or with token amount), but also should be able to be used to derive a cost prediction.
+* a leading measure of things like model used, tokens sent, etc. this should be live and up-to-date down to the minute, and should be sent from anything which uses an LLM (right now, this is just `live-refine`). These metrics should be operationally-useful for non-cost usages (e.g. seeing failures or how latency etc varies over time or with token amount), but also should be able to be used to derive a cost prediction.
+
+Note that I am using OpenAI right now, and so measures of real costs need to be coupled to them. However, I may move to others later, combine providers or even host my own models. So, this gives a bias of:
+* use standards or methods which are provider-neutral where possible, particularly for operational leading metrics
+* make it easy to plug in other providers later, particularly for lagging metrics tied to real costs
+    * so, for example, since my ultimate costs are in pounds, if I get billed in Euros (e.g. Mistral) and dollars (e.g. OpenAI) then any cost-related metrics should record a normalised pounds value as well as the billed currency (this may require lookups of third-part services for currency conversion data)
 
 Tasks:
 ...
