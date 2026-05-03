@@ -530,6 +530,8 @@ Phase 2 — verify alignment:
 * **prom_tmp captures 11 action types vs OTLP's 3** — `HeadObject`, `DeleteObjects`, `HeadBucket`, `ListMultipartUploads`, `CompleteMultipartUpload`, `CreateMultipartUpload`, `UploadPart` are absent from OTLP.
 * **Root cause:** `sync` is a short-lived pod — the OTel `Counter` resets to zero on every start and emits exactly one delta per run. The OTLP exporter uses delta temporality with a "now" timestamp, so Mimir sees one data point per minute stamped at pod-exit time rather than at the time the operations occurred. The missing action types are likely a side-effect of the same: low-frequency types that happened to be zero in the specific 1-minute window each pod queried don't appear in the OTel output. The prom_tmp path queries the same Cloudflare data but timestamps each sample to the window midpoint — it is the ground truth. The magnitude difference confirms the OTLP path was undercounting.
 
+**Observation (3rd May):** the ~5-min ingestion lag assumption in the design notes is not documented by Cloudflare — there is no official SLA or stated lag for the R2 GraphQL Analytics API. In practice, data is visible current to the last minute. The 11-minute lookback window in the cronjob (`[now−11min, now−1min]`) was sized conservatively around the assumed lag and is safe to leave as-is, but the lag assumption itself should not be relied upon as a Cloudflare guarantee.
+
 Phase 3 — retire the OTLP path:
 
 * [ ] `kubectl delete cronjob cloudflare-exporter` to remove the OTLP cronjob from the cluster
