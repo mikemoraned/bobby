@@ -295,6 +295,20 @@ The kind composition **inverted**. Worst pre-deploy spike (01:31, 47K ops/min): 
 
 This confirms the 30th-Apr diagnosis ("~99% of every spike is `_versions/{get,get_range}`") was load-bearing — pruning the manifests addressed the named cost source directly.
 
+#### 3rd May
+
+##### `optimise` R2 ops appearing to "start" at 18:12 UTC — likely a metrics-emission artefact
+
+Observed in Grafana: `r2_operations_total{cli="optimise"}` went from no visible activity to consistent ~800 ops/min peaks during each 4-min cron run, starting 18:12 UTC. No deploy correlates — `5282df0` had been the running binary since the 2nd-May cutover, and continued running until a redeploy to `1f88baf` at 19:51 UTC; the pattern straddles that cutover unchanged.
+
+Cross-checked against `lance_table_fragments` over the same window (`metrics_dumps/Lance Table Fragments by table & service_name-…2026-05-04 00_54_33.csv`): fragment counts are flat from 11:53 UTC onwards (`images_v6` 69–72, `images_score_v2` 1–3, others at 1), and each cycle's gauge-emission span is a steady 4–5 min from 11:53 onwards too. So the pod has been running the same length of time and doing the same work the whole window — no data-state inflection at 18:12. `just count-versions` also confirmed manifests are pruned across all 5 tables (≤37 each, 1 LIST page) — no pagination-tax growth.
+
+Most likely explanation: the same delta-temporality / short-lived-pod artefact already documented for `cloudflare-exporter` (above). `5282df0` predates `f006347`'s 60s → 5s export-interval fix, so under it the OTLP exporter only fires every 60s with `now`-stamped deltas. Whether `rate()` resolves into visible bars depends on where the periodic ticks land relative to Grafana's 1-min query buckets — flaky enough to look like "ops suddenly started at 18:12" without the underlying workload changing. The `1f88baf` cutover at 19:51 UTC includes the 5s exporter, and post-cutover data is denser/cleaner in the same CSV — consistent with the artefact theory.
+
+Comparing further back is harder than it could be because `optimise` was named `compact` before the 2nd-May rename, so the `cli` label changes across the boundary. Doable, just more hassle than was worth it for an investigation that already pointed at "metric visibility, not real workload."
+
+Leaving as: probable artefact, not a real cost regression. The ~800 ops/min × 4 min/cycle × 6 cycles/h ≈ 19K ops/h on `optimise` is the steady-state cost of the binary as written (`storage_health()` called twice + per-table `Table::stats()` inside `compact_and_reindex`); if it ever needs cutting, the lever is removing the post-optimisation `storage_health()` recomputation in `optimise.rs`, not investigating spikes.
+
 
 ### Tasks
 
