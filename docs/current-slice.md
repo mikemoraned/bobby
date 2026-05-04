@@ -535,8 +535,14 @@ Phase 1 — add the Prom path alongside OTLP, with a `_prom_tmp` suffix so serie
 
 Phase 2 — verify alignment:
 
-* [ ] both crons run in parallel for ~a day
-* [ ] in Grafana, overlay `cloudflare_r2_operations_total_prom_tmp` against the in-app `r2_operations_total` on a shared time axis (per `bucket`); confirm they line up at the 1-minute resolution with no 5-min lag. This is the comparison the "verify in Grafana" tasks above were aiming at — the `_prom_tmp` metric is what actually makes minute-precise overlay possible
+* [x] both crons run in parallel for ~a day
+* [x] in Grafana, overlay `cloudflare_r2_operations_total_prom_tmp` against the in-app `r2_operations_total` on a shared time axis (per `bucket`); confirm they line up at the 1-minute resolution with no 5-min lag. This is the comparison the "verify in Grafana" tasks above were aiming at — the `_prom_tmp` metric is what actually makes minute-precise overlay possible
+
+**Observations (4th May, `metrics_dumps/R2 Operations Total per Minute — Cloudflare vs In-app-data-as-joinbyfield-2026-05-04 23_51_23.csv`, ~27h window):**
+
+* **Time alignment confirmed** — spikes in CF and in-app occur at the same minute with no observable lag, validating the midpoint-timestamp approach and disproving the assumed 5-min lag.
+* **Magnitude: CF is ~1.2–1.5× higher than in-app on busy minutes** — expected, since Cloudflare counts all R2 operations on the account while in-app only tracks what bobby instruments.
+* **Coverage gaps in CF data** — 70 contiguous gaps (5–78 min) totalling ~959 of 1623 minutes. Root cause: the earliest failures (13:16–13:18 UTC 3rd May) were `StartError` due to `sync_prom_tmp` missing from the Dockerfile at that point (`exec: "sync_prom_tmp": executable file not found in $PATH`). The remaining gaps in the middle of the window cannot be confirmed from k8s — job history is only retained for the last 3 successes/failures and there is no log shipping. All runs from 22:59 UTC 4th May onward are `Completed`. The gaps do not affect the alignment conclusion — they reflect cron availability, not a systematic timing offset.
 
 **Observations (3rd May):** compared `sync` (OTLP) vs `sync_prom_tmp` over the same ~3h window (`metrics_dumps/R2 operations per minute by action_type*.csv`):
 
@@ -559,6 +565,8 @@ Phase 3 — retire the OTLP path:
 * [ ] update just targets: rename `cloudflare-sync-prom-tmp` / `cloudflare-sync-prom-tmp-window` → `cloudflare-sync` / `cloudflare-sync-window`; rename `cluster-deploy-cloudflare-exporter-prom-tmp` / `cluster-logs-cloudflare-exporter-prom-tmp` → `cluster-deploy-cloudflare-exporter` / `cluster-logs-cloudflare-exporter`; remove old OTLP targets
 * [ ] `kubectl apply` the renamed manifest to create the new `cloudflare-exporter` cronjob
 * [ ] update any Grafana panels/alerts to point at the renamed metrics
+* [ ] add self-monitoring metrics to `sync`: emit a `cloudflare_exporter_run_total{status="success|failure"}` counter and a `cloudflare_exporter_datapoints_fetched` gauge via **OTLP** (not Prometheus remote_write) at the end of each run. Using a separate transport means a Prometheus remote_write failure (which could itself be causing gaps in R2 metrics) does not also silence the watchdog — correlated failure is the failure mode we most need to detect. Motivation: gaps in `cloudflare_r2_operations_total` during Phase 2 verification could not be explained because k8s only retains 3 jobs of history and we have no log shipping.
+* [ ] investigate exporting k8s job/pod status metrics to Grafana via `kube-state-metrics` + Grafana Alloy (standard `kube_job_status_succeeded` / `kube_job_status_failed` metrics). This would give infra-level cronjob health for all crons, not just cloudflare-exporter, and would have made the May 3 StartError failures immediately visible in Grafana without needing `kubectl`.
 
 Phase 4 — add REST-based storage metrics:
 
