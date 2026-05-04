@@ -66,7 +66,7 @@ fn build_write_request(metrics: &R2Metrics, timestamp_ms: i64) -> WriteRequest {
             labels: vec![
                 Label {
                     name: "__name__".into(),
-                    value: "cloudflare_r2_operations_total_prom_tmp".into(),
+                    value: "cloudflare_r2_operations_total".into(),
                 },
                 Label {
                     name: "action_type".into(),
@@ -89,7 +89,7 @@ fn build_write_request(metrics: &R2Metrics, timestamp_ms: i64) -> WriteRequest {
             labels: vec![
                 Label {
                     name: "__name__".into(),
-                    value: "cloudflare_r2_storage_bytes_prom_tmp".into(),
+                    value: "cloudflare_r2_storage_bytes".into(),
                 },
                 Label {
                     name: "bucket".into(),
@@ -105,7 +105,7 @@ fn build_write_request(metrics: &R2Metrics, timestamp_ms: i64) -> WriteRequest {
             labels: vec![
                 Label {
                     name: "__name__".into(),
-                    value: "cloudflare_r2_storage_objects_prom_tmp".into(),
+                    value: "cloudflare_r2_storage_objects".into(),
                 },
                 Label {
                     name: "bucket".into(),

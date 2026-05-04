@@ -75,9 +75,6 @@ cluster-undeploy-compact:
 cluster-deploy-cloudflare-exporter:
     IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/cloudflare-exporter-cronjob.yaml | kubectl apply -f -
 
-cluster-deploy-cloudflare-exporter-prom-tmp:
-    IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/cloudflare-exporter-prom-tmp-cronjob.yaml | kubectl apply -f -
-
 # Re-render and re-apply with an explicit image tag, so both `image:` and
 # `service.version` in OTEL_RESOURCE_ATTRIBUTES are kept in sync. Use this to
 # roll forward or back to a specific previously-pushed image.
@@ -95,10 +92,7 @@ cluster-logs-optimise:
 cluster-logs-cloudflare-exporter:
     kubectl logs -l app=cloudflare-exporter --tail=100 -f | lnav
 
-cluster-logs-cloudflare-exporter-prom-tmp:
-    kubectl logs -l app=cloudflare-exporter-prom-tmp --tail=100 -f | lnav
-
-cluster-deploy-all: push-pruner push-live-refine push-optimise push-cloudflare-exporter cluster-deploy-pruner cluster-deploy-live-refine cluster-deploy-optimise cluster-deploy-cloudflare-exporter cluster-deploy-cloudflare-exporter-prom-tmp
+cluster-deploy-all: push-pruner push-live-refine push-optimise push-cloudflare-exporter cluster-deploy-pruner cluster-deploy-live-refine cluster-deploy-optimise cluster-deploy-cloudflare-exporter
 
 cluster-restart-all: cluster-restart-pruner cluster-restart-live-refine
 

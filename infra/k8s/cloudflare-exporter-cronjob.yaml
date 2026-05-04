@@ -24,7 +24,11 @@ spec:
             - name: cloudflare-exporter
               image: ghcr.io/mikemoraned/bobby/cloudflare-exporter:${IMAGE_TAG}
               imagePullPolicy: IfNotPresent
-              command: ["sync"]
+              command: ["/bin/sh", "-c"]
+              args:
+                - sync
+                    --from $(date -u -d '11 minutes ago' '+%Y-%m-%dT%H:%M:%SZ')
+                    --to   $(date -u -d '1 minute ago'  '+%Y-%m-%dT%H:%M:%SZ')
               resources:
                 requests:
                   memory: "64Mi"
@@ -41,21 +45,15 @@ spec:
                     secretKeyRef:
                       name: bobby-cloudflare-account-tag
                       key: password
-                - name: OTEL_EXPORTER_OTLP_PROTOCOL
-                  value: "http/protobuf"
-                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                - name: BOBBY_PROM_ENDPOINT
                   valueFrom:
                     secretKeyRef:
-                      name: bobby-grafana-oltp-endpoint
+                      name: bobby-grafanacloud-prom-endpoint
                       key: password
-                - name: OTEL_EXPORTER_OTLP_HEADERS
+                - name: BOBBY_PROM_AUTH
                   valueFrom:
                     secretKeyRef:
-                      name: bobby-grafana-oltp-headers
+                      name: bobby-grafanacloud-prom-auth
                       key: password
-                - name: OTEL_SERVICE_NAME
-                  value: "cloudflare-exporter"
-                - name: OTEL_RESOURCE_ATTRIBUTES
-                  value: "deployment.environment=hetzner,service.version=${IMAGE_TAG}"
                 - name: RUST_LOG
                   value: "info"

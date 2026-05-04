@@ -2330,7 +2330,6 @@ dependencies = [
  "build-support",
  "chrono",
  "clap",
- "opentelemetry",
  "prometheus-reqwest-remote-write",
  "reqwest 0.13.2",
  "serde",
