@@ -554,17 +554,17 @@ Phase 2 — verify alignment:
 
 Phase 3 — retire the OTLP path:
 
-* [ ] `kubectl delete cronjob cloudflare-exporter` to remove the OTLP cronjob from the cluster
-* [ ] `kubectl delete cronjob cloudflare-exporter-prom-tmp` to remove the tmp cronjob from the cluster
-* [ ] delete `cloudflare-exporter/src/bin/sync.rs` and `cloudflare-exporter/src/otlp.rs`
-* [ ] rename `sync_prom_tmp` → `sync` in `Cargo.toml` (`[[bin]]` name and path) and in the Dockerfile
-* [ ] drop `_prom_tmp` suffix from metric names in `prom.rs`
-* [ ] rename `infra/k8s/cloudflare-exporter-prom-tmp-cronjob.yaml` → `cloudflare-exporter-cronjob.yaml`; update the CronJob name and app label to `cloudflare-exporter`; update the command to `sync`; the `--from`/`--to` shell args stay as-is (10-minute lookback window)
-* [ ] rename `cloudflare-exporter-prom-tmp.env` → `cloudflare-exporter.env`
-* [ ] delete `infra/k8s/cloudflare-exporter-cronjob.yaml` (old OTLP version), `cloudflare-exporter.env` (old OTLP version)
-* [ ] update just targets: rename `cloudflare-sync-prom-tmp` / `cloudflare-sync-prom-tmp-window` → `cloudflare-sync` / `cloudflare-sync-window`; rename `cluster-deploy-cloudflare-exporter-prom-tmp` / `cluster-logs-cloudflare-exporter-prom-tmp` → `cluster-deploy-cloudflare-exporter` / `cluster-logs-cloudflare-exporter`; remove old OTLP targets
-* [ ] `kubectl apply` the renamed manifest to create the new `cloudflare-exporter` cronjob
-* [ ] update any Grafana panels/alerts to point at the renamed metrics
+* [x] `kubectl delete cronjob cloudflare-exporter` to remove the OTLP cronjob from the cluster
+* [x] `kubectl delete cronjob cloudflare-exporter-prom-tmp` to remove the tmp cronjob from the cluster
+* [x] delete `cloudflare-exporter/src/bin/sync.rs` and `cloudflare-exporter/src/otlp.rs`
+* [x] rename `sync_prom_tmp` → `sync` in `Cargo.toml` (`[[bin]]` name and path) and in the Dockerfile
+* [x] drop `_prom_tmp` suffix from metric names in `prom.rs`
+* [x] rename `infra/k8s/cloudflare-exporter-prom-tmp-cronjob.yaml` → `cloudflare-exporter-cronjob.yaml`; update the CronJob name and app label to `cloudflare-exporter`; update the command to `sync`; the `--from`/`--to` shell args stay as-is (10-minute lookback window)
+* [x] rename `cloudflare-exporter-prom-tmp.env` → `cloudflare-exporter.env`
+* [x] delete `infra/k8s/cloudflare-exporter-cronjob.yaml` (old OTLP version), `cloudflare-exporter.env` (old OTLP version)
+* [x] update just targets: rename `cloudflare-sync-prom-tmp` / `cloudflare-sync-prom-tmp-window` → `cloudflare-sync` / `cloudflare-sync-window`; rename `cluster-deploy-cloudflare-exporter-prom-tmp` / `cluster-logs-cloudflare-exporter-prom-tmp` → `cluster-deploy-cloudflare-exporter` / `cluster-logs-cloudflare-exporter`; remove old OTLP targets
+* [x] `kubectl apply` the renamed manifest to create the new `cloudflare-exporter` cronjob
+* [x] update any Grafana panels/alerts to point at the renamed metrics
 * [ ] add self-monitoring metrics to `sync`: emit a `cloudflare_exporter_run_total{status="success|failure"}` counter and a `cloudflare_exporter_datapoints_fetched` gauge via **OTLP** (not Prometheus remote_write) at the end of each run. Using a separate transport means a Prometheus remote_write failure (which could itself be causing gaps in R2 metrics) does not also silence the watchdog — correlated failure is the failure mode we most need to detect. Motivation: gaps in `cloudflare_r2_operations_total` during Phase 2 verification could not be explained because k8s only retains 3 jobs of history and we have no log shipping.
 * [ ] investigate exporting k8s job/pod status metrics to Grafana via `kube-state-metrics` + Grafana Alloy (standard `kube_job_status_succeeded` / `kube_job_status_failed` metrics). This would give infra-level cronjob health for all crons, not just cloudflare-exporter, and would have made the May 3 StartError failures immediately visible in Grafana without needing `kubectl`.
 
