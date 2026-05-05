@@ -55,5 +55,21 @@ spec:
                     secretKeyRef:
                       name: bobby-grafanacloud-prom-auth
                       key: password
+                - name: OTEL_EXPORTER_OTLP_PROTOCOL
+                  value: "http/protobuf"
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  valueFrom:
+                    secretKeyRef:
+                      name: bobby-grafana-oltp-endpoint
+                      key: password
+                - name: OTEL_EXPORTER_OTLP_HEADERS
+                  valueFrom:
+                    secretKeyRef:
+                      name: bobby-grafana-oltp-headers
+                      key: password
+                - name: OTEL_SERVICE_NAME
+                  value: "cloudflare-exporter"
+                - name: OTEL_RESOURCE_ATTRIBUTES
+                  value: "deployment.environment=hetzner,service.version=${IMAGE_TAG}"
                 - name: RUST_LOG
                   value: "info"
