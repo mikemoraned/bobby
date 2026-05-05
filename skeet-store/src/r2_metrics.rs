@@ -344,6 +344,7 @@ mod tests {
     use object_store::ObjectStore;
     use opentelemetry::metrics::MeterProvider;
     use opentelemetry_sdk::metrics::{InMemoryMetricExporter, SdkMeterProvider};
+    use test_support::{histogram_observation_count, sum_counter};
 
     fn make_test_wrapper() -> (
         R2MetricsWrapper,
@@ -357,44 +358,6 @@ mod tests {
         let meter = provider.meter("r2");
         let wrapper = R2MetricsWrapper::new("test-cli", meter);
         (wrapper, provider, exporter)
-    }
-
-    fn total_duration_count(exporter: &InMemoryMetricExporter, provider: &SdkMeterProvider) -> u64 {
-        provider.force_flush().unwrap();
-        let metrics = exporter.get_finished_metrics().unwrap();
-        metrics
-            .iter()
-            .flat_map(|rm| rm.scope_metrics())
-            .flat_map(|sm| sm.metrics())
-            .filter(|m| m.name() == "r2.duration")
-            .flat_map(|m| {
-                use opentelemetry_sdk::metrics::data::{AggregatedMetrics, MetricData};
-                if let AggregatedMetrics::F64(MetricData::Histogram(hist)) = m.data() {
-                    hist.data_points().map(|dp| dp.count()).collect::<Vec<_>>()
-                } else {
-                    vec![]
-                }
-            })
-            .sum()
-    }
-
-    fn total_bytes(exporter: &InMemoryMetricExporter, provider: &SdkMeterProvider) -> u64 {
-        provider.force_flush().unwrap();
-        let metrics = exporter.get_finished_metrics().unwrap();
-        metrics
-            .iter()
-            .flat_map(|rm| rm.scope_metrics())
-            .flat_map(|sm| sm.metrics())
-            .filter(|m| m.name() == "r2.bytes")
-            .flat_map(|m| {
-                use opentelemetry_sdk::metrics::data::{AggregatedMetrics, MetricData};
-                if let AggregatedMetrics::U64(MetricData::Sum(sum)) = m.data() {
-                    sum.data_points().map(|dp| dp.value()).collect::<Vec<_>>()
-                } else {
-                    vec![]
-                }
-            })
-            .sum()
     }
 
     #[test]
@@ -523,7 +486,7 @@ mod tests {
 
         store.get_range(&path, 10u64..30u64).await.unwrap();
 
-        assert_eq!(total_bytes(&exporter, &provider), 20);
+        assert_eq!(sum_counter(&provider, &exporter, "r2.bytes", None), 20);
     }
 
     #[tokio::test]
@@ -542,7 +505,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(total_bytes(&exporter, &provider), 40); // 10 + 30
+        assert_eq!(sum_counter(&provider, &exporter, "r2.bytes", None), 40); // 10 + 30
     }
 
     #[tokio::test]
@@ -557,7 +520,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(total_bytes(&exporter, &provider), 42);
+        assert_eq!(sum_counter(&provider, &exporter, "r2.bytes", None), 42);
     }
 
     #[tokio::test]
@@ -572,7 +535,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(total_bytes(&exporter, &provider), 17);
+        assert_eq!(sum_counter(&provider, &exporter, "r2.bytes", None), 17);
     }
 
     #[tokio::test]
@@ -589,6 +552,6 @@ mod tests {
         store.get_range(&path, 0u64..50u64).await.unwrap();
         store.get_range(&path, 50u64..100u64).await.unwrap();
 
-        assert_eq!(total_duration_count(&exporter, &provider), 2);
+        assert_eq!(histogram_observation_count(&provider, &exporter, "r2.duration", None), 2);
     }
 }

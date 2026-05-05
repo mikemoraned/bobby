@@ -42,10 +42,8 @@ impl SyncMetrics {
 mod tests {
     use super::*;
     use opentelemetry::metrics::MeterProvider;
-    use opentelemetry_sdk::metrics::{
-        InMemoryMetricExporter, SdkMeterProvider,
-        data::{AggregatedMetrics, MetricData},
-    };
+    use opentelemetry_sdk::metrics::{InMemoryMetricExporter, SdkMeterProvider};
+    use test_support::{last_gauge_u64, sum_counter};
 
     fn make_test_metrics() -> (SyncMetrics, SdkMeterProvider, InMemoryMetricExporter) {
         let exporter = InMemoryMetricExporter::default();
@@ -56,52 +54,12 @@ mod tests {
         (metrics, provider, exporter)
     }
 
-    fn collect_u64(
-        provider: &SdkMeterProvider,
-        exporter: &InMemoryMetricExporter,
-        metric: &str,
-        attr: Option<(&str, &str)>,
-    ) -> u64 {
-        provider.force_flush().unwrap();
-        let finished = exporter.get_finished_metrics().unwrap();
-        exporter.reset();
-        finished
-            .iter()
-            .flat_map(|rm| rm.scope_metrics())
-            .flat_map(|sm| sm.metrics())
-            .filter(|m| m.name() == metric)
-            .flat_map(|m| match m.data() {
-                AggregatedMetrics::U64(MetricData::Sum(s)) => s
-                    .data_points()
-                    .filter(|dp| {
-                        attr.is_none_or(|(k, v)| {
-                            dp.attributes()
-                                .any(|kv| kv.key.as_str() == k && kv.value.as_str() == v)
-                        })
-                    })
-                    .map(|dp| dp.value())
-                    .collect::<Vec<_>>(),
-                AggregatedMetrics::U64(MetricData::Gauge(g)) => g
-                    .data_points()
-                    .filter(|dp| {
-                        attr.is_none_or(|(k, v)| {
-                            dp.attributes()
-                                .any(|kv| kv.key.as_str() == k && kv.value.as_str() == v)
-                        })
-                    })
-                    .map(|dp| dp.value())
-                    .collect::<Vec<_>>(),
-                _ => vec![],
-            })
-            .sum()
-    }
-
     #[test]
     fn success_increments_run_counter_and_records_datapoints() {
         let (metrics, provider, exporter) = make_test_metrics();
         metrics.record_success(42);
         assert_eq!(
-            collect_u64(&provider, &exporter, "cloudflare_exporter_run_total", Some(("status", "success"))),
+            sum_counter(&provider, &exporter, "cloudflare_exporter_run_total", Some(("status", "success"))),
             1
         );
     }
@@ -111,7 +69,7 @@ mod tests {
         let (metrics, provider, exporter) = make_test_metrics();
         metrics.record_failure();
         assert_eq!(
-            collect_u64(&provider, &exporter, "cloudflare_exporter_run_total", Some(("status", "failure"))),
+            sum_counter(&provider, &exporter, "cloudflare_exporter_run_total", Some(("status", "failure"))),
             1
         );
     }
@@ -121,7 +79,7 @@ mod tests {
         let (metrics, provider, exporter) = make_test_metrics();
         metrics.record_success(7);
         assert_eq!(
-            collect_u64(&provider, &exporter, "cloudflare_exporter_datapoints_fetched", None),
+            last_gauge_u64(&provider, &exporter, "cloudflare_exporter_datapoints_fetched", None),
             7
         );
     }

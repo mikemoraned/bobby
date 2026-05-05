@@ -187,10 +187,8 @@ impl PruneMetrics {
 mod tests {
     use super::*;
     use opentelemetry::metrics::MeterProvider;
-    use opentelemetry_sdk::metrics::{
-        InMemoryMetricExporter, SdkMeterProvider,
-        data::{AggregatedMetrics, MetricData},
-    };
+    use opentelemetry_sdk::metrics::{InMemoryMetricExporter, SdkMeterProvider};
+    use test_support::{flush_and_collect, sum_counter};
 
     fn make_test_metrics() -> (PruneMetrics, SdkMeterProvider, InMemoryMetricExporter) {
         let exporter = InMemoryMetricExporter::default();
@@ -199,71 +197,6 @@ mod tests {
             .build();
         let metrics = PruneMetrics::new(&provider.meter("skeet_prune"));
         (metrics, provider, exporter)
-    }
-
-    fn collect(
-        provider: &SdkMeterProvider,
-        exporter: &InMemoryMetricExporter,
-    ) -> Vec<(String, Vec<(Vec<(String, String)>, u64)>)> {
-        provider.force_flush().unwrap();
-        let metrics = exporter.get_finished_metrics().unwrap();
-        let mut out = vec![];
-        for rm in &metrics {
-            for sm in rm.scope_metrics() {
-                for m in sm.metrics() {
-                    let points = match m.data() {
-                        AggregatedMetrics::U64(MetricData::Sum(s)) => s
-                            .data_points()
-                            .map(|dp| {
-                                let attrs = dp
-                                    .attributes()
-                                    .map(|kv| {
-                                        (kv.key.as_str().to_string(), kv.value.as_str().to_string())
-                                    })
-                                    .collect();
-                                (attrs, dp.value())
-                            })
-                            .collect(),
-                        AggregatedMetrics::U64(MetricData::Gauge(g)) => g
-                            .data_points()
-                            .map(|dp| {
-                                let attrs = dp
-                                    .attributes()
-                                    .map(|kv| {
-                                        (kv.key.as_str().to_string(), kv.value.as_str().to_string())
-                                    })
-                                    .collect();
-                                (attrs, dp.value())
-                            })
-                            .collect(),
-                        _ => vec![],
-                    };
-                    out.push((m.name().to_string(), points));
-                }
-            }
-        }
-        exporter.reset();
-        out
-    }
-
-    fn sum_for(
-        snapshot: &[(String, Vec<(Vec<(String, String)>, u64)>)],
-        metric: &str,
-        attr: Option<(&str, &str)>,
-    ) -> u64 {
-        snapshot
-            .iter()
-            .filter(|(n, _)| n == metric)
-            .flat_map(|(_, points)| points.iter())
-            .filter(|(attrs, _)| {
-                attr.is_none_or(|(k, v)| {
-                    attrs
-                        .iter()
-                        .any(|(ak, av)| ak.as_str() == k && av.as_str() == v)
-                })
-            })
-            .map(|(_, v)| v)
-            .sum()
     }
 
     fn empty_emit(metrics: &mut PruneMetrics) {
@@ -279,8 +212,7 @@ mod tests {
         metrics.emit(10, 0, 0, 0, 0, 0, 0, 0, 0, &HashMap::new(), &HashMap::new(), &HashMap::new());
         // Third emit: firehose=15 (delta=5) — counter adds 5.
         metrics.emit(15, 0, 0, 0, 0, 0, 0, 0, 0, &HashMap::new(), &HashMap::new(), &HashMap::new());
-        let snap = collect(&provider, &exporter);
-        let total = sum_for(&snap, "skeet_prune.pipeline.throughput", Some(("stage", "firehose")));
+        let total = sum_counter(&provider, &exporter, "skeet_prune.pipeline.throughput", Some(("stage", "firehose")));
         assert_eq!(total, 15, "cumulative firehose count after 10→10→15");
     }
 
@@ -288,10 +220,10 @@ mod tests {
     fn throughput_counter_keeps_stages_independent() {
         let (mut metrics, provider, exporter) = make_test_metrics();
         metrics.emit(7, 11, 13, 0, 0, 0, 0, 0, 0, &HashMap::new(), &HashMap::new(), &HashMap::new());
-        let snap = collect(&provider, &exporter);
-        assert_eq!(sum_for(&snap, "skeet_prune.pipeline.throughput", Some(("stage", "firehose"))), 7);
-        assert_eq!(sum_for(&snap, "skeet_prune.pipeline.throughput", Some(("stage", "meta"))), 11);
-        assert_eq!(sum_for(&snap, "skeet_prune.pipeline.throughput", Some(("stage", "image"))), 13);
+        let snap = flush_and_collect(&provider, &exporter);
+        assert_eq!(snap.sum_counter("skeet_prune.pipeline.throughput", Some(("stage", "firehose"))), 7);
+        assert_eq!(snap.sum_counter("skeet_prune.pipeline.throughput", Some(("stage", "meta"))), 11);
+        assert_eq!(snap.sum_counter("skeet_prune.pipeline.throughput", Some(("stage", "image"))), 13);
     }
 
     #[test]
@@ -299,10 +231,10 @@ mod tests {
         let (mut metrics, provider, exporter) = make_test_metrics();
         // Gauges emit current value unconditionally — even when "delta" would be zero.
         metrics.emit(0, 0, 0, 5, 7, 9, 0, 0, 0, &HashMap::new(), &HashMap::new(), &HashMap::new());
-        let snap = collect(&provider, &exporter);
-        assert_eq!(sum_for(&snap, "skeet_prune.pipeline.depth", Some(("stage", "firehose"))), 5);
-        assert_eq!(sum_for(&snap, "skeet_prune.pipeline.depth", Some(("stage", "meta"))), 7);
-        assert_eq!(sum_for(&snap, "skeet_prune.pipeline.depth", Some(("stage", "image"))), 9);
+        let snap = flush_and_collect(&provider, &exporter);
+        assert_eq!(snap.last_gauge_u64("skeet_prune.pipeline.depth", Some(("stage", "firehose"))), 5);
+        assert_eq!(snap.last_gauge_u64("skeet_prune.pipeline.depth", Some(("stage", "meta"))), 7);
+        assert_eq!(snap.last_gauge_u64("skeet_prune.pipeline.depth", Some(("stage", "image"))), 9);
     }
 
     #[test]
@@ -314,10 +246,10 @@ mod tests {
         metrics.emit(0, 0, 0, 0, 0, 0, 4, 6, 2, &HashMap::new(), &HashMap::new(), &HashMap::new());
         // Then bump.
         metrics.emit(0, 0, 0, 0, 0, 0, 5, 6, 3, &HashMap::new(), &HashMap::new(), &HashMap::new());
-        let snap = collect(&provider, &exporter);
-        assert_eq!(sum_for(&snap, "skeet_prune.skeets.total", None), 5);
-        assert_eq!(sum_for(&snap, "skeet_prune.images.total", None), 6);
-        assert_eq!(sum_for(&snap, "skeet_prune.saved.total", None), 3);
+        let snap = flush_and_collect(&provider, &exporter);
+        assert_eq!(snap.sum_counter("skeet_prune.skeets.total", None), 5);
+        assert_eq!(snap.sum_counter("skeet_prune.images.total", None), 6);
+        assert_eq!(snap.sum_counter("skeet_prune.saved.total", None), 3);
     }
 
     #[test]
@@ -332,9 +264,9 @@ mod tests {
         // Bump TooMuchText to 7.
         rejs.insert(Rejection::TooMuchText, 7);
         metrics.emit(0, 0, 0, 0, 0, 0, 0, 0, 0, &rejs, &HashMap::new(), &HashMap::new());
-        let snap = collect(&provider, &exporter);
-        assert_eq!(sum_for(&snap, "skeet_prune.rejected.total", Some(("reason", "TooMuchText"))), 7);
-        assert_eq!(sum_for(&snap, "skeet_prune.rejected.total", Some(("reason", "FaceTooSmall"))), 1);
+        let snap = flush_and_collect(&provider, &exporter);
+        assert_eq!(snap.sum_counter("skeet_prune.rejected.total", Some(("reason", "TooMuchText"))), 7);
+        assert_eq!(snap.sum_counter("skeet_prune.rejected.total", Some(("reason", "FaceTooSmall"))), 1);
     }
 
     #[test]
@@ -349,14 +281,8 @@ mod tests {
         cats.insert(RejectionCategory::Face, 8);
         sole.insert(RejectionCategory::Face, 3);
         metrics.emit(0, 0, 0, 0, 0, 0, 0, 0, 0, &HashMap::new(), &cats, &sole);
-        let snap = collect(&provider, &exporter);
-        assert_eq!(
-            sum_for(&snap, "skeet_prune.categories.total", Some(("category", "Face"))),
-            8
-        );
-        assert_eq!(
-            sum_for(&snap, "skeet_prune.categories.sole.total", Some(("category", "Face"))),
-            3
-        );
+        let snap = flush_and_collect(&provider, &exporter);
+        assert_eq!(snap.sum_counter("skeet_prune.categories.total", Some(("category", "Face"))), 8);
+        assert_eq!(snap.sum_counter("skeet_prune.categories.sole.total", Some(("category", "Face"))), 3);
     }
 }

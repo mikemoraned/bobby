@@ -21,7 +21,8 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-opentelemetry_sdk = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
+test-support = { workspace = true }
 
 [build-dependencies]
 build-support = { workspace = true }
