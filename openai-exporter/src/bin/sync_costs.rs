@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, Datelike, DurationRound, TimeZone, Utc};
 use clap::Parser;
-use openai_exporter::{openai, prom};
+use openai_exporter::{metrics::SyncMetrics, openai, prom};
 use tracing::info;
 
 #[derive(Parser)]
@@ -45,6 +45,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
 
+    let meter = opentelemetry::global::meter("openai-exporter");
+    let sync_metrics = SyncMetrics::new(&meter);
+
+    match sync(&args).await {
+        Ok(entries) => {
+            info!(entries, "pushed to Prometheus remote_write");
+            sync_metrics.record_success(entries);
+            Ok(())
+        }
+        Err(e) => {
+            sync_metrics.record_failure();
+            Err(e)
+        }
+    }
+}
+
+async fn sync(args: &Args) -> Result<u64, Box<dyn std::error::Error>> {
     let today = start_of_day(Utc::now());
     let yesterday = start_of_day(today - chrono::Duration::days(1));
 
@@ -60,7 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if entries.is_empty() {
         info!("no cost entries for window, nothing to push");
-        return Ok(());
+        return Ok(0);
     }
 
     // Floor to start of current hour so a run at 00:05 stamps 00:00,
@@ -72,6 +89,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     prom::push(&client, &args.prom_endpoint, &args.prom_auth, &entries, timestamp_ms).await?;
 
-    info!("pushed to Prometheus remote_write");
-    Ok(())
+    Ok(entries.len() as u64)
 }
