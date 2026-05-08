@@ -614,12 +614,20 @@ Phase 2 — minimum real cost in Grafana (USD, daily, OpenAI-coupled):
 
 The smallest possible thing that answers "what is bobby costing me on OpenAI?". Deliberately skips the Usage API, currency normalisation, and the `prom.rs` refactor — all out of scope for this slice (see future direction below).
 
-* [ ] gating curl: with a freshly provisioned admin key, hit `/v1/organization/costs?start_time=…&bucket_width=1d&group_by[]=line_item&group_by[]=project_id` for the last 7 days. Confirm bobby's `project_id` shows up, line items match the OpenAI billing dashboard, and the response shape matches the cookbook docs. If anything's off, diagnose before writing code.
-* [ ] provision an OpenAI Admin API key (Cost & Usage read scope — different credential from `BOBBY_OPENAI_API_KEY` used by live-refine). Store in 1Password as `bobby-openai-admin-key`. Add to `infra/k8s/onepassword-items.yaml`.
-* [ ] scaffold an `openai-exporter` crate in the workspace. Copy `prom.rs` from `cloudflare-exporter` verbatim; do not factor out yet (deferred to future work).
-* [ ] `openai-exporter/src/openai.rs` — typed REST client for `GET /v1/organization/costs` only. One `#[ignore]`d integration test behind `op run`, mirroring the Cloudflare crate's `fetch_r2_metrics_real_api` test.
-* [ ] `openai-exporter/src/bin/sync_costs.rs` — daily cron, default window is yesterday (`[start_of_yesterday, start_of_today]`), `--from`/`--to` overrides; emits `openai_cost_usd_total{line_item, project_id}` counter with `timestamp_ms = midpoint(window)`.
-* [ ] `Dockerfile.openai-exporter`; `infra/k8s/openai-cost-exporter-cronjob.yaml` (daily, e.g. 01:00 UTC); `openai-exporter.env`; just targets `openai-sync-costs`, `cluster-deploy-openai-exporter`, `cluster-logs-openai-exporter`; chain into `cluster-deploy-all`.
+* [x] gating curl: confirmed via `just openai-costs-check`. Findings:
+    * Shape: `{object, has_more, next_page, data: [{start_time, end_time, results: [{line_item, project_id, amount: {value, currency}}]}]}`
+    * Bobby's project appears with `gpt-4o-2024-08-06, input` / `output` / `cached input` line items (separate line_item for cached, billed ~50%)
+    * A second project appears with `ada v2` — both should be emitted; `project_id` label distinguishes them
+    * `amount.value` is a **string** in the JSON (not a number) — must deserialize as `String` and parse to `f64`
+    * Pagination is cursor-based via `next_page` token; `has_more: true` — client must loop until `has_more: false`
+    * "Cost & Usage" scope was not available in the OpenAI admin key UI; "Usage API Read" scope suffices for the Costs endpoint
+* [x] provision an OpenAI Admin API key. Stored in 1Password as `bobby-openai-admin-usage-key` (not `bobby-openai-admin-key` — that scope didn't exist). Add to `infra/k8s/onepassword-items.yaml`.
+* [x] scaffold an `openai-exporter` crate in the workspace. Copied `prom.rs` from `cloudflare-exporter` verbatim (adapted for `CostEntry`); did not factor out yet.
+* [x] `openai-exporter/src/openai.rs` — typed REST client for `GET /v1/organization/costs`. Handles pagination via `next_page` cursor loop. `amount.value` deserialized as `String` and parsed to `f64`. One `#[ignore]`d integration test `fetch_costs_real_api` gated behind `op run --env-file openai-exporter.env`.
+* [x] `openai-exporter/src/bin/sync_costs.rs` — daily cron, default window `[start_of_yesterday, start_of_today]` UTC, `--from`/`--to` overrides; pushes `openai_cost_usd_total{line_item, project_id}` with `timestamp_ms = midpoint(bucket)`.
+* [x] `Dockerfile.openai-exporter`; `infra/k8s/openai-cost-exporter-cronjob.yaml` (daily at 01:00 UTC); `openai-exporter.env`; just targets `openai-sync-costs` (in `just/openai.just`), `cluster-deploy-openai-cost-exporter`, `cluster-logs-openai-cost-exporter`; chained into `cluster-deploy-all`.
+    * Secret name in k8s is `bobby-openai-admin-usage-key` (matches 1Password item name and `onepassword-items.yaml` entry added)
+    * Timestamp strategy: samples are stamped at `Utc::now()` rather than bucket midpoint. Mimir's `past-grace-period` (~1h) rejects daily bucket midpoints (always many hours old); sub-day accuracy doesn't matter for a daily cost panel.
 * [ ] one Grafana panel: cumulative `openai_cost_usd_total` over the last 30 days, broken down by `line_item`. Verify it matches the OpenAI billing dashboard within ~$0.01 — Phase 2 done.
 
 Future direction — captured, not committed:

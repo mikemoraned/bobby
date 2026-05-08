@@ -6,6 +6,7 @@ import 'just/feed.just'
 import 'just/container.just'
 import 'just/cluster.just'
 import 'just/cloudflare.just'
+import 'just/openai.just'
 
 default:
     just --list

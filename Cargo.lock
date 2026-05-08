@@ -8232,6 +8232,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "openai-exporter"
+version = "0.1.0"
+dependencies = [
+ "build-support",
+ "chrono",
+ "clap",
+ "prometheus-reqwest-remote-write",
+ "reqwest 0.13.2",
+ "serde",
+ "serde_json",
+ "shared",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "opendal"
 version = "0.55.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

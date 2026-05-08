@@ -98,7 +98,13 @@ cluster-logs-cloudflare-operations-exporter:
 cluster-logs-cloudflare-storage-exporter:
     kubectl logs -l app=cloudflare-storage-exporter --tail=100 -f | lnav
 
-cluster-deploy-all: push-pruner push-live-refine push-optimise push-cloudflare-exporter cluster-deploy-pruner cluster-deploy-live-refine cluster-deploy-optimise cluster-deploy-cloudflare-operations-exporter cluster-deploy-cloudflare-storage-exporter
+cluster-deploy-openai-cost-exporter:
+    IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/openai-cost-exporter-cronjob.yaml | kubectl apply -f -
+
+cluster-logs-openai-cost-exporter:
+    kubectl logs -l app=openai-cost-exporter --tail=100 -f | lnav
+
+cluster-deploy-all: push-pruner push-live-refine push-optimise push-cloudflare-exporter push-openai-exporter cluster-deploy-pruner cluster-deploy-live-refine cluster-deploy-optimise cluster-deploy-cloudflare-operations-exporter cluster-deploy-cloudflare-storage-exporter cluster-deploy-openai-cost-exporter
 
 cluster-restart-all: cluster-restart-pruner cluster-restart-live-refine
 
