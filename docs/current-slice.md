@@ -579,7 +579,7 @@ The GraphQL `r2StorageAdaptiveGroups` dataset has daily granularity and is unsui
 * [x] add `cloudflare-storage-exporter.env` referencing the existing 1Password items (`bobby-cloudflare-analytics-token`, `bobby-cloudflare-account-tag`, `bobby-grafanacloud-prom-endpoint`, `bobby-grafanacloud-prom-auth`). The "no account-tag needed" assumption was wrong: the REST URL path requires `{account_id}`, and the analytics-scoped token cannot enumerate accounts via `GET /accounts` (returns empty list with `success: true`). Pass the same `BOBBY_CLOUDFLARE_ACCOUNT_TAG` env var that `sync_operations` uses.
 * [x] add `infra/k8s/cloudflare-storage-exporter-cronjob.yaml` — runs `sync_storage` once per minute (current snapshot, not historical window)
 * [x] add just targets: `cloudflare-sync-storage` (local), `cluster-deploy-cloudflare-storage-exporter`, `cluster-logs-cloudflare-storage-exporter`; add to `cluster-deploy-all`
-* [ ] verify in Grafana that `cloudflare_r2_storage_bytes` and `cloudflare_r2_storage_objects` appear with non-zero values and update each minute
+* [x] verify in Grafana that `cloudflare_r2_storage_bytes` and `cloudflare_r2_storage_objects` appear with non-zero values and update each minute
 
 ##### Get visibility of LLM-related metrics in my Grafana metrics
 
