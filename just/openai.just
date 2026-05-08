@@ -1,5 +1,5 @@
 openai-sync-costs:
     op run --env-file openai-exporter.env -- cargo run --quiet --release --bin sync_costs
 
-integ_test_openai:
-    op run --env-file openai-exporter.env -- cargo nextest run --release -p openai-exporter --run-ignored only fetch_costs_real_api
+end_to_end_test_openai:
+    op run --env-file openai-exporter.env -- cargo nextest run --release -p openai-exporter --profile end-to-end fetch_costs_end_to_end

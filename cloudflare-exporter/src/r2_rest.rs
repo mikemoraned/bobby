@@ -148,8 +148,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    #[ignore = "requires live Cloudflare API credentials via BOBBY_CLOUDFLARE_API_TOKEN and BOBBY_CLOUDFLARE_ACCOUNT_TAG"]
-    async fn fetch_bucket_usage_real_api() {
+    async fn fetch_bucket_usage_end_to_end() {
         let api_token: ApiToken = std::env::var("BOBBY_CLOUDFLARE_API_TOKEN")
             .expect("BOBBY_CLOUDFLARE_API_TOKEN must be set")
             .parse()

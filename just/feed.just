@@ -7,16 +7,7 @@ feed:
 feed-r2:
     RUST_BACKTRACE=1 OTEL_SERVICE_NAME=skeet-feed {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file bobby-local.env -- cargo run --release --bin skeet-feed -- --store-path {{ R2_STORE }} --hostname {{ STAGING_HOSTNAME }} --publisher-did {{ PUBLISHER_DID }} --local-admin
 
-test_feed:
-    cargo test --release -p skeet-feed --features test
-
-integ_test_feed:
-    cargo nextest run --release -p skeet-feed --features integ --test feed_integration
-
-integ_test_redis:
-    cargo nextest run --release -p skeet-feed --features integ --test redis_session
-
-deploy_staging: deploy_staging_secrets deploy_staging_app integ_test_staging
+deploy_staging: deploy_staging_secrets deploy_staging_app end_to_end_test_staging
 
 deploy_staging_secrets:
     op inject -i bobby-staging.env | grep "^BOBBY_\|^OTEL_" | fly secrets import --config fly.staging.toml
@@ -24,8 +15,8 @@ deploy_staging_secrets:
 deploy_staging_app: push-skeet-feed
     fly deploy --config fly.staging.toml --image {{ GHCR_REPO }}/skeet-feed:{{ GIT_HASH }} --env "OTEL_RESOURCE_ATTRIBUTES=deployment.environment=fly,service.version={{ GIT_HASH }}"
 
-integ_test_staging:
-    TEST_BASE_URL=https://bobby-staging.fly.dev cargo test --release -p skeet-feed --features integ --test feed_integration
+end_to_end_test_staging:
+    TEST_BASE_URL=https://bobby-staging.fly.dev cargo nextest run --release -p skeet-feed --features integ --test feed_integration
 
 register-feed:
     op run --env-file register.env -- cargo run --release --bin register-feed -- --hostname {{ STAGING_HOSTNAME }}

@@ -28,10 +28,9 @@ build:
     cargo build --quiet
 
 test:
-    cargo nextest run --release -p skeet-feed --features test
-    cargo nextest run --release
+    cargo nextest run --release --features integ
 
-integ_test: integ_test_feed integ_test_redis integ_test_cloudflare
+end_to_end_test: end_to_end_test_cloudflare end_to_end_test_openai end_to_end_test_staging
 
 mutants-on-diff:
     git diff main > /tmp/bobby-mutants-diff.patch

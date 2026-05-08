@@ -119,8 +119,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    #[ignore = "requires live OpenAI admin credentials via BOBBY_OPENAI_ADMIN_KEY"]
-    async fn fetch_costs_real_api() {
+    async fn fetch_costs_end_to_end() {
         let api_key = std::env::var("BOBBY_OPENAI_ADMIN_KEY")
             .expect("BOBBY_OPENAI_ADMIN_KEY must be set");
 
