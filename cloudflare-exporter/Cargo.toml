@@ -4,8 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [[bin]]
-name = "sync"
-path = "src/bin/sync.rs"
+name = "sync_operations"
+path = "src/bin/sync_operations.rs"
+
+[[bin]]
+name = "sync_storage"
+path = "src/bin/sync_storage.rs"
 
 [dependencies]
 chrono = { workspace = true }

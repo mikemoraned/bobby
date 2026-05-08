@@ -7,7 +7,8 @@ use prometheus_reqwest_remote_write::{
 use reqwest::Client;
 use thiserror::Error;
 
-use crate::cloudflare::R2Metrics;
+use crate::cloudflare::R2Operations;
+use crate::r2_rest::{Bucket, R2BucketUsage};
 
 #[derive(Debug, Error)]
 pub enum PromError {
@@ -21,18 +22,18 @@ pub enum PromError {
     RemoteWrite(u16, String),
 }
 
-pub async fn push(
+pub async fn push_timeseries(
     client: &Client,
     endpoint: &str,
     basic_auth: &str,
-    metrics: &R2Metrics,
-    timestamp_ms: i64,
+    timeseries: Vec<TimeSeries>,
 ) -> Result<(), PromError> {
     let (username, password) = basic_auth
         .split_once(':')
         .ok_or(PromError::InvalidAuth)?;
 
-    let compressed = build_write_request(metrics, timestamp_ms)
+    let compressed = WriteRequest { timeseries }
+        .sorted()
         .encode_compressed()
         .map_err(|e| PromError::Compression(e.to_string()))?;
 
@@ -58,11 +59,27 @@ pub async fn push(
     Ok(())
 }
 
-fn build_write_request(metrics: &R2Metrics, timestamp_ms: i64) -> WriteRequest {
-    let mut timeseries = Vec::new();
+pub async fn push_operations(
+    client: &Client,
+    endpoint: &str,
+    basic_auth: &str,
+    operations: &R2Operations,
+    timestamp_ms: i64,
+) -> Result<(), PromError> {
+    push_timeseries(
+        client,
+        endpoint,
+        basic_auth,
+        build_operations_timeseries(operations, timestamp_ms),
+    )
+    .await
+}
 
-    for op in &metrics.operations {
-        timeseries.push(TimeSeries {
+fn build_operations_timeseries(operations: &R2Operations, timestamp_ms: i64) -> Vec<TimeSeries> {
+    operations
+        .operations
+        .iter()
+        .map(|op| TimeSeries {
             labels: vec![
                 Label {
                     name: "__name__".into(),
@@ -74,18 +91,40 @@ fn build_write_request(metrics: &R2Metrics, timestamp_ms: i64) -> WriteRequest {
                 },
                 Label {
                     name: "bucket".into(),
-                    value: op.bucket_name.clone(),
+                    value: op.bucket_name.as_str().into(),
                 },
             ],
             samples: vec![Sample {
                 value: op.requests as f64,
                 timestamp: timestamp_ms,
             }],
-        });
-    }
+        })
+        .collect()
+}
 
-    for s in &metrics.storage {
-        timeseries.push(TimeSeries {
+pub async fn push_storage(
+    client: &Client,
+    endpoint: &str,
+    basic_auth: &str,
+    usages: &[(Bucket, R2BucketUsage)],
+    timestamp_ms: i64,
+) -> Result<(), PromError> {
+    push_timeseries(
+        client,
+        endpoint,
+        basic_auth,
+        build_storage_timeseries(usages, timestamp_ms),
+    )
+    .await
+}
+
+fn build_storage_timeseries(
+    usages: &[(Bucket, R2BucketUsage)],
+    timestamp_ms: i64,
+) -> Vec<TimeSeries> {
+    let mut series = Vec::with_capacity(usages.len() * 2);
+    for (bucket, usage) in usages {
+        series.push(TimeSeries {
             labels: vec![
                 Label {
                     name: "__name__".into(),
@@ -93,15 +132,15 @@ fn build_write_request(metrics: &R2Metrics, timestamp_ms: i64) -> WriteRequest {
                 },
                 Label {
                     name: "bucket".into(),
-                    value: s.bucket_name.clone(),
+                    value: bucket.name.as_str().into(),
                 },
             ],
             samples: vec![Sample {
-                value: s.payload_size as f64,
+                value: usage.payload_size as f64,
                 timestamp: timestamp_ms,
             }],
         });
-        timeseries.push(TimeSeries {
+        series.push(TimeSeries {
             labels: vec![
                 Label {
                     name: "__name__".into(),
@@ -109,15 +148,14 @@ fn build_write_request(metrics: &R2Metrics, timestamp_ms: i64) -> WriteRequest {
                 },
                 Label {
                     name: "bucket".into(),
-                    value: s.bucket_name.clone(),
+                    value: bucket.name.as_str().into(),
                 },
             ],
             samples: vec![Sample {
-                value: s.object_count as f64,
+                value: usage.object_count as f64,
                 timestamp: timestamp_ms,
             }],
         });
     }
-
-    WriteRequest { timeseries }.sorted()
+    series
 }

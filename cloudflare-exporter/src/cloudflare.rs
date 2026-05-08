@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
 use reqwest::Client;
 
+use crate::types::{AccountTag, ApiToken, BucketName, BucketNameError};
+
 pub fn one_minute_windows(
     from: DateTime<Utc>,
     to: DateTime<Utc>,
@@ -27,26 +29,20 @@ pub enum CloudflareError {
     GraphQL(String),
     #[error("No account data returned for the given account tag")]
     NoAccount,
+    #[error("Cloudflare returned an invalid bucket name: {0}")]
+    InvalidBucketName(#[from] BucketNameError),
 }
 
 #[derive(Debug, Clone)]
 pub struct R2OperationGroup {
     pub action_type: String,
-    pub bucket_name: String,
+    pub bucket_name: BucketName,
     pub requests: u64,
 }
 
 #[derive(Debug, Clone)]
-pub struct R2StorageGroup {
-    pub bucket_name: String,
-    pub payload_size: u64,
-    pub object_count: u64,
-}
-
-#[derive(Debug, Clone)]
-pub struct R2Metrics {
+pub struct R2Operations {
     pub operations: Vec<R2OperationGroup>,
-    pub storage: Vec<R2StorageGroup>,
 }
 
 #[derive(Deserialize)]
@@ -76,8 +72,6 @@ struct Viewer {
 struct Account {
     #[serde(rename = "r2OperationsAdaptiveGroups")]
     r2_operations: Vec<R2OpGroup>,
-    #[serde(rename = "r2StorageAdaptiveGroups")]
-    r2_storage: Vec<R2StorGroup>,
 }
 
 #[derive(Deserialize)]
@@ -99,26 +93,6 @@ struct R2OpSum {
     requests: u64,
 }
 
-#[derive(Deserialize)]
-struct R2StorGroup {
-    dimensions: R2StorDimensions,
-    max: R2StorMax,
-}
-
-#[derive(Deserialize)]
-struct R2StorDimensions {
-    #[serde(rename = "bucketName")]
-    bucket_name: String,
-}
-
-#[derive(Deserialize)]
-struct R2StorMax {
-    #[serde(rename = "payloadSize")]
-    payload_size: u64,
-    #[serde(rename = "objectCount")]
-    object_count: u64,
-}
-
 #[derive(Serialize)]
 struct GraphQLRequest<'a> {
     query: &'a str,
@@ -126,7 +100,7 @@ struct GraphQLRequest<'a> {
 }
 
 static QUERY: &str = r#"
-    query R2Metrics($accountTag: String!, $from: String!, $to: String!) {
+    query R2Operations($accountTag: String!, $from: String!, $to: String!) {
       viewer {
         accounts(filter: {accountTag: $accountTag}) {
           r2OperationsAdaptiveGroups(
@@ -141,32 +115,20 @@ static QUERY: &str = r#"
               requests
             }
           }
-          r2StorageAdaptiveGroups(
-            filter: {datetime_geq: $from, datetime_lt: $to}
-            limit: 10000
-          ) {
-            dimensions {
-              bucketName
-            }
-            max {
-              payloadSize
-              objectCount
-            }
-          }
         }
       }
     }
 "#;
 
-pub async fn fetch_r2_metrics(
+pub async fn fetch_r2_operations(
     client: &Client,
-    api_token: &str,
-    account_tag: &str,
+    api_token: &ApiToken,
+    account_tag: &AccountTag,
     from: DateTime<Utc>,
     to: DateTime<Utc>,
-) -> Result<R2Metrics, CloudflareError> {
+) -> Result<R2Operations, CloudflareError> {
     let variables = serde_json::json!({
-        "accountTag": account_tag,
+        "accountTag": account_tag.as_str(),
         "from": from.to_rfc3339(),
         "to": to.to_rfc3339(),
     });
@@ -178,7 +140,7 @@ pub async fn fetch_r2_metrics(
 
     let response: GraphQLResponse = client
         .post(GRAPHQL_ENDPOINT)
-        .header("Authorization", format!("Bearer {api_token}"))
+        .header("Authorization", format!("Bearer {}", api_token.as_str()))
         .json(&body)
         .send()
         .await?
@@ -220,27 +182,16 @@ pub async fn fetch_r2_metrics(
     let operations = account
         .r2_operations
         .into_iter()
-        .map(|g| R2OperationGroup {
-            action_type: g.dimensions.action_type,
-            bucket_name: g.dimensions.bucket_name,
-            requests: g.sum.requests,
+        .map(|g| {
+            Ok(R2OperationGroup {
+                action_type: g.dimensions.action_type,
+                bucket_name: BucketName::new(g.dimensions.bucket_name)?,
+                requests: g.sum.requests,
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, CloudflareError>>()?;
 
-    let storage = account
-        .r2_storage
-        .into_iter()
-        .map(|g| R2StorageGroup {
-            bucket_name: g.dimensions.bucket_name,
-            payload_size: g.max.payload_size,
-            object_count: g.max.object_count,
-        })
-        .collect();
-
-    Ok(R2Metrics {
-        operations,
-        storage,
-    })
+    Ok(R2Operations { operations })
 }
 
 #[cfg(test)]
@@ -285,29 +236,27 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires live Cloudflare API credentials via BOBBY_CLOUDFLARE_API_TOKEN and BOBBY_CLOUDFLARE_ACCOUNT_TAG"]
-    async fn fetch_r2_metrics_real_api() {
-        let api_token = std::env::var("BOBBY_CLOUDFLARE_API_TOKEN")
-            .expect("BOBBY_CLOUDFLARE_API_TOKEN must be set");
-        let account_tag = std::env::var("BOBBY_CLOUDFLARE_ACCOUNT_TAG")
-            .expect("BOBBY_CLOUDFLARE_ACCOUNT_TAG must be set");
+    async fn fetch_r2_operations_real_api() {
+        let api_token: ApiToken = std::env::var("BOBBY_CLOUDFLARE_API_TOKEN")
+            .expect("BOBBY_CLOUDFLARE_API_TOKEN must be set")
+            .parse()
+            .expect("api token must be valid");
+        let account_tag: AccountTag = std::env::var("BOBBY_CLOUDFLARE_ACCOUNT_TAG")
+            .expect("BOBBY_CLOUDFLARE_ACCOUNT_TAG must be set")
+            .parse()
+            .expect("account tag must be valid");
 
         let now = Utc::now();
         let from = now - chrono::Duration::minutes(10);
         let to = now - chrono::Duration::minutes(5);
 
         let client = Client::new();
-        let result = fetch_r2_metrics(&client, &api_token, &account_tag, from, to).await;
+        let result = fetch_r2_operations(&client, &api_token, &account_tag, from, to).await;
 
-        let metrics = result.expect("fetch_r2_metrics should succeed");
-        println!(
-            "operations: {}, storage groups: {}",
-            metrics.operations.len(),
-            metrics.storage.len()
-        );
-        // All operation groups must have non-empty fields
+        let metrics = result.expect("fetch_r2_operations should succeed");
+        println!("operations: {}", metrics.operations.len());
         for op in &metrics.operations {
             assert!(!op.action_type.is_empty());
-            assert!(!op.bucket_name.is_empty());
         }
     }
 }

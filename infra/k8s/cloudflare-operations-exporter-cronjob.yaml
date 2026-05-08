@@ -1,0 +1,75 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cloudflare-operations-exporter
+  labels:
+    app: cloudflare-operations-exporter
+spec:
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: cloudflare-operations-exporter
+        spec:
+          restartPolicy: Never
+          imagePullSecrets:
+            - name: ghcr-pull-secret
+          containers:
+            - name: cloudflare-operations-exporter
+              image: ghcr.io/mikemoraned/bobby/cloudflare-exporter:${IMAGE_TAG}
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/sh", "-c"]
+              args:
+                - sync_operations
+                    --from $(date -u -d '11 minutes ago' '+%Y-%m-%dT%H:%M:%SZ')
+                    --to   $(date -u -d '1 minute ago'  '+%Y-%m-%dT%H:%M:%SZ')
+              resources:
+                requests:
+                  memory: "64Mi"
+                limits:
+                  memory: "128Mi"
+              env:
+                - name: BOBBY_CLOUDFLARE_API_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: bobby-cloudflare-analytics-token
+                      key: password
+                - name: BOBBY_CLOUDFLARE_ACCOUNT_TAG
+                  valueFrom:
+                    secretKeyRef:
+                      name: bobby-cloudflare-account-tag
+                      key: password
+                - name: BOBBY_PROM_ENDPOINT
+                  valueFrom:
+                    secretKeyRef:
+                      name: bobby-grafanacloud-prom-endpoint
+                      key: password
+                - name: BOBBY_PROM_AUTH
+                  valueFrom:
+                    secretKeyRef:
+                      name: bobby-grafanacloud-prom-auth
+                      key: password
+                - name: OTEL_EXPORTER_OTLP_PROTOCOL
+                  value: "http/protobuf"
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  valueFrom:
+                    secretKeyRef:
+                      name: bobby-grafana-oltp-endpoint
+                      key: password
+                - name: OTEL_EXPORTER_OTLP_HEADERS
+                  valueFrom:
+                    secretKeyRef:
+                      name: bobby-grafana-oltp-headers
+                      key: password
+                - name: OTEL_SERVICE_NAME
+                  value: "cloudflare-operations-exporter"
+                - name: OTEL_RESOURCE_ATTRIBUTES
+                  value: "deployment.environment=hetzner,service.version=${IMAGE_TAG}"
+                - name: RUST_LOG
+                  value: "info"

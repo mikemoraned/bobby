@@ -30,6 +30,8 @@ test:
     cargo nextest run --release -p skeet-feed --features test
     cargo nextest run --release
 
+integ_test: integ_test_feed integ_test_redis integ_test_cloudflare
+
 mutants-on-diff:
     git diff main > /tmp/bobby-mutants-diff.patch
     cargo mutants --in-diff /tmp/bobby-mutants-diff.patch

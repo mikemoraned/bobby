@@ -72,8 +72,11 @@ cluster-deploy-optimise:
 cluster-undeploy-compact:
     kubectl delete cronjob compact
 
-cluster-deploy-cloudflare-exporter:
-    IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/cloudflare-exporter-cronjob.yaml | kubectl apply -f -
+cluster-deploy-cloudflare-operations-exporter:
+    IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/cloudflare-operations-exporter-cronjob.yaml | kubectl apply -f -
+
+cluster-deploy-cloudflare-storage-exporter:
+    IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/cloudflare-storage-exporter-cronjob.yaml | kubectl apply -f -
 
 # Re-render and re-apply with an explicit image tag, so both `image:` and
 # `service.version` in OTEL_RESOURCE_ATTRIBUTES are kept in sync. Use this to
@@ -89,10 +92,13 @@ cluster-rollback-live-refine image_tag:
 cluster-logs-optimise:
     kubectl logs -l app=optimise --tail=100 -f | lnav
 
-cluster-logs-cloudflare-exporter:
-    kubectl logs -l app=cloudflare-exporter --tail=100 -f | lnav
+cluster-logs-cloudflare-operations-exporter:
+    kubectl logs -l app=cloudflare-operations-exporter --tail=100 -f | lnav
 
-cluster-deploy-all: push-pruner push-live-refine push-optimise push-cloudflare-exporter cluster-deploy-pruner cluster-deploy-live-refine cluster-deploy-optimise cluster-deploy-cloudflare-exporter
+cluster-logs-cloudflare-storage-exporter:
+    kubectl logs -l app=cloudflare-storage-exporter --tail=100 -f | lnav
+
+cluster-deploy-all: push-pruner push-live-refine push-optimise push-cloudflare-exporter cluster-deploy-pruner cluster-deploy-live-refine cluster-deploy-optimise cluster-deploy-cloudflare-operations-exporter cluster-deploy-cloudflare-storage-exporter
 
 cluster-restart-all: cluster-restart-pruner cluster-restart-live-refine
 
