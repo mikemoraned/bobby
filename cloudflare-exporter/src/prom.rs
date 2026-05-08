@@ -9,6 +9,7 @@ use thiserror::Error;
 
 use crate::cloudflare::R2Operations;
 use crate::r2_rest::{Bucket, R2BucketUsage};
+use crate::types::BucketName;
 
 #[derive(Debug, Error)]
 pub enum PromError {
@@ -91,7 +92,12 @@ fn build_operations_timeseries(operations: &R2Operations, timestamp_ms: i64) -> 
                 },
                 Label {
                     name: "bucket".into(),
-                    value: op.bucket_name.as_str().into(),
+                    value: op
+                        .bucket_name
+                        .as_ref()
+                        .map(BucketName::as_str)
+                        .unwrap_or("")
+                        .into(),
                 },
             ],
             samples: vec![Sample {

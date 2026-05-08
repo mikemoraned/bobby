@@ -36,7 +36,7 @@ pub enum CloudflareError {
 #[derive(Debug, Clone)]
 pub struct R2OperationGroup {
     pub action_type: String,
-    pub bucket_name: BucketName,
+    pub bucket_name: Option<BucketName>,
     pub requests: u64,
 }
 
@@ -168,10 +168,7 @@ pub async fn fetch_r2_operations(
         return Err(CloudflareError::GraphQL(msg));
     }
 
-    let mut accounts = response
-        .data
-        .map(|d| d.viewer.accounts)
-        .unwrap_or_default();
+    let mut accounts = response.data.map(|d| d.viewer.accounts).unwrap_or_default();
 
     if accounts.is_empty() {
         return Err(CloudflareError::NoAccount);
@@ -183,9 +180,14 @@ pub async fn fetch_r2_operations(
         .r2_operations
         .into_iter()
         .map(|g| {
+            let bucket_name = if g.dimensions.bucket_name.is_empty() {
+                None
+            } else {
+                Some(BucketName::new(g.dimensions.bucket_name)?)
+            };
             Ok(R2OperationGroup {
                 action_type: g.dimensions.action_type,
-                bucket_name: BucketName::new(g.dimensions.bucket_name)?,
+                bucket_name,
                 requests: g.sum.requests,
             })
         })
@@ -206,15 +208,24 @@ mod tests {
     fn single_minute_gives_one_window() {
         let windows = one_minute_windows(ts("2026-01-01T00:00:00Z"), ts("2026-01-01T00:01:00Z"));
         assert_eq!(windows.len(), 1);
-        assert_eq!(windows[0], (ts("2026-01-01T00:00:00Z"), ts("2026-01-01T00:01:00Z")));
+        assert_eq!(
+            windows[0],
+            (ts("2026-01-01T00:00:00Z"), ts("2026-01-01T00:01:00Z"))
+        );
     }
 
     #[test]
     fn two_minutes_gives_two_windows() {
         let windows = one_minute_windows(ts("2026-01-01T00:00:00Z"), ts("2026-01-01T00:02:00Z"));
         assert_eq!(windows.len(), 2);
-        assert_eq!(windows[0], (ts("2026-01-01T00:00:00Z"), ts("2026-01-01T00:01:00Z")));
-        assert_eq!(windows[1], (ts("2026-01-01T00:01:00Z"), ts("2026-01-01T00:02:00Z")));
+        assert_eq!(
+            windows[0],
+            (ts("2026-01-01T00:00:00Z"), ts("2026-01-01T00:01:00Z"))
+        );
+        assert_eq!(
+            windows[1],
+            (ts("2026-01-01T00:01:00Z"), ts("2026-01-01T00:02:00Z"))
+        );
     }
 
     #[test]
