@@ -1,19 +1,89 @@
 //! Integration tests that hit a running skeet-feed server via HTTP.
 //!
-//! These require a live server — start one first with e.g. `just feed-r2`,
-//! then run with `just integ_test_feed`.
+//! When `TEST_BASE_URL` is set (e.g. `integ_test_staging`), tests hit that URL.
+//! Otherwise, each test spawns its own `skeet-feed` subprocess on a free port
+//! against a fresh tempdir store; the `TestServer` Drop guard kills the child
+//! when the test ends. nextest runs each test in its own process, so a single
+//! shared server isn't viable here.
 //!
 //! Gated behind the `integ` feature so `just test` doesn't compile them.
 
 #![cfg(feature = "integ")]
 
-async fn assert_server_available() -> String {
-    let url =
-        std::env::var("TEST_BASE_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
-    reqwest::get(&url)
-        .await
-        .unwrap_or_else(|e| panic!("server not reachable at {url}: {e}"));
-    url
+use std::process::{Child, Command, Stdio};
+use std::time::Duration;
+
+struct TestServer {
+    child: Option<Child>,
+    _store: Option<tempfile::TempDir>,
+    url: String,
+}
+
+impl Drop for TestServer {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
+async fn spawn_server() -> TestServer {
+    if let Ok(url) = std::env::var("TEST_BASE_URL") {
+        reqwest::get(&url)
+            .await
+            .unwrap_or_else(|e| panic!("server not reachable at {url}: {e}"));
+        return TestServer {
+            child: None,
+            _store: None,
+            url,
+        };
+    }
+
+    let port = pick_free_port();
+    let store = tempfile::tempdir().expect("create temp store");
+    let bind = format!("127.0.0.1:{port}");
+    let hostname = format!("localhost:{port}");
+    let publisher_did = format!("did:web:localhost:{port}");
+    let bin = env!("CARGO_BIN_EXE_skeet-feed");
+    let child = Command::new(bin)
+        .args([
+            "--store-path",
+            store.path().to_str().expect("utf-8 store path"),
+            "--bind",
+            &bind,
+            "--hostname",
+            &hostname,
+            "--publisher-did",
+            &publisher_did,
+            "--local-admin",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .expect("failed to spawn skeet-feed");
+
+    let url = format!("http://127.0.0.1:{port}");
+    let server = TestServer {
+        child: Some(child),
+        _store: Some(store),
+        url: url.clone(),
+    };
+    for _ in 0..30 {
+        if reqwest::get(&url).await.is_ok() {
+            return server;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    panic!("local skeet-feed server failed to become reachable at {url} within 15s");
+}
+
+fn pick_free_port() -> u16 {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+    listener
+        .local_addr()
+        .expect("local addr")
+        .port()
 }
 
 async fn discover_feed_uri(client: &reqwest::Client, base: &str) -> String {
@@ -37,7 +107,8 @@ async fn discover_feed_uri(client: &reqwest::Client, base: &str) -> String {
 
 #[tokio::test]
 async fn describe_feed_generator_returns_feed() {
-    let base = assert_server_available().await;
+    let server = spawn_server().await;
+    let base = &server.url;
     let client = reqwest::Client::new();
 
     let resp = client
@@ -66,7 +137,8 @@ async fn describe_feed_generator_returns_feed() {
 
 #[tokio::test]
 async fn did_document_is_valid() {
-    let base = assert_server_available().await;
+    let server = spawn_server().await;
+    let base = &server.url;
     let client = reqwest::Client::new();
 
     let resp = client
@@ -86,7 +158,8 @@ async fn did_document_is_valid() {
 
 #[tokio::test]
 async fn get_feed_skeleton_with_discovered_uri() {
-    let base = assert_server_available().await;
+    let server = spawn_server().await;
+    let base = &server.url;
     let client = reqwest::Client::new();
     let feed_uri = discover_feed_uri(&client, &base).await;
 
@@ -112,7 +185,8 @@ async fn get_feed_skeleton_with_discovered_uri() {
 
 #[tokio::test]
 async fn get_feed_skeleton_rejects_wrong_uri() {
-    let base = assert_server_available().await;
+    let server = spawn_server().await;
+    let base = &server.url;
     let client = reqwest::Client::new();
 
     let resp = client
