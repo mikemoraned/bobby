@@ -13,6 +13,8 @@ just prerequisites
 - `just prune` — run skeet-prune (listens to firehose, classifies images, saves matches)
 - `just clippy` — always run after completing each task
 - `just test` — run all unit + integration tests (integration tests spin up local dependencies via testcontainers; requires Docker)
+  - **Claude:** you run in a sandbox without Docker — use `just test-no-docker` instead
+- `just test-no-docker` — same as `just test` but omits testcontainers-based tests; safe to run without Docker
 - `just end_to_end_test` — run tests that require live external APIs (OpenAI, Cloudflare, staging)
 - `just mutants-on-diff` — run mutation testing on changed code; run after completing any non-trivial change
 - `just validate-storage` — validate store read/write works

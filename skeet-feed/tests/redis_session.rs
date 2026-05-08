@@ -180,7 +180,7 @@ async fn start_redis_with_tls() -> (ContainerAsync<GenericImage>, String) {
 // ─── Plain TCP ────────────────────────────────────────────────
 
 #[tokio::test]
-async fn login_and_admin_with_redis_session_store() {
+async fn login_and_admin_with_redis_session_store_docker() {
     let container = testcontainers_modules::redis::Redis::default()
         .start()
         .await
@@ -229,7 +229,7 @@ async fn login_and_admin_with_redis_session_store() {
 // ─── TLS ──────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn login_and_admin_with_redis_over_tls() {
+async fn login_and_admin_with_redis_over_tls_docker() {
     // Reproduces the original deploy bug: cot's RedisStore with a `rediss://`
     // URL failed at startup with "can't connect with TLS, the feature is not
     // enabled". This test starts Redis with TLS (self-signed certs), does a

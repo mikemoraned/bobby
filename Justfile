@@ -30,6 +30,10 @@ build:
 test:
     cargo nextest run --release --features integ
 
+# Omits tests marked _docker; safe to run without Docker
+test-no-docker:
+    cargo nextest run --release --features integ --profile no-docker
+
 end_to_end_test: end_to_end_test_cloudflare end_to_end_test_openai end_to_end_test_staging
 
 mutants-on-diff:
