@@ -880,8 +880,27 @@ Tasks:
     * record the loaded `eval-split.toml`'s path and content hash in the output
     * write `config/eval-results-baseline.toml`; print a stdout summary
 * [x] Add a `just refine-eval` recipe
-* [ ] Run `just refine-eval config/eval-results-baseline.toml` once against production `refine.toml`; **commit** the resulting file. This is the frozen baseline phases 3 and 4 must not regress against
-* [ ] Sanity-check the recorded `cost_usd` against the Phase-1 LLM token metrics in Grafana (or the OpenAI org-costs API) for the equivalent time window — they should agree to within a few percent
+* [x] Run `just refine-eval config/eval-results-baseline.toml` once against production `refine.toml`; **commit** the resulting file. This is the frozen baseline phases 3 and 4 must not regress against
+
+###### Observations
+
+**10th May — baseline `gpt-4o` against the frozen 143-image test set:**
+
+| Metric                | Value |
+| --------------------- | ----- |
+| Precision @0.5        | 0.762 |
+| Recall    @0.5        | 0.696 |
+| F1        @0.5        | 0.727 |
+| ROC-AUC               | 0.860 |
+| Pinned @P=0.762       | threshold=0.500, recall=0.696 |
+| Input tokens          | 126,489 |
+| Output tokens         | 1,144 |
+| Cost (USD)            | $0.3277 |
+| Cost / image          | $0.0023 |
+
+* The pinned operating point lands exactly on the default 0.5 threshold: no other score in the test set hits ≥0.762 precision with higher recall. So phases 3 and 4 inherit a sharp comparison bar — a candidate has to clear **precision ≥ 0.762** with **recall > 0.696** at *some* threshold to pass the acceptance gate, not just match recall at any threshold.
+* ROC-AUC 0.860 confirms the model has meaningful discrimination — the 0.762/0.696 numbers aren't an artefact of a near-random classifier sitting at the 0.5 boundary.
+* `cost_usd` is internally consistent with `eval/prices.toml`: $2.5/M × 126,489 + $10/M × 1,144 = $0.3273 vs reported $0.3277 (rounding-level). External Grafana / OpenAI org-costs cross-check still outstanding.
 
 ##### Phase 3 — train on the wider dataset; deploy if it doesn't regress
 
