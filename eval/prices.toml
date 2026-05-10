@@ -1,7 +1,10 @@
+# Source: https://models.dev/api.json
+# Fetched: 2026-05-10T17:06:34.843738+00:00
+
 [gpt-4o]
-input_per_million_usd = 2.50
-output_per_million_usd = 10.00
+input_per_million_usd = 2.5
+output_per_million_usd = 10.0
 
 [gpt-4o-mini]
 input_per_million_usd = 0.15
-output_per_million_usd = 0.60
+output_per_million_usd = 0.6

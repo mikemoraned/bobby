@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 const PRICES_TOML: &str = include_str!("../prices.toml");
@@ -11,10 +11,10 @@ pub enum PricingError {
     Parse(#[from] toml::de::Error),
 }
 
-#[derive(Debug, Deserialize)]
-struct ModelPrice {
-    input_per_million_usd: f64,
-    output_per_million_usd: f64,
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ModelPrice {
+    pub input_per_million_usd: f64,
+    pub output_per_million_usd: f64,
 }
 
 #[derive(Debug, Deserialize)]

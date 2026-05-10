@@ -4591,13 +4591,19 @@ name = "eval"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "clap",
  "proptest",
+ "reqwest 0.13.2",
  "serde",
+ "serde_json",
  "shared",
  "smartcore",
  "tempfile",
  "thiserror 2.0.18",
+ "tokio",
  "toml 0.8.23",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

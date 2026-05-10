@@ -68,6 +68,9 @@ add-to-blocklist at_uri reason="manual":
 capture-appraisals:
     op run --env-file bobby-local.env -- cargo run --quiet --release --bin capture-appraisals -- --store-path {{ R2_STORE }}
 
+update-prices:
+    cargo run --quiet --release --bin update-prices -- --models gpt-4o,gpt-4o-mini
+
 train:
     op run --env-file bobby-local.env -- cargo run --quiet --release --bin train
 

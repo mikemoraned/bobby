@@ -4,6 +4,7 @@ mod metrics;
 mod pricing;
 mod results;
 mod split;
+pub mod update_prices;
 
 pub use confusion::ConfusionMatrix;
 pub use metric_types::{
