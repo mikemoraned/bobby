@@ -869,7 +869,7 @@ Tasks:
 
 ##### Phase 2 — establish the current baseline measured against the appraised images
 
-* [ ] Run `just capture-appraisals` once against the current store; **commit** `config/eval-split.toml`. This is the frozen split that all later phases load — adding more appraisals after this point will not affect it. Re-capturing is a deliberate act that establishes a new baseline (re-run phase 2 onward)
+* [x] Run `just capture-appraisals` once against the current store; **commit** `config/eval-split.toml`. This is the frozen split that all later phases load — adding more appraisals after this point will not affect it. Re-capturing is a deliberate act that establishes a new baseline (re-run phase 2 onward)
 * [x] Add a new binary `skeet-refine/src/bin/refine_eval.rs`:
     * load `config/eval-split.toml` (the frozen split — phase 2 does not re-roll)
     * fetch the listed `test` image IDs from the store (warn + abort if any are no longer present, so the test set never drifts silently)
