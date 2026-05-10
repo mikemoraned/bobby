@@ -48,3 +48,7 @@ path = "src/bin/train.rs"
 [[bin]]
 name = "live-refine"
 path = "src/bin/live_refine.rs"
+
+[[bin]]
+name = "refine-eval"
+path = "src/bin/refine_eval.rs"

@@ -7,6 +7,7 @@ paths:
 # Rust Rules
 
 - Follow [Rust doc guidelines](https://doc.rust-lang.org/stable/rustdoc/write-documentation/what-to-include.html) if comments are needed
+- **Comments describe long-lived properties of the code, not the workflow that produced it.** Don't reference slice/phase numbers, the current task, the PR that added the code, "previously did X, now does Y", or the calling site that motivated the change. Those rot the moment work moves on. State invariants, contracts, and non-obvious *whys* that will still be true a year from now. If the only honest justification is "phase N needs this", the comment doesn't belong in the code — it belongs in the slice doc.
 
 - **Prefer adding a battle-tested dependency over hand-rolling non-trivial logic.** Datetimes, RNG, statistics, ML metrics, parsers — if a published crate solves it, take the dep.
   - Default to the dep even when the standard-library or hand-rolled version "looks short". Bespoke code accumulates: it needs tests, edge-case handling, and ongoing maintenance.

@@ -6,7 +6,7 @@ use crate::metric_types::{F1, PinnedPrecision, Precision, Recall, RocAuc};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EvalResults {
     pub split_config_path: String,
-    /// SHA-256 hex of the `eval-split.toml` content used.
+    /// `EvalSplit::content_hash` of the split used — lets a later run detect drift.
     pub split_config_hash: String,
     pub model_version: String,
     pub model_name: String,

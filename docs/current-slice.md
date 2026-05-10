@@ -870,7 +870,7 @@ Tasks:
 ##### Phase 2 — establish the current baseline measured against the appraised images
 
 * [ ] Run `just capture-appraisals` once against the current store; **commit** `config/eval-split.toml`. This is the frozen split that all later phases load — adding more appraisals after this point will not affect it. Re-capturing is a deliberate act that establishes a new baseline (re-run phase 2 onward)
-* [ ] Add a new binary `skeet-refine/src/bin/refine_eval.rs`:
+* [x] Add a new binary `skeet-refine/src/bin/refine_eval.rs`:
     * load `config/eval-split.toml` (the frozen split — phase 2 does not re-roll)
     * fetch the listed `test` image IDs from the store (warn + abort if any are no longer present, so the test set never drifts silently)
     * derive the binary label from `Band`: `band.is_visible_in_feed()` ⇒ positive class (matches the refine score's 0.5 threshold)
@@ -879,7 +879,7 @@ Tasks:
     * compute precision/recall/F1 at threshold 0.5, ROC-AUC, and the precision-pinned threshold (pinned to the baseline's own precision — this just records the threshold + recall + cost as the comparison target for later phases)
     * record the loaded `eval-split.toml`'s path and content hash in the output
     * write `config/eval-results-baseline.toml`; print a stdout summary
-* [ ] Add a `just refine-eval` recipe
+* [x] Add a `just refine-eval` recipe
 * [ ] Run once against production `refine.toml`; **commit** `config/eval-results-baseline.toml`. This is the frozen baseline phases 3 and 4 must not regress against
 * [ ] Sanity-check the recorded `cost_usd` against the Phase-1 LLM token metrics in Grafana (or the OpenAI org-costs API) for the equivalent time window — they should agree to within a few percent
 

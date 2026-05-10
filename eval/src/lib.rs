@@ -10,7 +10,7 @@ pub use confusion::ConfusionMatrix;
 pub use metric_types::{
     F1, InvalidMetric, LabelledScore, PinnedPrecision, Precision, Recall, RocAuc, Threshold,
 };
-pub use metrics::{pin_at_precision, roc_auc_score};
+pub use metrics::{confusion_at, pin_at_precision, roc_auc_score};
 pub use pricing::{ModelPrices, PricingError};
 pub use results::{EvalResults, EvalResultsError};
 pub use split::{EvalSplit, EvalSplitError, stratified_split};

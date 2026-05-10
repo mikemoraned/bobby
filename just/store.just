@@ -74,6 +74,9 @@ update-prices:
 train:
     op run --env-file bobby-local.env -- cargo run --quiet --release --bin train
 
+refine-eval:
+    op run --env-file bobby-local.env -- cargo run --quiet --release --bin refine-eval -- --store-path {{ R2_STORE }}
+
 live-refine:
     op run --env-file bobby-local.env -- cargo run --quiet --release --bin live-refine -- --store-path {{ STORE }}
 

@@ -1,3 +1,5 @@
+use std::hash::{DefaultHasher, Hash, Hasher};
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use shared::Band;
@@ -24,6 +26,18 @@ impl EvalSplit {
         let content = toml::to_string_pretty(self).map_err(EvalSplitError::Serialize)?;
         std::fs::write(path, content)
             .map_err(|e| EvalSplitError::Io(path.display().to_string(), e))
+    }
+
+    /// Hex digest identifying this split for drift detection across runs. Two splits
+    /// hash equal iff their `seed`, `captured_at`, and `train`/`test` id sequences
+    /// are equal.
+    pub fn content_hash(&self) -> String {
+        let mut hasher = DefaultHasher::new();
+        self.seed.hash(&mut hasher);
+        self.captured_at.timestamp_micros().hash(&mut hasher);
+        self.train.hash(&mut hasher);
+        self.test.hash(&mut hasher);
+        format!("{:016x}", hasher.finish())
     }
 }
 
@@ -172,6 +186,53 @@ mod tests {
         let (train, test) = stratified_split(&items, 0.8, 0);
         assert_eq!(train.len(), 2);
         assert_eq!(test.len(), 0);
+    }
+
+    fn sample_split() -> EvalSplit {
+        EvalSplit {
+            seed: 42,
+            captured_at: DateTime::from_timestamp(1_700_000_000, 0).expect("valid timestamp"),
+            train: vec!["a".into(), "b".into()],
+            test: vec!["c".into()],
+        }
+    }
+
+    #[test]
+    fn content_hash_is_stable() {
+        let split = sample_split();
+        assert_eq!(split.content_hash(), split.clone().content_hash());
+    }
+
+    #[test]
+    fn content_hash_changes_when_any_logical_field_changes() {
+        let base = sample_split().content_hash();
+
+        let mut other_seed = sample_split();
+        other_seed.seed = 43;
+        assert_ne!(base, other_seed.content_hash());
+
+        let mut other_time = sample_split();
+        other_time.captured_at = DateTime::from_timestamp(1_700_000_001, 0).expect("valid");
+        assert_ne!(base, other_time.content_hash());
+
+        let mut reordered = sample_split();
+        reordered.train.reverse();
+        assert_ne!(base, reordered.content_hash());
+
+        let mut moved = sample_split();
+        moved.train.push("c".into());
+        moved.test.clear();
+        assert_ne!(base, moved.content_hash());
+    }
+
+    #[test]
+    fn content_hash_survives_toml_roundtrip() {
+        let split = sample_split();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("split.toml");
+        split.save(&path).expect("save");
+        let loaded = EvalSplit::load(&path).expect("load");
+        assert_eq!(split.content_hash(), loaded.content_hash());
     }
 
     #[test]

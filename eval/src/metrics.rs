@@ -60,7 +60,7 @@ pub fn pin_at_precision(
         .max_by_key(|p| p.recall)
 }
 
-fn confusion_at(labelled: &[LabelledScore], threshold: Threshold) -> ConfusionMatrix {
+pub fn confusion_at(labelled: &[LabelledScore], threshold: Threshold) -> ConfusionMatrix {
     let mut matrix = ConfusionMatrix::default();
     for &l in labelled {
         matrix.record(l.is_positive, Threshold::from(l.score) >= threshold);
