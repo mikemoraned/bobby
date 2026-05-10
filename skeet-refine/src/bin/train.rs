@@ -35,6 +35,10 @@ struct Args {
     /// Target accuracy threshold (0.0-1.0) to stop early
     #[arg(long, default_value_t = 0.8)]
     target_accuracy: f32,
+
+    /// OpenAI model name to use for both scoring and prompt rewriting
+    #[arg(long, default_value = "gpt-4o")]
+    model: String,
 }
 
 struct ScoredExample {
@@ -115,6 +119,7 @@ fn format_results_for_refinement(results: &[ScoredExample]) -> String {
 
 async fn refine_prompt(
     client: &rig::providers::openai::client::CompletionsClient,
+    model_name: &str,
     current_prompt: &str,
     results: &[ScoredExample],
 ) -> Result<String, Box<dyn std::error::Error>> {
@@ -132,8 +137,8 @@ async fn refine_prompt(
          Respond with ONLY the new prompt text, nothing else. Do not include any preamble or explanation."
     );
 
-    let refinement_model = client.completion_model("gpt-4o");
-    let agent = AgentBuilder::new(refinement_model).build();
+    let refinement_model = client.completion_model(model_name);
+    let agent = AgentBuilder::new(refinement_model).temperature(0.0).build();
     let response = agent.prompt(refinement_request).await?;
     Ok(response)
 }
@@ -161,7 +166,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for iteration in 1..=args.max_iterations {
         info!(iteration, "starting training iteration");
 
-        let agent = build_agent(&client, "gpt-4o", &current_prompt);
+        let agent = build_agent(&client, &args.model, &current_prompt);
         let results = score_examples(&agent, &examples, &args.examples_dir).await;
         let acc = accuracy(&results);
 
@@ -180,7 +185,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if iteration < args.max_iterations {
             info!("refining prompt...");
-            match refine_prompt(&client, &current_prompt, &results).await {
+            match refine_prompt(&client, &args.model, &current_prompt, &results).await {
                 Ok(new_prompt) => {
                     info!(prompt_length = new_prompt.len(), "got refined prompt");
                     current_prompt = new_prompt;
@@ -194,7 +199,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let model = RefineModel {
         model_provider: ModelProvider::openai(),
-        model_name: ModelName::gpt_4o(),
+        model_name: ModelName::new(&args.model),
         prompt: RefinePrompt::new(best_prompt),
     };
     save_model(&args.model_output, &model)?;

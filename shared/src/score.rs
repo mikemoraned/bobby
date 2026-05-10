@@ -1,4 +1,8 @@
 /// A score in the range 0.0–1.0, where 1.0 is the best match.
+///
+/// `Score::new` rejects NaN (NaN is not in any range), so the type guarantees
+/// non-NaN — which is why `Eq` and `Ord` can be implemented soundly even though
+/// `f32` itself does not provide them.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Score(f32);
 
@@ -43,9 +47,17 @@ impl std::str::FromStr for Score {
     }
 }
 
+impl Eq for Score {}
+
+impl Ord for Score {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.total_cmp(&other.0)
+    }
+}
+
 impl PartialOrd for Score {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
+        Some(self.cmp(other))
     }
 }
 

@@ -8,7 +8,9 @@ workspace = true
 
 [dependencies]
 base64 = "0.22"
+chrono = { workspace = true }
 clap = { workspace = true }
+eval = { workspace = true }
 futures = "0.3"
 image = { workspace = true }
 opentelemetry = { workspace = true }
@@ -34,6 +36,10 @@ proptest = { workspace = true }
 skeet-store = { path = "../skeet-store", features = ["test-helpers"] }
 tempfile = { workspace = true }
 test-support = { workspace = true }
+
+[[bin]]
+name = "capture-appraisals"
+path = "src/bin/capture_appraisals.rs"
 
 [[bin]]
 name = "train"

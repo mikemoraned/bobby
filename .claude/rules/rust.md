@@ -8,7 +8,10 @@ paths:
 
 - Follow [Rust doc guidelines](https://doc.rust-lang.org/stable/rustdoc/write-documentation/what-to-include.html) if comments are needed
 
-- Use external crates for core things (datetimes, etc); don't write our own
+- **Prefer adding a battle-tested dependency over hand-rolling non-trivial logic.** Datetimes, RNG, statistics, ML metrics, parsers — if a published crate solves it, take the dep.
+  - Default to the dep even when the standard-library or hand-rolled version "looks short". Bespoke code accumulates: it needs tests, edge-case handling, and ongoing maintenance.
+  - Before claiming a library doesn't support what you need, check the *latest* version's docs (the API may have changed since older releases). State the version you checked.
+  - Hand-rolling is acceptable only for genuinely application-specific logic (e.g. domain enums, business rules) — not for replicable algorithms like ROC-AUC, train/test split, or seeded shuffling.
 - When multiple crates share a dependency, pull it to workspace-level `[workspace.dependencies]`
 - Always use latest stable Rust version and edition; do not use nightly
   - Specify version in `rust-toolchain.toml` and edition in `Cargo.toml`
@@ -41,6 +44,11 @@ paths:
 - Keep feature enablement flags (e.g. `--use-redis`) separate from their configuration values (e.g. `--redis-url`). A feature's on/off switch should not be derived from whether its config happens to be present — these are independent concerns.
 - CLI apps: all config via named CLI params (`--long-form VALUE`); no env vars except `RUST_LOG`
 - Prefer functions over macros — only use `macro_rules!` when you genuinely need syntax or control flow that a function can't express
+- **Avoid `continue`.** It makes control flow indirect — the conditions for skipping live separately from the body of the loop. Prefer:
+  - `Iterator::filter_map` / `filter` / `?` inside a closure for skip-on-condition patterns
+  - Extract the inner body into a helper function that returns `Option<T>` and use `filter_map` over it
+  - `if let Some(x) = ... { ... }` for guarded execution
+  - Restructure so the loop body has a single straight-line path
 - Prefer simple, readable techniques over clever ones until profiling identifies a real hotspot.
   - When the borrow checker pushes back, reach for `.clone()` first. Only escalate to tricks like `std::mem::take`, manual index loops, `RefCell`, or restructuring fields once a benchmark or trace shows the clone matters.
   - Example: in a per-tick loop that needs `&mut self` access while iterating one field, `let xs = self.xs.clone(); for x in xs { self.do_something(&x); }` beats `for x in std::mem::take(&mut self.xs) { ... }`. Both work; the clone is one line, obvious to read, and ~free for small Vecs of small values. Save the cleverness for when it's earned.

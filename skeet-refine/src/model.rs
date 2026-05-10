@@ -29,8 +29,12 @@ impl fmt::Display for ModelProvider {
 pub struct ModelName(String);
 
 impl ModelName {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self(name.into())
+    }
+
     pub fn gpt_4o() -> Self {
-        Self("gpt-4o".into())
+        Self::new("gpt-4o")
     }
 
     pub fn as_str(&self) -> &str {

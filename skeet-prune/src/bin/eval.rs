@@ -1,12 +1,12 @@
 #![warn(clippy::all, clippy::nursery)]
 
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 
 use clap::Parser;
+use eval::{ConfusionMatrix, F1, Precision, Recall};
 use face_detection::FaceDetector;
+use serde::Serialize;
 use shared::{Classification, PruneConfig, RejectionCategories, RejectionCategory};
 use skeet_store::{Band, ImageId, StoreArgs};
 use tracing::info;
@@ -30,58 +30,6 @@ struct Args {
     /// Rejection categories to enable (comma-separated, defaults to RejectionCategories::default())
     #[arg(long, value_delimiter = ',')]
     categories: Option<Vec<RejectionCategory>>,
-}
-
-#[derive(Default)]
-struct ConfusionMatrix {
-    true_pos: u64,
-    false_pos: u64,
-    true_neg: u64,
-    false_neg: u64,
-}
-
-impl ConfusionMatrix {
-    const fn record(&mut self, should_be_pruned: bool, was_pruned: bool) {
-        match (should_be_pruned, was_pruned) {
-            (true, true) => self.true_pos += 1,
-            (false, true) => self.false_pos += 1,
-            (false, false) => self.true_neg += 1,
-            (true, false) => self.false_neg += 1,
-        }
-    }
-
-    fn precision(&self) -> f64 {
-        let denom = self.true_pos + self.false_pos;
-        if denom == 0 {
-            0.0
-        } else {
-            self.true_pos as f64 / denom as f64
-        }
-    }
-
-    fn recall(&self) -> f64 {
-        let denom = self.true_pos + self.false_neg;
-        if denom == 0 {
-            0.0
-        } else {
-            self.true_pos as f64 / denom as f64
-        }
-    }
-
-    fn f1(&self) -> f64 {
-        let p = self.precision();
-        let r = self.recall();
-        let denom = p + r;
-        if denom == 0.0 {
-            0.0
-        } else {
-            2.0 * p * r / denom
-        }
-    }
-
-    const fn total(&self) -> u64 {
-        self.true_pos + self.false_pos + self.true_neg + self.false_neg
-    }
 }
 
 #[tokio::main]
@@ -177,30 +125,43 @@ fn print_table(m: &ConfusionMatrix) {
         fn_ = m.false_neg,
     );
     println!(
-        "  Precision={p:.3}  Recall={r:.3}  F1={f1:.3}",
-        p = m.precision(),
-        r = m.recall(),
-        f1 = m.f1(),
+        "  Precision={p}  Recall={r}  F1={f1}",
+        p = fmt_opt(m.precision()),
+        r = fmt_opt(m.recall()),
+        f1 = fmt_opt(m.f1()),
     );
+}
+
+fn fmt_opt(value: Option<impl std::fmt::Display>) -> String {
+    value.map_or_else(|| "n/a".into(), |v| v.to_string())
+}
+
+#[derive(Serialize)]
+struct EvalRow {
+    tp: u64,
+    fp: u64,
+    tn: u64,
+    #[serde(rename = "fn")]
+    fn_: u64,
+    precision: Option<Precision>,
+    recall: Option<Recall>,
+    f1: Option<F1>,
 }
 
 fn write_csv(
     path: &std::path::Path,
     m: &ConfusionMatrix,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let file = File::create(path)?;
-    let mut w = BufWriter::new(file);
-    writeln!(w, "tp,fp,tn,fn,precision,recall,f1")?;
-    writeln!(
-        w,
-        "{tp},{fp},{tn},{fn_},{p:.3},{r:.3},{f1:.3}",
-        tp = m.true_pos,
-        fp = m.false_pos,
-        tn = m.true_neg,
-        fn_ = m.false_neg,
-        p = m.precision(),
-        r = m.recall(),
-        f1 = m.f1(),
-    )?;
+    let mut wtr = csv::Writer::from_path(path)?;
+    wtr.serialize(EvalRow {
+        tp: m.true_pos,
+        fp: m.false_pos,
+        tn: m.true_neg,
+        fn_: m.false_neg,
+        precision: m.precision(),
+        recall: m.recall(),
+        f1: m.f1(),
+    })?;
+    wtr.flush()?;
     Ok(())
 }

@@ -4587,6 +4587,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "eval"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "proptest",
+ "serde",
+ "shared",
+ "smartcore",
+ "tempfile",
+ "thiserror 2.0.18",
+ "toml 0.8.23",
+]
+
+[[package]]
 name = "event-listener"
 version = "5.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10729,6 +10743,8 @@ dependencies = [
  "build-support",
  "chrono",
  "clap",
+ "csv",
+ "eval",
  "face-detection",
  "fastrand",
  "image",
@@ -10757,6 +10773,7 @@ dependencies = [
  "build-support",
  "chrono",
  "clap",
+ "eval",
  "futures",
  "image",
  "opentelemetry",
@@ -10863,6 +10880,20 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+
+[[package]]
+name = "smartcore"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92d6270025c1e0ab2a9aa107d757805540b3f7dcb502347ab7b87b5f65573159"
+dependencies = [
+ "approx",
+ "cfg-if",
+ "num",
+ "num-traits",
+ "ordered-float 5.1.0",
+ "rand 0.10.1",
+]
 
 [[package]]
 name = "snafu"

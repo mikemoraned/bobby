@@ -849,25 +849,23 @@ Tasks:
 
 ##### Phase 1 — refactors that introduce the new abilities, not yet wired into any deployed path
 
-* [ ] Scaffold a new workspace crate `eval` to hold shared evaluation primitives:
-    * lift `ConfusionMatrix` + `precision`/`recall`/`f1` out of `skeet-prune/src/bin/eval.rs:35-85`
-    * add `smartcore` as a dep — `nalgebra` and `ndarray` are already in `Cargo.lock` transitively, so this only adds `smartcore` itself plus a moderate compile-time hit. Verify with `cargo build -p eval`; flag if it adds more than a few seconds to a clean build
-    * re-export from smartcore: `roc_auc_score` and seeded random `train_test_split`
-    * hand-roll `stratified_split(scores, labels, ratio, seed)` that calls `train_test_split` once per `Band` value and concatenates (smartcore doesn't ship a stratified variant)
-    * hand-roll `pin_precision_at(scores, truth, target_precision) -> (threshold, recall)` — sweep thresholds; return the highest threshold whose precision ≥ target along with the recall there
+* [x] Scaffold a new workspace crate `eval` to hold shared evaluation primitives:
+    * [x] lift `ConfusionMatrix` + `precision`/`recall`/`f1` out of `skeet-prune/src/bin/eval.rs:35-85` (now returning `Option<Precision>` etc. so undefined cases don't return sentinel `0.0`)
+    * [x] add `smartcore` as a dep (0.5.0 — supports `Option<u64>` seed in `train_test_split`)
+    * [x] use smartcore for `roc_auc_score` and seeded `train_test_split` (called per-band from `stratified_split`)
+    * [x] `stratified_split(items, train_ratio, seed)` — calls smartcore's `train_test_split` once per `Band::ALL` value and concatenates
+    * [x] `pin_at_precision(labelled, target_precision) -> Option<PinnedPrecision>` — sweep distinct observed scores as candidate thresholds; among those whose precision ≥ target, return the operating point with the **highest recall**
+    * [x] newtypes for unit-interval metrics: `Precision`, `Recall`, `F1`, `RocAuc`, `Threshold` (plus `LabelledScore` and `PinnedPrecision`); `Score`/`Threshold`/`Recall` implement `Eq` + `Ord` via `total_cmp` (NaN-free by construction)
     * skip PR-AUC for now — not load-bearing under the pinned-precision rule; revisit only if ROC-AUC is too coarse during phase 4
-* [ ] Refactor `skeet-prune/src/bin/eval.rs` to use the new `eval` crate. No behaviour change — assert produced CSV is byte-identical to a pre-refactor snapshot
-* [ ] Define an `EvalResults` serde struct in the `eval` crate covering: `split_config_path`, `split_config_hash` (sha256 of the `eval-split.toml` content used), `model_version`, `model_name`, `precision`, `recall`, `f1`, `roc_auc`, threshold + recall at pinned precision, `tp/fp/tn/fn`, `input_tokens`, `output_tokens`, `cost_usd`. Round-trip test: write → read → assert eq
-* [ ] Add a new binary `skeet-refine/src/bin/capture_appraisals.rs` (and a `just capture-appraisals` recipe) that:
-    * loads all current image appraisals via `store.list_all_image_appraisals()`
-    * uses `eval::stratified_split` (Band-stratified, seeded) to produce two disjoint sets of `ImageId`
-    * writes `config/eval-split.toml` with: `seed` (provenance only), `captured_at`, `train = [image_id, ...]`, `test = [image_id, ...]`
-    * The generated ID lists are the durable artefact. Future eval/train runs **must** load this file and use its ID lists verbatim — they do not re-roll the split. This insulates evaluation from later growth in the appraisal set: more labels arriving over time cannot perturb the train/test partition once it is frozen. Labels (the `Band` for each ID) are still fetched fresh from the store at eval time, so corrections to existing labels do flow through
-* [ ] In `skeet-refine/src/refining.rs`, surface input + output token counts from the rig completion response alongside the score; callers ignore the new field for now (no behaviour change yet)
-* [ ] Add an OpenAI per-token `prices.toml` keyed on model name covering at least `gpt-4o` and `gpt-4o-mini`; expose `cost_for(model_name, input_tokens, output_tokens) -> f64` on the `eval` crate. Inline test asserts a known token-count → known $ figure
-* [ ] Parameterise the OpenAI model name in `skeet-refine/src/bin/train.rs`: replace the hardcoded `"gpt-4o"` literals at `bin/train.rs:135` and `:164` with a single `--model` CLI flag (default `"gpt-4o"`); the same value flows into both the scoring agent and the prompt-rewriting agent
-* [ ] Verify `rig`'s API exposes a temperature setting on the relevant agent / completion model; if so, set `temperature=0` on both `train.rs` completions for deterministic comparison; if not, capture the workaround inline
-* [ ] Phase-1 done when: `just train` and the existing `skeet-prune` eval recipe produce the same outputs as before, and the `eval` crate is in place but un-used by any new path
+* [x] Refactor `skeet-prune/src/bin/eval.rs` to use the new `eval` crate. CSV format **does** change deliberately: `None` metrics now serialise as empty cells (via `csv` + `serde`) rather than `0.000` sentinel; numeric values use `ryu` shortest-round-trip rather than `:.3` truncation. Both honest, neither a regression.
+* [x] Define an `EvalResults` serde struct in the `eval` crate covering: `split_config_path`, `split_config_hash`, `model_version`, `model_name`, typed `Precision`/`Recall`/`F1`, `Option<RocAuc>`, `Option<PinnedPrecision>`, `tp/fp/tn/fn_`, `input_tokens`, `output_tokens`, `cost_usd`. Round-trip tests for both populated and `None`-heavy cases.
+* [x] Add a new binary `skeet-refine/src/bin/capture_appraisals.rs` (and `just capture-appraisals` recipe) that loads all image appraisals, calls `eval::stratified_split`, writes `config/eval-split.toml` with `seed`, `captured_at`, `train`, `test`. The ID lists are the durable artefact — future eval/train runs load them verbatim.
+* [x] In `skeet-refine/src/refining.rs`, token counts already surfaced — `refine_image` returns `(Score, Usage, Duration)` and `Usage` exposes `input_tokens`/`output_tokens`. No code change needed.
+* [x] Add `eval/prices.toml` keyed on model name (`gpt-4o`, `gpt-4o-mini`); expose `ModelPrices::embedded()` and `.cost_for(model, input, output)` on the `eval` crate. Tests use a dummy TOML, not the real one.
+* [x] Parameterise the OpenAI model name in `skeet-refine/src/bin/train.rs`: `--model` CLI flag (default `"gpt-4o"`), flows into both scoring and prompt-rewriting agents. Saved `RefineModel` records the chosen model.
+* [x] `temperature=0` on both `train.rs` completions via `AgentBuilder::temperature(0.0)` — verified `rig` 0.33 exposes this on `AgentBuilder`.
+* [ ] Add a `update-prices` binary in the `eval` crate (and `just update-prices` recipe) that fetches OpenAI pricing from [models.dev's public API](https://models.dev/api.json) — single unauthenticated GET returning `{ provider: { models: { id: { cost: { input, output, cache_read } } } } }` with values **already in $/M tokens** (no per-token conversion). Reads at `.openai.models["<model-id>"].cost`. Takes `--models gpt-4o,gpt-4o-mini`, writes `eval/prices.toml` with a header comment recording the source URL + fetch timestamp. Inline test against a captured fixture so the parser is exercised offline. **Why this matters:** the current `prices.toml` values were hand-written from memory without provenance; `cost_usd` in eval-results files is only as trustworthy as those numbers. (Verified 2026-05-10: hand-written values match models.dev exactly, but no provenance trail in the file.) Run this once before Phase 2 so the baseline cost figure has a verifiable source.
+* [ ] Phase-1 done when: `eval` crate is in place; `skeet-prune` eval refactored (CSV format intentionally changed for honesty, see above); `update-prices` binary added and run once so `prices.toml` has provenance. `just train` output **will** differ slightly from prior runs because `temperature=0` is deliberate.
 
 ##### Phase 2 — establish the current baseline measured against the appraised images
 
@@ -894,7 +892,7 @@ Tasks:
     * after the loop, score the chosen prompt on the held-out test set and write `config/eval-results-phase3.toml`
     * keep `--model` defaulted to `gpt-4o` (no model swap in this phase)
 * [ ] Decide how to manage training cost: ~548 train examples × 10 iterations is ~5500 vision calls per training run. Pick one: reduce `--max-iterations`, subsample the train set per iteration, or accept the cost. Document the chosen approach and the resulting $ figure
-* [ ] Acceptance gate: read baseline precision from `eval-results-baseline.toml`; on the phase-3 test scores find the threshold giving precision ≥ baseline precision; read off recall there
+* [ ] Acceptance gate: read baseline precision from `eval-results-baseline.toml`; on the phase-3 test scores find the operating point giving precision ≥ baseline precision with maximum recall; read off recall there. `pin_at_precision` returns `Option<PinnedPrecision>` — treat `None` (no qualifying threshold) as gate failure.
     * **Pass:** recall ≥ baseline recall (within a tolerance — bootstrap CI on the test set is the principled choice; 1pp absolute is the cheap-and-dirty fallback). Save the new `refine.toml`, deploy, and treat `eval-results-phase3.toml` as the new baseline for phase 4
     * **Fail:** do not deploy. Investigate (label noise on misclassified images? insufficient iterations? prompt drift?). Phase 4 is gated on a successful phase 3
 * [ ] Commit the new `config/refine.toml` and `config/eval-results-phase3.toml` together so the deployed prompt and its accompanying eval are versioned in lockstep

@@ -65,6 +65,9 @@ optimise-r2-check:
 add-to-blocklist at_uri reason="manual":
     cargo run --quiet --release --bin add-to-blocklist -- "{{ at_uri }}" --reason "{{ reason }}"
 
+capture-appraisals:
+    op run --env-file bobby-local.env -- cargo run --quiet --release --bin capture-appraisals -- --store-path {{ R2_STORE }}
+
 train:
     op run --env-file bobby-local.env -- cargo run --quiet --release --bin train
 

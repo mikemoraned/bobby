@@ -1,5 +1,5 @@
 [workspace]
-members = ["build-support", "skeet-store", "skeet-prune", "skeet-feed", "skeet-refine", "face-detection", "shared", "skin-detection", "text-detection", "cloudflare-exporter", "openai-exporter", "test-support"]
+members = ["build-support", "eval", "skeet-store", "skeet-prune", "skeet-feed", "skeet-refine", "face-detection", "shared", "skin-detection", "text-detection", "cloudflare-exporter", "openai-exporter", "test-support"]
 resolver = "2"
 
 [workspace.lints.clippy]
@@ -7,12 +7,14 @@ unwrap_used = "deny"
 
 [workspace.dependencies]
 build-support = { path = "build-support" }
+eval = { path = "eval" }
 test-support = { path = "test-support" }
 chrono = "0.4"
 clap = { version = "4", features = ["derive", "env"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 serde = { version = "1", features = ["derive"] }
 shared = { path = "shared" }
+smartcore = "0.5"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 toml = "0.8"

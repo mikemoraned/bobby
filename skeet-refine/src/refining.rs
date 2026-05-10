@@ -119,6 +119,7 @@ pub fn build_agent(
     let model = client.completion_model(model_name);
     AgentBuilder::new(model)
         .preamble(refine_prompt)
+        .temperature(0.0)
         .build()
 }
 
