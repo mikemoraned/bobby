@@ -904,16 +904,23 @@ Tasks:
 
 ##### Phase 3 — train on the wider dataset; deploy if it doesn't regress
 
+Decisions (10th May):
+* **Cost management → dollar budget**: `train.rs` takes `--budget-usd` (default `5` meaning $5) and works backwards to a per-iteration train sample size, using the per-image cost derived from the baseline's `input_tokens / output_tokens` and `eval/prices.toml`. After reserving the cost of the final 143-image test eval (which is **never** sampled), the residual budget is divided across `--max-iterations` to set the per-iteration sample size. Sample is **stratified by `Band`** so each iteration sees a class-balanced slice. Different per-iteration seed so iterations see different subsets.
+* **Acceptance gate tolerance → 1pp absolute**: `recall ≥ baseline_recall - 0.01`. Bootstrap CI deferred; cheap-and-dirty is fine for the one-shot gate.
+* **Hash drift check**: `train.rs` refuses to run if `config/eval-split.toml`'s content hash differs from the hash recorded in `config/eval-results-baseline.toml`.
+
 * [ ] Extract the appraisal loader from `refine_eval.rs` into `skeet-refine/src/lib.rs` so `train.rs` can share it
+* [ ] Add `eval::stratified_sample(items, sample_size, seed)` alongside `stratified_split` — same per-band partition logic, returns a single sampled `Vec<T>`. Reuses `smartcore::train_test_split` per band so no new RNG dependency.
 * [ ] Update `skeet-refine/src/bin/train.rs` to use the wider dataset:
-    * load `config/eval-split.toml` and use its `train` / `test` ID lists verbatim — the same partition as phase 2 (no re-rolling); refuse to run if the file's content hash differs from what phase 2 recorded
-    * inside the iterative loop: score on **train**, refine prompt using train results, pick the best prompt by **train** F1 — do not peek at the test set during the loop
-    * after the loop, score the chosen prompt on the held-out test set and write `config/eval-results-phase3.toml`
+    * replace the `examples/`-based flags with `--store-path` (via `StoreArgs`), `--split-path` (default `config/eval-split.toml`), `--baseline-path` (default `config/eval-results-baseline.toml`), `--eval-output` (default `config/eval-results-phase3.toml`)
+    * load `config/eval-split.toml` and assert its content hash matches the baseline's `split_config_hash` — refuse to run on mismatch (so a re-rolled split can't silently invalidate phase 2)
+    * fetch the listed **train** image IDs from the store; labels from `Band::is_visible_in_feed()` (matches phase-2 convention)
+    * inside the iterative loop: take a stratified `--budget-usd`-derived subsample of train, score it, refine prompt using results, pick the best prompt by **train F1** — do not peek at the test set during the loop
+    * after the loop, score the chosen prompt on the held-out **test** set (full 143 images, no sampling) and write `config/eval-results-phase3.toml`
     * keep `--model` defaulted to `gpt-4o` (no model swap in this phase)
-* [ ] Decide how to manage training cost: ~548 train examples × 10 iterations is ~5500 vision calls per training run. Pick one: reduce `--max-iterations`, subsample the train set per iteration, or accept the cost. Document the chosen approach and the resulting $ figure
-* [ ] Acceptance gate: read baseline precision from `eval-results-baseline.toml`; on the phase-3 test scores find the operating point giving precision ≥ baseline precision with maximum recall; read off recall there. `pin_at_precision` returns `Option<PinnedPrecision>` — treat `None` (no qualifying threshold) as gate failure.
-    * **Pass:** recall ≥ baseline recall (within a tolerance — bootstrap CI on the test set is the principled choice; 1pp absolute is the cheap-and-dirty fallback). Save the new `refine.toml`, deploy, and treat `eval-results-phase3.toml` as the new baseline for phase 4
-    * **Fail:** do not deploy. Investigate (label noise on misclassified images? insufficient iterations? prompt drift?). Phase 4 is gated on a successful phase 3
+* [ ] Acceptance gate in `train.rs`: read baseline `precision` + `recall` from `eval-results-baseline.toml`; call `pin_at_precision(phase3_labelled, baseline_precision)`. `None` ⇒ gate fail. `Some(PinnedPrecision { recall, .. })` ⇒ pass iff `recall.f64() ≥ baseline_recall.f64() - 0.01`.
+    * **Pass:** save the new `config/refine.toml`, log pass; commit `refine.toml` + `eval-results-phase3.toml` together. Phase 4 inherits `eval-results-phase3.toml` as the new baseline
+    * **Fail:** do not overwrite `config/refine.toml`. Phase 3 eval is still written for inspection. Investigate (label noise on misclassified images? insufficient iterations? prompt drift?). Phase 4 is gated on a successful phase 3
 * [ ] Commit the new `config/refine.toml` and `config/eval-results-phase3.toml` together so the deployed prompt and its accompanying eval are versioned in lockstep
 
 ##### Phase 4 — evaluate cheaper model choices against the phase-3 baseline
