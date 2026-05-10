@@ -880,7 +880,7 @@ Tasks:
     * record the loaded `eval-split.toml`'s path and content hash in the output
     * write `config/eval-results-baseline.toml`; print a stdout summary
 * [x] Add a `just refine-eval` recipe
-* [ ] Run once against production `refine.toml`; **commit** `config/eval-results-baseline.toml`. This is the frozen baseline phases 3 and 4 must not regress against
+* [ ] Run `just refine-eval config/eval-results-baseline.toml` once against production `refine.toml`; **commit** the resulting file. This is the frozen baseline phases 3 and 4 must not regress against
 * [ ] Sanity-check the recorded `cost_usd` against the Phase-1 LLM token metrics in Grafana (or the OpenAI org-costs API) for the equivalent time window — they should agree to within a few percent
 
 ##### Phase 3 — train on the wider dataset; deploy if it doesn't regress

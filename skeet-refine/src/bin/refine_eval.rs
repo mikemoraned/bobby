@@ -32,7 +32,7 @@ struct Args {
     model_path: PathBuf,
 
     /// Path to write the eval results
-    #[arg(long, default_value = "config/eval-results-baseline.toml")]
+    #[arg(long)]
     output: PathBuf,
 
     /// OpenAI API key
