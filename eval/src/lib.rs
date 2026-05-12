@@ -13,4 +13,4 @@ pub use metric_types::{
 pub use metrics::{confusion_at, pin_at_precision, roc_auc_score};
 pub use pricing::{ModelPrices, PricingError};
 pub use results::{EvalResults, EvalResultsError};
-pub use split::{EvalSplit, EvalSplitError, stratified_split};
+pub use split::{EvalSplit, EvalSplitError, stratified_sample, stratified_split};

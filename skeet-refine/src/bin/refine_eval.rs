@@ -1,6 +1,4 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
-use std::str::FromStr;
 
 use clap::Parser;
 use eval::{
@@ -9,9 +7,10 @@ use eval::{
 };
 use futures::stream::{self, StreamExt};
 use shared::Score;
+use skeet_refine::loader::{LabelledImage, load_band_index, load_labelled_images};
 use skeet_refine::model::load_model;
-use skeet_refine::refining::{build_agent, create_client, refine_image};
-use skeet_store::{ImageId, StoreArgs};
+use skeet_refine::refining::{RefineAgent, build_agent, create_client, refine_image};
+use skeet_store::StoreArgs;
 use tracing::{error, info};
 
 #[derive(Parser)]
@@ -46,16 +45,39 @@ struct Args {
 
 #[derive(Debug, thiserror::Error)]
 enum EvalRunError {
-    #[error("test image id {0} is no longer present in the store appraisals")]
-    AppraisalMissing(String),
-    #[error("test image id {0} is no longer present in the store images table")]
-    ImageMissing(String),
-    #[error("invalid image id in split: {0}")]
-    InvalidImageId(String),
     #[error("no positive labels in test set — split is broken")]
     NoPositives,
     #[error("no positive predictions at threshold 0.5 — model is broken")]
     NoPositivePredictions,
+}
+
+async fn score_all(
+    agent: &RefineAgent,
+    images: &[LabelledImage],
+    concurrency: usize,
+) -> Result<Vec<(Score, u64, u64)>, Box<dyn std::error::Error>> {
+    let total = images.len();
+    let scored: Vec<(Score, u64, u64)> = stream::iter(images.iter())
+        .map(|labelled| async move {
+            refine_image(agent, &labelled.image)
+                .await
+                .map(|(s, usage, _d)| (s, usage.input_tokens, usage.output_tokens))
+        })
+        .buffered(concurrency)
+        .enumerate()
+        .map(|(i, r)| {
+            if let Err(e) = &r {
+                error!(idx = i, error = %e, "scoring failed");
+            } else if i % 10 == 0 {
+                info!(idx = i, total, "scoring progress");
+            }
+            r
+        })
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<_, _>>()?;
+    Ok(scored)
 }
 
 #[tokio::main]
@@ -89,83 +111,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let store = args.store.open_store("refine-eval").await?;
+    let band_by_id = load_band_index(&store).await?;
+    let test_images = load_labelled_images(&store, &band_by_id, &split.test).await?;
 
-    let test_ids: Vec<ImageId> = split
-        .test
-        .iter()
-        .map(|s| ImageId::from_str(s).map_err(|_| EvalRunError::InvalidImageId(s.clone())))
-        .collect::<Result<_, _>>()?;
-
-    let appraisals = store.list_all_image_appraisals().await?;
-    let band_by_id: HashMap<ImageId, shared::Band> =
-        appraisals.into_iter().map(|(id, a)| (id, a.band)).collect();
-
-    let labels: Vec<bool> = test_ids
-        .iter()
-        .map(|id| {
-            band_by_id
-                .get(id)
-                .map(|b| b.is_visible_in_feed())
-                .ok_or_else(|| EvalRunError::AppraisalMissing(id.to_string()))
-        })
-        .collect::<Result<_, _>>()?;
-
-    let originals = store.get_originals_by_ids(&test_ids).await?;
-    let images_by_id: HashMap<ImageId, image::DynamicImage> = originals
-        .into_iter()
-        .map(|o| (o.summary.image_id, o.image))
-        .collect();
-    for id in &test_ids {
-        if !images_by_id.contains_key(id) {
-            return Err(EvalRunError::ImageMissing(id.to_string()).into());
-        }
-    }
-
-    info!(
-        count = test_ids.len(),
-        "fetched test images, scoring"
-    );
+    info!(count = test_images.len(), "fetched test images, scoring");
 
     let client = create_client(&args.openai_api_key);
     let agent = build_agent(&client, model.model_name.as_str(), model.prompt.as_str());
-
-    let total = test_ids.len();
-    let scored: Vec<(Score, u64, u64)> = stream::iter(test_ids.iter().cloned())
-        .map(|id| {
-            let agent = &agent;
-            let images_by_id = &images_by_id;
-            async move {
-                let image = images_by_id.get(&id).expect("checked above");
-                refine_image(agent, image).await.map(|(s, usage, _d)| {
-                    (s, usage.input_tokens, usage.output_tokens)
-                })
-            }
-        })
-        .buffered(args.concurrency)
-        .enumerate()
-        .map(|(i, r)| {
-            if let Err(e) = &r {
-                error!(idx = i, error = %e, "scoring failed");
-            } else if i % 10 == 0 {
-                info!(idx = i, total, "scoring progress");
-            }
-            r
-        })
-        .collect::<Vec<_>>()
-        .await
-        .into_iter()
-        .collect::<Result<_, _>>()?;
+    let scored = score_all(&agent, &test_images, args.concurrency).await?;
 
     let (input_tokens, output_tokens): (u64, u64) = scored
         .iter()
         .fold((0u64, 0u64), |(i, o), (_, ti, to)| (i + ti, o + to));
 
-    let labelled: Vec<LabelledScore> = labels
+    let labelled: Vec<LabelledScore> = test_images
         .iter()
         .zip(scored.iter())
-        .map(|(is_pos, (score, _, _))| LabelledScore {
+        .map(|(img, (score, _, _))| LabelledScore {
             score: *score,
-            is_positive: *is_pos,
+            is_positive: img.is_positive(),
         })
         .collect();
 
@@ -203,7 +167,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
     println!("=== Eval results ===");
     println!("  model       : {} ({})", model.model_name, model_version);
-    println!("  test images : {}", test_ids.len());
+    println!("  test images : {}", test_images.len());
     println!("  precision   : {precision} (threshold 0.5)");
     println!("  recall      : {recall} (threshold 0.5)");
     println!("  f1          : {f1} (threshold 0.5)");

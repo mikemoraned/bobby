@@ -71,8 +71,8 @@ capture-appraisals:
 update-prices:
     cargo run --quiet --release --bin update-prices -- --models gpt-4o,gpt-4o-mini
 
-train:
-    op run --env-file bobby-local.env -- cargo run --quiet --release --bin train
+train eval_output:
+    op run --env-file bobby-local.env -- cargo run --quiet --release --bin train -- --store-path {{ R2_STORE }} --eval-output {{ eval_output }}
 
 refine-eval output:
     op run --env-file bobby-local.env -- cargo run --quiet --release --bin refine-eval -- --store-path {{ R2_STORE }} --output {{ output }}

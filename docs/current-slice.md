@@ -909,22 +909,59 @@ Decisions (10th May):
 * **Acceptance gate tolerance → 1pp absolute**: `recall ≥ baseline_recall - 0.01`. Bootstrap CI deferred; cheap-and-dirty is fine for the one-shot gate.
 * **Hash drift check**: `train.rs` refuses to run if `config/eval-split.toml`'s content hash differs from the hash recorded in `config/eval-results-baseline.toml`.
 
-* [ ] Extract the appraisal loader from `refine_eval.rs` into `skeet-refine/src/lib.rs` so `train.rs` can share it
-* [ ] Add `eval::stratified_sample(items, sample_size, seed)` alongside `stratified_split` — same per-band partition logic, returns a single sampled `Vec<T>`. Reuses `smartcore::train_test_split` per band so no new RNG dependency.
-* [ ] Update `skeet-refine/src/bin/train.rs` to use the wider dataset:
-    * replace the `examples/`-based flags with `--store-path` (via `StoreArgs`), `--split-path` (default `config/eval-split.toml`), `--baseline-path` (default `config/eval-results-baseline.toml`), `--eval-output` (default `config/eval-results-phase3.toml`)
+* [x] Extract the appraisal loader from `refine_eval.rs` into `skeet-refine/src/lib.rs` so `train.rs` can share it
+* [x] Add `eval::stratified_sample(items, sample_size, seed)` alongside `stratified_split` — same per-band partition logic, returns a single sampled `Vec<T>`. Reuses `smartcore::train_test_split` per band so no new RNG dependency.
+* [x] Update `skeet-refine/src/bin/train.rs` to use the wider dataset:
+    * replace the `examples/`-based flags with `--store-path` (via `StoreArgs`), `--split-path` (default `config/eval-split.toml`), `--baseline-path` (default `config/eval-results-baseline.toml`), `--eval-output` (required — no default, since each run produces a versioned eval file the caller chooses a name for)
     * load `config/eval-split.toml` and assert its content hash matches the baseline's `split_config_hash` — refuse to run on mismatch (so a re-rolled split can't silently invalidate phase 2)
     * fetch the listed **train** image IDs from the store; labels from `Band::is_visible_in_feed()` (matches phase-2 convention)
     * inside the iterative loop: take a stratified `--budget-usd`-derived subsample of train, score it, refine prompt using results, pick the best prompt by **train F1** — do not peek at the test set during the loop
-    * after the loop, score the chosen prompt on the held-out **test** set (full 143 images, no sampling) and write `config/eval-results-phase3.toml`
+    * after the loop, score the chosen prompt on the held-out **test** set (full 143 images, no sampling) and write to `--eval-output`
     * keep `--model` defaulted to `gpt-4o` (no model swap in this phase)
-* [ ] Acceptance gate in `train.rs`: read baseline `precision` + `recall` from `eval-results-baseline.toml`; call `pin_at_precision(phase3_labelled, baseline_precision)`. `None` ⇒ gate fail. `Some(PinnedPrecision { recall, .. })` ⇒ pass iff `recall.f64() ≥ baseline_recall.f64() - 0.01`.
+* [x] Acceptance gate in `train.rs`: read baseline `precision` + `recall` from `eval-results-baseline.toml`; call `pin_at_precision(phase3_labelled, baseline_precision)`. `None` ⇒ gate fail. `Some(PinnedPrecision { recall, .. })` ⇒ pass iff `recall.f64() ≥ baseline_recall.f64() - 0.01`.
     * **Pass:** save the new `config/refine.toml`, log pass; commit `refine.toml` + `eval-results-phase3.toml` together. Phase 4 inherits `eval-results-phase3.toml` as the new baseline
     * **Fail:** do not overwrite `config/refine.toml`. Phase 3 eval is still written for inspection. Investigate (label noise on misclassified images? insufficient iterations? prompt drift?). Phase 4 is gated on a successful phase 3
-* [ ] Commit the new `config/refine.toml` and `config/eval-results-phase3.toml` together so the deployed prompt and its accompanying eval are versioned in lockstep
+* [x] Run the training pass once: `just train config/eval-results-phase3.toml`. Gate accepted (test P=0.769, R=0.870, F1=0.816 vs baseline P=0.762, R=0.696). **However**, the pinned operating point landed at `threshold=0.600`, not 0.500 — so the candidate clears baseline precision at a different threshold than the deployed default. The accepted-but-unsaved threshold is the deployment gap captured by the next task.
+* [ ] **Capture the operating threshold in `refine.toml`** so the deployed scorer uses the threshold the gate actually accepted at, not the hardcoded 0.5. Concretely:
+    * Add a `decision_threshold: Threshold` field to `RefineModel` (and therefore `refine.toml`) — no `#[serde(default)]`, no backwards-compat shim. If an existing `refine.toml` is checked into the tree, edit it in place to add the field explicitly (per CLAUDE.md: "no backwards-compatibility hacks ... when you can just change the code").
+    * In `train.rs`, on `GateOutcome::Accepted`, save the pinned threshold from `pinned_at_baseline_precision.threshold` into the new field (NOT the default 0.5).
+    * Find every site that currently treats a refine `Score` as positive/negative against a hardcoded 0.5 and switch it to read `model.decision_threshold`. Audit `live-refine`, `Band::is_visible_in_feed`'s callers in the scoring path, and `refine_eval.rs`.
+    * Re-run training after this is in place so the committed `refine.toml` carries the right threshold for the new prompt.
+* [ ] Report budget overshoot at end of `train.rs` run: compare `total_cost` to `--budget-usd` and emit a warning (and a line in the printed summary) if `total_cost > budget_usd`. The 13% overshoot in the first run was the refinement-call text-token cost, which the per-image cost model doesn't reserve for — surfacing it makes the gap visible without forcing a model change.
+* [ ] Re-run training after the threshold-capture fix: `just train config/eval-results-phase3.toml`.
+* [ ] Commit the new `config/refine.toml` and `config/eval-results-phase3.toml` together so the deployed prompt, its threshold, and its accompanying eval are versioned in lockstep
+
+###### Observations
+
+**11th May — first phase-3 training run, `gpt-4o`, 10 iterations, per-iter sample 203:**
+
+| Metric                       | Baseline      | Phase-3 candidate | Δ            |
+| ---------------------------- | ------------- | ----------------- | ------------ |
+| Precision @0.5               | 0.762         | 0.769             | +0.007       |
+| Recall    @0.5               | 0.696         | 0.870             | +0.174       |
+| F1        @0.5               | 0.727         | 0.816             | +0.089       |
+| ROC-AUC                      | 0.860         | 0.897             | +0.037       |
+| Pinned @P=0.762               | thr=0.500, R=0.696 | thr=**0.600**, R=0.870 | recall +0.174 at same precision floor |
+| Best train F1 (in-loop)      | —             | 0.917             |              |
+| Test cost (USD)              | $0.3277       | $0.3841           | +$0.056      |
+| Total run cost (USD)         | —             | $5.6387           | over $5 budget by 13% |
+
+* Gate **ACCEPTED**: the candidate clears the baseline precision floor *and* lifts recall by ~17pp at that floor. The training loop genuinely improved the prompt on held-out data, not just on the in-loop sample.
+* **The pinned threshold is 0.600, not 0.500** — meaning the saved `refine.toml` (which today carries only the prompt) is under-specified: deploying it at the hardcoded 0.5 would give a different precision/recall point than the one the gate accepted. The threshold-capture task above closes this gap, and the committed `refine.toml`/`eval-results-phase3.toml` pair will follow a re-run with that fix in place.
+* Train F1 0.917 vs test F1 0.816 — 10pp gap is generalisation slack, not alarming for an LLM-in-the-loop classifier on 23 held-out positives. Phase 4 will inherit `eval-results-phase3.toml` as the new baseline, so this isn't a free lunch we get to spend twice.
+* Total cost overshot the $5 budget by $0.64 (13%). The reservation model in `per_iteration_sample_size` only counts per-image scoring tokens; it doesn't reserve for the iteration-end prompt-refinement call (one full text completion per iteration). Adequate for a one-shot run but worth surfacing — captured as the budget-overshoot reporting task above.
+
+End-of-phase refactor (do before closing the slice):
+* [ ] Replace bare `f64` dollar amounts (`--budget-usd`, `EvalResults.cost_usd`, `ModelPrice.{input,output}_per_million_usd`, `ModelPrices::cost_for` return) with a `Money`/`Usd` newtype in the `eval` crate. Currently violates the rust.md NewType rule for bare `f64`s; left as a deliberate follow-up to keep this phase focused.
 
 ##### Phase 4 — evaluate cheaper model choices against the phase-3 baseline
 
+* [ ] Add LLM-call resilience to `refine_image` before running phase 4 (transient empty/no-message responses from OpenAI are likely to recur more under cheaper models):
+    * Wrap `refine_image` with bounded retries (3) and exponential backoff (e.g. 500ms × 2^attempt).
+    * On exhausted retries, return a fallback `ScoredCall` with `score = 0.0` and `outcome = ScoringOutcome::FallbackAfterRetries`. **Do not** silently substitute a sentinel into the `Score` field without an accompanying outcome marker — the marker is what makes the substitution honest (per `feedback_no_sentinel_values`).
+    * Make `score_concurrent` infallible: it now returns `Vec<ScoredCall>` rather than `Result<Vec<...>, _>`.
+    * Surface the fallback count both in the per-iteration logs and in the final printed summary so a high fallback rate is visible at a glance.
+    * Consider also wiring this into `refine_eval.rs` for symmetry, since phase 4 will use refine_eval on each candidate.
 * [ ] Pick a small candidate list. Start with `gpt-4o-mini`. Optionally add 1–2 other OpenAI vision models cheaper than `gpt-4o`. Add each candidate's per-token price to `prices.toml` before running
 * [ ] For each candidate: run `train.rs --model <candidate>` against the same `config/eval-split.toml` used in phases 2–3 (the candidate is used as scorer *and* rewriter, per the agreed simplification). Save outputs as `config/eval-results-<candidate>.toml` (don't overwrite the phase-3 file)
 * [ ] Apply the acceptance gate against `eval-results-phase3.toml`: pin precision to phase-3 precision on the candidate's test scores; compare recall

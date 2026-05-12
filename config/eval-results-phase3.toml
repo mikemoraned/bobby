@@ -1,0 +1,19 @@
+split_config_path = "config/eval-split.toml"
+split_config_hash = "627e566ef06bc232"
+model_version = "f1815343"
+model_name = "gpt-4o"
+precision = 0.7692307692307693
+recall = 0.8695652173913043
+f1 = 0.8163265306122449
+roc_auc = 0.8967391304347826
+tp = 20
+fp = 6
+tn = 114
+fn_ = 3
+input_tokens = 149083
+output_tokens = 1144
+cost_usd = 0.38414750000000003
+
+[pinned_precision]
+threshold = 0.6000000238418579
+recall = 0.8695652173913043

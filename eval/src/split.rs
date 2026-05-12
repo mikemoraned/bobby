@@ -83,6 +83,55 @@ pub fn stratified_split<T: Clone + ToString>(
         )
 }
 
+/// Draw a per-band-stratified subsample of approximately `sample_size` items.
+///
+/// Each band is allocated a proportional quota (rounded, minimum 1 if the
+/// band has any items), then `smartcore::model_selection::train_test_split`
+/// shuffles within the band and the quota is taken from the test partition.
+/// The seed offset per band matches `stratified_split` so the two functions
+/// behave consistently for the same `seed`.
+pub fn stratified_sample<T: Clone>(
+    items: &[(T, Band)],
+    sample_size: usize,
+    seed: u64,
+) -> Vec<T> {
+    if items.is_empty() || sample_size == 0 {
+        return Vec::new();
+    }
+    let total = items.len();
+    Band::ALL
+        .iter()
+        .flat_map(|&band| {
+            let group: Vec<T> = items
+                .iter()
+                .filter(|(_, b)| *b == band)
+                .map(|(id, _)| id.clone())
+                .collect();
+            sample_band(group, sample_size, total, seed.wrapping_add(band as u64))
+        })
+        .collect()
+}
+
+fn sample_band<T: Clone>(group: Vec<T>, total_target: usize, total: usize, seed: u64) -> Vec<T> {
+    let n = group.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    let quota = (((total_target as f64) * (n as f64) / (total as f64)).round() as usize)
+        .max(1)
+        .min(n);
+    if quota == n {
+        return group;
+    }
+    let test_size = quota as f32 / n as f32;
+    let dummy_x = DenseMatrix::new(n, 1, vec![0.0_f64; n], false)
+        .expect("(n, 1) shape matches values len");
+    let indices: Vec<u64> = (0..n as u64).collect();
+    let (_, _, _, test_idx) =
+        train_test_split(&dummy_x, &indices, test_size, true, Some(seed));
+    test_idx.into_iter().map(|i| group[i as usize].clone()).collect()
+}
+
 fn split_band<T: Clone>(group: Vec<T>, test_size: f32, seed: u64) -> (Vec<T>, Vec<T>) {
     let n = group.len();
     if (((n as f32) * test_size) as usize) < 1 {
@@ -233,6 +282,77 @@ mod tests {
         split.save(&path).expect("save");
         let loaded = EvalSplit::load(&path).expect("load");
         assert_eq!(split.content_hash(), loaded.content_hash());
+    }
+
+    proptest! {
+        /// Calling `stratified_sample` twice with the same seed and inputs must produce
+        /// an identical sample for any items, sample size, and seed.
+        #[test]
+        fn sample_is_deterministic(
+            items in items_strategy(100),
+            sample_size in 0usize..=50,
+            seed in any::<u64>(),
+        ) {
+            let s1 = stratified_sample(&items, sample_size, seed);
+            let s2 = stratified_sample(&items, sample_size, seed);
+            prop_assert_eq!(s1, s2);
+        }
+
+        /// Every item returned by `stratified_sample` must be one of the input items.
+        #[test]
+        fn sample_is_a_subset(
+            items in items_strategy(100),
+            sample_size in 0usize..=50,
+            seed in any::<u64>(),
+        ) {
+            let inputs: std::collections::HashSet<String> =
+                items.iter().map(|(id, _)| id.clone()).collect();
+            let sample = stratified_sample(&items, sample_size, seed);
+            for id in &sample {
+                prop_assert!(inputs.contains(id));
+            }
+        }
+
+        /// `stratified_sample` returns distinct items (no duplicates).
+        #[test]
+        fn sample_has_no_duplicates(
+            items in items_strategy(100),
+            sample_size in 0usize..=50,
+            seed in any::<u64>(),
+        ) {
+            let sample = stratified_sample(&items, sample_size, seed);
+            let unique: std::collections::HashSet<_> = sample.iter().cloned().collect();
+            prop_assert_eq!(sample.len(), unique.len());
+        }
+    }
+
+    #[test]
+    fn sample_size_zero_returns_empty() {
+        let items = enough_per_band();
+        assert!(stratified_sample(&items, 0, 1).is_empty());
+    }
+
+    #[test]
+    fn sample_size_at_least_total_returns_everything() {
+        let items = enough_per_band();
+        let sample = stratified_sample(&items, items.len() * 2, 1);
+        assert_eq!(sample.len(), items.len());
+    }
+
+    #[test]
+    fn sample_includes_at_least_one_from_each_non_empty_band() {
+        let items = enough_per_band();
+        let bands_in_sample: std::collections::HashSet<_> = stratified_sample(&items, 4, 1)
+            .into_iter()
+            .map(|id| {
+                items
+                    .iter()
+                    .find(|(i, _)| *i == id)
+                    .map(|(_, b)| *b)
+                    .expect("sampled id was an input")
+            })
+            .collect();
+        assert_eq!(bands_in_sample.len(), Band::ALL.len());
     }
 
     #[test]
