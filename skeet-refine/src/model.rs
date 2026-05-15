@@ -3,6 +3,7 @@ use std::fmt::Write as _;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::Path;
 
+use eval::Threshold;
 use serde::{Deserialize, Serialize};
 use shared::ModelVersion;
 
@@ -72,11 +73,15 @@ pub struct RefineModel {
     pub model_provider: ModelProvider,
     pub model_name: ModelName,
     pub prompt: RefinePrompt,
+    /// Score boundary at or above which a refined image is treated as positive.
+    pub decision_threshold: Threshold,
 }
 
 impl RefineModel {
     pub fn version(&self) -> ModelVersion {
+        let threshold_str = format!("{:?}", f64::from(self.decision_threshold));
         let mut entries: Vec<(&str, &str)> = vec![
+            ("decision_threshold", threshold_str.as_str()),
             ("model_name", self.model_name.as_str()),
             ("model_provider", self.model_provider.as_str()),
             ("prompt", self.prompt.as_str()),
@@ -113,12 +118,17 @@ pub fn save_model(path: &Path, model: &RefineModel) -> Result<(), Box<dyn std::e
 mod tests {
     use super::*;
 
+    fn threshold(value: f64) -> Threshold {
+        Threshold::new(value).expect("valid")
+    }
+
     #[test]
     fn version_is_deterministic() {
         let model = RefineModel {
             model_provider: ModelProvider::openai(),
             model_name: ModelName::gpt_4o(),
             prompt: RefinePrompt::new("Rate this image"),
+            decision_threshold: threshold(0.5),
         };
         assert_eq!(model.version(), model.version());
     }
@@ -129,11 +139,30 @@ mod tests {
             model_provider: ModelProvider::openai(),
             model_name: ModelName::gpt_4o(),
             prompt: RefinePrompt::new("Rate this image"),
+            decision_threshold: threshold(0.5),
         };
         let m2 = RefineModel {
             model_provider: ModelProvider::openai(),
             model_name: ModelName::gpt_4o(),
             prompt: RefinePrompt::new("Different prompt"),
+            decision_threshold: threshold(0.5),
+        };
+        assert_ne!(m1.version(), m2.version());
+    }
+
+    #[test]
+    fn version_changes_with_decision_threshold() {
+        let m1 = RefineModel {
+            model_provider: ModelProvider::openai(),
+            model_name: ModelName::gpt_4o(),
+            prompt: RefinePrompt::new("Rate this image"),
+            decision_threshold: threshold(0.5),
+        };
+        let m2 = RefineModel {
+            model_provider: ModelProvider::openai(),
+            model_name: ModelName::gpt_4o(),
+            prompt: RefinePrompt::new("Rate this image"),
+            decision_threshold: threshold(0.6),
         };
         assert_ne!(m1.version(), m2.version());
     }
@@ -147,6 +176,7 @@ mod tests {
             model_provider: ModelProvider::openai(),
             model_name: ModelName::gpt_4o(),
             prompt: RefinePrompt::new("Rate this image"),
+            decision_threshold: threshold(0.6),
         };
 
         save_model(&path, &model).expect("save");
@@ -154,5 +184,6 @@ mod tests {
         assert_eq!(loaded.model_provider, ModelProvider::openai());
         assert_eq!(loaded.model_name, ModelName::gpt_4o());
         assert_eq!(loaded.prompt, RefinePrompt::new("Rate this image"));
+        assert_eq!(loaded.decision_threshold, threshold(0.6));
     }
 }

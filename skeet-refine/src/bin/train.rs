@@ -17,16 +17,18 @@ use skeet_refine::refining::{RefineAgent, SEED_PROMPT, build_agent, create_clien
 use skeet_store::{ImageId, StoreArgs};
 use tracing::{error, info, warn};
 
-/// Score above which the refine classifier's prediction is treated as
-/// positive. Matches the threshold encoded in `Band::is_visible_in_feed`.
-const DECISION_THRESHOLD_F64: f64 = 0.5;
+/// Threshold used during the training loop to score in-loop F1 — the prompt
+/// with the best F1 at this threshold becomes the candidate. The deployed
+/// threshold is decided separately after the loop by pinning at the baseline's
+/// precision floor.
+const TRAINING_LOOP_THRESHOLD_F64: f64 = 0.5;
 
 /// Maximum tolerated drop in recall (absolute) at the baseline's precision
 /// floor before the candidate is rejected.
 const GATE_RECALL_TOLERANCE: f64 = 0.01;
 
-fn decision_threshold() -> Threshold {
-    Threshold::new(DECISION_THRESHOLD_F64).expect("0.5 is in [0, 1]")
+fn training_loop_threshold() -> Threshold {
+    Threshold::new(TRAINING_LOOP_THRESHOLD_F64).expect("0.5 is in [0, 1]")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -190,7 +192,7 @@ async fn refine_prompt(
     scored: &[ScoredCall],
 ) -> Result<String, Box<dyn std::error::Error>> {
     let labelled = labelled_scores(images, scored);
-    let matrix = confusion_at(&labelled, decision_threshold());
+    let matrix = confusion_at(&labelled, training_loop_threshold());
     let f1_pct = matrix
         .f1()
         .map(|v| format!("{:.0}%", f64::from(v) * 100.0))
@@ -326,7 +328,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         total_output += out_t;
 
         let labelled = labelled_scores(&sampled, &scored);
-        let matrix = confusion_at(&labelled, decision_threshold());
+        let matrix = confusion_at(&labelled, training_loop_threshold());
         let train_f1 = matrix.f1();
         info!(
             iteration,
@@ -375,7 +377,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     total_output += test_out;
 
     let test_labelled = labelled_scores(&test_images, &test_scored);
-    let test_matrix = confusion_at(&test_labelled, decision_threshold());
+    let test_matrix = confusion_at(&test_labelled, training_loop_threshold());
     let test_precision = test_matrix
         .precision()
         .ok_or(TrainError::NoPositivePredictions)?;
@@ -390,10 +392,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pinned_at_baseline_precision = pin_at_precision(&test_labelled, baseline.precision);
     let outcome = evaluate_gate(pinned_at_baseline_precision, baseline.recall);
 
+    let candidate_threshold = pinned_at_baseline_precision
+        .map(|p| p.threshold)
+        .unwrap_or_else(training_loop_threshold);
     let candidate_model = RefineModel {
         model_provider: ModelProvider::openai(),
         model_name: ModelName::new(&args.model),
         prompt: RefinePrompt::new(best_prompt.clone()),
+        decision_threshold: candidate_threshold,
     };
     let candidate_version = candidate_model.version().to_string();
 
@@ -458,9 +464,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "  ACCEPTED: candidate clears baseline precision={} with recall ≥ {} - {GATE_RECALL_TOLERANCE}",
                 baseline.precision, baseline.recall
             );
+            println!(
+                "  saved decision_threshold : {}",
+                candidate_model.decision_threshold
+            );
             println!("  written model      : {}", args.model_output.display());
             info!(
                 path = %args.model_output.display(),
+                decision_threshold = %candidate_model.decision_threshold,
                 "saved new refine.toml"
             );
         }
@@ -476,6 +487,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             warn!("acceptance gate rejected candidate; refine.toml left untouched");
         }
+    }
+
+    if total_cost > args.budget_usd {
+        let overshoot = total_cost - args.budget_usd;
+        let pct = overshoot / args.budget_usd * 100.0;
+        println!();
+        println!(
+            "  BUDGET OVERSHOOT   : total ${total_cost:.4} exceeds --budget-usd ${:.4} by ${overshoot:.4} ({pct:.1}%)",
+            args.budget_usd
+        );
+        warn!(
+            total_cost,
+            budget_usd = args.budget_usd,
+            overshoot,
+            overshoot_pct = pct,
+            "training run exceeded budget"
+        );
     }
 
     Ok(())

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use eval::{
-    EvalResults, EvalSplit, LabelledScore, ModelPrices, Threshold, confusion_at, pin_at_precision,
+    EvalResults, EvalSplit, LabelledScore, ModelPrices, confusion_at, pin_at_precision,
     roc_auc_score,
 };
 use futures::stream::{self, StreamExt};
@@ -47,7 +47,7 @@ struct Args {
 enum EvalRunError {
     #[error("no positive labels in test set — split is broken")]
     NoPositives,
-    #[error("no positive predictions at threshold 0.5 — model is broken")]
+    #[error("no positive predictions at the model's decision_threshold — model is broken")]
     NoPositivePredictions,
 }
 
@@ -133,8 +133,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .collect();
 
-    let threshold_05 = Threshold::new(0.5).expect("0.5 is in range");
-    let matrix = confusion_at(&labelled, threshold_05);
+    let decision_threshold = model.decision_threshold;
+    let matrix = confusion_at(&labelled, decision_threshold);
     let precision = matrix.precision().ok_or(EvalRunError::NoPositivePredictions)?;
     let recall = matrix.recall().ok_or(EvalRunError::NoPositives)?;
     let f1 = matrix.f1().expect("precision and recall both defined");
@@ -168,9 +168,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Eval results ===");
     println!("  model       : {} ({})", model.model_name, model_version);
     println!("  test images : {}", test_images.len());
-    println!("  precision   : {precision} (threshold 0.5)");
-    println!("  recall      : {recall} (threshold 0.5)");
-    println!("  f1          : {f1} (threshold 0.5)");
+    println!("  precision   : {precision} (threshold {decision_threshold})");
+    println!("  recall      : {recall} (threshold {decision_threshold})");
+    println!("  f1          : {f1} (threshold {decision_threshold})");
     match roc_auc {
         Some(v) => println!("  roc-auc     : {v}"),
         None => println!("  roc-auc     : (undefined — only one class present)"),
