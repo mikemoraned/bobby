@@ -931,7 +931,7 @@ Decisions (10th May):
       * `live-refine` — no direct Score-vs-0.5 comparison; stores raw scores tagged with `model_version` (which now folds `decision_threshold` into its hash).
       * **Gap:** `Band::is_visible_in_feed`'s feed-path callers go through `Band::from_score`'s hardcoded 0.5 boundary, so feed visibility doesn't yet honour `decision_threshold`. Closing this means plumbing `refine.toml` into `skeet-feed`, or having `live-refine` derive a visible flag, or parameterising `Band::from_score` — bigger than the threshold-capture task, captured here for the deploy-time follow-up.
 * [x] Report budget overshoot at end of `train.rs` run: compare `total_cost` to `--budget-usd` and emit a warning (and a line in the printed summary) if `total_cost > budget_usd`. The 13% overshoot in the first run was the refinement-call text-token cost, which the per-image cost model doesn't reserve for — surfacing it makes the gap visible without forcing a model change.
-* [ ] Re-run training after the threshold-capture fix: `just train config/eval-results-phase3.toml`.
+* [x] Re-run training after the threshold-capture fix: `just train config/eval-results-phase3.toml`. Gate accepted (test P=0.800, R=0.870, F1=0.833); saved `decision_threshold = 0.500`.
 * [ ] Commit the new `config/refine.toml` and `config/eval-results-phase3.toml` together so the deployed prompt, its threshold, and its accompanying eval are versioned in lockstep
 
 ###### Observations
@@ -953,6 +953,23 @@ Decisions (10th May):
 * **The pinned threshold is 0.600, not 0.500** — meaning the saved `refine.toml` (which today carries only the prompt) is under-specified: deploying it at the hardcoded 0.5 would give a different precision/recall point than the one the gate accepted. The threshold-capture task above closes this gap, and the committed `refine.toml`/`eval-results-phase3.toml` pair will follow a re-run with that fix in place.
 * Train F1 0.917 vs test F1 0.816 — 10pp gap is generalisation slack, not alarming for an LLM-in-the-loop classifier on 23 held-out positives. Phase 4 will inherit `eval-results-phase3.toml` as the new baseline, so this isn't a free lunch we get to spend twice.
 * Total cost overshot the $5 budget by $0.64 (13%). The reservation model in `per_iteration_sample_size` only counts per-image scoring tokens; it doesn't reserve for the iteration-end prompt-refinement call (one full text completion per iteration). Adequate for a one-shot run but worth surfacing — captured as the budget-overshoot reporting task above.
+
+**15th May — second phase-3 training run, post-`decision_threshold` capture, `gpt-4o`, 10 iterations, per-iter sample 203:**
+
+| Metric                       | Baseline      | 1st phase-3 run | 2nd phase-3 run | Δ vs baseline |
+| ---------------------------- | ------------- | --------------- | --------------- | ------------- |
+| Precision @ saved threshold  | 0.762 (@0.5)  | 0.769 (@0.5)    | 0.800 (@0.5)    | +0.038        |
+| Recall    @ saved threshold  | 0.696         | 0.870           | 0.870           | +0.174        |
+| F1        @ saved threshold  | 0.727         | 0.816           | 0.833           | +0.106        |
+| ROC-AUC                      | 0.860         | 0.897           | 0.897           | +0.037        |
+| Pinned @P=0.762              | thr=0.500     | thr=0.600       | **thr=0.500**   |               |
+| Best train F1 (in-loop)      | —             | 0.917           | 0.901           |               |
+| Test cost (USD)              | $0.3277       | $0.3841         | $0.3974         | +$0.070       |
+| Total run cost (USD)         | —             | $5.6387         | $5.8239         | over $5 by 16.5% |
+
+* Gate **ACCEPTED**. Saved `decision_threshold = 0.500` — the second run's pinned operating point landed back at 0.5 (the prompt is different and happens to put more positives above 0.5 than the first prompt did).
+* Precision went up (+3pp) without sacrificing recall — slightly better calibrated than the first phase-3 candidate.
+* Budget overshoot ($5.82 vs $5, 16.5%) reported by the new end-of-run warning. Same root cause as run 1: per-image cost model doesn't reserve for the prompt-refinement call. Adequate to live with for phase 4; revisit if a cheaper model widens the gap.
 
 End-of-phase refactor (do before closing the slice):
 * [ ] Replace bare `f64` dollar amounts (`--budget-usd`, `EvalResults.cost_usd`, `ModelPrice.{input,output}_per_million_usd`, `ModelPrices::cost_for` return) with a `Money`/`Usd` newtype in the `eval` crate. Currently violates the rust.md NewType rule for bare `f64`s; left as a deliberate follow-up to keep this phase focused.

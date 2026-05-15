@@ -12,7 +12,7 @@ fn model_version() {
 
     let actual = model.version();
     // Placeholder — will be updated after first run
-    let expected = "c3fa5ec8";
+    let expected = "34d8bec0";
     assert_eq!(
         actual.as_str(),
         expected,
