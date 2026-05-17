@@ -1012,6 +1012,7 @@ Validation before closing the phase:
 
 ##### Phase 4 — evaluate cheaper model choices against the phase-3 baseline
 
+* [ ] refactor: `train.rs` is really big and does multiple things. Split it into logical chunks. These chunks can just be methods or can be separate mods. A good hint of where logical boundaries are is where we have placed `info!` calls.
 * [ ] Add LLM-call resilience to `refine_image` before running phase 4 (transient empty/no-message responses from OpenAI are likely to recur more under cheaper models):
     * Wrap `refine_image` with bounded retries (3) and exponential backoff (e.g. 500ms × 2^attempt).
     * On exhausted retries, return a fallback `ScoredCall` with `score = 0.0` and `outcome = ScoringOutcome::FallbackAfterRetries`. **Do not** silently substitute a sentinel into the `Score` field without an accompanying outcome marker — the marker is what makes the substitution honest (per `feedback_no_sentinel_values`).
