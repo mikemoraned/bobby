@@ -997,6 +997,26 @@ Decisions (10th May):
 * Precision went up (+3pp) without sacrificing recall — slightly better calibrated than the first phase-3 candidate.
 * Budget overshoot ($5.82 vs $5, 16.5%) reported by the new end-of-run warning. Same root cause as run 1: per-image cost model doesn't reserve for the prompt-refinement call. Adequate to live with for phase 4; revisit if a cheaper model widens the gap.
 
+**17th May — third phase-3 training run, post-`Usd`/per-model-registry refactors, `gpt-4o`, 10 iterations, per-iter sample 204:**
+
+| Metric                       | Baseline      | 2nd run (15 May, saved) | 3rd run (17 May) |
+| ---------------------------- | ------------- | ----------------------- | ---------------- |
+| Precision @ saved threshold  | 0.762 (@0.5)  | **0.800 (@0.5)**        | 0.762 (@0.6)     |
+| Recall    @ saved threshold  | 0.696         | **0.870**               | 0.696            |
+| F1        @ saved threshold  | 0.727         | **0.833**               | 0.727            |
+| ROC-AUC                      | 0.860         | 0.897                   | 0.896            |
+| Pinned @P=0.762              | thr=0.500     | thr=0.500               | thr=0.600        |
+| Best train F1 (in-loop)      | —             | 0.901                   | 0.917            |
+| Test cost (USD)              | $0.3277       | $0.3974                 | $0.3934          |
+| Total run cost (USD)         | —             | $5.8239                 | $5.8034          |
+
+* Purpose of the run was to confirm the recent refactors (HashScheme prefix on `ModelVersion`, per-model `RefineModels` registry, historical backfill, `Usd` newtype) still produce a working end-to-end training run. The pipeline machinery worked: gate accepted, `v2:30dca4b3` written, threshold captured, budget overshoot reported.
+* **Result regressed materially vs the 15 May run.** Test recall fell 17pp (0.870 → 0.696) while in-loop train F1 *rose* (0.901 → 0.917) — the classic "loop is overfitting to its own per-iter sample" signature. The candidate just scrapes the gate (`recall=0.696` equals baseline recall, against the `≥ baseline − 0.01` floor).
+* Saved threshold flipped 0.500 → 0.600 again, matching the 1st (11 May) run. Different prompts naturally calibrate to different thresholds; the saved threshold is sensitive to which side of the in-loop noise the chosen prompt lands.
+* **Decision: do not adopt this run as production.** The 15 May `v2:34d8bec0` prompt + threshold=0.500 remain the deployed model. To preserve the regressed run for future audit (training-variance evidence), we commit it as its own commit and then `git revert` that commit — leaving forward-only history with both states recoverable.
+* Phase 4 will therefore inherit the **15 May** `eval-results-phase3.toml` (P=0.800, R=0.870) as its baseline, not this run.
+* Lesson for phase 4: a single training run is a noisy sample. When evaluating cheaper candidates, treat one accepted run with caution — re-running or widening the per-iter sample may be necessary if the gate margin is thin.
+
 End-of-phase refactor (do before closing the slice):
 * [x] Replace bare `f64` dollar amounts (`--budget-usd`, `EvalResults.cost_usd`, `ModelPrice.{input,output}_per_million_usd`, `ModelPrices::cost_for` return) with a `Usd` newtype in the `eval` crate. Currently violates the rust.md NewType rule for bare `f64`s; left as a deliberate follow-up to keep this phase focused.
     * **Backing type:** wrap `rust_decimal::Decimal` (latest 1.42.0). Chosen over a bare-`f64` newtype so monetary arithmetic stops being float-rounded, and over `rusty-money` (overkill — single-currency project, currency-aware abstraction adds friction without benefit) and `uom` (wrong tool — units-of-measurement framework for dimensional analysis, not a decimal-precision money type; doesn't address precision at all since it's generic over `f64`).
