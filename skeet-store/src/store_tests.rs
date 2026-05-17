@@ -879,7 +879,7 @@ async fn list_scores_for_ids_returns_matching() {
         .await
         .unwrap();
     assert_eq!(scores.len(), 1);
-    assert_eq!(scores[&r1.image_id], s1);
+    assert_eq!(scores[&r1.image_id], (s1, mv));
 }
 
 #[tokio::test]

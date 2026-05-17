@@ -8,7 +8,7 @@ use cot::{Body, Template};
 use serde::Deserialize;
 use std::sync::Arc;
 
-use shared::{Appraiser, Band};
+use shared::{Appraiser, Band, ModelVersion};
 use skeet_store::{Appraisal, DiscoveredAt, ImageId, Score, SkeetId, StoredImageSummary};
 use crate::Store;
 use crate::effective_band::image_effective_band;
@@ -24,7 +24,9 @@ pub struct AdminRow {
     pub row_id: String,
     pub item_id: String,
     pub item_id_encoded: String,
+    pub pruner: String,
     pub score: String,
+    pub refiner: String,
     pub auto_band: String,
     pub manual_band: Option<Band>,
     pub manual_band_str: String,
@@ -158,7 +160,7 @@ pub async fn admin(
 
 fn build_rows(
     summaries: &[StoredImageSummary],
-    score_map: &HashMap<ImageId, Score>,
+    score_map: &HashMap<ImageId, (Score, ModelVersion)>,
     skeet_appraisals: &HashMap<SkeetId, Appraisal>,
     image_appraisals: &HashMap<ImageId, Appraisal>,
     view: &str,
@@ -166,7 +168,11 @@ fn build_rows(
     summaries
         .iter()
         .map(|s| {
-            let score = score_map.get(&s.image_id).copied();
+            let scored = score_map.get(&s.image_id);
+            let score = scored.map(|(sc, _)| *sc);
+            let refiner = scored
+                .map(|(_, mv)| mv.to_string())
+                .unwrap_or_else(|| "—".to_string());
             let score_str = score
                 .map(|sc| format!("{sc}"))
                 .unwrap_or_else(|| "—".to_string());
@@ -213,7 +219,9 @@ fn build_rows(
                 row_id,
                 item_id,
                 item_id_encoded,
+                pruner: s.config_version.to_string(),
                 score: score_str,
+                refiner,
                 auto_band,
                 manual_band: manual_appraisal.map(|a| a.band),
                 manual_band_str: manual_appraisal

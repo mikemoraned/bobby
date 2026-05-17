@@ -325,7 +325,7 @@ impl SkeetStore {
     pub async fn list_scores_for_ids(
         &self,
         image_ids: &[&str],
-    ) -> Result<HashMap<ImageId, Score>, StoreError> {
+    ) -> Result<HashMap<ImageId, (Score, ModelVersion)>, StoreError> {
         if image_ids.is_empty() {
             return Ok(HashMap::new());
         }
@@ -340,7 +340,11 @@ impl SkeetStore {
         let query = self
             .scores_table
             .query()
-            .select(lancedb::query::Select::columns(&["image_id", "score"]))
+            .select(lancedb::query::Select::columns(&[
+                "image_id",
+                "score",
+                "model_version",
+            ]))
             .only_if(filter);
         let batches = execute_query(&query, "list_scores_for_ids").await?;
 
@@ -348,11 +352,13 @@ impl SkeetStore {
         for batch in &batches {
             let ids = typed_column::<StringArray>(batch, "image_id")?;
             let scores = typed_column::<Float32Array>(batch, "score")?;
+            let model_versions = typed_column::<StringArray>(batch, "model_version")?;
             for i in 0..batch.num_rows() {
                 let score = Score::new(scores.value(i))
                     .map_err(|e| StoreError::ValidationFailed(e.to_string()))?;
                 let image_id: ImageId = ids.value(i).parse()?;
-                score_map.insert(image_id, score);
+                let model_version = ModelVersion::from(model_versions.value(i));
+                score_map.insert(image_id, (score, model_version));
             }
         }
         Ok(score_map)
