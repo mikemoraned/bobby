@@ -10,6 +10,7 @@ pub mod band;
 mod blocklist;
 pub mod labels;
 mod rejection;
+pub mod refine_model;
 pub mod score;
 pub mod skeet_id;
 pub mod tracing;
@@ -18,8 +19,12 @@ mod zone;
 pub use appraiser::{Appraiser, ParseAppraiserError};
 pub use band::{Band, ParseBandError};
 pub use blocklist::{BlockedEntry, BlocklistConfig};
+pub use refine_model::{
+    HashScheme, Label, ModelName, ModelProvider, RefineModel, RefineModels, RefineModelsError,
+    RefinePrompt,
+};
 pub use rejection::{Rejection, RejectionCategories, RejectionCategory};
-pub use score::{InvalidScore, Score};
+pub use score::{InvalidScore, InvalidThreshold, Score, Threshold};
 use serde::Deserialize;
 use skeet_id::SkeetId;
 pub use zone::Zone;

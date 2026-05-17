@@ -10609,6 +10609,7 @@ dependencies = [
  "opentelemetry_sdk",
  "proptest",
  "serde",
+ "tempfile",
  "thiserror 2.0.18",
  "toml 0.8.23",
  "tracing",
@@ -10731,6 +10732,7 @@ dependencies = [
  "shared",
  "skeet-store",
  "tempfile",
+ "test-support",
  "testcontainers",
  "testcontainers-modules",
  "tokio",
@@ -11459,6 +11461,7 @@ name = "test-support"
 version = "0.1.0"
 dependencies = [
  "opentelemetry_sdk",
+ "shared",
 ]
 
 [[package]]

@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 opentelemetry_sdk = { workspace = true, features = ["testing"] }
+shared = { workspace = true, features = ["test-helpers"] }

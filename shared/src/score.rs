@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 /// A score in the range 0.0–1.0, where 1.0 is the best match.
 ///
 /// `Score::new` rejects NaN (NaN is not in any range), so the type guarantees
@@ -56,6 +58,61 @@ impl Ord for Score {
 }
 
 impl PartialOrd for Score {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// A threshold in the range 0.0–1.0.
+///
+/// `Threshold::new` rejects NaN and out-of-range values, so `Eq` and `Ord`
+/// are implemented soundly via `f64::total_cmp`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Threshold(f64);
+
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("threshold must be in [0.0, 1.0], got {0}")]
+pub struct InvalidThreshold(f64);
+
+impl Threshold {
+    pub fn new(value: f64) -> Result<Self, InvalidThreshold> {
+        if (0.0..=1.0).contains(&value) {
+            Ok(Self(value))
+        } else {
+            Err(InvalidThreshold(value))
+        }
+    }
+}
+
+impl From<Threshold> for f64 {
+    fn from(v: Threshold) -> Self {
+        v.0
+    }
+}
+
+impl std::fmt::Display for Threshold {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:.3}", self.0)
+    }
+}
+
+impl From<Score> for Threshold {
+    fn from(s: Score) -> Self {
+        // Score is validated to [0.0, 1.0], so Threshold::new is infallible here.
+        Self::new(f64::from(s)).expect("Score is in [0.0, 1.0]")
+    }
+}
+
+impl Eq for Threshold {}
+
+impl Ord for Threshold {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.total_cmp(&other.0)
+    }
+}
+
+impl PartialOrd for Threshold {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }

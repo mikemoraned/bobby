@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use shared::Score;
+pub use shared::Threshold;
 
 #[derive(Debug, thiserror::Error)]
 #[error("{name} must be in [0.0, 1.0], got {value}")]
@@ -116,50 +117,6 @@ impl From<RocAuc> for f64 {
 impl std::fmt::Display for RocAuc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:.3}", self.0)
-    }
-}
-
-/// `Threshold::new` rejects NaN, so `Eq` and `Ord` are sound (`f64::total_cmp` is total).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct Threshold(f64);
-
-impl Threshold {
-    pub fn new(value: f64) -> Result<Self, InvalidMetric> {
-        validated("threshold", value).map(Self)
-    }
-}
-
-impl From<Threshold> for f64 {
-    fn from(v: Threshold) -> Self {
-        v.0
-    }
-}
-
-impl std::fmt::Display for Threshold {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:.3}", self.0)
-    }
-}
-
-impl From<Score> for Threshold {
-    fn from(s: Score) -> Self {
-        // Score is validated to [0.0, 1.0], so Threshold::new is infallible here.
-        Self::new(f64::from(s)).expect("Score is in [0.0, 1.0]")
-    }
-}
-
-impl Eq for Threshold {}
-
-impl Ord for Threshold {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.total_cmp(&other.0)
-    }
-}
-
-impl PartialOrd for Threshold {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
     }
 }
 

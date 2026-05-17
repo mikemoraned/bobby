@@ -1,3 +1,26 @@
+use std::sync::Arc;
+
+use shared::refine_model::{HashScheme, ModelName, ModelProvider, RefinePrompt};
+use shared::{RefineModel, RefineModels, Threshold};
+
+/// A `RefineModels` registry for use in tests, containing a single entry
+/// keyed by `"test"` (a synthetic version string, not a real hash) that
+/// accepts any score ≥ 0.5.
+pub fn test_models() -> Arc<RefineModels> {
+    let mut models = RefineModels::new();
+    models.insert_unverified(
+        "test",
+        RefineModel {
+            model_provider: ModelProvider::openai(),
+            model_name: ModelName::gpt_4o(),
+            prompt: RefinePrompt::new("test prompt"),
+            decision_threshold: Threshold::new(0.5).expect("valid"),
+            hash_scheme: HashScheme::V2,
+        },
+    );
+    Arc::new(models)
+}
+
 use opentelemetry_sdk::metrics::{
     InMemoryMetricExporter, SdkMeterProvider,
     data::{AggregatedMetrics, MetricData},

@@ -12,7 +12,7 @@ use rig::client::CompletionClient;
 use rig::completion::request::Prompt;
 use shared::{Band, Score};
 use skeet_refine::loader::{LabelledImage, load_band_index, load_labelled_images};
-use skeet_refine::model::{ModelName, ModelProvider, RefineModel, RefinePrompt, save_model};
+use skeet_refine::model::{HashScheme, Label, ModelName, ModelProvider, RefineModel, RefineModels, RefinePrompt};
 use skeet_refine::refining::{RefineAgent, SEED_PROMPT, build_agent, create_client, refine_image};
 use skeet_store::{ImageId, StoreArgs};
 use tracing::{error, info, warn};
@@ -269,6 +269,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
 
+    let mut models = RefineModels::load_or_empty(&args.model_output)?;
+    info!(path = %args.model_output.display(), "loaded refine models");
+
     let split = EvalSplit::load(&args.split_path)?;
     let split_hash = split.content_hash();
     let baseline = EvalResults::load(&args.baseline_path)?;
@@ -400,6 +403,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         model_name: ModelName::new(&args.model),
         prompt: RefinePrompt::new(best_prompt.clone()),
         decision_threshold: candidate_threshold,
+        hash_scheme: HashScheme::V2,
     };
     let candidate_version = candidate_model.version().to_string();
 
@@ -458,7 +462,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match outcome {
         GateOutcome::Accepted => {
-            save_model(&args.model_output, &candidate_model)?;
+            models.insert(candidate_model.clone(), &[Label::production()]);
+            models.save(&args.model_output)?;
             println!();
             println!(
                 "  ACCEPTED: candidate clears baseline precision={} with recall ≥ {} - {GATE_RECALL_TOLERANCE}",

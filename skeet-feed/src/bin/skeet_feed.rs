@@ -1,11 +1,12 @@
 #![warn(clippy::all, clippy::nursery)]
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use chrono::Utc;
 use clap::Parser;
 use cot::project::Bootstrapper;
-use shared::Appraiser;
+use shared::{Appraiser, RefineModels};
 use skeet_feed::auth_config::OAuthConfig;
 use skeet_feed::feed_cache::{FeedCache, FeedCacheLayer};
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
@@ -42,6 +43,10 @@ struct Args {
     /// Maximum age in hours for posts to be included
     #[arg(long, default_value_t = 48)]
     max_age_hours: u64,
+
+    /// Path to the refine model registry (refine.toml)
+    #[arg(long, default_value = "config/refine.toml")]
+    model_path: PathBuf,
 
     /// Enable local admin mode (uses Appraiser::LocalAdmin for appraisals)
     #[arg(long, default_value_t = false)]
@@ -91,6 +96,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .expect("failed to open store at startup"),
     );
 
+    let models = Arc::new(
+        RefineModels::load(&args.model_path)
+            .unwrap_or_else(|e| panic!("failed to load {}: {e}", args.model_path.display())),
+    );
+    info!(path = %args.model_path.display(), "loaded refine models");
+
     let feed_params = FeedParams {
         hostname: args.hostname.clone(),
         publisher_did: args.publisher_did,
@@ -108,6 +119,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cache = Arc::new(FeedCache::new(
         Arc::clone(&store),
+        Arc::clone(&models),
         feed_params.max_entries,
         feed_params.max_age_hours,
     ));

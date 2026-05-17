@@ -8,7 +8,7 @@ use eval::{
 use futures::stream::{self, StreamExt};
 use shared::Score;
 use skeet_refine::loader::{LabelledImage, load_band_index, load_labelled_images};
-use skeet_refine::model::load_model;
+use skeet_refine::model::{Label, RefineModels};
 use skeet_refine::refining::{RefineAgent, build_agent, create_client, refine_image};
 use skeet_store::StoreArgs;
 use tracing::{error, info};
@@ -101,7 +101,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "loaded frozen split"
     );
 
-    let model = load_model(&args.model_path)?;
+    let models = RefineModels::load(&args.model_path)?;
+    let model = models
+        .by_label(&Label::production())
+        .ok_or("no production label in refine.toml")?;
     let model_version = model.version();
     info!(
         path = %args.model_path.display(),

@@ -6,6 +6,7 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::FromRequestHead;
+use shared::RefineModels;
 use skeet_store::{
     Appraisal, IMAGE_APPRAISAL_TABLE_NAME, ImageId, SCORE_TABLE_NAME,
     SKEET_APPRAISAL_TABLE_NAME, Score, SkeetId, SkeetStore, StoredImageSummary, Version,
@@ -28,12 +29,14 @@ const RELEVANT_TABLES: &[&str] = &[
 /// How often the background worker checks for version changes.
 const BACKGROUND_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 
-/// Cached feed data including scored summaries and manual appraisals.
+/// Cached feed data including scored summaries, manual appraisals, and the
+/// model registry used to interpret each score's `model_version`.
 #[derive(Clone)]
 pub struct CachedFeed {
-    pub entries: Vec<(StoredImageSummary, Score)>,
+    pub entries: Vec<(StoredImageSummary, Score, skeet_store::ModelVersion)>,
     pub skeet_appraisals: HashMap<SkeetId, Appraisal>,
     pub image_appraisals: HashMap<ImageId, Appraisal>,
+    pub models: Arc<RefineModels>,
 }
 
 struct CacheEntry {
@@ -44,6 +47,7 @@ struct CacheEntry {
 
 pub struct FeedCache {
     store: Arc<SkeetStore>,
+    models: Arc<RefineModels>,
     limit: usize,
     max_age_hours: u64,
     inner: RwLock<Option<CacheEntry>>,
@@ -58,9 +62,15 @@ pub enum RefreshOutcome {
 }
 
 impl FeedCache {
-    pub fn new(store: Arc<SkeetStore>, limit: usize, max_age_hours: u64) -> Self {
+    pub fn new(
+        store: Arc<SkeetStore>,
+        models: Arc<RefineModels>,
+        limit: usize,
+        max_age_hours: u64,
+    ) -> Self {
         Self {
             store,
+            models,
             limit,
             max_age_hours,
             inner: RwLock::new(None),
@@ -136,6 +146,7 @@ impl FeedCache {
             entries,
             skeet_appraisals,
             image_appraisals,
+            models: self.models.clone(),
         };
         let cloned = feed.clone();
         {
@@ -248,6 +259,7 @@ mod tests {
     use shared::{Appraiser, Band};
     use skeet_store::ModelVersion;
     use skeet_store::test_utils::{make_record, open_temp_store};
+    use test_support::test_models;
 
     async fn seed_store(store: &SkeetStore, suffix: &str, r: u8, score: f32) {
         let record = make_record(suffix, r, 0, 0);
@@ -269,7 +281,7 @@ mod tests {
         let store = Arc::new(open_temp_store(&dir).await);
         seed_store(&store, "a", 10, 0.9).await;
 
-        let cache = FeedCache::new(Arc::clone(&store), 10, 48);
+        let cache = FeedCache::new(Arc::clone(&store), test_models(), 10, 48);
         let result = cache.get().await.expect("get");
         assert_eq!(result.entries.len(), 1);
         assert!(cache.refreshed_at().await.is_some());
@@ -280,7 +292,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("create temp dir");
         let store = Arc::new(open_temp_store(&dir).await);
 
-        let cache = FeedCache::new(Arc::clone(&store), 10, 48);
+        let cache = FeedCache::new(Arc::clone(&store), test_models(), 10, 48);
         let result = cache.get().await.expect("get");
         assert!(result.entries.is_empty());
     }
@@ -291,7 +303,7 @@ mod tests {
         let store = Arc::new(open_temp_store(&dir).await);
         seed_store(&store, "a", 10, 0.9).await;
 
-        let cache = FeedCache::new(Arc::clone(&store), 10, 48);
+        let cache = FeedCache::new(Arc::clone(&store), test_models(), 10, 48);
         let first = cache.get().await.expect("first get");
         assert_eq!(first.entries.len(), 1);
 
@@ -309,7 +321,7 @@ mod tests {
         let store = Arc::new(open_temp_store(&dir).await);
         seed_store(&store, "a", 10, 0.9).await;
 
-        let cache = FeedCache::new(Arc::clone(&store), 10, 48);
+        let cache = FeedCache::new(Arc::clone(&store), test_models(), 10, 48);
         let outcome = cache.refresh_if_changed().await.expect("refresh");
         assert!(
             matches!(outcome, RefreshOutcome::Refreshed { entry_count: 1 }),
@@ -326,7 +338,7 @@ mod tests {
         let store = Arc::new(open_temp_store(&dir).await);
         seed_store(&store, "a", 10, 0.9).await;
 
-        let cache = FeedCache::new(Arc::clone(&store), 10, 48);
+        let cache = FeedCache::new(Arc::clone(&store), test_models(), 10, 48);
         cache.get().await.expect("first get");
 
         // Add a new image but don't score it — this changes the images table
@@ -347,7 +359,7 @@ mod tests {
         let store = Arc::new(open_temp_store(&dir).await);
         seed_store(&store, "a", 10, 0.9).await;
 
-        let cache = FeedCache::new(Arc::clone(&store), 10, 48);
+        let cache = FeedCache::new(Arc::clone(&store), test_models(), 10, 48);
         cache.get().await.expect("first get");
 
         seed_store(&store, "b", 20, 0.8).await;
@@ -368,7 +380,7 @@ mod tests {
         let store = Arc::new(open_temp_store(&dir).await);
         seed_store(&store, "a", 10, 0.9).await;
 
-        let cache = FeedCache::new(Arc::clone(&store), 10, 48);
+        let cache = FeedCache::new(Arc::clone(&store), test_models(), 10, 48);
         cache.get().await.expect("first get");
 
         let appraiser = Appraiser::new_github("tester").expect("valid appraiser");
@@ -393,7 +405,7 @@ mod tests {
         let store = Arc::new(open_temp_store(&dir).await);
         seed_store(&store, "a", 10, 0.9).await;
 
-        let cache = FeedCache::new(Arc::clone(&store), 10, 48);
+        let cache = FeedCache::new(Arc::clone(&store), test_models(), 10, 48);
         cache.get().await.expect("first get");
 
         for _ in 0..3 {
@@ -411,7 +423,7 @@ mod tests {
         let store = Arc::new(open_temp_store(&dir).await);
         seed_store(&store, "a", 10, 0.9).await;
 
-        let cache = FeedCache::new(Arc::clone(&store), 10, 48);
+        let cache = FeedCache::new(Arc::clone(&store), test_models(), 10, 48);
         assert!(cache.refreshed_at().await.is_none());
 
         cache.get().await.expect("get");

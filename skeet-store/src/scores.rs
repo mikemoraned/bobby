@@ -14,7 +14,7 @@ use crate::{ModelVersion, Score, SkeetStore, StoredImageSummary, StoreError};
 
 pub struct ScoresCache {
     pub version: u64,
-    pub scores: HashMap<ImageId, Score>,
+    pub scores: HashMap<ImageId, (Score, ModelVersion)>,
 }
 
 impl SkeetStore {
@@ -148,7 +148,7 @@ impl SkeetStore {
         &self,
         limit: usize,
         max_age_hours: Option<u64>,
-    ) -> Result<Vec<(StoredImageSummary, Score)>, StoreError> {
+    ) -> Result<Vec<(StoredImageSummary, Score, ModelVersion)>, StoreError> {
         if limit > Self::MAX_SCORED_SUMMARIES {
             return Err(StoreError::LimitExceeded {
                 requested: limit,
@@ -202,17 +202,17 @@ impl SkeetStore {
         &self,
         limit: usize,
         recent_ids: &Option<std::collections::HashSet<ImageId>>,
-    ) -> Result<Vec<(Score, ImageId)>, StoreError> {
+    ) -> Result<Vec<(Score, ModelVersion, ImageId)>, StoreError> {
         let all_scores_map = self.cached_scores().await?;
 
-        let mut all_scores: Vec<(Score, ImageId)> = all_scores_map
+        let mut all_scores: Vec<(Score, ModelVersion, ImageId)> = all_scores_map
             .iter()
             .filter(|(id, _)| {
                 recent_ids
                     .as_ref()
                     .is_none_or(|recent| recent.contains(id))
             })
-            .map(|(id, score)| (*score, id.clone()))
+            .map(|(id, (score, mv))| (*score, mv.clone(), id.clone()))
             .collect();
         info!(score_rows = all_scores.len(), "read scores (after age filter)");
 
@@ -225,7 +225,7 @@ impl SkeetStore {
     }
 
     #[instrument(skip(self))]
-    async fn cached_scores(&self) -> Result<HashMap<ImageId, Score>, StoreError> {
+    async fn cached_scores(&self) -> Result<HashMap<ImageId, (Score, ModelVersion)>, StoreError> {
         let current_version = self.scores_table.version().await?;
 
         // Fast path: check if cache is still valid
@@ -244,18 +244,20 @@ impl SkeetStore {
         let scored_query = self
             .scores_table
             .query()
-            .select(lancedb::query::Select::columns(&["image_id", "score"]));
+            .select(lancedb::query::Select::columns(&["image_id", "score", "model_version"]));
         let scored_batches = execute_query(&scored_query, "cached_scores:full_scan").await?;
 
         let mut scores = HashMap::new();
         for batch in &scored_batches {
             let image_ids = typed_column::<StringArray>(batch, "image_id")?;
             let score_vals = typed_column::<Float32Array>(batch, "score")?;
+            let model_versions = typed_column::<StringArray>(batch, "model_version")?;
             for i in 0..batch.num_rows() {
                 let image_id: ImageId = image_ids.value(i).parse()?;
                 let score = Score::new(score_vals.value(i))
                     .map_err(|e| StoreError::ValidationFailed(e.to_string()))?;
-                scores.insert(image_id, score);
+                let model_version = ModelVersion::from(model_versions.value(i));
+                scores.insert(image_id, (score, model_version));
             }
         }
         info!(score_rows = scores.len(), version = current_version, "scores cache refreshed");
@@ -271,16 +273,16 @@ impl SkeetStore {
     #[instrument(skip(self, top_scores))]
     async fn fetch_summaries_for_scores(
         &self,
-        top_scores: &[(Score, ImageId)],
-    ) -> Result<Vec<(StoredImageSummary, Score)>, StoreError> {
-        let score_map: HashMap<&ImageId, Score> = top_scores
+        top_scores: &[(Score, ModelVersion, ImageId)],
+    ) -> Result<Vec<(StoredImageSummary, Score, ModelVersion)>, StoreError> {
+        let score_map: HashMap<&ImageId, (Score, ModelVersion)> = top_scores
             .iter()
-            .map(|(s, id)| (id, *s))
+            .map(|(s, mv, id)| (id, (*s, mv.clone())))
             .collect();
 
         let in_list = top_scores
             .iter()
-            .map(|(_, id)| format!("'{id}'"))
+            .map(|(_, _, id)| format!("'{id}'"))
             .collect::<Vec<_>>()
             .join(", ");
         let filter = format!("image_id IN ({in_list})");
@@ -302,11 +304,11 @@ impl SkeetStore {
         let summaries = batches_to_summaries(&batches)?;
         info!(summary_rows = summaries.len(), "read summaries for top scores");
 
-        let mut scored: Vec<(StoredImageSummary, Score)> = summaries
+        let mut scored: Vec<(StoredImageSummary, Score, ModelVersion)> = summaries
             .into_iter()
             .filter_map(|s| {
-                let score = score_map.get(&s.image_id).copied();
-                score.map(|sc| (s, sc))
+                let entry = score_map.get(&s.image_id).cloned();
+                entry.map(|(sc, mv)| (s, sc, mv))
             })
             .collect();
 
@@ -354,5 +356,28 @@ impl SkeetStore {
             }
         }
         Ok(score_map)
+    }
+
+    /// Scan all scores and return a count per distinct `model_version`.
+    #[instrument(skip(self))]
+    pub async fn count_scores_by_model_version(
+        &self,
+    ) -> Result<std::collections::HashMap<String, usize>, StoreError> {
+        let query = self
+            .scores_table
+            .query()
+            .select(lancedb::query::Select::columns(&["model_version"]));
+        let batches = execute_query(&query, "count_scores_by_model_version").await?;
+
+        let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for batch in &batches {
+            let model_versions = typed_column::<StringArray>(batch, "model_version")?;
+            for i in 0..batch.num_rows() {
+                *counts
+                    .entry(model_versions.value(i).to_string())
+                    .or_insert(0) += 1;
+            }
+        }
+        Ok(counts)
     }
 }

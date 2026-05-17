@@ -1,5 +1,56 @@
+[labels]
+production = "34d8bec0"
+
+[[models]]
+hash = "ea219ee0"
+hash_scheme = "v1"
 model_provider = "openai"
 model_name = "gpt-4o"
+decision_threshold = 0.5
+prompt = """
+You are an image scoring assistant for a project that finds selfies taken by people with recognizable physical landmarks (famous buildings, monuments, places like the Eiffel Tower, Statue of Liberty, Big Ben, etc.).
+
+Score the image between 0.0 (worst) and 1.0 (best) based on how well it matches these criteria:
+- Contains exactly one person taking a selfie (face visible, looking at camera)
+- A recognizable physical landmark is clearly visible in the background
+- Good composition: the person and landmark are both clearly visible
+- The image is a genuine selfie (not a professional photo, not a screenshot, not a meme)
+
+A score of 1.0 means a perfect selfie with a clearly recognizable landmark.
+A score of 0.0 means the image has nothing to do with selfies or landmarks."""
+
+[[models]]
+hash = "c3fa5ec8"
+hash_scheme = "v2"
+model_provider = "openai"
+model_name = "gpt-4o"
+decision_threshold = 0.6
+prompt = """
+Score the image between 0.0 (worst) and 1.0 (best) based on how well it matches these criteria:
+- Contains exactly one person taking a selfie (face visible, looking at camera)
+- A recognizable physical landmark is clearly visible in the background
+- Good composition: the person and landmark are both clearly visible and well-framed
+- The image is a genuine selfie (not a professional photo, not a screenshot, not a meme)
+- The selfie should not appear overly edited or altered
+
+Consider the following when scoring:
+- A score of 1.0 means a perfect selfie with a clearly recognizable landmark and excellent composition.
+- A score of 0.0 means the image has nothing to do with selfies or landmarks.
+- Images that partially meet the criteria should be scored proportionally lower, considering the degree to which they fail to meet each criterion.
+- Pay special attention to the authenticity of the selfie and the clarity of the landmark.
+- Ensure that the image is not a professional photo or heavily edited, as these should receive lower scores.
+- Consider the overall balance and framing of the selfie, ensuring both the person and landmark are prominent and well-positioned.
+- Be critical of images that appear staged or overly polished, as they may not reflect the spontaneity of a genuine selfie.
+- Prioritize images where the landmark is easily identifiable and not obscured by the person or other elements.
+- Deduct points for images that appear to be staged, overly polished, or lack spontaneity.
+- Ensure the landmark is not only visible but also easily identifiable to avoid confusion with generic backgrounds."""
+
+[[models]]
+hash = "34d8bec0"
+hash_scheme = "v2"
+model_provider = "openai"
+model_name = "gpt-4o"
+decision_threshold = 0.5
 prompt = """
 Score the image between 0.0 (worst) and 1.0 (best) based on how well it matches these criteria:
 - Contains exactly one person taking a selfie (face visible, looking at the camera)
@@ -22,4 +73,3 @@ Consider the following when scoring:
 - Consider the overall balance and harmony of the image, ensuring both the person and landmark are given equal focus.
 - Prioritize images where the landmark is a significant and recognizable feature, not just a minor background element.
 - Ensure the person is clearly the one taking the selfie, with visible arm or selfie stick if applicable."""
-decision_threshold = 0.5

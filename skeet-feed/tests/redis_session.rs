@@ -23,6 +23,7 @@ use skeet_feed::project::FeedProject;
 use skeet_feed::{AppraiserLayer, FeedCacheLayer, OAuthConfigLayer, StartedAtLayer, StoreLayer};
 use skeet_store::test_utils::{make_record, open_temp_store};
 use skeet_store::{ModelVersion, Score, SkeetStore};
+use test_support::test_models;
 use testcontainers::core::{IntoContainerPort, WaitFor};
 use testcontainers::runners::AsyncRunner;
 use testcontainers::{ContainerAsync, CopyTargetOptions, GenericImage, ImageExt};
@@ -48,6 +49,7 @@ async fn oauth_client_with_redis(
     let params = test_params();
     let cache = Arc::new(FeedCache::new(
         Arc::clone(&store),
+        test_models(),
         params.max_entries,
         params.max_age_hours,
     ));

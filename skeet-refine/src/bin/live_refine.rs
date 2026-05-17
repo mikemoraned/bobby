@@ -6,7 +6,7 @@ use shared::ModelVersion;
 use skeet_refine::batch::Batch;
 use skeet_refine::llm_metrics::LlmMetrics;
 use skeet_refine::metrics::LiveRefineMetrics;
-use skeet_refine::model::load_model;
+use skeet_refine::model::{Label, RefineModels};
 use skeet_refine::polling::PollingBatchSource;
 use skeet_refine::refining::{build_agent, create_client, refine_image, RefineAgent};
 use skeet_refine::tick::{RunningTotals, TickAccumulator};
@@ -82,7 +82,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(git_hash = env!("BUILD_GIT_HASH"), "live-refine starting");
 
     let args = Args::parse();
-    let model = load_model(&args.model_path)?;
+    let models = RefineModels::load(&args.model_path)?;
+    let model = models
+        .by_label(&Label::production())
+        .ok_or("no production label in refine.toml")?;
     let model_version = model.version();
     info!(model_name = %model.model_name, %model_version, "loaded model");
 

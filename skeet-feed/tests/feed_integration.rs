@@ -46,6 +46,7 @@ async fn spawn_server() -> TestServer {
     let hostname = format!("localhost:{port}");
     let publisher_did = format!("did:web:localhost:{port}");
     let bin = env!("CARGO_BIN_EXE_skeet-feed");
+    let model_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../config/refine.toml");
     let child = Command::new(bin)
         .args([
             "--store-path",
@@ -57,6 +58,8 @@ async fn spawn_server() -> TestServer {
             "--publisher-did",
             &publisher_did,
             "--local-admin",
+            "--model-path",
+            model_path,
         ])
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())

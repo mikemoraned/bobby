@@ -38,6 +38,9 @@ at-metadata-dump at_uri:
 count-versions:
     {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file bobby-local.env -- cargo run --quiet --release --bin count-versions -- --store-path {{ R2_STORE }}
 
+model-versions:
+    {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file bobby-local.env -- cargo run --quiet --release --bin model-versions -- --store-path {{ R2_STORE }}
+
 abort-multipart-uploads:
     {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file bobby-local.env -- cargo run --quiet --release --bin abort-multipart-uploads -- --store-path {{ R2_STORE }}
 
