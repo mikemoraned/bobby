@@ -145,7 +145,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pinned_precision = pin_at_precision(&labelled, precision);
 
     let prices = ModelPrices::embedded()?;
-    let cost_usd = prices.cost_for(model.model_name.as_str(), input_tokens, output_tokens)?;
+    let cost = prices.cost_for(model.model_name.as_str(), input_tokens, output_tokens)?;
 
     let results = EvalResults {
         split_config_path: args.split_path.display().to_string(),
@@ -163,7 +163,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         fn_: matrix.false_neg,
         input_tokens,
         output_tokens,
-        cost_usd,
+        cost,
     };
     results.save(&args.output)?;
 
@@ -186,7 +186,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => println!("  pinned@P={precision}: no qualifying threshold"),
     }
     println!(
-        "  tokens      : input={input_tokens}, output={output_tokens}, cost_usd={cost_usd}"
+        "  tokens      : input={input_tokens}, output={output_tokens}, cost={cost}"
     );
     println!("  written     : {}", args.output.display());
 

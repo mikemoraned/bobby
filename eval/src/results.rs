@@ -24,7 +24,8 @@ pub struct EvalResults {
     pub fn_: u64,
     pub input_tokens: u64,
     pub output_tokens: u64,
-    pub cost_usd: Usd,
+    #[serde(rename = "cost_usd")]
+    pub cost: Usd,
 }
 
 impl EvalResults {
@@ -36,7 +37,7 @@ impl EvalResults {
 
     pub fn save(&self, path: &std::path::Path) -> Result<(), EvalResultsError> {
         let mut to_save = self.clone();
-        to_save.cost_usd = to_save.cost_usd.round_dp(4);
+        to_save.cost = to_save.cost.round_dp(4);
         let content = toml::to_string_pretty(&to_save).map_err(EvalResultsError::Serialize)?;
         std::fs::write(path, content)
             .map_err(|e| EvalResultsError::Io(path.display().to_string(), e))
@@ -84,7 +85,7 @@ mod tests {
             fn_: 39,
             input_tokens: 50000,
             output_tokens: 5000,
-            cost_usd: usd("0.175"),
+            cost: usd("0.175"),
         };
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("results.toml");
@@ -111,7 +112,7 @@ mod tests {
             fn_: 0,
             input_tokens: 0,
             output_tokens: 0,
-            cost_usd: Usd::zero(),
+            cost: Usd::zero(),
         };
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("results.toml");

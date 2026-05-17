@@ -70,8 +70,8 @@ struct Args {
     /// Approximate dollar budget for the entire training run, including the
     /// final full-test-set evaluation. Per-iteration sample size is derived
     /// from this budget and the baseline's per-image scoring cost.
-    #[arg(long, default_value = "5.0")]
-    budget_usd: Usd,
+    #[arg(long = "budget-usd", default_value = "5.0")]
+    budget: Usd,
 
     /// OpenAI model name to use for both scoring and prompt rewriting
     #[arg(long, default_value = "gpt-4o")]
@@ -245,22 +245,16 @@ fn build_candidate_model(model_name: &str, prompt: &str, threshold: Threshold) -
 }
 
 /// Sample size per iteration. Reserves cost for one full test-set evaluation
-/// at the baseline's per-image cost, then divides the residual budget evenly
-/// across `max_iterations`.
+/// then divides the residual budget evenly across `max_iterations`.
 fn per_iteration_sample_size(
-    baseline: &EvalResults,
+    per_image_cost: Usd,
     test_count: usize,
-    budget_usd: Usd,
+    budget: Usd,
     max_iterations: u32,
 ) -> Result<usize, TrainError> {
-    let baseline_images = baseline.tp + baseline.fp + baseline.tn + baseline.fn_;
-    if baseline_images == 0 {
-        return Err(TrainError::EmptyBaseline);
-    }
-    let per_image_cost = baseline.cost_usd / baseline_images;
     let reserved_for_final_eval = per_image_cost * test_count as u64;
-    let residual = if budget_usd > reserved_for_final_eval {
-        budget_usd - reserved_for_final_eval
+    let residual = if budget > reserved_for_final_eval {
+        budget - reserved_for_final_eval
     } else {
         Usd::zero()
     };
@@ -306,17 +300,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "loaded split + baseline (hash matches)"
     );
 
-    let per_iter_size = per_iteration_sample_size(
-        &baseline,
-        split.test.len(),
-        args.budget_usd,
-        args.max_iterations,
+    let prices = ModelPrices::embedded()?;
+    let baseline_image_count = baseline.tp + baseline.fp + baseline.tn + baseline.fn_;
+    if baseline_image_count == 0 {
+        return Err(TrainError::EmptyBaseline.into());
+    }
+    let per_image_cost = prices.cost_for(
+        &args.model,
+        baseline.input_tokens / baseline_image_count,
+        baseline.output_tokens / baseline_image_count,
     )?;
+
+    let per_iter_size =
+        per_iteration_sample_size(per_image_cost, split.test.len(), args.budget, args.max_iterations)?;
     info!(
         per_iter_size,
-        budget_usd = %args.budget_usd,
+        budget = %args.budget,
+        per_image_cost = %per_image_cost,
         max_iterations = args.max_iterations,
-        "derived per-iteration sample size from baseline cost"
+        "derived per-iteration sample size from current model cost estimate"
     );
 
     let store = args.store.open_store("train").await?;
@@ -403,7 +405,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let test_f1 = test_matrix.f1().expect("precision and recall both defined");
     let test_roc_auc = roc_auc_score(&test_labelled);
 
-    let prices = ModelPrices::embedded()?;
     let test_cost = prices.cost_for(&args.model, test_in, test_out)?;
     let total_cost = prices.cost_for(&args.model, total_input, total_output)?;
 
@@ -432,7 +433,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         fn_: test_matrix.false_neg,
         input_tokens: test_in,
         output_tokens: test_out,
-        cost_usd: test_cost,
+        cost: test_cost,
     };
     results.save(&args.eval_output)?;
 
@@ -503,17 +504,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    if total_cost > args.budget_usd {
-        let overshoot = total_cost - args.budget_usd;
-        let pct = overshoot.ratio_as_f64(args.budget_usd) * 100.0;
+    if total_cost > args.budget {
+        let overshoot = total_cost - args.budget;
+        let pct = overshoot.ratio_as_f64(args.budget) * 100.0;
         println!();
         println!(
             "  BUDGET OVERSHOOT   : total {total_cost} exceeds --budget-usd {} by {overshoot} ({pct:.1}%)",
-            args.budget_usd
+            args.budget
         );
         warn!(
             total_cost = %total_cost,
-            budget_usd = %args.budget_usd,
+            budget = %args.budget,
             overshoot = %overshoot,
             overshoot_pct = pct,
             "training run exceeded budget"
@@ -543,47 +544,20 @@ mod tests {
         s.parse().expect("valid Usd")
     }
 
-    fn baseline_with(images: u64, cost: Usd) -> EvalResults {
-        EvalResults {
-            split_config_path: "x".into(),
-            split_config_hash: "x".into(),
-            model_version: "x".into(),
-            model_name: "x".into(),
-            precision: eval::Precision::new(0.5).expect("valid"),
-            recall: eval::Recall::new(0.5).expect("valid"),
-            f1: F1::new(0.5).expect("valid"),
-            roc_auc: None,
-            pinned_precision: None,
-            tp: images,
-            fp: 0,
-            tn: 0,
-            fn_: 0,
-            input_tokens: 0,
-            output_tokens: 0,
-            cost_usd: cost,
-        }
+    #[test]
+    fn sample_size_is_reduced_by_final_eval_reservation() {
+        // $0.01/image, budget $2.00, 100 test images, 5 iterations:
+        //   reserve $1.00 for final eval → residual $1.00
+        //   $1.00 / 5 iterations / $0.01 = 20 images/iter
+        //   (without reservation: floor($2.00 / 5 / $0.01) = 40)
+        let n = per_iteration_sample_size(usd("0.01"), 100, usd("2.00"), 5)
+            .expect("budget covers it");
+        assert_eq!(n, 20); // 40 without reservation — final eval halves the training budget
     }
 
     #[test]
-    fn per_iteration_size_reserves_final_eval_cost() {
-        // 143 baseline images at $0.30 → ~$0.0021/image.
-        // Budget $5: reserve 143×0.0021 ≈ $0.30 for final eval; residual ≈ $4.70
-        // across 10 iterations ≈ $0.47/iter → ~224 images/iter.
-        let baseline = baseline_with(143, usd("0.3"));
-        let n = per_iteration_sample_size(&baseline, 143, usd("5.0"), 10).expect("budget covers it");
-        assert!(n > 0);
-        let per_image = usd("0.3") / 143u64;
-        let reserved = per_image * 143u64;
-        let residual = usd("5.0") - reserved;
-        let per_iter = residual / 10u64;
-        let expected = per_iter.ratio_floor(per_image) as usize;
-        assert_eq!(n, expected);
-    }
-
-    #[test]
-    fn per_iteration_size_errors_on_zero_budget() {
-        let baseline = baseline_with(143, usd("0.3"));
-        let err = per_iteration_sample_size(&baseline, 143, usd("0.0"), 10);
+    fn per_iteration_size_errors_when_budget_too_small() {
+        let err = per_iteration_sample_size(usd("0.01"), 100, usd("0.0"), 5);
         assert!(matches!(err, Err(TrainError::BudgetTooSmall)));
     }
 

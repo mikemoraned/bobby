@@ -15,8 +15,10 @@ pub enum PricingError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ModelPrice {
-    pub input_per_million_usd: Usd,
-    pub output_per_million_usd: Usd,
+    #[serde(rename = "input_per_million_usd")]
+    pub input_per_million: Usd,
+    #[serde(rename = "output_per_million_usd")]
+    pub output_per_million: Usd,
 }
 
 #[derive(Debug, Deserialize)]
@@ -43,8 +45,8 @@ impl ModelPrices {
             .0
             .get(model_name)
             .ok_or_else(|| PricingError::UnknownModel(model_name.to_string()))?;
-        Ok(price.input_per_million_usd * input_tokens / 1_000_000
-            + price.output_per_million_usd * output_tokens / 1_000_000)
+        Ok(price.input_per_million * input_tokens / 1_000_000
+            + price.output_per_million * output_tokens / 1_000_000)
     }
 }
 

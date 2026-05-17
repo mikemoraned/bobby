@@ -65,8 +65,8 @@ pub fn extract_prices(
         prices.insert(
             name.clone(),
             ModelPrice {
-                input_per_million_usd: cost.input,
-                output_per_million_usd: cost.output,
+                input_per_million: cost.input,
+                output_per_million: cost.output,
             },
         );
     }
@@ -121,19 +121,19 @@ mod tests {
             extract_prices(FIXTURE, &["gpt-4o".into(), "gpt-4o-mini".into()]).expect("parse");
         assert_eq!(prices.len(), 2);
         assert_eq!(
-            prices["gpt-4o"].input_per_million_usd,
+            prices["gpt-4o"].input_per_million,
             Usd::from_str("2.5").expect("valid")
         );
         assert_eq!(
-            prices["gpt-4o"].output_per_million_usd,
+            prices["gpt-4o"].output_per_million,
             Usd::from_str("10").expect("valid")
         );
         assert_eq!(
-            prices["gpt-4o-mini"].input_per_million_usd,
+            prices["gpt-4o-mini"].input_per_million,
             Usd::from_str("0.15").expect("valid")
         );
         assert_eq!(
-            prices["gpt-4o-mini"].output_per_million_usd,
+            prices["gpt-4o-mini"].output_per_million,
             Usd::from_str("0.6").expect("valid")
         );
     }
