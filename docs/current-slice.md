@@ -1025,9 +1025,9 @@ End-of-phase refactor (do before closing the slice):
     * **Callsites touched:** `ModelPrice.{input,output}_per_million_usd`, `ModelPrices::cost_for(...) -> Usd`, `Cost.{input,output}` in `update_prices`, `EvalResults.cost_usd`, `train.rs::Args::budget_usd` + `per_iteration_sample_size(budget_usd: Usd, ...)` + overshoot arithmetic, `refine_eval.rs` cost log line.
 
 Validation before closing the phase:
-* [ ] Re-run `just train config/eval-results-phase3.toml` to confirm recent changes (HashScheme prefix, per-model `RefineModels` registry, backfill) work end-to-end in a training run
-* [ ] Commit the new `config/refine.toml` and `config/eval-results-phase3.toml` together (in the new history format, with the per-model-lookup change in place) so the deployed prompt, its threshold, and its accompanying eval are versioned in lockstep
-* [ ] Run feed + prune + refine locally end-to-end to confirm the per-model lookup and threshold-capture changes work together against the live pipeline
+* [x] Re-run `just train config/eval-results-phase3.toml` to confirm recent changes (HashScheme prefix, per-model `RefineModels` registry, backfill) work end-to-end in a training run
+* [x] Commit the new `config/refine.toml` and `config/eval-results-phase3.toml` together (in the new history format, with the per-model-lookup change in place) so the deployed prompt, its threshold, and its accompanying eval are versioned in lockstep
+* [x] Run feed + prune + refine locally end-to-end to confirm the per-model lookup and threshold-capture changes work together against the live pipeline
 * [ ] Deploy to fly.io and hetzner to confirm the rollout works in production
 
 ##### Phase 4 — evaluate cheaper model choices against the phase-3 baseline
