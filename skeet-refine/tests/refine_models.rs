@@ -10,15 +10,15 @@ fn load_refine_models_and_resolve_production() {
     let models = RefineModels::load(&path)
         .unwrap_or_else(|e| panic!("failed to load {}: {e}", path.display()));
 
-    let production = models
+    let version = models
         .by_label(&Label::production())
-        .expect("production label must resolve to a model");
+        .expect("production label must resolve to a model")
+        .version();
 
     assert_eq!(
-        production.version().as_str(),
-        "34d8bec0",
-        "production model version mismatch: got \"{}\". \
+        version.to_string(),
+        "v2:34d8bec0",
+        "production model version mismatch: got \"{version}\". \
          If refine.toml changed intentionally, update both the production label and this test",
-        production.version()
     );
 }

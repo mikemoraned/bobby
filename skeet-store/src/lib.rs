@@ -138,7 +138,7 @@ impl SkeetStore {
                 ),
                 Arc::new(StringArray::from(vec![record.zone.to_string().as_str()])),
                 Arc::new(LargeBinaryArray::from_vec(vec![&annotated_bytes])),
-                Arc::new(StringArray::from(vec![record.config_version.as_str()])),
+                Arc::new(StringArray::from(vec![record.config_version.to_string().as_str()])),
                 Arc::new(StringArray::from(vec![record.detected_text.as_str()])),
             ],
         )?;

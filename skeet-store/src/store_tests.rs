@@ -175,6 +175,57 @@ async fn upsert_overwrites_existing_score() {
 }
 
 #[tokio::test]
+async fn scores_roundtrip_preserves_v1_and_v2_schemes() {
+    use shared::HashScheme;
+
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let r_v1 = make_record("mix_v1");
+    let r_v2 = make_record("mix_v2");
+    store.add(&r_v1).await.unwrap();
+    store.add(&r_v2).await.unwrap();
+
+    let v1_mv = ModelVersion::new(HashScheme::V1, "abc12345");
+    let v2_mv = ModelVersion::new(HashScheme::V2, "def67890");
+    assert_eq!(v1_mv.to_string(), "abc12345");
+    assert_eq!(v2_mv.to_string(), "v2:def67890");
+
+    store
+        .upsert_score(&r_v1.image_id, &Score::new(0.4).expect("valid"), &v1_mv)
+        .await
+        .unwrap();
+    store
+        .upsert_score(&r_v2.image_id, &Score::new(0.9).expect("valid"), &v2_mv)
+        .await
+        .unwrap();
+
+    // Single-row path (get_score) preserves the scheme on each entry.
+    let (_, mv_back_v1) = store.get_score(&r_v1.image_id).await.unwrap().unwrap();
+    let (_, mv_back_v2) = store.get_score(&r_v2.image_id).await.unwrap().unwrap();
+
+    assert_eq!(mv_back_v1.scheme(), HashScheme::V1);
+    assert_eq!(mv_back_v1.hash(), "abc12345");
+    assert_eq!(mv_back_v1, v1_mv);
+
+    assert_eq!(mv_back_v2.scheme(), HashScheme::V2);
+    assert_eq!(mv_back_v2.hash(), "def67890");
+    assert_eq!(mv_back_v2, v2_mv);
+
+    // Bulk path (list_scored_summaries_by_score → cached_scores) also preserves each scheme.
+    let summaries = store
+        .list_scored_summaries_by_score(10, None)
+        .await
+        .unwrap();
+    let by_id: std::collections::HashMap<_, _> = summaries
+        .iter()
+        .map(|(s, _, mv)| (s.image_id.clone(), mv.clone()))
+        .collect();
+    assert_eq!(by_id.get(&r_v1.image_id), Some(&v1_mv));
+    assert_eq!(by_id.get(&r_v2.image_id), Some(&v2_mv));
+}
+
+#[tokio::test]
 async fn list_unscored_returns_images_without_scores() {
     let dir = tempfile::tempdir().unwrap();
     let store = open_temp_store(&dir).await;

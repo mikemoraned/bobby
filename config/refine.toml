@@ -1,9 +1,8 @@
 [labels]
-production = "34d8bec0"
+production = "v2:34d8bec0"
 
 [[models]]
-hash = "ea219ee0"
-hash_scheme = "v1"
+model_version = "ea219ee0"
 model_provider = "openai"
 model_name = "gpt-4o"
 decision_threshold = 0.5
@@ -20,8 +19,7 @@ A score of 1.0 means a perfect selfie with a clearly recognizable landmark.
 A score of 0.0 means the image has nothing to do with selfies or landmarks."""
 
 [[models]]
-hash = "c3fa5ec8"
-hash_scheme = "v2"
+model_version = "v2:c3fa5ec8"
 model_provider = "openai"
 model_name = "gpt-4o"
 decision_threshold = 0.6
@@ -46,8 +44,7 @@ Consider the following when scoring:
 - Ensure the landmark is not only visible but also easily identifiable to avoid confusion with generic backgrounds."""
 
 [[models]]
-hash = "34d8bec0"
-hash_scheme = "v2"
+model_version = "v2:34d8bec0"
 model_provider = "openai"
 model_name = "gpt-4o"
 decision_threshold = 0.5

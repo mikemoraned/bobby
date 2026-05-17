@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use shared::refine_model::{HashScheme, ModelName, ModelProvider, RefinePrompt};
+use shared::refine_model::{ModelName, ModelProvider, RefinePrompt};
 use shared::{RefineModel, RefineModels, Threshold};
 
 /// A `RefineModels` registry for use in tests, containing a single entry
@@ -15,7 +15,6 @@ pub fn test_models() -> Arc<RefineModels> {
             model_name: ModelName::gpt_4o(),
             prompt: RefinePrompt::new("test prompt"),
             decision_threshold: Threshold::new(0.5).expect("valid"),
-            hash_scheme: HashScheme::V2,
         },
     );
     Arc::new(models)

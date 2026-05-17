@@ -13,7 +13,7 @@ fn config_version() {
     let actual = config.version();
     let expected = "1a5d95f3";
     assert_eq!(
-        actual.as_str(),
+        actual.to_string(),
         expected,
         "config version mismatch: got \"{actual}\". \
          If the config changed intentionally, update the expected value in this test"

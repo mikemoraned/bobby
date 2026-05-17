@@ -1,10 +1,9 @@
 use std::collections::HashMap;
-use std::fmt::Write as _;
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::model_version::HashScheme;
 use crate::{ModelVersion, Score, Threshold};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -68,60 +67,37 @@ impl std::fmt::Display for RefinePrompt {
     }
 }
 
-/// The hash algorithm used to derive a `RefineModel`'s version string.
-///
-/// `V1` hashes only `(model_provider, model_name, prompt)` — `decision_threshold`
-/// is excluded.  Used for entries trained before the threshold was captured.
-/// `V2` hashes all fields including `decision_threshold`.  Used for all newly
-/// trained entries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum HashScheme {
-    V1,
-    V2,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RefineModel {
     pub model_provider: ModelProvider,
     pub model_name: ModelName,
     pub prompt: RefinePrompt,
     pub decision_threshold: Threshold,
-    pub hash_scheme: HashScheme,
 }
 
 impl RefineModel {
-    /// Compute the canonical version hash for this model entry.
-    ///
-    /// The algorithm is fixed by `self.hash_scheme` so that historical entries
-    /// whose hashes were computed before `decision_threshold` was tracked can
-    /// still be verified.
+    /// The canonical `ModelVersion` for this model. Always V2 — newly
+    /// constructed models always include `decision_threshold` in the hash.
+    /// Use this for training output, live-refine tagging, and any other
+    /// "what is this model's id" need.
     pub fn version(&self) -> ModelVersion {
-        let mut entries: Vec<(&str, &str)> = vec![
-            ("model_name", self.model_name.as_str()),
-            ("model_provider", self.model_provider.as_str()),
-            ("prompt", self.prompt.as_str()),
-        ];
+        self.version_under(HashScheme::V2)
+    }
 
+    /// Compute the version under an explicit scheme. Used by the loader to
+    /// verify legacy entries against their persisted hash; other callers
+    /// should prefer `version()`.
+    pub fn version_under(&self, scheme: HashScheme) -> ModelVersion {
         let threshold_str;
-        if self.hash_scheme == HashScheme::V2 {
+        let mut entries: HashMap<&str, &str> = HashMap::new();
+        entries.insert("model_name", self.model_name.as_str());
+        entries.insert("model_provider", self.model_provider.as_str());
+        entries.insert("prompt", self.prompt.as_str());
+        if scheme == HashScheme::V2 {
             threshold_str = format!("{:?}", f64::from(self.decision_threshold));
-            entries.push(("decision_threshold", threshold_str.as_str()));
+            entries.insert("decision_threshold", threshold_str.as_str());
         }
-
-        entries.sort_by_key(|(k, _)| *k);
-
-        let mut hasher = DefaultHasher::new();
-        for (k, v) in &entries {
-            k.hash(&mut hasher);
-            v.hash(&mut hasher);
-        }
-        let hash = hasher.finish();
-
-        let mut version = String::with_capacity(8);
-        write!(version, "{hash:016x}").expect("write to String");
-        version.truncate(8);
-        ModelVersion::from(version.as_str())
+        ModelVersion::compute(scheme, entries)
     }
 
     /// Whether a score produced by this model is considered a positive match.
@@ -152,16 +128,15 @@ impl std::fmt::Display for Label {
 
 #[derive(Debug, thiserror::Error)]
 pub enum RefineModelsError {
-    #[error("hash mismatch for entry with hash={stored}: recomputed {recomputed} under scheme {scheme:?}")]
-    HashMismatch {
-        stored: String,
-        recomputed: String,
-        scheme: HashScheme,
+    #[error("model_version mismatch: stored {stored}, recomputed {recomputed}")]
+    VersionMismatch {
+        stored: ModelVersion,
+        recomputed: ModelVersion,
     },
-    #[error("label {label} references unknown hash {hash}")]
-    UnknownLabelHash { label: String, hash: String },
-    #[error("duplicate hash {hash} — each model must appear once")]
-    DuplicateHash { hash: String },
+    #[error("label {label} references unknown model_version {version}")]
+    UnknownLabelVersion { label: String, version: ModelVersion },
+    #[error("duplicate model_version {version} — each model must appear once")]
+    DuplicateVersion { version: ModelVersion },
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("toml deserialize error: {0}")]
@@ -170,28 +145,16 @@ pub enum RefineModelsError {
     TomlSerialize(#[from] toml::ser::Error),
 }
 
-/// Persisted form of a single model entry in `refine.toml`.
+/// Persisted form of a single model entry in `refine.toml`. The
+/// `hash_scheme` lives on the prefix of `model_version`, not as a separate
+/// field.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PersistedEntry {
-    hash: String,
-    hash_scheme: HashScheme,
+    model_version: ModelVersion,
     model_provider: ModelProvider,
     model_name: ModelName,
     prompt: RefinePrompt,
     decision_threshold: Threshold,
-}
-
-impl From<&RefineModel> for PersistedEntry {
-    fn from(m: &RefineModel) -> Self {
-        Self {
-            hash: m.version().to_string(),
-            hash_scheme: m.hash_scheme,
-            model_provider: m.model_provider.clone(),
-            model_name: m.model_name.clone(),
-            prompt: m.prompt.clone(),
-            decision_threshold: m.decision_threshold,
-        }
-    }
 }
 
 impl TryFrom<PersistedEntry> for RefineModel {
@@ -203,14 +166,12 @@ impl TryFrom<PersistedEntry> for RefineModel {
             model_name: e.model_name,
             prompt: e.prompt,
             decision_threshold: e.decision_threshold,
-            hash_scheme: e.hash_scheme,
         };
-        let recomputed = model.version().to_string();
-        if recomputed != e.hash {
-            return Err(RefineModelsError::HashMismatch {
-                stored: e.hash,
+        let recomputed = model.version_under(e.model_version.scheme());
+        if recomputed != e.model_version {
+            return Err(RefineModelsError::VersionMismatch {
+                stored: e.model_version,
                 recomputed,
-                scheme: e.hash_scheme,
             });
         }
         Ok(model)
@@ -221,7 +182,7 @@ impl TryFrom<PersistedEntry> for RefineModel {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct PersistedModels {
     #[serde(default)]
-    labels: HashMap<String, String>,
+    labels: HashMap<String, ModelVersion>,
     #[serde(default, rename = "models")]
     models: Vec<PersistedEntry>,
 }
@@ -260,22 +221,20 @@ impl RefineModels {
     fn from_persisted(persisted: PersistedModels) -> Result<Self, RefineModelsError> {
         let mut models: HashMap<ModelVersion, RefineModel> = HashMap::new();
         for entry in persisted.models {
-            let hash_str = entry.hash.clone();
+            let version = entry.model_version.clone();
             let model = RefineModel::try_from(entry)?;
-            let key = ModelVersion::from(hash_str.as_str());
-            if models.contains_key(&key) {
-                return Err(RefineModelsError::DuplicateHash { hash: hash_str });
+            if models.contains_key(&version) {
+                return Err(RefineModelsError::DuplicateVersion { version });
             }
-            models.insert(key, model);
+            models.insert(version, model);
         }
 
         let mut labels: HashMap<Label, ModelVersion> = HashMap::new();
-        for (label_str, hash_str) in persisted.labels {
-            let version = ModelVersion::from(hash_str.as_str());
+        for (label_str, version) in persisted.labels {
             if !models.contains_key(&version) {
-                return Err(RefineModelsError::UnknownLabelHash {
+                return Err(RefineModelsError::UnknownLabelVersion {
                     label: label_str,
-                    hash: hash_str,
+                    version,
                 });
             }
             labels.insert(Label(label_str), version);
@@ -286,18 +245,24 @@ impl RefineModels {
 
     /// Persist to a TOML file.
     pub fn save(&self, path: &Path) -> Result<(), RefineModelsError> {
-        let mut persisted_labels: HashMap<String, String> = HashMap::new();
+        let mut persisted_labels: HashMap<String, ModelVersion> = HashMap::new();
         for (label, version) in &self.labels {
-            persisted_labels.insert(label.0.clone(), version.to_string());
+            persisted_labels.insert(label.0.clone(), version.clone());
         }
 
         let mut entries: Vec<PersistedEntry> = self
             .models
-            .values()
-            .map(PersistedEntry::from)
+            .iter()
+            .map(|(version, model)| PersistedEntry {
+                model_version: version.clone(),
+                model_provider: model.model_provider.clone(),
+                model_name: model.model_name.clone(),
+                prompt: model.prompt.clone(),
+                decision_threshold: model.decision_threshold,
+            })
             .collect();
-        // Sort entries by hash for stable output.
-        entries.sort_by(|a, b| a.hash.cmp(&b.hash));
+        // Stable output: sort by serialised model_version.
+        entries.sort_by_key(|e| e.model_version.to_string());
 
         let persisted = PersistedModels {
             labels: persisted_labels,
@@ -319,9 +284,11 @@ impl RefineModels {
         self.models.get(version)
     }
 
-    /// Insert a model and assign the given labels to its hash.  Any label
-    /// listed here is moved to the new model's hash (removing it from
-    /// whichever entry previously held it, if any).
+    /// Insert a model and assign the given labels to its `ModelVersion`.
+    /// Any label listed here is moved to the new entry's version (removing
+    /// it from whichever entry previously held it, if any). Historical V1
+    /// entries are loaded via `load`, not `insert` — V1 is only a
+    /// parse-time concept for legacy stored data.
     pub fn insert(&mut self, model: RefineModel, labels: &[Label]) {
         let version = model.version();
         for label in labels {
@@ -350,55 +317,36 @@ mod tests {
         Threshold::new(value).expect("valid")
     }
 
-    fn model_v1(prompt: &str) -> RefineModel {
-        RefineModel {
-            model_provider: ModelProvider::openai(),
-            model_name: ModelName::gpt_4o(),
-            prompt: RefinePrompt::new(prompt),
-            decision_threshold: threshold(0.5),
-            hash_scheme: HashScheme::V1,
-        }
-    }
-
-    fn model_v2(prompt: &str, thr: f64) -> RefineModel {
+    fn model_with(prompt: &str, thr: f64) -> RefineModel {
         RefineModel {
             model_provider: ModelProvider::openai(),
             model_name: ModelName::gpt_4o(),
             prompt: RefinePrompt::new(prompt),
             decision_threshold: threshold(thr),
-            hash_scheme: HashScheme::V2,
         }
     }
 
     #[test]
-    fn v1_hash_ignores_decision_threshold() {
-        let m1 = model_v1("prompt");
-        let m2 = RefineModel {
-            decision_threshold: threshold(0.7),
-            ..model_v1("prompt")
-        };
-        assert_eq!(m1.version(), m2.version());
+    fn v1_version_ignores_decision_threshold() {
+        let m1 = model_with("prompt", 0.5);
+        let m2 = model_with("prompt", 0.7);
+        assert_eq!(
+            m1.version_under(HashScheme::V1),
+            m2.version_under(HashScheme::V1)
+        );
     }
 
     #[test]
-    fn v2_hash_includes_decision_threshold() {
-        let m1 = model_v2("prompt", 0.5);
-        let m2 = model_v2("prompt", 0.6);
+    fn version_defaults_to_v2_and_includes_decision_threshold() {
+        let m1 = model_with("prompt", 0.5);
+        let m2 = model_with("prompt", 0.6);
+        assert_eq!(m1.version().scheme(), HashScheme::V2);
         assert_ne!(m1.version(), m2.version());
     }
 
     #[test]
-    fn v1_and_v2_differ_for_same_fields() {
-        let v1 = model_v1("prompt");
-        let v2 = model_v2("prompt", 0.5);
-        // V1 excludes decision_threshold from the hash; V2 includes it.
-        // The two schemes produce different field sets, so hashes should differ.
-        assert_ne!(v1.version(), v2.version());
-    }
-
-    #[test]
     fn is_positive_at_boundary() {
-        let model = model_v2("p", 0.5);
+        let model = model_with("p", 0.5);
         let score_below = Score::new(0.499).expect("valid");
         let score_at = Score::new(0.5).expect("valid");
         let score_above = Score::new(0.6).expect("valid");
@@ -412,101 +360,122 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("refine.toml");
 
-        let v1 = model_v1("old prompt");
-        let v2 = model_v2("new prompt", 0.6);
-
         let mut models = RefineModels::new();
-        models.insert(v1, &[]);
-        models.insert(v2, &[Label::production()]);
+        models.insert(model_with("old prompt", 0.5), &[]);
+        models.insert(model_with("new prompt", 0.6), &[Label::production()]);
         models.save(&path).expect("save");
 
         let loaded = RefineModels::load(&path).expect("load");
-        assert!(loaded.by_label(&Label::production()).is_some());
-        assert_eq!(
-            loaded
-                .by_label(&Label::production())
-                .map(|m| m.prompt.as_str()),
-            Some("new prompt")
-        );
+        let production = loaded
+            .by_label(&Label::production())
+            .expect("production resolves");
+        assert_eq!(production.prompt.as_str(), "new prompt");
     }
 
     #[test]
-    fn load_error_hash_mismatch() {
+    fn load_preserves_v1_and_v2_entries() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("refine.toml");
-        // Write a TOML with a wrong hash.
-        std::fs::write(
-            &path,
-            r#"
-[labels]
 
-[[models]]
-hash = "deadbeef"
-hash_scheme = "v2"
-model_provider = "openai"
-model_name = "gpt-4o"
-decision_threshold = 0.5
-prompt = "some prompt"
-"#,
-        )
-        .expect("write");
-        let err = RefineModels::load(&path).expect_err("should fail");
-        assert!(matches!(err, RefineModelsError::HashMismatch { .. }));
-    }
+        // Build a TOML with one V1 and one V2 entry by computing real hashes.
+        let m_v1 = model_with("legacy prompt", 0.5);
+        let v1_mv = m_v1.version_under(HashScheme::V1);
+        let m_v2 = model_with("modern prompt", 0.5);
+        let v2_mv = m_v2.version();
 
-    #[test]
-    fn load_error_unknown_label_hash() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("refine.toml");
-        std::fs::write(
-            &path,
-            r#"
-[labels]
-production = "ffffffff"
-
-[[models]]
-hash = "deadbeef"
-hash_scheme = "v2"
-model_provider = "openai"
-model_name = "gpt-4o"
-decision_threshold = 0.5
-prompt = "some prompt"
-"#,
-        )
-        .expect("write");
-        // "deadbeef" hash also won't match, but unknown label is checked after hash verification.
-        // Let's use a valid hash. Since we can't know it without computing, just check the error type.
-        // This is a structural test, not a value test — just verify the error path is reachable.
-        let err = RefineModels::load(&path).expect_err("should fail");
-        // Either HashMismatch or UnknownLabelHash depending on parse order.
-        assert!(matches!(
-            err,
-            RefineModelsError::HashMismatch { .. } | RefineModelsError::UnknownLabelHash { .. }
-        ));
-    }
-
-    #[test]
-    fn load_error_duplicate_hash() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("refine.toml");
-        // Two entries with the same prompt/provider/model will hash identically under V2 with same threshold.
-        let model = model_v2("prompt", 0.5);
-        let hash = model.version().to_string();
         let content = format!(
             r#"
 [labels]
 
 [[models]]
-hash = "{hash}"
-hash_scheme = "v2"
+model_version = "{v1_mv}"
+model_provider = "openai"
+model_name = "gpt-4o"
+decision_threshold = 0.5
+prompt = "legacy prompt"
+
+[[models]]
+model_version = "{v2_mv}"
+model_provider = "openai"
+model_name = "gpt-4o"
+decision_threshold = 0.5
+prompt = "modern prompt"
+"#,
+        );
+        std::fs::write(&path, content).expect("write");
+
+        let loaded = RefineModels::load(&path).expect("load");
+        assert!(!v1_mv.to_string().starts_with("v2:"));
+        assert!(v2_mv.to_string().starts_with("v2:"));
+        assert_eq!(loaded.get(&v1_mv).map(|m| m.prompt.as_str()), Some("legacy prompt"));
+        assert_eq!(loaded.get(&v2_mv).map(|m| m.prompt.as_str()), Some("modern prompt"));
+    }
+
+    #[test]
+    fn load_error_version_mismatch() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("refine.toml");
+        std::fs::write(
+            &path,
+            r#"
+[labels]
+
+[[models]]
+model_version = "v2:deadbeef"
+model_provider = "openai"
+model_name = "gpt-4o"
+decision_threshold = 0.5
+prompt = "some prompt"
+"#,
+        )
+        .expect("write");
+        let err = RefineModels::load(&path).expect_err("should fail");
+        assert!(matches!(err, RefineModelsError::VersionMismatch { .. }));
+    }
+
+    #[test]
+    fn load_error_unknown_label_version() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("refine.toml");
+        let model = model_with("some prompt", 0.5);
+        let real = model.version();
+        let content = format!(
+            r#"
+[labels]
+production = "v2:ffffffff"
+
+[[models]]
+model_version = "{real}"
+model_provider = "openai"
+model_name = "gpt-4o"
+decision_threshold = 0.5
+prompt = "some prompt"
+"#
+        );
+        std::fs::write(&path, content).expect("write");
+        let err = RefineModels::load(&path).expect_err("should fail");
+        assert!(matches!(err, RefineModelsError::UnknownLabelVersion { .. }));
+    }
+
+    #[test]
+    fn load_error_duplicate_version() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("refine.toml");
+        let model = model_with("prompt", 0.5);
+        let version = model.version();
+        let content = format!(
+            r#"
+[labels]
+
+[[models]]
+model_version = "{version}"
 model_provider = "openai"
 model_name = "gpt-4o"
 decision_threshold = 0.5
 prompt = "prompt"
 
 [[models]]
-hash = "{hash}"
-hash_scheme = "v2"
+model_version = "{version}"
 model_provider = "openai"
 model_name = "gpt-4o"
 decision_threshold = 0.5
@@ -515,27 +484,28 @@ prompt = "prompt"
         );
         std::fs::write(&path, content).expect("write");
         let err = RefineModels::load(&path).expect_err("should fail");
-        assert!(matches!(err, RefineModelsError::DuplicateHash { .. }));
+        assert!(matches!(err, RefineModelsError::DuplicateVersion { .. }));
     }
 
     #[test]
     fn insert_moves_label_to_new_model() {
-        let v1 = model_v2("old prompt", 0.5);
-        let v2 = model_v2("new prompt", 0.6);
+        let old = model_with("old prompt", 0.5);
+        let new = model_with("new prompt", 0.6);
+        let old_version = old.version();
 
         let mut models = RefineModels::new();
-        models.insert(v1.clone(), &[Label::production()]);
+        models.insert(old, &[Label::production()]);
         assert_eq!(
             models.by_label(&Label::production()).map(|m| m.prompt.as_str()),
             Some("old prompt")
         );
 
-        models.insert(v2, &[Label::production()]);
+        models.insert(new, &[Label::production()]);
         assert_eq!(
             models.by_label(&Label::production()).map(|m| m.prompt.as_str()),
             Some("new prompt")
         );
         // Old entry is still present.
-        assert!(models.get(&v1.version()).is_some());
+        assert!(models.get(&old_version).is_some());
     }
 }

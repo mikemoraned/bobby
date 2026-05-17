@@ -12,7 +12,7 @@ use rig::client::CompletionClient;
 use rig::completion::request::Prompt;
 use shared::{Band, Score};
 use skeet_refine::loader::{LabelledImage, load_band_index, load_labelled_images};
-use skeet_refine::model::{HashScheme, Label, ModelName, ModelProvider, RefineModel, RefineModels, RefinePrompt};
+use skeet_refine::model::{Label, ModelName, ModelProvider, RefineModel, RefineModels, RefinePrompt};
 use skeet_refine::refining::{RefineAgent, SEED_PROMPT, build_agent, create_client, refine_image};
 use skeet_store::{ImageId, StoreArgs};
 use tracing::{error, info, warn};
@@ -233,6 +233,17 @@ fn label_train_items(
         .collect()
 }
 
+/// Build the `RefineModel` that, on Accept, will be appended to the registry
+/// and labelled `production`.
+fn build_candidate_model(model_name: &str, prompt: &str, threshold: Threshold) -> RefineModel {
+    RefineModel {
+        model_provider: ModelProvider::openai(),
+        model_name: ModelName::new(model_name),
+        prompt: RefinePrompt::new(prompt),
+        decision_threshold: threshold,
+    }
+}
+
 /// Sample size per iteration. Reserves cost for one full test-set evaluation
 /// at the baseline's per-image cost, then divides the residual budget evenly
 /// across `max_iterations`.
@@ -398,13 +409,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let candidate_threshold = pinned_at_baseline_precision
         .map(|p| p.threshold)
         .unwrap_or_else(training_loop_threshold);
-    let candidate_model = RefineModel {
-        model_provider: ModelProvider::openai(),
-        model_name: ModelName::new(&args.model),
-        prompt: RefinePrompt::new(best_prompt.clone()),
-        decision_threshold: candidate_threshold,
-        hash_scheme: HashScheme::V2,
-    };
+    let candidate_model = build_candidate_model(&args.model, &best_prompt, candidate_threshold);
     let candidate_version = candidate_model.version().to_string();
 
     let results = EvalResults {
@@ -605,5 +610,21 @@ mod tests {
             evaluate_gate(None, Recall::new(0.5).expect("valid")),
             GateOutcome::Rejected
         );
+    }
+
+    #[test]
+    fn inserting_candidate_makes_it_resolvable_by_production_label() {
+        let candidate = build_candidate_model(
+            "gpt-4o",
+            "any prompt",
+            Threshold::new(0.5).expect("valid"),
+        );
+        let mut models = RefineModels::new();
+        models.insert(candidate.clone(), &[Label::production()]);
+
+        let resolved = models
+            .by_label(&Label::production())
+            .expect("production label resolves");
+        assert_eq!(resolved, &candidate);
     }
 }
