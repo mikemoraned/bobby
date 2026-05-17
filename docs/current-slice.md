@@ -959,7 +959,6 @@ Decisions (10th May):
     3. Cross-reference (1) and (2): for every distinct `model_version` from the store, locate the matching prompt from git. Versions that don't match anything in git should be investigated before discarding (could be pre-`version()` tracking, or test-only data that leaked in).
     4. For each backfilled entry: choose the scheme that recomputes back to the stored version. Pre-`decision_threshold` entries go in as V1 (`model_version = "<hash>"`, no prefix, `decision_threshold = 0.5` implied); post-`decision_threshold` entries go in as V2 (`model_version = "v2:<hash>"`).
     5. Write the backfilled entries into `config/refine.toml` alongside the current `v2:34d8bec0` (V2) entry, with `production` pointing at `v2:34d8bec0`.
-* [ ] Commit the new `config/refine.toml` and `config/eval-results-phase3.toml` together (in the new history format, with the per-model-lookup change in place) so the deployed prompt, its threshold, and its accompanying eval are versioned in lockstep
 
 ###### Observations
 
@@ -999,7 +998,17 @@ Decisions (10th May):
 * Budget overshoot ($5.82 vs $5, 16.5%) reported by the new end-of-run warning. Same root cause as run 1: per-image cost model doesn't reserve for the prompt-refinement call. Adequate to live with for phase 4; revisit if a cheaper model widens the gap.
 
 End-of-phase refactor (do before closing the slice):
-* [ ] Replace bare `f64` dollar amounts (`--budget-usd`, `EvalResults.cost_usd`, `ModelPrice.{input,output}_per_million_usd`, `ModelPrices::cost_for` return) with a `Money`/`Usd` newtype in the `eval` crate. Currently violates the rust.md NewType rule for bare `f64`s; left as a deliberate follow-up to keep this phase focused.
+* [ ] Replace bare `f64` dollar amounts (`--budget-usd`, `EvalResults.cost_usd`, `ModelPrice.{input,output}_per_million_usd`, `ModelPrices::cost_for` return) with a `Usd` newtype in the `eval` crate. Currently violates the rust.md NewType rule for bare `f64`s; left as a deliberate follow-up to keep this phase focused.
+    * **Backing type:** wrap `rust_decimal::Decimal` (latest 1.42.0). Chosen over a bare-`f64` newtype so monetary arithmetic stops being float-rounded, and over `rusty-money` (overkill — single-currency project, currency-aware abstraction adds friction without benefit) and `uom` (wrong tool — units-of-measurement framework for dimensional analysis, not a decimal-precision money type; doesn't address precision at all since it's generic over `f64`).
+    * **API shape:** `#[serde(transparent)]` newtype with `Display` (`"${:.4}"`), `From<u64>` / `Decimal::from` for token-count multiplication, `Add`/`Sub`/`Mul<u64>`/`Div<u64>` impls, parsed from TOML via serde-float (keeps existing `cost_usd = 0.175` form readable).
+    * **Migration caveat:** existing `eval-results-*.toml` files were written with `f64` rounding; the next save under `Decimal` may emit more digits. Apply `Decimal::round_dp(4)` (or `(6)`) before serialisation so the on-disk form stays stable run-to-run and re-saving the existing files produces a minimal diff.
+    * **Callsites touched:** `ModelPrice.{input,output}_per_million_usd`, `ModelPrices::cost_for(...) -> Usd`, `Cost.{input,output}` in `update_prices`, `EvalResults.cost_usd`, `train.rs::Args::budget_usd` + `per_iteration_sample_size(budget_usd: Usd, ...)` + overshoot arithmetic, `refine_eval.rs` cost log line.
+
+Validation before closing the phase:
+* [ ] Re-run `just train config/eval-results-phase3.toml` to confirm recent changes (HashScheme prefix, per-model `RefineModels` registry, backfill) work end-to-end in a training run
+* [ ] Commit the new `config/refine.toml` and `config/eval-results-phase3.toml` together (in the new history format, with the per-model-lookup change in place) so the deployed prompt, its threshold, and its accompanying eval are versioned in lockstep
+* [ ] Run feed + prune + refine locally end-to-end to confirm the per-model lookup and threshold-capture changes work together against the live pipeline
+* [ ] Deploy to fly.io and hetzner to confirm the rollout works in production
 
 ##### Phase 4 — evaluate cheaper model choices against the phase-3 baseline
 
