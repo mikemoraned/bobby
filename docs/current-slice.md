@@ -1015,6 +1015,9 @@ Validation before closing the phase:
 * [ ] refactor: `train.rs` is really big and does multiple things. Split it into logical chunks. These chunks can just be methods or can be separate mods. A good hint of where logical boundaries are is where we have placed `info!` calls.
 * [ ] Add LLM-call resilience to `refine_image` before running phase 4 (transient empty/no-message responses from OpenAI are likely to recur more under cheaper models):
     * Wrap `refine_image` with bounded retries (3) and exponential backoff (e.g. 500ms × 2^attempt); use existing functionality in crates we have or third-party crates (i.e. don't implement our own exponential backoff)
+      * Use `backon` 1.6.0 — already in the dependency graph (transitive via `opendal` ← `rig`), so add it directly to `skeet-refine/Cargo.toml` at no extra cost
+      * `ExponentialBuilder::default().with_min_delay(500ms).with_factor(2.0).with_max_times(3)` maps exactly to the spec
+      * Use `.when(|e| matches!(e, RefineError::Completion(_)))` to restrict retries to transient errors only — `ImageEncoding` and `ParseScore` are not transient and should not be retried
     * On exhausted retries, return a fallback `ScoredCall` with `score = 0.0` and `outcome = ScoringOutcome::FallbackAfterRetries`. **Do not** silently substitute a sentinel into the `Score` field without an accompanying outcome marker — the marker is what makes the substitution honest (per `feedback_no_sentinel_values`).
     * Make `score_concurrent` infallible: it now returns `Vec<ScoredCall>` rather than `Result<Vec<...>, _>`.
     * Surface the fallback count both in the per-iteration logs and in the final printed summary so a high fallback rate is visible at a glance.
