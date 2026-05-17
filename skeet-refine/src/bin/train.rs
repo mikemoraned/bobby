@@ -4,7 +4,7 @@ use std::str::FromStr;
 use clap::Parser;
 use eval::{
     EvalResults, EvalSplit, F1, LabelledScore, ModelPrices, PinnedPrecision, Recall, Threshold,
-    confusion_at, pin_at_precision, roc_auc_score, stratified_sample,
+    Usd, confusion_at, pin_at_precision, roc_auc_score, stratified_sample,
 };
 use futures::stream::{self, StreamExt};
 use rig::agent::AgentBuilder;
@@ -70,8 +70,8 @@ struct Args {
     /// Approximate dollar budget for the entire training run, including the
     /// final full-test-set evaluation. Per-iteration sample size is derived
     /// from this budget and the baseline's per-image scoring cost.
-    #[arg(long, default_value_t = 5.0)]
-    budget_usd: f64,
+    #[arg(long, default_value = "5.0")]
+    budget_usd: Usd,
 
     /// OpenAI model name to use for both scoring and prompt rewriting
     #[arg(long, default_value = "gpt-4o")]
@@ -250,18 +250,22 @@ fn build_candidate_model(model_name: &str, prompt: &str, threshold: Threshold) -
 fn per_iteration_sample_size(
     baseline: &EvalResults,
     test_count: usize,
-    budget_usd: f64,
+    budget_usd: Usd,
     max_iterations: u32,
 ) -> Result<usize, TrainError> {
     let baseline_images = baseline.tp + baseline.fp + baseline.tn + baseline.fn_;
     if baseline_images == 0 {
         return Err(TrainError::EmptyBaseline);
     }
-    let per_image_cost = baseline.cost_usd / baseline_images as f64;
-    let reserved_for_final_eval = per_image_cost * test_count as f64;
-    let residual = (budget_usd - reserved_for_final_eval).max(0.0);
-    let per_iter_budget = residual / max_iterations as f64;
-    let size = (per_iter_budget / per_image_cost).floor() as usize;
+    let per_image_cost = baseline.cost_usd / baseline_images;
+    let reserved_for_final_eval = per_image_cost * test_count as u64;
+    let residual = if budget_usd > reserved_for_final_eval {
+        budget_usd - reserved_for_final_eval
+    } else {
+        Usd::zero()
+    };
+    let per_iter_budget = residual / u64::from(max_iterations);
+    let size = per_iter_budget.ratio_floor(per_image_cost) as usize;
     if size == 0 {
         return Err(TrainError::BudgetTooSmall);
     }
@@ -310,7 +314,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     info!(
         per_iter_size,
-        budget_usd = args.budget_usd,
+        budget_usd = %args.budget_usd,
         max_iterations = args.max_iterations,
         "derived per-iteration sample size from baseline cost"
     );
@@ -461,7 +465,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => println!("  pinned@baseline P  : no qualifying threshold"),
     }
     println!(
-        "  test cost          : ${test_cost:.4}  (total run incl. iterations: ${total_cost:.4})"
+        "  test cost          : {test_cost}  (total run incl. iterations: {total_cost})"
     );
     println!("  written eval       : {}", args.eval_output.display());
 
@@ -501,16 +505,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if total_cost > args.budget_usd {
         let overshoot = total_cost - args.budget_usd;
-        let pct = overshoot / args.budget_usd * 100.0;
+        let pct = overshoot.ratio_as_f64(args.budget_usd) * 100.0;
         println!();
         println!(
-            "  BUDGET OVERSHOOT   : total ${total_cost:.4} exceeds --budget-usd ${:.4} by ${overshoot:.4} ({pct:.1}%)",
+            "  BUDGET OVERSHOOT   : total {total_cost} exceeds --budget-usd {} by {overshoot} ({pct:.1}%)",
             args.budget_usd
         );
         warn!(
-            total_cost,
-            budget_usd = args.budget_usd,
-            overshoot,
+            total_cost = %total_cost,
+            budget_usd = %args.budget_usd,
+            overshoot = %overshoot,
             overshoot_pct = pct,
             "training run exceeded budget"
         );
@@ -535,7 +539,11 @@ fn evaluate_gate(pinned: Option<PinnedPrecision>, baseline_recall: Recall) -> Ga
 mod tests {
     use super::*;
 
-    fn baseline_with(images: u64, cost: f64) -> EvalResults {
+    fn usd(s: &str) -> Usd {
+        s.parse().expect("valid Usd")
+    }
+
+    fn baseline_with(images: u64, cost: Usd) -> EvalResults {
         EvalResults {
             split_config_path: "x".into(),
             split_config_hash: "x".into(),
@@ -561,18 +569,21 @@ mod tests {
         // 143 baseline images at $0.30 → ~$0.0021/image.
         // Budget $5: reserve 143×0.0021 ≈ $0.30 for final eval; residual ≈ $4.70
         // across 10 iterations ≈ $0.47/iter → ~224 images/iter.
-        let baseline = baseline_with(143, 0.3);
-        let n = per_iteration_sample_size(&baseline, 143, 5.0, 10).expect("budget covers it");
+        let baseline = baseline_with(143, usd("0.3"));
+        let n = per_iteration_sample_size(&baseline, 143, usd("5.0"), 10).expect("budget covers it");
         assert!(n > 0);
-        let per_image: f64 = 0.3 / 143.0;
-        let expected = ((5.0 - per_image * 143.0) / 10.0 / per_image).floor() as usize;
+        let per_image = usd("0.3") / 143u64;
+        let reserved = per_image * 143u64;
+        let residual = usd("5.0") - reserved;
+        let per_iter = residual / 10u64;
+        let expected = per_iter.ratio_floor(per_image) as usize;
         assert_eq!(n, expected);
     }
 
     #[test]
     fn per_iteration_size_errors_on_zero_budget() {
-        let baseline = baseline_with(143, 0.3);
-        let err = per_iteration_sample_size(&baseline, 143, 0.0, 10);
+        let baseline = baseline_with(143, usd("0.3"));
+        let err = per_iteration_sample_size(&baseline, 143, usd("0.0"), 10);
         assert!(matches!(err, Err(TrainError::BudgetTooSmall)));
     }
 

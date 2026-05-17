@@ -186,7 +186,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => println!("  pinned@P={precision}: no qualifying threshold"),
     }
     println!(
-        "  tokens      : input={input_tokens}, output={output_tokens}, cost_usd={cost_usd:.4}"
+        "  tokens      : input={input_tokens}, output={output_tokens}, cost_usd={cost_usd}"
     );
     println!("  written     : {}", args.output.display());
 

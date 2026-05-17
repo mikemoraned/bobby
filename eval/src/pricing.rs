@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::usd::Usd;
+
 const PRICES_TOML: &str = include_str!("../prices.toml");
 
 #[derive(Debug, thiserror::Error)]
@@ -13,8 +15,8 @@ pub enum PricingError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ModelPrice {
-    pub input_per_million_usd: f64,
-    pub output_per_million_usd: f64,
+    pub input_per_million_usd: Usd,
+    pub output_per_million_usd: Usd,
 }
 
 #[derive(Debug, Deserialize)]
@@ -36,19 +38,20 @@ impl ModelPrices {
         model_name: &str,
         input_tokens: u64,
         output_tokens: u64,
-    ) -> Result<f64, PricingError> {
+    ) -> Result<Usd, PricingError> {
         let price = self
             .0
             .get(model_name)
             .ok_or_else(|| PricingError::UnknownModel(model_name.to_string()))?;
-        Ok(input_tokens as f64 * price.input_per_million_usd / 1_000_000.0
-            + output_tokens as f64 * price.output_per_million_usd / 1_000_000.0)
+        Ok(price.input_per_million_usd * input_tokens / 1_000_000
+            + price.output_per_million_usd * output_tokens / 1_000_000)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
 
     const DUMMY_PRICES: &str = r#"
 [fast-cheap]
@@ -70,7 +73,7 @@ output_per_million_usd = 30.00
         let cost = dummy()
             .cost_for("fast-cheap", 1_000_000, 100_000)
             .expect("known model");
-        assert!((cost - 1.20).abs() < 1e-9, "expected $1.20 got {cost}");
+        assert_eq!(cost, Usd::from_str("1.20").expect("valid"), "expected $1.20 got {cost}");
     }
 
     #[test]
@@ -82,7 +85,7 @@ output_per_million_usd = 30.00
         let large = prices
             .cost_for("slow-expensive", 10_000, 10_000)
             .expect("known model");
-        assert!((large - small * 10.0).abs() < 1e-9);
+        assert_eq!(large, small * 10u64);
     }
 
     #[test]

@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 
 use crate::pricing::ModelPrice;
+use crate::usd::Usd;
 
 pub const MODELS_DEV_URL: &str = "https://models.dev/api.json";
 
@@ -38,8 +39,8 @@ struct ModelEntry {
 
 #[derive(Deserialize)]
 struct Cost {
-    input: f64,
-    output: f64,
+    input: Usd,
+    output: Usd,
 }
 
 /// Parse a models.dev API response and extract per-million pricing for each requested
@@ -82,6 +83,7 @@ pub fn render_prices_toml(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
 
     /// Captured 2026-05-10 from `https://models.dev/api.json`, trimmed to the
     /// fields this parser uses. Includes a non-OpenAI provider and an extra
@@ -118,10 +120,22 @@ mod tests {
         let prices =
             extract_prices(FIXTURE, &["gpt-4o".into(), "gpt-4o-mini".into()]).expect("parse");
         assert_eq!(prices.len(), 2);
-        assert!((prices["gpt-4o"].input_per_million_usd - 2.5).abs() < 1e-9);
-        assert!((prices["gpt-4o"].output_per_million_usd - 10.0).abs() < 1e-9);
-        assert!((prices["gpt-4o-mini"].input_per_million_usd - 0.15).abs() < 1e-9);
-        assert!((prices["gpt-4o-mini"].output_per_million_usd - 0.6).abs() < 1e-9);
+        assert_eq!(
+            prices["gpt-4o"].input_per_million_usd,
+            Usd::from_str("2.5").expect("valid")
+        );
+        assert_eq!(
+            prices["gpt-4o"].output_per_million_usd,
+            Usd::from_str("10").expect("valid")
+        );
+        assert_eq!(
+            prices["gpt-4o-mini"].input_per_million_usd,
+            Usd::from_str("0.15").expect("valid")
+        );
+        assert_eq!(
+            prices["gpt-4o-mini"].output_per_million_usd,
+            Usd::from_str("0.6").expect("valid")
+        );
     }
 
     #[test]
@@ -171,13 +185,9 @@ mod tests {
         // The format must match what `ModelPrices::from_toml_str` expects, since
         // `update-prices` writes the file that `ModelPrices::embedded()` reads.
         let parsed = crate::ModelPrices::from_toml_str(&body).expect("round-trip");
-        assert!(
-            (parsed
-                .cost_for("gpt-4o", 1_000_000, 0)
-                .expect("present")
-                - 2.5)
-                .abs()
-                < 1e-9
+        assert_eq!(
+            parsed.cost_for("gpt-4o", 1_000_000, 0).expect("present"),
+            Usd::from_str("2.5").expect("valid")
         );
     }
 }
