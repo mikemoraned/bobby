@@ -291,7 +291,6 @@ mod tests {
         let resp: TraceResponse =
             serde_json::from_str(TRACE_FIXTURE).expect("trace fixture should parse");
         let trace = flatten_trace(resp);
-        // list_all_image_ids_by_most_recent is a child of list_unscored_image_ids_for_version
         let child = trace
             .spans
             .iter()

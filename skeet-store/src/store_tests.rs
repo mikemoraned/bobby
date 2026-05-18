@@ -244,7 +244,7 @@ async fn list_unscored_returns_images_without_scores() {
         .unwrap();
 
     let unscored = store
-        .list_unscored_image_ids_for_version(&mv, None)
+        .list_unscored_image_ids(None)
         .await
         .unwrap();
     assert_eq!(unscored.len(), 2);
@@ -254,7 +254,7 @@ async fn list_unscored_returns_images_without_scores() {
 }
 
 #[tokio::test]
-async fn list_unscored_includes_images_scored_with_different_version() {
+async fn list_unscored_excludes_images_scored_under_any_model_version() {
     let dir = tempfile::tempdir().unwrap();
     let store = open_temp_store(&dir).await;
 
@@ -262,18 +262,16 @@ async fn list_unscored_includes_images_scored_with_different_version() {
     store.add(&r1).await.unwrap();
 
     let old_mv = ModelVersion::from("old_v1");
-    let new_mv = ModelVersion::from("new_v2");
     store
         .upsert_score(&r1.image_id, &Score::new(0.8).expect("valid"), &old_mv)
         .await
         .unwrap();
 
-    let unscored = store
-        .list_unscored_image_ids_for_version(&new_mv, None)
-        .await
-        .unwrap();
-    assert_eq!(unscored.len(), 1);
-    assert!(unscored.contains(&r1.image_id));
+    let unscored = store.list_unscored_image_ids(None).await.unwrap();
+    assert!(
+        unscored.is_empty(),
+        "an image scored under any model_version is not unscored"
+    );
 }
 
 #[tokio::test]
@@ -293,10 +291,9 @@ async fn list_unscored_with_since_filter_returns_only_newer() {
     store.add(&r_mid).await.unwrap();
     store.add(&r_new).await.unwrap();
 
-    let mv = test_model_version();
     let cutoff = DiscoveredAt::new(t_mid);
     let unscored = store
-        .list_unscored_image_ids_for_version(&mv, Some(&cutoff))
+        .list_unscored_image_ids(Some(&cutoff))
         .await
         .unwrap();
 

@@ -11,7 +11,7 @@ struct Args {
     #[arg(long, default_value = "skeet-live-refine")]
     service: String,
 
-    /// Filter to traces containing a span with this name (e.g. list_unscored_image_ids_for_version)
+    /// Filter to traces containing a span with this name (e.g. list_unscored_image_ids)
     #[arg(long)]
     span: Option<String>,
 

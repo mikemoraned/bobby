@@ -101,7 +101,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(args.interval_secs));
-    let mut source = PollingBatchSource::new(store.clone(), model_version.clone());
+    let mut source = PollingBatchSource::new(store.clone());
 
     let mut metrics = LiveRefineMetrics::new(&opentelemetry::global::meter("skeet_live_refine"));
     let llm_metrics = LlmMetrics::new(&opentelemetry::global::meter("gen_ai"));

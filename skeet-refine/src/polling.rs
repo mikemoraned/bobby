@@ -1,28 +1,30 @@
 use std::sync::Arc;
 
-use skeet_store::{DiscoveredAt, ModelVersion, SkeetStore, StoreError, TABLE_NAME};
+use skeet_store::{DiscoveredAt, SkeetStore, StoreError, TABLE_NAME};
 use tracing::info;
 
 use crate::batch::Batch;
 
 pub struct PollingBatchSource {
     store: Arc<SkeetStore>,
-    model_version: ModelVersion,
     last_images_version: Option<u64>,
     last_discovered_at: Option<DiscoveredAt>,
 }
 
 impl PollingBatchSource {
-    pub const fn new(store: Arc<SkeetStore>, model_version: ModelVersion) -> Self {
+    pub const fn new(store: Arc<SkeetStore>) -> Self {
         Self {
             store,
-            model_version,
             last_images_version: None,
             last_discovered_at: None,
         }
     }
 
     /// Fetch unscored images for this tick.
+    ///
+    /// "Unscored" means *no row* in the scores table — re-scoring under a
+    /// different `model_version` is a deliberate offline operation, not an
+    /// automatic side-effect of deploying a new production model.
     ///
     /// Returns an empty `Batch` if the `images` table version hasn't changed since
     /// the last call — skipping the expensive full-table scan. On cold start
@@ -44,10 +46,7 @@ impl PollingBatchSource {
 
         let unscored_ids = self
             .store
-            .list_unscored_image_ids_for_version(
-                &self.model_version,
-                self.last_discovered_at.as_ref(),
-            )
+            .list_unscored_image_ids(self.last_discovered_at.as_ref())
             .await?;
 
         self.last_images_version = images_version;
@@ -87,9 +86,34 @@ mod tests {
         let store = Arc::new(open_temp_store(&dir).await);
         store.add(&make_record("cold1", 10, 0, 0)).await.expect("add");
 
-        let mut source = PollingBatchSource::new(store, ModelVersion::from("v1"));
+        let mut source = PollingBatchSource::new(store);
         let batch = source.fetch().await.expect("fetch");
         assert_eq!(batch.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn image_scored_under_any_model_version_is_not_refetched() {
+        use skeet_store::{ModelVersion, Score};
+
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = Arc::new(open_temp_store(&dir).await);
+        let r = make_record("old_score", 10, 0, 0);
+        store.add(&r).await.expect("add");
+        store
+            .upsert_score(
+                &r.image_id,
+                &Score::new(0.5).expect("valid"),
+                &ModelVersion::from("previous_prompt"),
+            )
+            .await
+            .expect("upsert prior score");
+
+        let mut source = PollingBatchSource::new(store);
+        let batch = source.fetch().await.expect("fetch");
+        assert!(
+            batch.is_empty(),
+            "an image already scored under any model_version must not be re-fetched"
+        );
     }
 
     #[tokio::test]
@@ -98,7 +122,7 @@ mod tests {
         let store = Arc::new(open_temp_store(&dir).await);
         store.add(&make_record("same1", 10, 0, 0)).await.expect("add");
 
-        let mut source = PollingBatchSource::new(store, ModelVersion::from("v1"));
+        let mut source = PollingBatchSource::new(store);
         let _ = source.fetch().await.expect("first fetch");
         let batch = source.fetch().await.expect("second fetch");
         assert!(batch.is_empty(), "expected early-abort on unchanged version");
@@ -110,7 +134,7 @@ mod tests {
         let store = Arc::new(open_temp_store(&dir).await);
         store.add(&make_record("chg1", 10, 0, 0)).await.expect("add");
 
-        let mut source = PollingBatchSource::new(store.clone(), ModelVersion::from("v1"));
+        let mut source = PollingBatchSource::new(store.clone());
         let first = source.fetch().await.expect("first fetch");
         assert_eq!(first.len(), 1);
 
@@ -129,7 +153,7 @@ mod tests {
         let id = r.image_id.clone();
         store.add(&r).await.expect("add");
 
-        let mut source = PollingBatchSource::new(store, ModelVersion::from("v1"));
+        let mut source = PollingBatchSource::new(store);
         let batch = source.fetch().await.expect("fetch");
         assert_eq!(batch.discovered_at(&id), Some(&DiscoveredAt::new(t)));
     }
@@ -145,7 +169,7 @@ mod tests {
         store.add(&r_old).await.expect("add");
         store.add(&r_new).await.expect("add");
 
-        let mut source = PollingBatchSource::new(store.clone(), ModelVersion::from("v1"));
+        let mut source = PollingBatchSource::new(store.clone());
         let mut first = source.fetch().await.expect("first fetch");
         assert_eq!(first.len(), 2);
         first.mark_completed(&r_old.image_id);
@@ -173,7 +197,7 @@ mod tests {
         store.add(&r_mid).await.expect("add");
         store.add(&r_new).await.expect("add");
 
-        let mut source = PollingBatchSource::new(store.clone(), ModelVersion::from("v1"));
+        let mut source = PollingBatchSource::new(store.clone());
         let mut first = source.fetch().await.expect("first fetch");
         assert_eq!(first.len(), 3);
         // Old + new succeed; mid fails (e.g. ParseScore error).
@@ -199,7 +223,7 @@ mod tests {
         store.add(&r_mid).await.expect("add");
         store.add(&r_new).await.expect("add");
 
-        let mut source = PollingBatchSource::new(store.clone(), ModelVersion::from("v1"));
+        let mut source = PollingBatchSource::new(store.clone());
         let mut first = source.fetch().await.expect("first fetch");
         assert_eq!(first.len(), 2);
         first.mark_completed(&r_new.image_id); // mid stays uncompleted
@@ -228,7 +252,7 @@ mod tests {
         // without going through a store fetch by constructing batches by hand.
         let dir = tempfile::tempdir().expect("temp dir");
         let store = Arc::new(open_temp_store(&dir).await);
-        let mut source = PollingBatchSource::new(store, ModelVersion::from("v1"));
+        let mut source = PollingBatchSource::new(store);
 
         let t_late = chrono::Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap();
         let t_early = chrono::Utc.with_ymd_and_hms(2026, 4, 1, 0, 0, 0).unwrap();
