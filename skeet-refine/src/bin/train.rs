@@ -1,41 +1,13 @@
 use std::path::PathBuf;
-use std::str::FromStr;
 
 use clap::Parser;
-use eval::{
-    EvalResults, EvalSplit, F1, LabelledScore, ModelPrices, PinnedPrecision, Recall, Threshold,
-    Usd, confusion_at, pin_at_precision, roc_auc_score, stratified_sample,
-};
-use futures::stream::{self, StreamExt};
-use rig::agent::AgentBuilder;
-use rig::client::CompletionClient;
-use rig::completion::request::Prompt;
-use shared::{Band, Score};
-use skeet_refine::loader::{LabelledImage, load_band_index, load_labelled_images};
-use skeet_refine::model::{Label, ModelName, ModelProvider, RefineModel, RefineModels, RefinePrompt};
-use skeet_refine::refining::{RefineAgent, SEED_PROMPT, build_agent, create_client, refine_image};
-use skeet_store::{ImageId, StoreArgs};
-use tracing::{error, info, warn};
-
-/// Threshold used during the training loop to score in-loop F1 — the prompt
-/// with the best F1 at this threshold becomes the candidate. The deployed
-/// threshold is decided separately after the loop by pinning at the baseline's
-/// precision floor.
-const TRAINING_LOOP_THRESHOLD_F64: f64 = 0.5;
-
-/// Maximum tolerated drop in recall (absolute) at the baseline's precision
-/// floor before the candidate is rejected.
-const GATE_RECALL_TOLERANCE: f64 = 0.01;
-
-fn training_loop_threshold() -> Threshold {
-    Threshold::new(TRAINING_LOOP_THRESHOLD_F64).expect("0.5 is in [0, 1]")
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum GateOutcome {
-    Accepted,
-    Rejected,
-}
+use eval::{EvalResults, EvalSplit, ModelPrices, Usd};
+use skeet_refine::model::{Label, RefineModels};
+use skeet_refine::train::gate::GateOutcome;
+use skeet_refine::train::setup::verify_baseline_matches_split;
+use skeet_refine::train::{TrainingInputs, run_training};
+use skeet_store::StoreArgs;
+use tracing::{info, warn};
 
 #[derive(Parser)]
 #[command(name = "train", about = "Train a scoring prompt against the wider appraised dataset")]
@@ -86,186 +58,6 @@ struct Args {
     seed: u64,
 }
 
-#[derive(Debug, thiserror::Error)]
-enum TrainError {
-    #[error(
-        "split content hash {split_hash} does not match the baseline's recorded hash {baseline_hash} — re-run capture-appraisals + refine-eval to refresh the baseline before re-training"
-    )]
-    SplitHashDrift {
-        split_hash: String,
-        baseline_hash: String,
-    },
-    #[error("invalid image id in split: {0}")]
-    InvalidImageId(String),
-    #[error("image id {0} is no longer present in the store appraisals")]
-    AppraisalMissing(String),
-    #[error("baseline records zero scored images — cannot derive per-image cost")]
-    EmptyBaseline,
-    #[error("derived per-iteration sample size is zero — increase --budget-usd")]
-    BudgetTooSmall,
-    #[error("no positive labels in test set")]
-    NoPositives,
-    #[error("no positive predictions in test set at threshold 0.5")]
-    NoPositivePredictions,
-    #[error("prompt refinement call failed at iteration {iteration}: {message}")]
-    PromptRefinementFailed { iteration: u32, message: String },
-}
-
-#[derive(Debug, Clone, Copy)]
-struct ScoredCall {
-    score: Score,
-    input_tokens: u64,
-    output_tokens: u64,
-}
-
-async fn score_concurrent(
-    agent: &RefineAgent,
-    images: &[LabelledImage],
-    concurrency: usize,
-) -> Result<Vec<ScoredCall>, Box<dyn std::error::Error>> {
-    let total = images.len();
-    let scored: Vec<ScoredCall> = stream::iter(images.iter())
-        .map(|labelled| async move {
-            refine_image(agent, &labelled.image)
-                .await
-                .map(|(score, usage, _d)| ScoredCall {
-                    score,
-                    input_tokens: usage.input_tokens,
-                    output_tokens: usage.output_tokens,
-                })
-        })
-        .buffered(concurrency)
-        .enumerate()
-        .map(|(i, r)| {
-            if let Err(e) = &r {
-                error!(idx = i, error = %e, "scoring failed");
-            } else if i % 10 == 0 {
-                info!(idx = i, total, "scoring progress");
-            }
-            r
-        })
-        .collect::<Vec<_>>()
-        .await
-        .into_iter()
-        .collect::<Result<_, _>>()?;
-    Ok(scored)
-}
-
-fn labelled_scores(images: &[LabelledImage], scored: &[ScoredCall]) -> Vec<LabelledScore> {
-    images
-        .iter()
-        .zip(scored.iter())
-        .map(|(img, call)| LabelledScore {
-            score: call.score,
-            is_positive: img.is_positive(),
-        })
-        .collect()
-}
-
-fn token_totals(scored: &[ScoredCall]) -> (u64, u64) {
-    scored.iter().fold((0, 0), |(i, o), c| {
-        (i + c.input_tokens, o + c.output_tokens)
-    })
-}
-
-fn format_results_for_refinement(images: &[LabelledImage], scored: &[ScoredCall]) -> String {
-    let mut s = String::from("Here are the scoring results for each example:\n\n");
-    for (img, call) in images.iter().zip(scored.iter()) {
-        let is_pos = img.is_positive();
-        let score: f32 = call.score.into();
-        let predicted_pos = score > 0.5;
-        let status = if is_pos == predicted_pos { "CORRECT" } else { "WRONG" };
-        let expected = if is_pos { "high (>0.5)" } else { "low (<=0.5)" };
-        s.push_str(&format!(
-            "- {}: score={:.2}, expected={}, status={}\n",
-            img.id, score, expected, status
-        ));
-    }
-    s
-}
-
-async fn refine_prompt(
-    client: &rig::providers::openai::client::CompletionsClient,
-    model_name: &str,
-    current_prompt: &str,
-    images: &[LabelledImage],
-    scored: &[ScoredCall],
-) -> Result<String, Box<dyn std::error::Error>> {
-    let labelled = labelled_scores(images, scored);
-    let matrix = confusion_at(&labelled, training_loop_threshold());
-    let f1_pct = matrix
-        .f1()
-        .map(|v| format!("{:.0}%", f64::from(v) * 100.0))
-        .unwrap_or_else(|| "undefined".to_string());
-    let results_summary = format_results_for_refinement(images, scored);
-
-    let refinement_request = format!(
-        "You are helping improve a scoring prompt for an image classification system.\n\n\
-         The current scoring prompt is:\n\
-         ---\n{current_prompt}\n---\n\n\
-         {results_summary}\n\
-         Current train F1: {f1_pct}\n\n\
-         The expected=high images are good selfies with landmarks. The expected=low images should get low scores.\n\n\
-         Please provide an improved scoring prompt that would better distinguish between good and bad examples.\n\
-         Respond with ONLY the new prompt text, nothing else. Do not include any preamble or explanation."
-    );
-
-    let refinement_model = client.completion_model(model_name);
-    let agent = AgentBuilder::new(refinement_model).temperature(0.0).build();
-    let response = agent.prompt(refinement_request).await?;
-    Ok(response)
-}
-
-fn label_train_items(
-    train: &[String],
-    band_by_id: &std::collections::HashMap<ImageId, Band>,
-) -> Result<Vec<(String, Band)>, TrainError> {
-    train
-        .iter()
-        .map(|s| {
-            let id = ImageId::from_str(s).map_err(|_| TrainError::InvalidImageId(s.clone()))?;
-            let band = band_by_id
-                .get(&id)
-                .copied()
-                .ok_or_else(|| TrainError::AppraisalMissing(s.clone()))?;
-            Ok((s.clone(), band))
-        })
-        .collect()
-}
-
-/// Build the `RefineModel` that, on Accept, will be appended to the registry
-/// and labelled `production`.
-fn build_candidate_model(model_name: &str, prompt: &str, threshold: Threshold) -> RefineModel {
-    RefineModel {
-        model_provider: ModelProvider::openai(),
-        model_name: ModelName::new(model_name),
-        prompt: RefinePrompt::new(prompt),
-        decision_threshold: threshold,
-    }
-}
-
-/// Sample size per iteration. Reserves cost for one full test-set evaluation
-/// then divides the residual budget evenly across `max_iterations`.
-fn per_iteration_sample_size(
-    per_image_cost: Usd,
-    test_count: usize,
-    budget: Usd,
-    max_iterations: u32,
-) -> Result<usize, TrainError> {
-    let reserved_for_final_eval = per_image_cost * test_count as u64;
-    let residual = if budget > reserved_for_final_eval {
-        budget - reserved_for_final_eval
-    } else {
-        Usd::zero()
-    };
-    let per_iter_budget = residual / u64::from(max_iterations);
-    let size = per_iter_budget.ratio_floor(per_image_cost) as usize;
-    if size == 0 {
-        return Err(TrainError::BudgetTooSmall);
-    }
-    Ok(size)
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
@@ -282,15 +74,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(path = %args.model_output.display(), "loaded refine models");
 
     let split = EvalSplit::load(&args.split_path)?;
-    let split_hash = split.content_hash();
     let baseline = EvalResults::load(&args.baseline_path)?;
-    if split_hash != baseline.split_config_hash {
-        return Err(TrainError::SplitHashDrift {
-            split_hash,
-            baseline_hash: baseline.split_config_hash,
-        }
-        .into());
-    }
+    let split_hash = verify_baseline_matches_split(&split, &baseline)?;
     info!(
         split_path = %args.split_path.display(),
         baseline_path = %args.baseline_path.display(),
@@ -301,219 +86,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let prices = ModelPrices::embedded()?;
-    let baseline_image_count = baseline.tp + baseline.fp + baseline.tn + baseline.fn_;
-    if baseline_image_count == 0 {
-        return Err(TrainError::EmptyBaseline.into());
-    }
-    let per_image_cost = prices.cost_for(
-        &args.model,
-        baseline.input_tokens / baseline_image_count,
-        baseline.output_tokens / baseline_image_count,
-    )?;
-
-    let per_iter_size =
-        per_iteration_sample_size(per_image_cost, split.test.len(), args.budget, args.max_iterations)?;
-    info!(
-        per_iter_size,
-        budget = %args.budget,
-        per_image_cost = %per_image_cost,
-        max_iterations = args.max_iterations,
-        "derived per-iteration sample size from current model cost estimate"
-    );
-
     let store = args.store.open_store("train").await?;
-    let band_by_id = load_band_index(&store).await?;
-    let train_items = label_train_items(&split.train, &band_by_id)?;
-    info!(count = train_items.len(), "labelled train pool");
 
-    let client = create_client(&args.openai_api_key);
-
-    let mut current_prompt = SEED_PROMPT.to_string();
-    let mut best_prompt = current_prompt.clone();
-    let mut best_train_f1: Option<F1> = None;
-    let mut total_input = 0_u64;
-    let mut total_output = 0_u64;
-
-    for iteration in 1..=args.max_iterations {
-        let iter_seed = args.seed.wrapping_add(u64::from(iteration));
-        let sampled_ids: Vec<String> =
-            stratified_sample(&train_items, per_iter_size, iter_seed);
-        let sampled = load_labelled_images(&store, &band_by_id, &sampled_ids).await?;
-        info!(iteration, sample = sampled.len(), "starting iteration");
-
-        let agent = build_agent(&client, &args.model, &current_prompt);
-        let scored = score_concurrent(&agent, &sampled, args.concurrency).await?;
-        let (in_t, out_t) = token_totals(&scored);
-        total_input += in_t;
-        total_output += out_t;
-
-        let labelled = labelled_scores(&sampled, &scored);
-        let matrix = confusion_at(&labelled, training_loop_threshold());
-        let train_f1 = matrix.f1();
-        info!(
-            iteration,
-            train_f1 = ?train_f1,
-            tp = matrix.true_pos, fp = matrix.false_pos,
-            tn = matrix.true_neg, fn_ = matrix.false_neg,
-            "iteration scored"
-        );
-
-        if let Some(f1) = train_f1
-            && best_train_f1.is_none_or(|best| f1 > best)
-        {
-            best_train_f1 = Some(f1);
-            best_prompt = current_prompt.clone();
-            info!(best_train_f1 = %f1, prompt = %current_prompt, "new best prompt");
-        }
-
-        if iteration < args.max_iterations {
-            match refine_prompt(&client, &args.model, &current_prompt, &sampled, &scored).await {
-                Ok(new_prompt) => {
-                    info!(prompt = %new_prompt, "generated refined prompt");
-                    current_prompt = new_prompt;
-                }
-                Err(e) => {
-                    error!(iteration, error = %e, "prompt refinement call failed; aborting training");
-                    return Err(TrainError::PromptRefinementFailed {
-                        iteration,
-                        message: e.to_string(),
-                    }
-                    .into());
-                }
-            }
-        }
-    }
-
-    info!(
-        best_train_f1 = ?best_train_f1,
-        "training loop complete; running final test-set evaluation"
-    );
-
-    let test_images = load_labelled_images(&store, &band_by_id, &split.test).await?;
-    let test_agent = build_agent(&client, &args.model, &best_prompt);
-    let test_scored = score_concurrent(&test_agent, &test_images, args.concurrency).await?;
-    let (test_in, test_out) = token_totals(&test_scored);
-    total_input += test_in;
-    total_output += test_out;
-
-    let test_labelled = labelled_scores(&test_images, &test_scored);
-    let test_matrix = confusion_at(&test_labelled, training_loop_threshold());
-    let test_precision = test_matrix
-        .precision()
-        .ok_or(TrainError::NoPositivePredictions)?;
-    let test_recall = test_matrix.recall().ok_or(TrainError::NoPositives)?;
-    let test_f1 = test_matrix.f1().expect("precision and recall both defined");
-    let test_roc_auc = roc_auc_score(&test_labelled);
-
-    let test_cost = prices.cost_for(&args.model, test_in, test_out)?;
-    let total_cost = prices.cost_for(&args.model, total_input, total_output)?;
-
-    let pinned_at_baseline_precision = pin_at_precision(&test_labelled, baseline.precision);
-    let outcome = evaluate_gate(pinned_at_baseline_precision, baseline.recall);
-
-    let candidate_threshold = pinned_at_baseline_precision
-        .map(|p| p.threshold)
-        .unwrap_or_else(training_loop_threshold);
-    let candidate_model = build_candidate_model(&args.model, &best_prompt, candidate_threshold);
-    let candidate_version = candidate_model.version().to_string();
-
-    let results = EvalResults {
-        split_config_path: args.split_path.display().to_string(),
-        split_config_hash: split_hash,
-        model_version: candidate_version.clone(),
-        model_name: args.model.clone(),
-        precision: test_precision,
-        recall: test_recall,
-        f1: test_f1,
-        roc_auc: test_roc_auc,
-        pinned_precision: pinned_at_baseline_precision,
-        tp: test_matrix.true_pos,
-        fp: test_matrix.false_pos,
-        tn: test_matrix.true_neg,
-        fn_: test_matrix.false_neg,
-        input_tokens: test_in,
-        output_tokens: test_out,
-        cost: test_cost,
+    let inputs = TrainingInputs {
+        store: &store,
+        split: &split,
+        split_path_str: args.split_path.display().to_string(),
+        split_hash,
+        baseline: &baseline,
+        prices: &prices,
+        openai_api_key: &args.openai_api_key,
+        max_iterations: args.max_iterations,
+        budget: args.budget,
+        model: args.model.clone(),
+        concurrency: args.concurrency,
+        seed: args.seed,
     };
-    results.save(&args.eval_output)?;
 
-    println!();
-    println!("=== Training results ===");
-    println!("  model              : {} ({})", args.model, candidate_version);
-    println!("  iterations         : {}", args.max_iterations);
-    println!("  per-iter sample    : {per_iter_size}");
-    if let Some(best) = best_train_f1 {
-        println!("  best train F1      : {best}");
-    } else {
-        println!("  best train F1      : (undefined in every iteration)");
-    }
-    println!("  test precision     : {test_precision}");
-    println!("  test recall        : {test_recall}");
-    println!("  test F1            : {test_f1}");
-    match test_roc_auc {
-        Some(v) => println!("  test ROC-AUC       : {v}"),
-        None => println!("  test ROC-AUC       : (undefined — only one class present)"),
-    }
-    println!(
-        "  baseline precision : {} (recall {})",
-        baseline.precision, baseline.recall
-    );
-    match pinned_at_baseline_precision {
-        Some(p) => println!(
-            "  pinned@baseline P  : threshold={}, recall={}",
-            p.threshold, p.recall
-        ),
-        None => println!("  pinned@baseline P  : no qualifying threshold"),
-    }
-    println!(
-        "  test cost          : {test_cost}  (total run incl. iterations: {total_cost})"
-    );
-    println!("  written eval       : {}", args.eval_output.display());
+    let report = run_training(inputs).await?;
+    report.results.save(&args.eval_output)?;
 
-    match outcome {
+    print_metrics(&args, &baseline, &report);
+
+    match report.outcome {
         GateOutcome::Accepted => {
-            models.insert(candidate_model.clone(), &[Label::production()]);
+            models.insert(report.candidate_model.clone(), &[Label::production()]);
             models.save(&args.model_output)?;
-            println!();
-            println!(
-                "  ACCEPTED: candidate clears baseline precision={} with recall ≥ {} - {GATE_RECALL_TOLERANCE}",
-                baseline.precision, baseline.recall
-            );
-            println!(
-                "  saved decision_threshold : {}",
-                candidate_model.decision_threshold
-            );
-            println!("  written model      : {}", args.model_output.display());
+            print_accepted(&args, &baseline, &report);
             info!(
                 path = %args.model_output.display(),
-                decision_threshold = %candidate_model.decision_threshold,
+                decision_threshold = %report.candidate_model.decision_threshold,
                 "saved new refine.toml"
             );
         }
         GateOutcome::Rejected => {
-            println!();
-            println!(
-                "  REJECTED: candidate did not match baseline precision={} at recall ≥ {} - {GATE_RECALL_TOLERANCE}",
-                baseline.precision, baseline.recall
-            );
-            println!(
-                "  refine.toml at {} left untouched",
-                args.model_output.display()
-            );
+            print_rejected(&args, &baseline);
             warn!("acceptance gate rejected candidate; refine.toml left untouched");
         }
     }
 
-    if total_cost > args.budget {
-        let overshoot = total_cost - args.budget;
+    if report.total_cost > args.budget {
+        let overshoot = report.total_cost - args.budget;
         let pct = overshoot.ratio_as_f64(args.budget) * 100.0;
         println!();
         println!(
-            "  BUDGET OVERSHOOT   : total {total_cost} exceeds --budget-usd {} by {overshoot} ({pct:.1}%)",
-            args.budget
+            "  BUDGET OVERSHOOT   : total {} exceeds --budget-usd {} by {overshoot} ({pct:.1}%)",
+            report.total_cost, args.budget,
         );
         warn!(
-            total_cost = %total_cost,
+            total_cost = %report.total_cost,
             budget = %args.budget,
             overshoot = %overshoot,
             overshoot_pct = pct,
@@ -524,92 +145,70 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Decide whether the candidate clears the baseline. At the baseline's
-/// precision floor, the candidate's recall must be within
-/// `GATE_RECALL_TOLERANCE` absolute of the baseline's recall.
-fn evaluate_gate(pinned: Option<PinnedPrecision>, baseline_recall: Recall) -> GateOutcome {
-    match pinned {
-        Some(p) if f64::from(p.recall) >= f64::from(baseline_recall) - GATE_RECALL_TOLERANCE => {
-            GateOutcome::Accepted
-        }
-        _ => GateOutcome::Rejected,
+fn print_metrics(args: &Args, baseline: &EvalResults, report: &skeet_refine::train::TrainingReport) {
+    let candidate_version = report.candidate_model.version();
+    let results = &report.results;
+
+    println!();
+    println!("=== Training results ===");
+    println!("  model              : {} ({})", args.model, candidate_version);
+    println!("  iterations         : {}", args.max_iterations);
+    println!("  per-iter sample    : {}", report.per_iter_size);
+    if let Some(best) = report.best_train_f1 {
+        println!("  best train F1      : {best}");
+    } else {
+        println!("  best train F1      : (undefined in every iteration)");
     }
+    println!("  test precision     : {}", results.precision);
+    println!("  test recall        : {}", results.recall);
+    println!("  test F1            : {}", results.f1);
+    match results.roc_auc {
+        Some(v) => println!("  test ROC-AUC       : {v}"),
+        None => println!("  test ROC-AUC       : (undefined — only one class present)"),
+    }
+    println!(
+        "  baseline precision : {} (recall {})",
+        baseline.precision, baseline.recall
+    );
+    match results.pinned_precision {
+        Some(p) => println!(
+            "  pinned@baseline P  : threshold={}, recall={}",
+            p.threshold, p.recall
+        ),
+        None => println!("  pinned@baseline P  : no qualifying threshold"),
+    }
+    println!(
+        "  test cost          : {}  (total run incl. iterations: {})",
+        results.cost, report.total_cost
+    );
+    println!("  written eval       : {}", args.eval_output.display());
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+fn print_accepted(args: &Args, baseline: &EvalResults, report: &skeet_refine::train::TrainingReport) {
+    println!();
+    println!(
+        "  ACCEPTED: candidate clears baseline precision={} with recall ≥ {} - {}",
+        baseline.precision,
+        baseline.recall,
+        skeet_refine::train::gate::GATE_RECALL_TOLERANCE,
+    );
+    println!(
+        "  saved decision_threshold : {}",
+        report.candidate_model.decision_threshold
+    );
+    println!("  written model      : {}", args.model_output.display());
+}
 
-    fn usd(s: &str) -> Usd {
-        s.parse().expect("valid Usd")
-    }
-
-    #[test]
-    fn sample_size_is_reduced_by_final_eval_reservation() {
-        // $0.01/image, budget $2.00, 100 test images, 5 iterations:
-        //   reserve $1.00 for final eval → residual $1.00
-        //   $1.00 / 5 iterations / $0.01 = 20 images/iter
-        //   (without reservation: floor($2.00 / 5 / $0.01) = 40)
-        let n = per_iteration_sample_size(usd("0.01"), 100, usd("2.00"), 5)
-            .expect("budget covers it");
-        assert_eq!(n, 20); // 40 without reservation — final eval halves the training budget
-    }
-
-    #[test]
-    fn per_iteration_size_errors_when_budget_too_small() {
-        let err = per_iteration_sample_size(usd("0.01"), 100, usd("0.0"), 5);
-        assert!(matches!(err, Err(TrainError::BudgetTooSmall)));
-    }
-
-    #[test]
-    fn gate_accepts_when_recall_within_tolerance() {
-        let baseline_recall = Recall::new(0.70).expect("valid");
-        let pinned = PinnedPrecision {
-            threshold: Threshold::new(0.5).expect("valid"),
-            recall: Recall::new(f64::from(baseline_recall) - GATE_RECALL_TOLERANCE / 2.0)
-                .expect("valid"),
-        };
-        assert_eq!(
-            evaluate_gate(Some(pinned), baseline_recall),
-            GateOutcome::Accepted
-        );
-    }
-
-    #[test]
-    fn gate_rejects_when_recall_drops_below_tolerance() {
-        let baseline_recall = Recall::new(0.70).expect("valid");
-        let pinned = PinnedPrecision {
-            threshold: Threshold::new(0.5).expect("valid"),
-            recall: Recall::new(f64::from(baseline_recall) - GATE_RECALL_TOLERANCE * 1.5)
-                .expect("valid"),
-        };
-        assert_eq!(
-            evaluate_gate(Some(pinned), baseline_recall),
-            GateOutcome::Rejected
-        );
-    }
-
-    #[test]
-    fn gate_rejects_when_no_qualifying_threshold() {
-        assert_eq!(
-            evaluate_gate(None, Recall::new(0.5).expect("valid")),
-            GateOutcome::Rejected
-        );
-    }
-
-    #[test]
-    fn inserting_candidate_makes_it_resolvable_by_production_label() {
-        let candidate = build_candidate_model(
-            "gpt-4o",
-            "any prompt",
-            Threshold::new(0.5).expect("valid"),
-        );
-        let mut models = RefineModels::new();
-        models.insert(candidate.clone(), &[Label::production()]);
-
-        let resolved = models
-            .by_label(&Label::production())
-            .expect("production label resolves");
-        assert_eq!(resolved, &candidate);
-    }
+fn print_rejected(args: &Args, baseline: &EvalResults) {
+    println!();
+    println!(
+        "  REJECTED: candidate did not match baseline precision={} at recall ≥ {} - {}",
+        baseline.precision,
+        baseline.recall,
+        skeet_refine::train::gate::GATE_RECALL_TOLERANCE,
+    );
+    println!(
+        "  refine.toml at {} left untouched",
+        args.model_output.display()
+    );
 }

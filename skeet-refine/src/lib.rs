@@ -7,3 +7,4 @@ pub mod model;
 pub mod polling;
 pub mod refining;
 pub mod tick;
+pub mod train;
