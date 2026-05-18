@@ -20,5 +20,6 @@ LABEL org.opencontainers.image.source=https://github.com/mikemoraned/bobby
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /build/target/release/skeet-feed /usr/local/bin/skeet-feed
+COPY config/refine.toml /etc/bobby/refine.toml
 
-CMD ["skeet-feed"]
+CMD ["skeet-feed", "--model-path", "/etc/bobby/refine.toml"]
