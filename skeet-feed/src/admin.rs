@@ -8,8 +8,8 @@ use cot::{Body, Template};
 use serde::Deserialize;
 use std::sync::Arc;
 
-use shared::{Appraiser, Band, ModelVersion};
-use skeet_store::{Appraisal, DiscoveredAt, ImageId, Score, SkeetId, StoredImageSummary};
+use shared::{Appraiser, Band, ImageId, ModelVersion};
+use skeet_store::{Appraisal, DiscoveredAt, Score, SkeetId, StoredImageSummary};
 use crate::Store;
 use crate::effective_band::image_effective_band;
 use tracing::{info, instrument};

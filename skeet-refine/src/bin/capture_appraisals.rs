@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use chrono::Utc;
 use clap::Parser;
 use eval::{EvalSplit, stratified_split};
+use shared::{Band, ImageId};
 use skeet_store::StoreArgs;
 use tracing::info;
 
@@ -40,9 +41,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let appraisals = store.list_all_image_appraisals().await?;
     info!(count = appraisals.len(), "loaded image appraisals");
 
-    let items: Vec<(String, skeet_store::Band)> = appraisals
+    let items: Vec<(ImageId, Band)> = appraisals
         .into_iter()
-        .map(|(id, appraisal)| (id.to_string(), appraisal.band))
+        .map(|(id, appraisal)| (id, appraisal.band))
         .collect();
 
     let (train, test) = stratified_split(&items, args.train_ratio, args.seed);

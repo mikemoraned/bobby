@@ -1,7 +1,29 @@
 use std::sync::Arc;
 
+use image::{DynamicImage, ImageBuffer, Rgb};
 use shared::refine_model::{ModelName, ModelProvider, RefinePrompt};
-use shared::{RefineModel, RefineModels, Threshold};
+use shared::{RefineModel, RefineModels, Score, Threshold};
+
+/// Build a 1-pixel-tall RGB image whose width encodes `marker + 1`, so the
+/// caller can later recover `marker` from the image alone via `marker_of`.
+/// Useful for asynchronous tests where requests and responses need to be
+/// paired without sharing other state.
+pub fn marker_image(marker: u32) -> DynamicImage {
+    let width = marker + 1;
+    DynamicImage::ImageRgb8(ImageBuffer::from_pixel(width, 1, Rgb([0u8, 0, 0])))
+}
+
+/// Recover the marker an image was built with via `marker_image`.
+pub fn marker_of(image: &DynamicImage) -> u32 {
+    image.width() - 1
+}
+
+/// Deterministic `Score` for a marker — `marker / 100`, clamped by the
+/// `0u32..=100` range of valid markers. Pair with `marker_image` to let an
+/// async scoring stub return a score the caller can independently predict.
+pub fn score_for(marker: u32) -> Score {
+    Score::new(marker as f32 / 100.0).expect("marker in 0..=100 yields valid score")
+}
 
 /// A `RefineModels` registry for use in tests, containing a single entry
 /// keyed by `"test"` (a synthetic version string, not a real hash) that

@@ -1,9 +1,8 @@
 use std::collections::HashMap;
-use std::str::FromStr;
 
 use image::DynamicImage;
-use shared::Band;
-use skeet_store::{ImageId, SkeetStore, StoreError};
+use shared::{Band, ImageId};
+use skeet_store::{SkeetStore, StoreError};
 
 /// An image fetched from the store paired with its appraised `Band`. The binary
 /// label for the refine classifier is `band.is_visible_in_feed()`.
@@ -22,8 +21,6 @@ impl LabelledImage {
 
 #[derive(Debug, thiserror::Error)]
 pub enum LoaderError {
-    #[error("invalid image id in split: {0}")]
-    InvalidImageId(String),
     #[error("image id {0} is no longer present in the store appraisals")]
     AppraisalMissing(String),
     #[error("image id {0} is no longer present in the store images table")]
@@ -40,18 +37,13 @@ pub async fn load_band_index(store: &SkeetStore) -> Result<HashMap<ImageId, Band
     Ok(appraisals.into_iter().map(|(id, a)| (id, a.band)).collect())
 }
 
-/// Resolve `image_id_strs` into in-memory `LabelledImage`s. Errors if any id is
-/// malformed, missing from the appraisal index, or absent from the images table.
+/// Resolve `ids` into in-memory `LabelledImage`s. Errors if any id is missing
+/// from the appraisal index, or absent from the images table.
 pub async fn load_labelled_images(
     store: &SkeetStore,
     band_by_id: &HashMap<ImageId, Band>,
-    image_id_strs: &[String],
+    ids: &[ImageId],
 ) -> Result<Vec<LabelledImage>, LoaderError> {
-    let ids: Vec<ImageId> = image_id_strs
-        .iter()
-        .map(|s| ImageId::from_str(s).map_err(|_| LoaderError::InvalidImageId(s.clone())))
-        .collect::<Result<_, _>>()?;
-
     let bands: Vec<Band> = ids
         .iter()
         .map(|id| {
@@ -62,19 +54,23 @@ pub async fn load_labelled_images(
         })
         .collect::<Result<_, _>>()?;
 
-    let originals = store.get_originals_by_ids(&ids).await?;
-    let mut images_by_id: HashMap<ImageId, DynamicImage> = originals
+    let originals = store.get_originals_by_ids(ids).await?;
+    let mut originals_by_id: HashMap<ImageId, DynamicImage> = originals
         .into_iter()
         .map(|o| (o.summary.image_id, o.image))
         .collect();
 
-    ids.into_iter()
+    ids.iter()
         .zip(bands)
         .map(|(id, band)| {
-            let image = images_by_id
-                .remove(&id)
+            let (id_original, image) = originals_by_id
+                .remove_entry(id)
                 .ok_or_else(|| LoaderError::ImageMissing(id.to_string()))?;
-            Ok(LabelledImage { id, image, band })
+            Ok(LabelledImage {
+                id: id_original,
+                image,
+                band,
+            })
         })
         .collect()
 }

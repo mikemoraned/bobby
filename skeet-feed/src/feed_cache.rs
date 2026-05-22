@@ -6,10 +6,10 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::FromRequestHead;
-use shared::RefineModels;
+use shared::{ImageId, RefineModels};
 use skeet_store::{
-    Appraisal, IMAGE_APPRAISAL_TABLE_NAME, ImageId, SCORE_TABLE_NAME,
-    SKEET_APPRAISAL_TABLE_NAME, Score, SkeetId, SkeetStore, StoredImageSummary, Version,
+    Appraisal, IMAGE_APPRAISAL_TABLE_NAME, SCORE_TABLE_NAME, SKEET_APPRAISAL_TABLE_NAME, Score,
+    SkeetId, SkeetStore, StoredImageSummary, Version,
 };
 use tokio::sync::RwLock;
 use tower::{Layer, Service};

@@ -26,6 +26,8 @@ pub fn per_iteration_sample_size(
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+
     use super::*;
 
     fn usd(s: &str) -> Usd {
@@ -38,14 +40,42 @@ mod tests {
         //   reserve $1.00 for final eval → residual $1.00
         //   $1.00 / 5 iterations / $0.01 = 20 images/iter
         //   (without reservation: floor($2.00 / 5 / $0.01) = 40)
-        let n = per_iteration_sample_size(usd("0.01"), 100, usd("2.00"), 5)
-            .expect("budget covers it");
+        let n =
+            per_iteration_sample_size(usd("0.01"), 100, usd("2.00"), 5).expect("budget covers it");
         assert_eq!(n, 20);
     }
 
-    #[test]
-    fn per_iteration_size_errors_when_budget_too_small() {
-        let err = per_iteration_sample_size(usd("0.01"), 100, usd("0.0"), 5);
-        assert!(matches!(err, Err(TrainError::BudgetTooSmall)));
+    proptest! {
+        /// At `budget == reservation` the residual is zero and no image can be
+        /// afforded per iteration — errors with `BudgetTooSmall` for any cost,
+        /// test count, or iteration count.
+        #[test]
+        fn errors_when_budget_equals_reservation(
+            cost_cents in 1u64..=1000,
+            test_count in 1usize..=1000,
+            max_iter in 1u32..=100,
+        ) {
+            let cost = usd("0.01") * cost_cents;
+            let reservation = cost * test_count as u64;
+            let budget = reservation;
+            let err = per_iteration_sample_size(cost, test_count, budget, max_iter);
+            prop_assert!(matches!(err, Err(TrainError::BudgetTooSmall)));
+        }
+
+        /// At `budget == reservation + (max_iter × cost)` the residual covers
+        /// exactly one image per iteration — the floor selects size = 1.
+        #[test]
+        fn returns_one_when_budget_covers_exactly_one_image_per_iter_above_reservation(
+            cost_cents in 1u64..=1000,
+            test_count in 1usize..=1000,
+            max_iter in 1u32..=100,
+        ) {
+            let cost = usd("0.01") * cost_cents;
+            let reservation = cost * test_count as u64;
+            let budget = reservation + (cost * u64::from(max_iter));
+            let n = per_iteration_sample_size(cost, test_count, budget, max_iter)
+                .expect("just enough for size=1");
+            prop_assert_eq!(n, 1);
+        }
     }
 }

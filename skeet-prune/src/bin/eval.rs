@@ -7,8 +7,8 @@ use clap::Parser;
 use eval::{ConfusionMatrix, F1, Precision, Recall};
 use face_detection::FaceDetector;
 use serde::Serialize;
-use shared::{Classification, PruneConfig, RejectionCategories, RejectionCategory};
-use skeet_store::{Band, ImageId, StoreArgs};
+use shared::{Classification, ImageId, PruneConfig, RejectionCategories, RejectionCategory};
+use skeet_store::{Band, StoreArgs};
 use tracing::info;
 
 const BATCH_SIZE: usize = 10;

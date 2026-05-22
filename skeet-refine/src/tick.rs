@@ -6,8 +6,7 @@
 
 use std::collections::HashMap;
 
-use shared::{ModelVersion, Score};
-use skeet_store::ImageId;
+use shared::{ImageId, ModelVersion, Score};
 use tracing::{error, info};
 
 use crate::batch::ScoreOutcomes;

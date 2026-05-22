@@ -3,13 +3,13 @@ use std::sync::Arc;
 use arrow_array::{RecordBatch, StringArray, TimestampMicrosecondArray};
 use chrono::Utc;
 use lancedb::query::QueryBase;
-use shared::{Appraiser, Band};
+use shared::{Appraiser, Band, ImageId};
 use tracing::instrument;
 
 use crate::arrow_utils::typed_column;
 use crate::lancedb_utils::execute_query;
 use crate::schema::{manual_image_appraisal_v1_schema, manual_skeet_appraisal_v1_schema};
-use crate::types::{ImageId, SkeetId};
+use crate::types::SkeetId;
 use crate::{SkeetStore, StoreError};
 
 /// A stored manual appraisal: the band assigned and who assigned it.

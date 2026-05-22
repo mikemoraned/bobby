@@ -2,7 +2,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use shared::Band;
+use shared::{Band, ImageId};
 use smartcore::linalg::basic::matrix::DenseMatrix;
 use smartcore::model_selection::train_test_split;
 
@@ -11,8 +11,8 @@ use smartcore::model_selection::train_test_split;
 pub struct EvalSplit {
     pub seed: u64,
     pub captured_at: DateTime<Utc>,
-    pub train: Vec<String>,
-    pub test: Vec<String>,
+    pub train: Vec<ImageId>,
+    pub test: Vec<ImageId>,
 }
 
 impl EvalSplit {
@@ -237,12 +237,18 @@ mod tests {
         assert_eq!(test.len(), 0);
     }
 
+    fn id(n: u32) -> ImageId {
+        format!("00000000-0000-0000-0000-{n:012x}")
+            .parse()
+            .expect("valid v1 image id")
+    }
+
     fn sample_split() -> EvalSplit {
         EvalSplit {
             seed: 42,
             captured_at: DateTime::from_timestamp(1_700_000_000, 0).expect("valid timestamp"),
-            train: vec!["a".into(), "b".into()],
-            test: vec!["c".into()],
+            train: vec![id(1), id(2)],
+            test: vec![id(3)],
         }
     }
 
@@ -269,7 +275,7 @@ mod tests {
         assert_ne!(base, reordered.content_hash());
 
         let mut moved = sample_split();
-        moved.train.push("c".into());
+        moved.train.push(id(99));
         moved.test.clear();
         assert_ne!(base, moved.content_hash());
     }
@@ -360,8 +366,8 @@ mod tests {
         let split = EvalSplit {
             seed: 42,
             captured_at: DateTime::from_timestamp(0, 0).expect("valid timestamp"),
-            train: vec!["a".into(), "b".into()],
-            test: vec!["c".into()],
+            train: vec![id(1), id(2)],
+            test: vec![id(3)],
         };
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("split.toml");

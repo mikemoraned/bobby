@@ -8,12 +8,13 @@ use eval::{
     EvalResults, EvalSplit, F1, ModelPrices, PricingError, Usd, confusion_at, pin_at_precision,
     roc_auc_score,
 };
+use shared::ImageId;
 use shared::refine_model::RefineModel;
 use skeet_store::SkeetStore;
 use tracing::{error, info};
 
 use crate::loader::{LoaderError, load_band_index, load_labelled_images};
-use crate::refining::{RefineError, SEED_PROMPT, build_agent, create_client};
+use crate::refining::{RefineError, SEED_PROMPT, build_agent, create_client, refine_image};
 use crate::train::budget::per_iteration_sample_size;
 use crate::train::gate::{
     GateOutcome, build_candidate_model, evaluate_gate, training_loop_threshold,
@@ -31,8 +32,6 @@ pub enum TrainError {
         split_hash: String,
         baseline_hash: String,
     },
-    #[error("invalid image id in split: {0}")]
-    InvalidImageId(String),
     #[error("image id {0} is no longer present in the store appraisals")]
     AppraisalMissing(String),
     #[error("baseline records zero scored images — cannot derive per-image cost")]
@@ -127,13 +126,17 @@ pub async fn run_training(inputs: TrainingInputs<'_>) -> Result<TrainingReport, 
 
     for iteration in 1..=max_iterations {
         let iter_seed = seed.wrapping_add(u64::from(iteration));
-        let sampled_ids: Vec<String> =
+        let sampled_ids: Vec<ImageId> =
             eval::stratified_sample(&train_items, per_iter_size, iter_seed);
         let sampled = load_labelled_images(store, &band_by_id, &sampled_ids).await?;
         info!(iteration, sample = sampled.len(), "starting iteration");
 
         let agent = build_agent(&client, &model, &current_prompt);
-        let scored = score_concurrent(&agent, &sampled, concurrency).await?;
+        let agent_ref = &agent;
+        let scored = score_concurrent(&sampled, concurrency, |image| async move {
+            refine_image(agent_ref, &image).await
+        })
+        .await?;
         let (in_t, out_t) = token_totals(&scored);
         total_input += in_t;
         total_output += out_t;
@@ -181,7 +184,11 @@ pub async fn run_training(inputs: TrainingInputs<'_>) -> Result<TrainingReport, 
 
     let test_images = load_labelled_images(store, &band_by_id, &split.test).await?;
     let test_agent = build_agent(&client, &model, &best_prompt);
-    let test_scored = score_concurrent(&test_agent, &test_images, concurrency).await?;
+    let test_agent_ref = &test_agent;
+    let test_scored = score_concurrent(&test_images, concurrency, |image| async move {
+        refine_image(test_agent_ref, &image).await
+    })
+    .await?;
     let (test_in, test_out) = token_totals(&test_scored);
     total_input += test_in;
     total_output += test_out;

@@ -10745,7 +10745,9 @@ name = "shared"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "hex",
  "image",
+ "md5 0.7.0",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
@@ -10758,6 +10760,7 @@ dependencies = [
  "tracing-appender",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -10960,12 +10963,10 @@ dependencies = [
  "chrono",
  "clap",
  "futures",
- "hex",
  "image",
  "lance",
  "lance-io",
  "lancedb",
- "md5 0.7.0",
  "object_store",
  "opentelemetry",
  "opentelemetry_sdk",
@@ -11602,6 +11603,7 @@ dependencies = [
 name = "test-support"
 version = "0.1.0"
 dependencies = [
+ "image",
  "opentelemetry_sdk",
  "shared",
 ]

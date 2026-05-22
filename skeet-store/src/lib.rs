@@ -33,7 +33,7 @@ pub use shared::{Appraiser, Band, ModelVersion, Score};
 pub use stored::{StoredImage, StoredImageSummary, StoredOriginal};
 pub use store_metrics::StoreMetrics;
 pub use summary::SkeetStoreSummary;
-pub use types::{DiscoveredAt, ImageId, ImageRecord, InvalidImageId, OriginalAt, SkeetId, Zone};
+pub use types::{DiscoveredAt, ImageRecord, OriginalAt, SkeetId, Zone};
 pub use version::Version;
 
 use std::sync::Arc;
@@ -50,6 +50,7 @@ use lancedb::query::QueryBase;
 use tracing::instrument;
 
 use arrow_utils::{encode_image_as_png, typed_column};
+use shared::ImageId;
 use lance::dataset::{WriteMode, WriteParams};
 use lance_io::object_store::ObjectStoreParams;
 use lancedb::table::WriteOptions;

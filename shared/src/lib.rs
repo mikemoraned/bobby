@@ -8,6 +8,7 @@ use image::DynamicImage;
 pub mod appraiser;
 pub mod band;
 mod blocklist;
+mod image_id;
 pub mod labels;
 pub mod model_version;
 mod rejection;
@@ -20,6 +21,7 @@ mod zone;
 pub use appraiser::{Appraiser, ParseAppraiserError};
 pub use band::{Band, ParseBandError};
 pub use blocklist::{BlockedEntry, BlocklistConfig};
+pub use image_id::{ImageId, InvalidImageId};
 pub use model_version::{HashScheme, ModelVersion};
 pub use refine_model::{
     Label, ModelName, ModelProvider, RefineModel, RefineModels, RefineModelsError, RefinePrompt,

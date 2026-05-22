@@ -10,7 +10,8 @@ use std::collections::{HashMap, HashSet};
 use futures::stream::{self, StreamExt};
 use image::DynamicImage;
 use shared::Score;
-use skeet_store::{DiscoveredAt, ImageId, StoredOriginal};
+use shared::ImageId;
+use skeet_store::{DiscoveredAt, StoredOriginal};
 
 #[derive(Default)]
 pub struct Batch {
@@ -149,28 +150,13 @@ mod tests {
 
     use std::time::Duration;
 
-    use image::{ImageBuffer, Rgb};
     use proptest::prelude::*;
+    use test_support::{marker_image, marker_of, score_for};
 
     /// `score_with` is generic over its scorer's error, so tests don't need
     /// `RefineError` — a unit error is enough.
     #[derive(Debug, PartialEq, Eq)]
     struct TestError;
-
-    /// Encode a `marker` (small integer id) into the image's width so the
-    /// scorer can recover it from the image alone.
-    fn marker_image(marker: u32) -> DynamicImage {
-        let width = marker + 1;
-        DynamicImage::ImageRgb8(ImageBuffer::from_pixel(width, 1, Rgb([0u8, 0, 0])))
-    }
-
-    fn marker_of(image: &DynamicImage) -> u32 {
-        image.width() - 1
-    }
-
-    fn score_for(marker: u32) -> Score {
-        Score::new(marker as f32 / 100.0).expect("score in 0..1")
-    }
 
     fn build_batch(markers: impl IntoIterator<Item = u32>) -> (Batch, Vec<u32>) {
         let mut batch = Batch::default();

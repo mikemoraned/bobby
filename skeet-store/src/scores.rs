@@ -3,13 +3,13 @@ use std::sync::Arc;
 
 use arrow_array::{Float32Array, RecordBatch, RecordBatchIterator, StringArray};
 use lancedb::query::QueryBase;
+use shared::ImageId;
 use tracing::{debug, info, instrument};
 
 use crate::arrow_utils::typed_column;
 use crate::lancedb_utils::execute_query;
 use crate::schema::images_score_v2_schema;
 use crate::stored::batches_to_summaries;
-use crate::types::ImageId;
 use crate::{ModelVersion, Score, SkeetStore, StoreError, StoredImageSummary};
 
 pub struct ScoresCache {

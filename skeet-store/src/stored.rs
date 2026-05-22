@@ -1,10 +1,10 @@
 use arrow_array::{LargeBinaryArray, RecordBatch, StringArray, TimestampMicrosecondArray};
 use image::DynamicImage;
-use shared::ModelVersion;
+use shared::{ImageId, ModelVersion};
 use tracing::instrument;
 
 use crate::arrow_utils::{micros_to_datetime, typed_column};
-use crate::types::{DiscoveredAt, ImageId, ImageRecord, OriginalAt, SkeetId, Zone};
+use crate::types::{DiscoveredAt, ImageRecord, OriginalAt, SkeetId, Zone};
 use crate::StoreError;
 
 pub struct StoredImage {

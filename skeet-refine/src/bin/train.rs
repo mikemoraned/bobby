@@ -4,8 +4,7 @@ use clap::Parser;
 use eval::{EvalResults, EvalSplit, ModelPrices, Usd};
 use skeet_refine::model::{Label, RefineModels};
 use skeet_refine::train::gate::GateOutcome;
-use skeet_refine::train::setup::verify_baseline_matches_split;
-use skeet_refine::train::{TrainingInputs, run_training};
+use skeet_refine::train::{TrainError, TrainingInputs, run_training};
 use skeet_store::StoreArgs;
 use tracing::{info, warn};
 
@@ -75,7 +74,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let split = EvalSplit::load(&args.split_path)?;
     let baseline = EvalResults::load(&args.baseline_path)?;
-    let split_hash = verify_baseline_matches_split(&split, &baseline)?;
+    let split_hash = split.content_hash();
+    if split_hash != baseline.split_config_hash {
+        return Err(TrainError::SplitHashDrift {
+            split_hash,
+            baseline_hash: baseline.split_config_hash,
+        }
+        .into());
+    }
     info!(
         split_path = %args.split_path.display(),
         baseline_path = %args.baseline_path.display(),
