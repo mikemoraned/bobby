@@ -1,14 +1,16 @@
 use std::path::PathBuf;
 
+use chrono::Utc;
 use clap::Parser;
 use eval::{
-    EvalResults, EvalSplit, LabelledScore, ModelPrices, confusion_at, pin_at_precision,
-    roc_auc_score,
+    Evaluation, EvalResultsLog, EvalSplits, LabelledScore, ModelPrices, Purpose, Resources, RunId,
+    RunRecord, confusion_at, pin_at_precision, roc_auc_score,
 };
 use futures::stream::{self, StreamExt};
 use shared::Score;
+use shared::refine_model::Label;
 use skeet_refine::loader::{LabelledImage, load_band_index, load_labelled_images};
-use skeet_refine::model::{Label, RefineModels};
+use skeet_refine::model::RefineModels;
 use skeet_refine::refining::{RefineAgent, build_agent, create_client, refine_image};
 use skeet_store::StoreArgs;
 use tracing::{error, info};
@@ -16,23 +18,31 @@ use tracing::{error, info};
 #[derive(Parser)]
 #[command(
     name = "refine-eval",
-    about = "Evaluate the configured refine model against the frozen held-out test split"
+    about = "Evaluate the configured refine model against a labelled split and append the result to the eval-results log"
 )]
 struct Args {
     #[command(flatten)]
     store: StoreArgs,
 
-    /// Path to the frozen eval split written by `capture-appraisals`
-    #[arg(long, default_value = "config/eval-split.toml")]
-    split_path: PathBuf,
+    /// Path to the eval-splits registry
+    #[arg(long, default_value = "config/eval-splits.toml")]
+    splits_path: PathBuf,
+
+    /// Which split (by label) to evaluate against
+    #[arg(long, default_value = "default")]
+    split_label: String,
+
+    /// Path to the eval-results log (created if missing)
+    #[arg(long, default_value = "config/eval-results.toml")]
+    eval_results_path: PathBuf,
 
     /// Path to the refine model config under evaluation
     #[arg(long, default_value = "config/refine.toml")]
     model_path: PathBuf,
 
-    /// Path to write the eval results
+    /// Free-text purpose for this run (e.g. "phase-4 gpt-4o-mini #1")
     #[arg(long)]
-    output: PathBuf,
+    purpose: String,
 
     /// OpenAI API key
     #[arg(long, env = "BOBBY_OPENAI_API_KEY")]
@@ -91,14 +101,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(git_hash = env!("BUILD_GIT_HASH"), "refine-eval starting");
 
     let args = Args::parse();
+    let split_label = Label::new(&args.split_label);
 
-    let split = EvalSplit::load(&args.split_path)?;
-    let split_hash = split.content_hash();
+    let splits = EvalSplits::load(&args.splits_path)?;
+    let (split_id, split) = splits
+        .by_label(&split_label)
+        .ok_or_else(|| format!("split label {split_label} not found in {}", args.splits_path.display()))?;
     info!(
-        path = %args.split_path.display(),
-        hash = %split_hash,
+        path = %args.splits_path.display(),
+        %split_id,
         test_count = split.test.len(),
-        "loaded frozen split"
+        "loaded split"
     );
 
     let models = RefineModels::load(&args.model_path)?;
@@ -147,29 +160,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let prices = ModelPrices::embedded()?;
     let cost = prices.cost_for(model.model_name.as_str(), input_tokens, output_tokens)?;
 
-    let results = EvalResults {
-        split_config_path: args.split_path.display().to_string(),
-        split_config_hash: split_hash,
-        model_version: model_version.to_string(),
-        model_name: model.model_name.to_string(),
-        precision,
-        recall,
-        f1,
-        roc_auc,
-        pinned_precision,
-        tp: matrix.true_pos,
-        fp: matrix.false_pos,
-        tn: matrix.true_neg,
-        fn_: matrix.false_neg,
-        input_tokens,
-        output_tokens,
-        cost,
+    let run_at = Utc::now();
+    let run = RunRecord {
+        run_id: RunId::from_run_at(run_at),
+        run_at,
+        model_version: model_version.clone(),
+        split_id: *split_id,
+        purpose: Purpose::new(args.purpose),
+        evaluation: Evaluation {
+            precision,
+            recall,
+            f1,
+            roc_auc,
+            pinned_precision,
+            confusion: matrix,
+        },
+        resources: Resources {
+            input_tokens,
+            output_tokens,
+            cost,
+        },
+        training: None,
     };
-    results.save(&args.output)?;
+    let mut log = EvalResultsLog::load_or_empty(&args.eval_results_path)?;
+    log.append(run.clone())?;
+    log.save(&args.eval_results_path)?;
 
     println!();
     println!("=== Eval results ===");
+    println!("  run_id      : {}", run.run_id);
+    println!("  purpose     : {}", run.purpose);
     println!("  model       : {} ({})", model.model_name, model_version);
+    println!("  split       : {split_id}");
     println!("  test images : {}", test_images.len());
     println!("  precision   : {precision} (threshold {decision_threshold})");
     println!("  recall      : {recall} (threshold {decision_threshold})");
@@ -188,7 +210,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "  tokens      : input={input_tokens}, output={output_tokens}, cost={cost}"
     );
-    println!("  written     : {}", args.output.display());
+    println!("  appended    : {}", args.eval_results_path.display());
 
     Ok(())
 }

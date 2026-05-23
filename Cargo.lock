@@ -4649,6 +4649,8 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "clap",
+ "hex",
+ "md5 0.7.0",
  "proptest",
  "reqwest 0.13.2",
  "rust_decimal",
@@ -4662,6 +4664,7 @@ dependencies = [
  "toml 0.8.23",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

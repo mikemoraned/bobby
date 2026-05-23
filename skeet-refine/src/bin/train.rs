@@ -1,10 +1,12 @@
 use std::path::PathBuf;
 
+use chrono::Utc;
 use clap::Parser;
-use eval::{EvalResults, EvalSplit, ModelPrices, Usd};
-use skeet_refine::model::{Label, RefineModels};
+use eval::{EvalResultsLog, EvalSplits, ModelPrices, Purpose, RunId, RunRecord, Usd};
+use shared::refine_model::Label;
+use skeet_refine::model::RefineModels;
 use skeet_refine::train::gate::GateOutcome;
-use skeet_refine::train::{TrainError, TrainingInputs, run_training};
+use skeet_refine::train::TrainingInputs;
 use skeet_store::StoreArgs;
 use tracing::{info, warn};
 
@@ -14,21 +16,28 @@ struct Args {
     #[command(flatten)]
     store: StoreArgs,
 
-    /// Path to the frozen eval split written by `capture-appraisals`
-    #[arg(long, default_value = "config/eval-split.toml")]
-    split_path: PathBuf,
+    /// Path to the eval-splits registry
+    #[arg(long, default_value = "config/eval-splits.toml")]
+    splits_path: PathBuf,
 
-    /// Path to the baseline eval results this run must not regress against
-    #[arg(long, default_value = "config/eval-results-baseline.toml")]
-    baseline_path: PathBuf,
+    /// Which split (by label) to train against
+    #[arg(long, default_value = "default")]
+    split_label: String,
+
+    /// Path to the eval-results log; this run's results are always appended,
+    /// regardless of gate outcome
+    #[arg(long, default_value = "config/eval-results.toml")]
+    eval_results_path: PathBuf,
+
+    /// Specific baseline run to compare this run against; defaults to the
+    /// best-F1 run in the log that has the production model_version and the
+    /// same split_id as this run
+    #[arg(long)]
+    baseline_run_id: Option<RunId>,
 
     /// Path to write the resulting refine.toml — only written if the acceptance gate accepts
     #[arg(long, default_value = "config/refine.toml")]
     model_output: PathBuf,
-
-    /// Path to write this run's eval results (always written, regardless of gate outcome)
-    #[arg(long)]
-    eval_output: PathBuf,
 
     /// OpenAI API key
     #[arg(long, env = "BOBBY_OPENAI_API_KEY")]
@@ -55,6 +64,28 @@ struct Args {
     /// Random seed for per-iteration subsampling
     #[arg(long, default_value_t = 42)]
     seed: u64,
+
+    /// Free-text purpose for this run (e.g. "phase-4 gpt-4o-mini #1")
+    #[arg(long)]
+    purpose: String,
+}
+
+#[derive(Debug, thiserror::Error)]
+enum TrainCliError {
+    #[error("split label {0} not found in {1}")]
+    UnknownSplitLabel(String, PathBuf),
+    #[error("no production label in {0} — cannot select a default baseline")]
+    NoProductionModel(PathBuf),
+    #[error(
+        "no run in {path} matches model_version {model_version} and split_id {split_id} — pass --baseline-run-id to override"
+    )]
+    NoBaselineCandidate {
+        path: PathBuf,
+        model_version: String,
+        split_id: String,
+    },
+    #[error("baseline run_id {0} not found in {1}")]
+    UnknownBaselineRunId(RunId, PathBuf),
 }
 
 #[tokio::main]
@@ -72,33 +103,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut models = RefineModels::load_or_empty(&args.model_output)?;
     info!(path = %args.model_output.display(), "loaded refine models");
 
-    let split = EvalSplit::load(&args.split_path)?;
-    let baseline = EvalResults::load(&args.baseline_path)?;
-    let split_hash = split.content_hash();
-    if split_hash != baseline.split_config_hash {
-        return Err(TrainError::SplitHashDrift {
-            split_hash,
-            baseline_hash: baseline.split_config_hash,
-        }
-        .into());
-    }
+    let splits = EvalSplits::load(&args.splits_path)?;
+    let split_label = Label::new(&args.split_label);
+    let (split_id, split) = splits.by_label(&split_label).ok_or_else(|| {
+        TrainCliError::UnknownSplitLabel(args.split_label.clone(), args.splits_path.clone())
+    })?;
     info!(
-        split_path = %args.split_path.display(),
-        baseline_path = %args.baseline_path.display(),
+        path = %args.splits_path.display(),
+        %split_id,
         train_count = split.train.len(),
         test_count = split.test.len(),
-        hash = %split_hash,
-        "loaded split + baseline (hash matches)"
+        "loaded split"
+    );
+
+    let mut log = EvalResultsLog::load(&args.eval_results_path)?;
+    let baseline = pick_baseline(&log, &models, &args, split_id)?.clone();
+    info!(
+        run_id = %baseline.run_id,
+        model_version = %baseline.model_version,
+        precision = %baseline.evaluation.precision,
+        recall = %baseline.evaluation.recall,
+        "selected baseline run"
     );
 
     let prices = ModelPrices::embedded()?;
     let store = args.store.open_store("train").await?;
 
+    let run_at = Utc::now();
     let inputs = TrainingInputs {
         store: &store,
-        split: &split,
-        split_path_str: args.split_path.display().to_string(),
-        split_hash,
+        split,
+        split_id: *split_id,
         baseline: &baseline,
         prices: &prices,
         openai_api_key: &args.openai_api_key,
@@ -107,10 +142,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         model: args.model.clone(),
         concurrency: args.concurrency,
         seed: args.seed,
+        purpose: Purpose::new(args.purpose.clone()),
+        run_at,
     };
 
-    let report = run_training(inputs).await?;
-    report.results.save(&args.eval_output)?;
+    let report = inputs.train().await?;
+
+    log.append(report.run.clone())?;
+    log.save(&args.eval_results_path)?;
 
     print_metrics(&args, &baseline, &report);
 
@@ -131,16 +170,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    if report.total_cost > args.budget {
-        let overshoot = report.total_cost - args.budget;
+    let total_cost = report.run.total_cost();
+    if total_cost > args.budget {
+        let overshoot = total_cost - args.budget;
         let pct = overshoot.ratio_as_f64(args.budget) * 100.0;
         println!();
         println!(
-            "  BUDGET OVERSHOOT   : total {} exceeds --budget-usd {} by {overshoot} ({pct:.1}%)",
-            report.total_cost, args.budget,
+            "  BUDGET OVERSHOOT   : total {total_cost} exceeds --budget-usd {} by {overshoot} ({pct:.1}%)",
+            args.budget,
         );
         warn!(
-            total_cost = %report.total_cost,
+            total_cost = %total_cost,
             budget = %args.budget,
             overshoot = %overshoot,
             overshoot_pct = pct,
@@ -151,32 +191,68 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn print_metrics(args: &Args, baseline: &EvalResults, report: &skeet_refine::train::TrainingReport) {
+fn pick_baseline<'a>(
+    log: &'a EvalResultsLog,
+    models: &RefineModels,
+    args: &Args,
+    split_id: &eval::SplitId,
+) -> Result<&'a RunRecord, TrainCliError> {
+    if let Some(run_id) = args.baseline_run_id {
+        return log
+            .runs()
+            .iter()
+            .find(|r| r.run_id == run_id)
+            .ok_or_else(|| {
+                TrainCliError::UnknownBaselineRunId(
+                    run_id,
+                    args.eval_results_path.clone(),
+                )
+            });
+    }
+    let production = models
+        .by_label(&Label::production())
+        .ok_or_else(|| TrainCliError::NoProductionModel(args.model_output.clone()))?;
+    let prod_version = production.version();
+    log.best_by(|r| {
+        if r.model_version == prod_version && &r.split_id == split_id {
+            Some(r.evaluation.f1)
+        } else {
+            None
+        }
+    })
+    .ok_or_else(|| TrainCliError::NoBaselineCandidate {
+        path: args.eval_results_path.clone(),
+        model_version: prod_version.to_string(),
+        split_id: split_id.to_string(),
+    })
+}
+
+fn print_metrics(args: &Args, baseline: &RunRecord, report: &skeet_refine::train::TrainingReport) {
     let candidate_version = report.candidate_model.version();
-    let results = &report.results;
+    let run = &report.run;
 
     println!();
     println!("=== Training results ===");
+    println!("  run_id             : {}", run.run_id);
+    println!("  purpose            : {}", run.purpose);
     println!("  model              : {} ({})", args.model, candidate_version);
     println!("  iterations         : {}", args.max_iterations);
     println!("  per-iter sample    : {}", report.per_iter_size);
-    if let Some(best) = report.best_train_f1 {
-        println!("  best train F1      : {best}");
-    } else {
-        println!("  best train F1      : (undefined in every iteration)");
-    }
-    println!("  test precision     : {}", results.precision);
-    println!("  test recall        : {}", results.recall);
-    println!("  test F1            : {}", results.f1);
-    match results.roc_auc {
+    println!("  test precision     : {}", run.evaluation.precision);
+    println!("  test recall        : {}", run.evaluation.recall);
+    println!("  test F1            : {}", run.evaluation.f1);
+    match run.evaluation.roc_auc {
         Some(v) => println!("  test ROC-AUC       : {v}"),
         None => println!("  test ROC-AUC       : (undefined — only one class present)"),
     }
     println!(
-        "  baseline precision : {} (recall {})",
-        baseline.precision, baseline.recall
+        "  baseline           : {} ({}; P={}, R={})",
+        baseline.run_id,
+        baseline.model_version,
+        baseline.evaluation.precision,
+        baseline.evaluation.recall,
     );
-    match results.pinned_precision {
+    match run.evaluation.pinned_precision {
         Some(p) => println!(
             "  pinned@baseline P  : threshold={}, recall={}",
             p.threshold, p.recall
@@ -185,17 +261,18 @@ fn print_metrics(args: &Args, baseline: &EvalResults, report: &skeet_refine::tra
     }
     println!(
         "  test cost          : {}  (total run incl. iterations: {})",
-        results.cost, report.total_cost
+        run.resources.cost,
+        run.total_cost(),
     );
-    println!("  written eval       : {}", args.eval_output.display());
+    println!("  appended to log    : {}", args.eval_results_path.display());
 }
 
-fn print_accepted(args: &Args, baseline: &EvalResults, report: &skeet_refine::train::TrainingReport) {
+fn print_accepted(args: &Args, baseline: &RunRecord, report: &skeet_refine::train::TrainingReport) {
     println!();
     println!(
         "  ACCEPTED: candidate clears baseline precision={} with recall ≥ {} - {}",
-        baseline.precision,
-        baseline.recall,
+        baseline.evaluation.precision,
+        baseline.evaluation.recall,
         skeet_refine::train::gate::GATE_RECALL_TOLERANCE,
     );
     println!(
@@ -205,12 +282,12 @@ fn print_accepted(args: &Args, baseline: &EvalResults, report: &skeet_refine::tr
     println!("  written model      : {}", args.model_output.display());
 }
 
-fn print_rejected(args: &Args, baseline: &EvalResults) {
+fn print_rejected(args: &Args, baseline: &RunRecord) {
     println!();
     println!(
         "  REJECTED: candidate did not match baseline precision={} at recall ≥ {} - {}",
-        baseline.precision,
-        baseline.recall,
+        baseline.evaluation.precision,
+        baseline.evaluation.recall,
         skeet_refine::train::gate::GATE_RECALL_TOLERANCE,
     );
     println!(

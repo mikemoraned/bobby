@@ -111,8 +111,12 @@ impl RefineModel {
 pub struct Label(String);
 
 impl Label {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self(name.into())
+    }
+
     pub fn production() -> Self {
-        Self("production".into())
+        Self::new("production")
     }
 
     pub fn as_str(&self) -> &str {

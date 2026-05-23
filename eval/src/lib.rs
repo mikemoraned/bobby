@@ -13,6 +13,11 @@ pub use metric_types::{
 };
 pub use metrics::{confusion_at, pin_at_precision, roc_auc_score};
 pub use pricing::{ModelPrices, PricingError};
+pub use results::{
+    Evaluation, EvalResultsLog, EvalResultsLogError, Purpose, Resources, RunId, RunRecord,
+};
+pub use split::{
+    EvalSplit, EvalSplits, EvalSplitsError, InvalidSplitId, SplitId, stratified_sample,
+    stratified_split,
+};
 pub use usd::Usd;
-pub use results::{EvalResults, EvalResultsError};
-pub use split::{EvalSplit, EvalSplitError, stratified_sample, stratified_split};

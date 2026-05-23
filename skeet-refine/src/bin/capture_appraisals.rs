@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use chrono::Utc;
 use clap::Parser;
-use eval::{EvalSplit, stratified_split};
+use eval::{EvalSplit, EvalSplits, stratified_split};
+use shared::refine_model::Label;
 use shared::{Band, ImageId};
 use skeet_store::StoreArgs;
 use tracing::info;
@@ -13,9 +14,14 @@ struct Args {
     #[command(flatten)]
     store: StoreArgs,
 
-    /// Path to write the frozen split
-    #[arg(long, default_value = "config/eval-split.toml")]
-    output: PathBuf,
+    /// Path to the eval-splits registry to append into (created if missing)
+    #[arg(long, default_value = "config/eval-splits.toml")]
+    splits_path: PathBuf,
+
+    /// Label to assign to the new split (any previous holder of this label
+    /// keeps its entry but loses the label)
+    #[arg(long, default_value = "default")]
+    label: String,
 
     /// Fraction of appraisals to place in the training set
     #[arg(long, default_value_t = 0.8)]
@@ -55,9 +61,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         train,
         test,
     };
+    let label = Label::new(args.label);
 
-    split.save(&args.output)?;
-    info!(path = %args.output.display(), "wrote eval-split.toml");
+    let mut splits = EvalSplits::load_or_empty(&args.splits_path)?;
+    let split_id = splits.insert(split, std::slice::from_ref(&label));
+    splits.save(&args.splits_path)?;
+    info!(
+        path = %args.splits_path.display(),
+        %split_id,
+        %label,
+        "appended split to eval-splits registry"
+    );
 
     Ok(())
 }
