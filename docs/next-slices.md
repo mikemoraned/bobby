@@ -1,6 +1,6 @@
 # Next Slices
 
-## Slice 17: improving prune and refine quality
+## Slice: improving prune and refine quality
 
 ### Target: prune
 
@@ -24,7 +24,7 @@ We can then exclude any images that have > threshold %-age in any Zone, and > nu
 
 Rest TBC
 
-## Slice 18: reducing unintentional bias
+## Slice: reducing unintentional bias
 
 ### Target
 
@@ -67,7 +67,7 @@ The current skin-detection method in `lib.rs` (Kovac/Peer/Solina 2003 RGB rules 
 - [ ] Keep the per-Fitzpatrick-bucket eval as a checked-in test or bench so future changes can't silently regress fairness
 - [ ] Update the doc-comment on `detect_skin` to honestly describe what the method does and its known limitations
 
-## Slice 19: replay-based regression testing
+## Slice: replay-based regression testing
 
 ### Target
 

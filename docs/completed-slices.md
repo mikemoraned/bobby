@@ -1,6 +1,6 @@
 # Completed Slices
 
-## Slice 1: A random local feed
+## Slice: A random local feed
 
 Built the end-to-end pipeline:
 
@@ -8,7 +8,7 @@ Built the end-to-end pipeline:
 - **skeet-finder** listens to live Bluesky firehose via `jetstream-oxide`, finds posts with images (`app.bsky.embed.images` and `recordWithMedia`), randomly selects 1% of images, downloads from CDN, saves to store. Run via `just find`.
 - **skeet-feed** web UI showing embedded skeets from the store using cot.rs and Bluesky's embed.js. Run via `just feed` (http://127.0.0.1:8000/).
 
-## Slice 2: Finding faces
+## Slice: Finding faces
 
 Added face detection and archetype matching:
 
@@ -22,7 +22,7 @@ Added face detection and archetype matching:
 - Rejection reasons: FaceTooSmall, FaceTooLarge, TooManyFaces, face in central zone
 - `classify_examples` diagnostic CLI for tuning
 
-## Slice 3: Removing porn (false positives)
+## Slice: Removing porn (false positives)
 
 - Refactored `skeet-finder` main.rs into sub-modules (firehose handling vs classification)
 - Added indicatif progress bar (spinner, runtime, skeets/images seen, images saved, hit-rate)
@@ -33,7 +33,7 @@ Added face detection and archetype matching:
 - Skin detection mask used in annotated images
 - Integration tests driven by blocklist of AT URLs for adult content filtering
 
-## Slice 4: Removing text (false positives)
+## Slice: Removing text (false positives)
 
 - Added per-rejection-reason counters with percentages in skeet-finder output
 - **text-detection** crate: OCR-based glyph counting (multi-language support)
@@ -47,11 +47,11 @@ Added face detection and archetype matching:
 - Verified adult-based filtering with `metadata-dump` CLI and `add_to_blocklist` CLI
 - Extended `blocked_labels()` to check both post labels (porn) and author labels (!no-unauthenticated)
 
-## Slice 5: Meta: Split TODO.md into Claude Code memory hierarchy
+## Slice: Meta: Split TODO.md into Claude Code memory hierarchy
 
 Restructured project documentation for Claude Code workflows. Created `CLAUDE.md` at project root, `.claude/rules/` with Rust and Python rule files (with `paths:` frontmatter), and split the monolithic `TODO.md` into `docs/architecture.md`, `docs/current-slice.md`, `docs/next-slices.md`, and `docs/completed-slices.md`. Deleted the original `TODO.md` with no information loss.
 
-## Slice 6: Tweak recognition parameters and filtering
+## Slice: Tweak recognition parameters and filtering
 
 Refined face position classification and text/pre-filtering:
 
@@ -61,7 +61,7 @@ Refined face position classification and text/pre-filtering:
 - Split `metadata_dump` CLI into `image_metadata_dump` and `at_metadata_dump` (shared `metadata` module) for better debugging.
 - Switched text filtering from glyph count to text area percentage of the image, with new parameters in `archetype.toml`, reducing false positives from overlaid text.
 
-## Slice 7: Make version available that can run on different machines
+## Slice: Make version available that can run on different machines
 
 Moved storage to the cloud and added observability:
 
@@ -72,7 +72,7 @@ Moved storage to the cloud and added observability:
 - **tokio-console**: opt-in via `--tokio-console-port` CLI arg on `finder` and `feed`. Uses `console_subscriber::ConsoleLayer::builder().init()` as a standalone subscriber — file and OTEL layers are disabled in this mode due to a known incompatibility between `ConsoleLayer` and `fmt::Layer` span tracking.
 - **Refactoring**: eliminated redundant face detection in `classify_image`, deduplicated excluded-labels constants, fixed `ImageId::as_str()` conventions, extracted shared tracing setup to `shared::tracing`, embedded `StoredImageSummary` inside `StoredImage`.
 
-## Slice 8: Minimal qualitative scoring on top of Envelope filtering
+## Slice: Minimal qualitative scoring on top of Envelope filtering
 
 Added scoring, robustness, and terminology refactoring across the pipeline:
 
@@ -84,7 +84,7 @@ Added scoring, robustness, and terminology refactoring across the pipeline:
 - **Terminology refactor**: renamed `skeet-finder` → `skeet-prune` and `skeet-scorer` → `skeet-refine` to follow prune-and-refine pattern; `archetype.toml` → `config/prune.toml`, `model.toml` → `config/refine.toml`. Documented pattern in `architecture.md`.
 - **Debugging & UX**: `summarise` CLI and `SkeetStoreSummary` on feed homepage; feed split into `latest` (all skeets) and `best` (scored, ordered by score) pages with homepage links.
 
-## Slice 9: "Bobby Dev" Custom Feed in Bluesky
+## Slice: "Bobby Dev" Custom Feed in Bluesky
 
 Built a live Bluesky Custom Feed for dev testing, with supporting refactors:
 
@@ -94,7 +94,7 @@ Built a live Bluesky Custom Feed for dev testing, with supporting refactors:
 - **Feed registration**: wrote a Rust CLI to register the Custom Feed with Bluesky (inspired by `skyfeed` crate and official docs).
 - **Refine improvements**: live-refine now prioritises most recently discovered images, scores within a time budget (matching the polling interval) before re-checking for newer arrivals, and uses a `model_version` scalar index on the scores table for efficient unscored-image queries.
 
-## Slice 10: Running pruning/refining remotely on Hetzner
+## Slice: Running pruning/refining remotely on Hetzner
 
 Moved the pruner and live-refine workloads from local machines to a single-node k3s cluster on Hetzner Cloud ARM (CAX21 in fsn1), provisioned via `hetzner-k3s`:
 
@@ -105,7 +105,7 @@ Moved the pruner and live-refine workloads from local machines to a single-node 
 - **Operations**: umbrella recipes (`cluster-deploy`, `cluster-restart-*`, `cluster-logs-*`, `cluster-status`) for common remote operations. Full setup/teardown documented in `docs/remote-setup.md`.
 - **Justfile decomposition**: split the 244-line monolithic Justfile into `just/store.just`, `just/feed.just`, `just/container.just`, and `just/cluster.just` using just's `import` feature. Exported `KUBECONFIG` as an environment variable to eliminate 11 manual prefixes.
 
-## Slice 11: Improve Rust compile times, both locally and remotely
+## Slice: Improve Rust compile times, both locally and remotely
 
 Reduced compile times and streamlined the Docker build pipeline:
 
@@ -117,7 +117,7 @@ Reduced compile times and streamlined the Docker build pipeline:
 - **fly.io pre-built images**: switched `fly.staging.toml` from building on fly.io to pulling pre-built amd64 images from GHCR. GHCR packages made public for unauthenticated pulls.
 - **Build config**: moved architecture-specific RUSTFLAGS (`-C target-cpu=neoverse-n1` for ARM) into `.cargo/config.toml` per-target sections. Added `.dockerignore` excluding `target/`, `store/`, `logs/`, and other large dirs.
 
-## Slice 12: Optimisations of pruning, refining, and feeding
+## Slice: Optimisations of pruning, refining, and feeding
 
 Systematic investigation and resolution of performance bottlenecks across the pipeline:
 
@@ -131,7 +131,7 @@ Systematic investigation and resolution of performance bottlenecks across the pi
 - **Feed caching**: added a read-through `FeedCache` in skeet-feed with 5-minute staleness window and 1-minute background refresh, reducing feed response times from ~8s to near-instant for cached results. Used tokio's `start_paused`/`advance` for deterministic time-based tests.
 - **Test infrastructure**: extracted shared test helpers (`make_record`, `open_temp_store`, etc.) into `skeet-store::test_utils` behind a `test-helpers` feature flag, deduplicating across four test files.
 
-## Slice 13: Add /admin area in skeet-feed for manual quality appraisal of skeets and images
+## Slice: Add /admin area in skeet-feed for manual quality appraisal of skeets and images
 
 Built a full admin area with manual appraisal capabilities and GitHub OAuth authentication:
 
@@ -146,7 +146,7 @@ Built a full admin area with manual appraisal capabilities and GitHub OAuth auth
 - **Auth guard**: handler-level `AppraiserExtractor` checks both static extensions (local-admin) and session (OAuth); unauthenticated requests redirect to login, non-allowlisted users get 403.
 - **Testing**: comprehensive integ tests for OAuth flow (mocked GitHub), admin access control, CSRF rejection, feed visibility after appraisal mutations, and paging.
 
-## Slice 14: Property-based tests for value types + Mutation-testing for coverage check
+## Slice: Property-based tests for value types + Mutation-testing for coverage check
 
 Adopted `proptest` for property-based testing across value types and introduced `cargo-mutants` for mutation testing to verify test coverage:
 
@@ -156,7 +156,7 @@ Adopted `proptest` for property-based testing across value types and introduced 
 - **Detection crate tests**: added high-level public API tests for skin-detection (`detect_skin` dimensions/marking, `skin_pct_in_rect`/`skin_pct_outside_rect`) and face-detection (`area_pct_known_value`, `annotate_image` rendering). Deferred deeper algorithm-level mutation coverage to a future slice using test dataset comparisons.
 - **Cleanup**: removed dead code (`PartialEq<&str> for Nsid`), added distinctness tests for Band labels/descriptions, and ensured all 230 tests pass with clippy clean.
 
-## Slice 15: Re-introduce text-filtering to reduce costs / increase quality
+## Slice: Re-introduce text-filtering to reduce costs / increase quality
 
 Re-introduced text-detection as a configurable classification category, evaluated its impact, and fixed several deployment issues:
 
