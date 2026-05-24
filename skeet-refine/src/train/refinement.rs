@@ -89,6 +89,7 @@ mod tests {
 
     use super::*;
     use crate::loader::LabelledImage;
+    use crate::refining::ScoringOutcome;
 
     fn labelled(marker: u32, band: Band) -> LabelledImage {
         let img = marker_image(marker);
@@ -105,6 +106,7 @@ mod tests {
             score: Score::new(score).expect("valid"),
             input_tokens: 0,
             output_tokens: 0,
+            outcome: ScoringOutcome::Scored,
         }
     }
 

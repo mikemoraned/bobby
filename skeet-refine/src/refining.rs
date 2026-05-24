@@ -1,6 +1,7 @@
 use std::io::Cursor;
 use std::time::{Duration, Instant};
 
+use backon::{ExponentialBuilder, Retryable};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use image::DynamicImage;
@@ -11,7 +12,7 @@ use rig::completion::{Completion, Usage};
 use rig::one_or_many::OneOrMany;
 use rig::providers::openai;
 use shared::Score;
-use tracing::{info, instrument};
+use tracing::{info, instrument, warn};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RefineError {
@@ -111,6 +112,97 @@ pub async fn refine_image(
     Ok((score, response.usage, duration))
 }
 
+/// Outcome of a resilient scoring call.
+///
+/// Distinguishes a real LLM score from a zero-score substitution applied
+/// after all retries were exhausted. The marker keeps the substitution honest:
+/// callers can count fallbacks and weigh them against the dataset rather than
+/// silently treating sentinels as real scores.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScoringOutcome {
+    Scored,
+    FallbackAfterRetries,
+}
+
+/// Result of `refine_image_resilient`: either a successful score (with usage)
+/// or a fallback after exhausted retries.
+#[derive(Debug, Clone, Copy)]
+pub struct ResilientScore {
+    pub score: Score,
+    pub usage: Usage,
+    pub duration: Duration,
+    pub outcome: ScoringOutcome,
+}
+
+/// Only Completion errors are treated as transient and worth retrying. Image
+/// encoding failures will recur deterministically, and a malformed response
+/// from a deterministic prompt is more likely a prompt problem than a flake.
+const fn is_transient(e: &RefineError) -> bool {
+    matches!(e, RefineError::Completion(_))
+}
+
+fn default_retry_policy() -> ExponentialBuilder {
+    ExponentialBuilder::default()
+        .with_min_delay(Duration::from_millis(500))
+        .with_factor(2.0)
+        .with_max_times(3)
+}
+
+async fn retry_refine_call<F, Fut>(
+    backoff: ExponentialBuilder,
+    call: F,
+) -> Result<(Score, Usage, Duration), RefineError>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<(Score, Usage, Duration), RefineError>>,
+{
+    call.retry(backoff)
+        .when(is_transient)
+        .notify(|e, dur| {
+            warn!(
+                error = %e,
+                retry_in_ms = dur.as_millis() as u64,
+                "refine_image transient failure; will retry",
+            );
+        })
+        .await
+}
+
+fn fallback_score() -> ResilientScore {
+    ResilientScore {
+        score: Score::new(0.0).expect("0.0 is within [0.0, 1.0]"),
+        usage: Usage::new(),
+        duration: Duration::ZERO,
+        outcome: ScoringOutcome::FallbackAfterRetries,
+    }
+}
+
+/// `refine_image` with bounded exponential-backoff retries on transient errors.
+///
+/// Retries `Completion` errors up to three times with delays of ~0.5s, ~1.0s,
+/// ~2.0s. `ImageEncoding` and `ParseScore` are not retried. When the call
+/// ultimately fails, returns a fallback `ResilientScore` with `score = 0.0`
+/// and `outcome = FallbackAfterRetries` — the marker keeps the sentinel
+/// substitution honest at the call site.
+#[instrument(skip(agent, image))]
+pub async fn refine_image_resilient(
+    agent: &RefineAgent,
+    image: &DynamicImage,
+) -> ResilientScore {
+    match retry_refine_call(default_retry_policy(), || refine_image(agent, image)).await {
+        Ok((score, usage, duration)) => ResilientScore {
+            score,
+            usage,
+            duration,
+            outcome: ScoringOutcome::Scored,
+        },
+        Err(e) => {
+            warn!(error = %e, "refine_image exhausted retries; substituting fallback score=0.0");
+            fallback_score()
+        }
+    }
+}
+
 pub fn build_agent(
     client: &openai::client::CompletionsClient,
     model_name: &str,
@@ -165,5 +257,97 @@ mod tests {
     #[test]
     fn parse_score_rejects_garbage() {
         assert!(parse_score("hello world").is_err());
+    }
+
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Backoff policy with negligible delay, so retry-exhaustion tests don't
+    /// have to wait the production 3.5s.
+    fn fast_retry_policy() -> ExponentialBuilder {
+        ExponentialBuilder::default()
+            .with_min_delay(Duration::from_millis(1))
+            .with_factor(2.0)
+            .with_max_times(3)
+    }
+
+    fn ok_result() -> Result<(Score, Usage, Duration), RefineError> {
+        Ok((
+            Score::new(0.5).expect("valid"),
+            Usage::new(),
+            Duration::ZERO,
+        ))
+    }
+
+    #[test]
+    fn completion_errors_are_transient() {
+        assert!(is_transient(&RefineError::Completion("net down".into())));
+    }
+
+    #[test]
+    fn parse_and_encoding_errors_are_not_transient() {
+        assert!(!is_transient(&RefineError::ParseScore("garbage".into())));
+        let img_err = image::ImageError::Limits(image::error::LimitError::from_kind(
+            image::error::LimitErrorKind::DimensionError,
+        ));
+        assert!(!is_transient(&RefineError::ImageEncoding(img_err)));
+    }
+
+    #[tokio::test]
+    async fn transient_error_then_success_returns_ok_within_retries() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls_ref = calls.clone();
+        let result = retry_refine_call(fast_retry_policy(), move || {
+            let n = calls_ref.fetch_add(1, Ordering::SeqCst);
+            async move {
+                if n < 2 {
+                    Err(RefineError::Completion("transient".into()))
+                } else {
+                    ok_result()
+                }
+            }
+        })
+        .await;
+
+        assert!(result.is_ok());
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn exhausted_completion_retries_propagate_error() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls_ref = calls.clone();
+        let result = retry_refine_call(fast_retry_policy(), move || {
+            calls_ref.fetch_add(1, Ordering::SeqCst);
+            async move { Err(RefineError::Completion("always".into())) }
+        })
+        .await;
+
+        assert!(matches!(result, Err(RefineError::Completion(_))));
+        // 1 initial attempt + 3 retries = 4 calls
+        assert_eq!(calls.load(Ordering::SeqCst), 4);
+    }
+
+    #[tokio::test]
+    async fn non_transient_error_is_not_retried() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls_ref = calls.clone();
+        let result = retry_refine_call(fast_retry_policy(), move || {
+            calls_ref.fetch_add(1, Ordering::SeqCst);
+            async move { Err(RefineError::ParseScore("nope".into())) }
+        })
+        .await;
+
+        assert!(matches!(result, Err(RefineError::ParseScore(_))));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn fallback_score_uses_zero_with_marker() {
+        let f = fallback_score();
+        assert_eq!(f64::from(f.score), 0.0);
+        assert_eq!(f.usage.input_tokens, 0);
+        assert_eq!(f.usage.output_tokens, 0);
+        assert_eq!(f.outcome, ScoringOutcome::FallbackAfterRetries);
     }
 }

@@ -15,13 +15,13 @@ use skeet_store::SkeetStore;
 use tracing::{error, info};
 
 use crate::loader::{LoaderError, load_band_index, load_labelled_images};
-use crate::refining::{RefineError, SEED_PROMPT, build_agent, create_client, refine_image};
+use crate::refining::{SEED_PROMPT, build_agent, create_client, refine_image_resilient};
 use crate::train::budget::per_iteration_sample_size;
 use crate::train::gate::{
     GateOutcome, build_candidate_model, evaluate_gate, training_loop_threshold,
 };
 use crate::train::refinement::refine_prompt;
-use crate::train::scoring::{labelled_scores, score_concurrent, token_totals};
+use crate::train::scoring::{fallback_count, labelled_scores, score_concurrent, token_totals};
 use crate::train::setup::label_train_items;
 
 #[derive(Debug, thiserror::Error)]
@@ -38,8 +38,6 @@ pub enum TrainError {
     NoPositivePredictions,
     #[error("prompt refinement call failed at iteration {iteration}: {message}")]
     PromptRefinementFailed { iteration: u32, message: String },
-    #[error("scoring failed: {0}")]
-    Scoring(#[from] RefineError),
     #[error("loader error: {0}")]
     Loader(#[from] LoaderError),
     #[error("pricing error: {0}")]
@@ -68,6 +66,8 @@ pub struct TrainingReport {
     pub outcome: GateOutcome,
     pub candidate_model: RefineModel,
     pub per_iter_size: usize,
+    pub training_fallbacks: usize,
+    pub test_fallbacks: usize,
 }
 
 impl<'a> TrainingInputs<'a> {
@@ -107,6 +107,7 @@ impl<'a> TrainingInputs<'a> {
         let mut best_train_f1: Option<F1> = None;
         let mut training_input = 0_u64;
         let mut training_output = 0_u64;
+        let mut training_fallbacks = 0_usize;
 
         for iteration in 1..=self.max_iterations {
             let iter_seed = self.seed.wrapping_add(u64::from(iteration));
@@ -118,12 +119,14 @@ impl<'a> TrainingInputs<'a> {
             let agent = build_agent(&client, &self.model, &current_prompt);
             let agent_ref = &agent;
             let scored = score_concurrent(&sampled, self.concurrency, |image| async move {
-                refine_image(agent_ref, &image).await
+                refine_image_resilient(agent_ref, &image).await
             })
-            .await?;
+            .await;
             let (in_t, out_t) = token_totals(&scored);
             training_input += in_t;
             training_output += out_t;
+            let iter_fallbacks = fallback_count(&scored);
+            training_fallbacks += iter_fallbacks;
 
             let labelled = labelled_scores(&sampled, &scored);
             let matrix = confusion_at(&labelled, training_loop_threshold());
@@ -133,6 +136,8 @@ impl<'a> TrainingInputs<'a> {
                 train_f1 = ?train_f1,
                 tp = matrix.true_pos, fp = matrix.false_pos,
                 tn = matrix.true_neg, fn_ = matrix.false_neg,
+                fallbacks = iter_fallbacks,
+                sample = sampled.len(),
                 "iteration scored"
             );
 
@@ -169,10 +174,11 @@ impl<'a> TrainingInputs<'a> {
         let test_agent_ref = &test_agent;
         let test_scored =
             score_concurrent(&test_images, self.concurrency, |image| async move {
-                refine_image(test_agent_ref, &image).await
+                refine_image_resilient(test_agent_ref, &image).await
             })
-            .await?;
+            .await;
         let (test_in, test_out) = token_totals(&test_scored);
+        let test_fallbacks = fallback_count(&test_scored);
 
         let test_labelled = labelled_scores(&test_images, &test_scored);
         let test_matrix = confusion_at(&test_labelled, training_loop_threshold());
@@ -230,6 +236,8 @@ impl<'a> TrainingInputs<'a> {
             outcome,
             candidate_model,
             per_iter_size,
+            training_fallbacks,
+            test_fallbacks,
         })
     }
 }

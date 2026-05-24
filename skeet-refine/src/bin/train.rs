@@ -248,6 +248,10 @@ fn print_metrics(args: &Args, baseline: &RunRecord, report: &skeet_refine::train
     println!("  model              : {} ({})", args.model, candidate_version);
     println!("  iterations         : {}", args.max_iterations);
     println!("  per-iter sample    : {}", report.per_iter_size);
+    println!(
+        "  fallbacks          : training={}, test={} (score=0.0 substitutions after exhausted retries)",
+        report.training_fallbacks, report.test_fallbacks,
+    );
     println!("  test precision     : {}", run.evaluation.precision);
     println!("  test recall        : {}", run.evaluation.recall);
     println!("  test F1            : {}", run.evaluation.f1);

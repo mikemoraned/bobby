@@ -11,9 +11,11 @@ use shared::Score;
 use shared::refine_model::Label;
 use skeet_refine::loader::{LabelledImage, load_band_index, load_labelled_images};
 use skeet_refine::model::RefineModels;
-use skeet_refine::refining::{RefineAgent, build_agent, create_client, refine_image};
+use skeet_refine::refining::{
+    RefineAgent, ScoringOutcome, build_agent, create_client, refine_image_resilient,
+};
 use skeet_store::StoreArgs;
-use tracing::{error, info};
+use tracing::{info, warn};
 
 #[derive(Parser)]
 #[command(
@@ -66,33 +68,45 @@ enum EvalRunError {
     NoPositivePredictions,
 }
 
+/// One result per input image, in the same positional order as `images`.
+/// `.buffered(concurrency)` preserves order; ids stay aligned with `images`
+/// by position. The `outcome` field marks images whose score is a fallback
+/// after exhausted retries (sentinel `0.0`).
+struct ScoreEntry {
+    score: Score,
+    input_tokens: u64,
+    output_tokens: u64,
+    outcome: ScoringOutcome,
+}
+
 async fn score_all(
     agent: &RefineAgent,
     images: &[LabelledImage],
     concurrency: usize,
-) -> Result<Vec<(Score, u64, u64)>, Box<dyn std::error::Error>> {
+) -> Vec<ScoreEntry> {
     let total = images.len();
-    let scored: Vec<(Score, u64, u64)> = stream::iter(images.iter())
+    stream::iter(images.iter())
         .map(|labelled| async move {
-            refine_image(agent, &labelled.image)
-                .await
-                .map(|(s, usage, _d)| (s, usage.input_tokens, usage.output_tokens))
+            let r = refine_image_resilient(agent, &labelled.image).await;
+            ScoreEntry {
+                score: r.score,
+                input_tokens: r.usage.input_tokens,
+                output_tokens: r.usage.output_tokens,
+                outcome: r.outcome,
+            }
         })
         .buffered(concurrency)
         .enumerate()
-        .map(|(i, r)| {
-            if let Err(e) = &r {
-                error!(idx = i, error = %e, "scoring failed");
+        .map(|(i, entry)| {
+            if entry.outcome == ScoringOutcome::FallbackAfterRetries {
+                warn!(idx = i, "scoring fell back after exhausted retries");
             } else if i % 10 == 0 {
                 info!(idx = i, total, "scoring progress");
             }
-            r
+            entry
         })
-        .collect::<Vec<_>>()
+        .collect()
         .await
-        .into_iter()
-        .collect::<Result<_, _>>()?;
-    Ok(scored)
 }
 
 #[tokio::main]
@@ -139,17 +153,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = create_client(&args.openai_api_key);
     let agent = build_agent(&client, model.model_name.as_str(), model.prompt.as_str());
-    let scored = score_all(&agent, &test_images, args.concurrency).await?;
+    let scored = score_all(&agent, &test_images, args.concurrency).await;
 
     let (input_tokens, output_tokens): (u64, u64) = scored
         .iter()
-        .fold((0u64, 0u64), |(i, o), (_, ti, to)| (i + ti, o + to));
+        .fold((0u64, 0u64), |(i, o), e| (i + e.input_tokens, o + e.output_tokens));
+
+    let fallbacks = scored
+        .iter()
+        .filter(|e| e.outcome == ScoringOutcome::FallbackAfterRetries)
+        .count();
 
     let labelled: Vec<LabelledScore> = test_images
         .iter()
         .zip(scored.iter())
-        .map(|(img, (score, _, _))| LabelledScore {
-            score: *score,
+        .map(|(img, entry)| LabelledScore {
+            score: entry.score,
             is_positive: img.is_positive(),
         })
         .collect();
@@ -202,6 +221,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  model       : {} ({})", model.model_name, model_version);
     println!("  split       : {split_id}");
     println!("  test images : {}", test_images.len());
+    println!(
+        "  fallbacks   : {fallbacks} (score=0.0 substitutions after exhausted retries)"
+    );
     println!("  precision   : {precision} (threshold {decision_threshold})");
     println!("  recall      : {recall} (threshold {decision_threshold})");
     println!("  f1          : {f1} (threshold {decision_threshold})");
