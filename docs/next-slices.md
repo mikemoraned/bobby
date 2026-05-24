@@ -1,5 +1,102 @@
 # Next Slices
 
+## Slice: Split out `skeet-feed`/`skeet-appraise`/`skeet-publish`
+
+### Target
+
+I want to get to the following different division of responsibilities:
+* `skeet-feed`:
+    * lives at `bobby-staging.houseofmoran.io`
+    * handles:
+        * bluesky feed
+        * public website listing skeets ordered by band or by recency
+    * bias is towards simplicity, reliability and speed (latency/cachability)
+* `skeet-appraise`:
+    * lives at `bobby-appraisals-staging` within the hetzner cluster, accessible via tailscale
+    * handles:
+        * showing current status and editable controls (appraisals) for:
+            * what is currently live as the feed
+            * what has been found by the pruner and refiner for each skeet and associated images
+        * manual appraisals (assigning High/MedHigh/MedLow/Low)
+    * bias is towards ease-of-use and quick interactive updates
+* `skeet-publish`:
+    * runs in hetnzer k8s cluster like `live-refine` looking for changes to dependent tables
+    * handles:
+        * watching for changes in what skeets / images have been found and scored by a model as well as what has been appraised
+        * determining what needs to be published as the feed; this is the canonical single place we decide this
+* `skeet-refine` / `skeet-prune` stay as-is
+
+The parts are related as follows by introducing a new redis table in upstash that sits between publisher and feed:
+
+```mermaid
+architecture-beta
+    group redis(cloud)[Upstash]
+    group fly(cloud)[Fly]
+    group r2(cloud)[R2]
+    group hetzner(cloud)[Hetzner Cluster]
+
+    service feed-table(database)[Feed] in redis
+    service pruned-table(database)[Pruned] in r2
+    service refined-table(database)[Refined] in r2
+    service appraised-table(database)[Appraised] in r2
+    service feed(server)[Bluesky Feed] in fly
+    service publisher(server)[Publisher] in hetzner
+
+    junction publisherJunction in r2
+
+    feed:R -- L:feed-table
+    publisher:T --> B:feed-table
+    pruned-table:T -- B:publisherJunction
+    refined-table:R -- L:publisherJunction
+    appraised-table:B -- T:publisherJunction
+    publisherJunction:R --> L:publisher
+```
+
+### Bugs / Refactors
+
+### Phases
+
+We'll do this in phases, with a working system at each step
+
+#### Phase 1: Split out `skeet-appraise` as a standalone website
+
+Even though we want to ultimately make this run within the hetzner cluster and be accessible over tailscale, initially we'll introduce a new fly.io website at `bobby-appraisals-staging.houseofmoran.io`. 
+
+This can effectively copy/clone setup we already have for `bobby-staging.houseofmoran.io` as we are largely splitting out existing code.
+
+Tasks:
+...
+
+#### Phase 2: Split out `skeet-publish` as a library
+
+This is not introducing a new service, but instead is factoring out the code already in `skeet-feed` which is to do with caching and generating a feed to instead live in `skeet-publish` crate. This should live behind a trait which abstracts away as much detail as possible. The `skeet-feed` should depend only on this trait.
+
+Tasks:
+...
+
+#### Phase 3: Turn `skeet-publish` into a service
+
+This is where we introduce a new redis `feed` storage to act as the publishing destination which links `skeet-feed` and `skeet-publish`. we can do this in steps:
+1. Create a new redis list in upstash called `feeds` which will contains a list of image-id:skeet-id pairs, which represent the images which have been allowed through
+2. Create a new service which works like `live-refine` except it monitors and periodically recalculates the pairs (based on same logic as was in `skeet-feed` but has now been moved to this library), and then publishes this to the redis list. Deploy this to hetzner and leave running for an afternoon (verify manually that redis list makes sense).
+3. Update `skeet-feed` to be configurable (via config flag) to either continue using the library implementation or reading from redis (using different implementations of same trait). Deploy this to staging with it told to use the redis input. Deploy and leave running for an afternoon and manually verify it makes sense.
+4. If all good, remove implementation of trait that does live calculation and instead rely only on redis implementation.
+
+Tasks:
+...
+
+#### Phase 4: Expose `skeet-appraise` as a service inside hetzner via tailscale
+
+This means we can now use tailscale to expose `skeet-appraise` running as a local k8s Service inside the cluster but still have it accessible from my phone and my laptop. As part of this we need to introduce a new type of identity of appraiser based on tailscale identity.
+
+We can do this like in Phase 3 where we run new/old alongside each other for a little while before we delete the fly.io website for `skeet-appraise`.
+
+At end of this we can probably do a code and infra cleanup/simplification as we should no-longer need the github app / redis auth / oauth login stuff.
+
+Tasks:
+...
+
+
 ## Slice: improving prune and refine quality
 
 ### Target: prune
