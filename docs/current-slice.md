@@ -1078,7 +1078,7 @@ Actual optimisation for costs:
     * Per-candidate runs:
         * [x] `just train "phase-4 gpt-4o-mini #1" gpt-4o-mini` — REJECTED (run_id `019e57c2-…`; see Observations)
         * [x] `just train "phase-4 gpt-4.1-mini #1" gpt-4.1-mini` — REJECTED (run_id `019e5a1c-…`; see Observations)
-        * [ ] `just train "phase-4 gpt-4.1-nano #1" gpt-4.1-nano`
+        * [x] `just train "phase-4 gpt-4.1-nano #1" gpt-4.1-nano` — REJECTED (run_id `019e5ae2-…`; ROC-AUC 0.912 > baseline, but rejected on calibration — pinned @P=0.800 is degenerate thr=1.000, R=0.217; cheapest at $0.031, −92%)
         * [ ] `just train "phase-4 gpt-5 #1" gpt-5`
         * [ ] `just train "phase-4 gpt-5-mini #1" gpt-5-mini`
         * [ ] `just train "phase-4 gpt-5-nano #1" gpt-5-nano`
@@ -1127,6 +1127,22 @@ Cost: the patch-based-multiplier prediction held — actual −81% on the test s
 Accuracy: same shape as `gpt-4o-mini` — precision at thr=0.5 is actually slightly *better* than baseline (0.833 vs 0.800), but recall collapses (0.435 vs 0.870); pinning at baseline precision lifts recall only to 0.522, still ~35pp below. ROC-AUC 0.825 is much healthier than `gpt-4o-mini`'s 0.657, so the model *can* discriminate — it just calibrates true positives lower on the 0..1 score scale than `gpt-4o` does, and the gate (precision pinned to baseline) is hard to clear without recovering recall.
 
 Cross-candidate pattern so far: both mini-class models keep precision but lose recall at the baseline precision floor. Could be the rewriter producing prompts the smaller models read more conservatively, or an inherent visual-reasoning capability gap on edge cases. Re-running with a fresh seed or a higher iteration count would test the rewriter hypothesis; running `gpt-4.1-nano` next gives one more datapoint on whether dropping further down the capability ladder makes recall worse (likely) or the rewriter the actual culprit (unlikely).
+
+**24th May — third phase-4 run, `gpt-4.1-nano` (run_id `019e5ae2-61b6-761e-815d-dd35455cbcd5`):**
+
+| Metric | Baseline (`v2:34d8bec0`, `gpt-4o`) | `gpt-4.1-nano` #1 |
+|---|---|---|
+| Precision / Recall / F1 @ thr=0.5 | 0.800 / 0.870 / 0.833 | 0.615 / 0.696 / 0.653 |
+| ROC-AUC | 0.897 | **0.912** |
+| Pinned @ P=0.800 | thr=0.500, R=0.870 | thr=1.000, R=0.217 |
+| Test cost (143 images) | $0.397 | **$0.031 (−92%)** |
+| Total run cost (USD) | $5.82 | $1.25 (under $5 budget) |
+
+Gate **REJECTED** — but on *calibration*, not discrimination.
+
+Cost: cheapest candidate by far. $0.031 test cost (−92% vs baseline), total run $1.25 well under the $5 budget — the patch-based 2.46× multiplier prediction held.
+
+Accuracy/calibration: the strongest counter so far to "the cheap models are just bad." ROC-AUC 0.912 *exceeds* the baseline's 0.897 — nano's *ranking* of images is better than `gpt-4o`'s. The rejection is purely calibration: precision @0.5 is only 0.615, and the pinned-at-baseline-precision point is degenerate (threshold=**1.000**, recall=0.217) — nano can reach 0.800 precision only at the extreme top of its score range, because its scores pile up near the extremes (small-model overconfidence), leaving no useful operating threshold. The ROC-AUC ordering across the cheap candidates is coherent (`gpt-4o-mini` 0.657 → `gpt-4.1-mini` 0.825 → `gpt-4.1-nano` 0.912), which argues the eval path is sound rather than regressed — corroborated by the sampling regression test `eval::split::oversized_sample_returns_each_input_exactly_once` and discussed in the methodology observation below.
 
 **24th May — evaluation methodology: fixed-budget vs fixed-examples, and predicted-vs-real cost.**
 
