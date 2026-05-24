@@ -127,6 +127,14 @@ OAuth client created in the Tailscale admin console for the operator — see the
 ##### Tasks
 ...
 
+#### Phase 5: turn `skeet-feed` homepage into a simple-but-nice list of images
+
+What I am envisaging here is a pinterest-style layout using css-grid. This should show all images seens in past week, and a click on each goes to the skeet. This may involve extending the publisher to publish a larger list of all images seen in past week (not just past couple of days that show in feed).
+
+This should be as server-rendered as possible, with associated cache headers on images and similar to maximise cache-ability.
+
+Tasks:
+...
 
 ## Slice: improving prune and refine quality
 
