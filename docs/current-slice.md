@@ -1068,17 +1068,20 @@ Enabling refactors/robustness/cleanups:
 
 Actual optimisation for costs:
 * [x] Pick a small candidate list. Start with `gpt-4o-mini`. Optionally add 1–2 other OpenAI vision models cheaper than `gpt-4o`. Ensure each candidate is listed in the `update-prices` just rule, run it to append a fresh `[[snapshots]]` entry to `eval/prices.toml`, and note the resulting `snapshot_id` — phase-4 will pin every candidate run to this single snapshot.
-    * Candidates: `gpt-4o-mini`, `gpt-4.1-mini`, `gpt-4.1-nano` (all OpenAI vision models priced below `gpt-4o` per models.dev).
-    * `just/store.just` `update-prices` recipe now requests all four model names (the three candidates plus `gpt-4o` as the baseline reference).
-    * Pinned `price_snapshot_id` for phase-4: **`2026-05-24T01:51:14.922566Z`**. Per-million USD pricing on this snapshot: `gpt-4o` 2.5 / 10.0; `gpt-4o-mini` 0.15 / 0.6; `gpt-4.1-mini` 0.4 / 1.6; `gpt-4.1-nano` 0.1 / 0.4.
+    * Candidates: initial set `gpt-4o-mini`, `gpt-4.1-mini`, `gpt-4.1-nano`; expanded mid-phase with the gpt-5 family `gpt-5`, `gpt-5-mini`, `gpt-5-nano` after the gpt-5 image-token formulas (tile base **70** / per-tile **140**; same 1.62×/2.46× patch multipliers as the 4.1 family) showed gpt-5 is *cheaper per image than `gpt-4o`* despite being a more capable model — a qualitatively different proposition than the mini/nano-only initial set.
+    * `just/store.just` `update-prices` recipe now requests `gpt-4o,gpt-4o-mini,gpt-4.1-mini,gpt-4.1-nano,gpt-5,gpt-5-mini,gpt-5-nano`.
+    * Pinned snapshots for phase-4:
+        * `2026-05-24T01:51:14.922566Z` — original 4-model snapshot. `gpt-4o-mini`, `gpt-4.1-mini`, `gpt-4.1-nano` runs resolved against this.
+        * `2026-05-24T16:55:51.154384Z` — expanded 7-model snapshot (adds gpt-5 family). gpt-5* candidate runs resolve against this. Prices for the four models that appear in both snapshots are identical, so apples-to-apples cross-snapshot cost comparisons are valid.
 * [ ] For each candidate: run `just train` with `--model <candidate>`, `--split-id <label or id from eval-splits.toml>` (the same split used in phases 2–3), and `--prices-snapshot-id <pinned snapshot from step above>`. The candidate is used as scorer *and* rewriter, per the agreed simplification. Each run appends a new `[[runs]]` entry to `config/eval-results.toml` with `purpose = "phase-4 <candidate> #<n>"`; the previous per-file `eval-results-<candidate>.toml` shape is gone.
-    * `just train` now takes a second positional `model` arg (default `gpt-4o`), so phase-4 invocations are:
-      ```sh
-      just train "phase-4 gpt-4o-mini #1" gpt-4o-mini
-      just train "phase-4 gpt-4.1-mini #1" gpt-4.1-mini
-      just train "phase-4 gpt-4.1-nano #1" gpt-4.1-nano
-      ```
-    * `--split-label` defaults to `"default"` (the phase-2/3 split `a746519149bafd1f9505f0869e04c8d3`) and `--prices-snapshot-id` defaults to the `current` price-registry label — which now resolves to `2026-05-24T01:51:14.922566Z`. As long as `update-prices` isn't re-run mid-sweep, every candidate run lands on the same pinned snapshot without an explicit flag.
+    * `just train` takes a second positional `model` arg (default `gpt-4o`). `--split-label` defaults to `"default"` (the phase-2/3 split `a746519149bafd1f9505f0869e04c8d3`); `--prices-snapshot-id` defaults to whatever the prices registry's `current` label resolves to at startup. Re-running `update-prices` mid-sweep is safe — in-flight runs keep the snapshot they resolved at startup.
+    * Per-candidate runs:
+        * [x] `just train "phase-4 gpt-4o-mini #1" gpt-4o-mini` — REJECTED (run_id `019e57c2-…`; see Observations)
+        * [x] `just train "phase-4 gpt-4.1-mini #1" gpt-4.1-mini` — REJECTED (run_id `019e5a1c-…`; see Observations)
+        * [ ] `just train "phase-4 gpt-4.1-nano #1" gpt-4.1-nano`
+        * [ ] `just train "phase-4 gpt-5 #1" gpt-5`
+        * [ ] `just train "phase-4 gpt-5-mini #1" gpt-5-mini`
+        * [ ] `just train "phase-4 gpt-5-nano #1" gpt-5-nano`
 * [ ] Apply the acceptance gate against the phase-3 baseline by querying the log rather than passing a path: `train.rs` resolves the production baseline via `log.for_model(&production_model_version).best_by(f1)` (the 15 May `v2:34d8bec0` run), or accepts an explicit `--baseline-run-id` for reproducibility. Pin precision to that baseline's precision on the candidate's test scores; compare recall.
 * [ ] Among accepted candidates (if any), pick the cheapest by querying the log over the phase-4 runs (filter by `purpose` or by `price_snapshot_id` = the pinned snapshot, then min on `cost_usd`); update `config/refine.toml` to label that candidate's `model_version` as production; deploy.
 * [ ] If no candidate is accepted, capture the negative result inline (which model, observed precision, recall when pinned, observed cost) and move on. The pre-phase-4 `refine.toml` stays in place
