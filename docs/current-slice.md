@@ -1104,3 +1104,21 @@ Implication for the remaining candidates: `gpt-4.1-mini` and `gpt-4.1-nano` use 
 References for the multipliers above:
 * [Images and vision | OpenAI API docs](https://developers.openai.com/api/docs/guides/images-vision) — canonical per-model image-token formulas (tile-based for `gpt-4o` / `gpt-4o-mini`, 32px patch-based for the 4.1 family) and the published multipliers
 * [GPT-4o-Mini Vision Token Cost Issue thread](https://community.openai.com/t/gpt-4-o-mini-vision-token-cost-issue/989143) — Huet quote on intended per-image cost parity
+
+**24th May — second phase-4 run, `gpt-4.1-mini` (run_id `019e5a1c-edcd-7b2f-a245-50d2bdd9298a`):**
+
+| Metric | Baseline (`v2:34d8bec0`, `gpt-4o`) | `gpt-4.1-mini` #1 |
+|---|---|---|
+| Precision / Recall / F1 @ thr=0.5 | 0.800 / 0.870 / 0.833 | 0.833 / 0.435 / 0.571 |
+| ROC-AUC | 0.897 | 0.825 |
+| Pinned @ P=0.800 | thr=0.500, R=0.870 | thr=0.400, R=0.522 |
+| Test input tokens / cost (143 images) | 154,374 / $0.397 | — / **$0.074** (−81%) |
+| Total run cost (USD) | $5.82 | $4.39 (under $5 budget) |
+
+Gate **REJECTED**.
+
+Cost: the patch-based-multiplier prediction held — actual −81% on the test set (predicted ~−64%); the per-iter-sample sizing carried baseline-cost assumptions, so the candidate's lower per-image cost left the $5 budget with slack rather than overshooting.
+
+Accuracy: same shape as `gpt-4o-mini` — precision at thr=0.5 is actually slightly *better* than baseline (0.833 vs 0.800), but recall collapses (0.435 vs 0.870); pinning at baseline precision lifts recall only to 0.522, still ~35pp below. ROC-AUC 0.825 is much healthier than `gpt-4o-mini`'s 0.657, so the model *can* discriminate — it just calibrates true positives lower on the 0..1 score scale than `gpt-4o` does, and the gate (precision pinned to baseline) is hard to clear without recovering recall.
+
+Cross-candidate pattern so far: both mini-class models keep precision but lose recall at the baseline precision floor. Could be the rewriter producing prompts the smaller models read more conservatively, or an inherent visual-reasoning capability gap on edge cases. Re-running with a fresh seed or a higher iteration count would test the rewriter hypothesis; running `gpt-4.1-nano` next gives one more datapoint on whether dropping further down the capability ladder makes recall worse (likely) or the rewriter the actual culprit (unlikely).
