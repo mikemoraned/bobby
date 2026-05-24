@@ -30,7 +30,7 @@ cost_usd = 0.3277
 [[runs]]
 run_id = "019e2c0f-74d8-7db6-afd6-3268d2791ee7"
 run_at = "2026-05-15T14:34:31Z"
-model_version = "34d8bec0"
+model_version = "v2:34d8bec0"
 split_id = "a746519149bafd1f9505f0869e04c8d3"
 price_snapshot_id = "2026-05-10T17:06:34.843738Z"
 purpose = "phase-3 accepted retrain (gpt-4o)"
