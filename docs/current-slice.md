@@ -1082,3 +1082,25 @@ Actual optimisation for costs:
 * [ ] Apply the acceptance gate against the phase-3 baseline by querying the log rather than passing a path: `train.rs` resolves the production baseline via `log.for_model(&production_model_version).best_by(f1)` (the 15 May `v2:34d8bec0` run), or accepts an explicit `--baseline-run-id` for reproducibility. Pin precision to that baseline's precision on the candidate's test scores; compare recall.
 * [ ] Among accepted candidates (if any), pick the cheapest by querying the log over the phase-4 runs (filter by `purpose` or by `price_snapshot_id` = the pinned snapshot, then min on `cost_usd`); update `config/refine.toml` to label that candidate's `model_version` as production; deploy.
 * [ ] If no candidate is accepted, capture the negative result inline (which model, observed precision, recall when pinned, observed cost) and move on. The pre-phase-4 `refine.toml` stays in place
+
+###### Observations
+
+**24th May — first phase-4 run, `gpt-4o-mini` (run_id `019e57c2-78c7-72c8-aced-3102e8671a7c`):**
+
+| Metric | Baseline (`v2:34d8bec0`, `gpt-4o`) | `gpt-4o-mini` #1 |
+|---|---|---|
+| Precision / Recall / F1 @ thr=0.5 | 0.800 / 0.870 / 0.833 | 0.786 / 0.478 / 0.595 |
+| ROC-AUC | 0.897 | 0.657 |
+| Pinned @ P=0.800 | thr=0.500, R=0.870 | thr=0.700, R=0.304 |
+| Test input tokens / cost (143 images) | 154,374 / $0.397 | 3,330,965 / $0.500 |
+| Total run cost (USD) | $5.82 | $21.45 (329% over the $5 budget) |
+
+Gate **REJECTED** — recall collapses far below the `≥ baseline − 0.01` floor at any threshold matching baseline precision.
+
+Cost: `gpt-4o-mini` was *more* expensive than the baseline on the same 143 test images, not cheaper. Per OpenAI's published vision-token formulas, mini uses **33.3× more tokens per image** than gpt-4o (base 2833 vs 85; per-tile 5667 vs 170). The per-token price is only 16.7× cheaper, so the net per-image cost is ~2× *higher*. By design — Romain Huet (OpenAI DevRel) [stated](https://community.openai.com/t/gpt-4-o-mini-vision-token-cost-issue/989143) the intent was per-image cost parity (not cheaper). The training-side overshoot is the same effect amplified: budget-derived sample sizing assumes the baseline's per-image cost, so `gpt-4o-mini`'s ~21.6× input-token blow-up scaled the per-iter sample to 2986 (vs 203 for `gpt-4o` under the same $5 budget), then paid mini's actual cost on all of it.
+
+Implication for the remaining candidates: `gpt-4.1-mini` and `gpt-4.1-nano` use 32px patch-based tokenisation (cap 1536 patches) with much smaller multipliers — **1.62×** and **2.46×** respectively per the [OpenAI vision docs](https://developers.openai.com/api/docs/guides/images-vision). Predicted per-image cost at the patch cap: `gpt-4.1-mini` ~$0.001 (~64% cheaper than baseline), `gpt-4.1-nano` ~$0.0004 (~86% cheaper). `gpt-4o-mini` was the worst-case candidate by design; the 4.1 family should land genuinely cheaper — accuracy is the open question.
+
+References for the multipliers above:
+* [Images and vision | OpenAI API docs](https://developers.openai.com/api/docs/guides/images-vision) — canonical per-model image-token formulas (tile-based for `gpt-4o` / `gpt-4o-mini`, 32px patch-based for the 4.1 family) and the published multipliers
+* [GPT-4o-Mini Vision Token Cost Issue thread](https://community.openai.com/t/gpt-4-o-mini-vision-token-cost-issue/989143) — Huet quote on intended per-image cost parity
