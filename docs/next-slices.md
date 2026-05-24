@@ -9,13 +9,13 @@ I want to get to the following different division of responsibilities:
     * lives at `bobby-staging.houseofmoran.io`
     * handles:
         * bluesky feed
-        * public website listing skeets ordered by recency and filtered by band >= MedHigh
+        * public website listing skeets ordered by recency and filtered by band >= MedHigh; this is a much simpler page than today's homepage (the current rich homepage moves to `skeet-appraise`)
     * bias is towards simplicity, reliability and speed (latency/cachability)
 * `skeet-appraise`:
-    * lives at `bobby-appraisals-staging` within the hetzner cluster, accessible via tailscale
+    * lives at `bobby-appraisals-staging` (the eventual MagicDNS FQDN `bobby-appraisals-staging.<tailnet>.ts.net`) within the hetzner cluster, accessible via tailscale
     * handles:
         * showing current status and editable controls (appraisals) for:
-            * what is currently live as the feed
+            * what is currently live as the feed (this is effectively the current `skeet-feed` homepage, moved here)
             * what has been found by the pruner and refiner for each skeet and associated images
         * manual appraisals (assigning High/MedHigh/MedLow/Low)
     * bias is towards ease-of-use and quick interactive updates
@@ -24,10 +24,11 @@ I want to get to the following different division of responsibilities:
     * handles:
         * watching for changes in what skeets / images have been found and scored by a model as well as what has been appraised
         * determining what needs to be published as the feed; this is the canonical single place we decide this
-        * this is we apply the "ordered by recency and filtered by band >= MedHigh" from above i.e. the `skeet-feed` just blindly accepts the ordering specified by the publisher
+        * this is where we apply the "ordered by recency and filtered by band >= MedHigh" from above i.e. the `skeet-feed` just blindly accepts the ordering specified by the publisher
+        * deriving the image URL for each published image (the redis Feed stores `image-url:skeet-id` pairs)
 * `skeet-refine` / `skeet-prune` stay as-is
 
-The parts are related as follows by introducing a new redis table in upstash that sits between publisher and feed:
+The parts are related as follows by introducing a new redis table in upstash that sits between publisher and feed. The publisher writes `image-url:skeet-id` pairs to this table (it derives the image URL). The Bluesky feed reads the pairs and extracts a unique, ordered list of skeet-ids; the image URLs are used (from Phase 5 onwards) to render the public image grid:
 
 ```mermaid
 architecture-beta
@@ -84,7 +85,7 @@ Tasks:
 #### Phase 3: Turn `skeet-publish` into a service
 
 This is where we introduce a new redis `feed` storage to act as the publishing destination which links `skeet-feed` and `skeet-publish`. we can do this in steps:
-1. Create a new redis list in upstash called `feeds` which will contains a list of image-id:skeet-id pairs, which represent the images which have been allowed through
+1. Create a new redis list in upstash called `feeds` which will contain a list of `image-url:skeet-id` pairs (the publisher derives the image URL), which represent the images which have been allowed through. `skeet-feed` reads these pairs and extracts a unique, ordered list of skeet-ids for the Bluesky feed
 2. Create a new service which works like `live-refine` except it monitors and periodically recalculates the pairs (based on same logic as was in `skeet-feed` but has now been moved to this library), and then publishes this to the redis list. Deploy this to hetzner and leave running for an afternoon (verify manually that redis list makes sense).
 3. Update `skeet-feed` to be configurable (via config flag) to either continue using the library implementation or reading from redis (using different implementations of same trait). Deploy this to staging with it told to use the redis input. Deploy and leave running for an afternoon and manually verify it makes sense.
 4. If all good, remove implementation of trait that does live calculation and instead rely only on redis implementation.
