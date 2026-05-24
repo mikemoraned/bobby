@@ -87,6 +87,18 @@ This is where we introduce a new redis `feed` storage to act as the publishing d
 2. Create a new service which works like `live-refine` except it monitors and periodically recalculates the pairs (based on same logic as was in `skeet-feed` but has now been moved to this library), and then publishes this to the redis list. Deploy this to hetzner and leave running for an afternoon (verify manually that redis list makes sense).
 3. Update `skeet-feed` to be configurable (via config flag) to either continue using the library implementation or reading from redis (using different implementations of same trait). Deploy this to staging with it told to use the redis input. Deploy and leave running for an afternoon and manually verify it makes sense.
 4. If all good, remove implementation of trait that does live calculation and instead rely only on redis implementation.
+5. Switch `skeet-feed` to be a suspendable service (see below)
+
+##### `skeet-feed` as a suspendable Fly service: things to know
+
+- **Eligibility:** ≤ 2 GB RAM, no swap, no GPU, machine updated since June 2024.
+- **Redis connection dies on resume.** Upstash's idle timeout fires during suspension; local socket doesn't notice. Need a pool that validates before use, or retry-on-failure that reconnects + re-auths.
+- **Same for any other long-lived outbound HTTP pools**
+- **Every deploy invalidates the snapshot** — first request after deploy is a real cold start, not a resume. Keep the cold-start path fast (lazy-load from Redis, don't preload).
+- **Tune `soft_limit`** on the HTTP service in `fly.toml` — controls how aggressively the proxy suspends. Default is too high for low-traffic staging.
+- **Timers pause during suspend** and clock can lag a few seconds on resume. Use wall-clock for anything time-sensitive; don't trust `tokio::time::interval` cadence as real-time.
+- **Logs and metric pushes can drop** across the suspend boundary. Don't alert on metric absence.
+- **Keep health checks shallow**, or have them go through the same retry path as real requests.
 
 Tasks:
 ...
