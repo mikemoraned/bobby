@@ -10,7 +10,25 @@ use shared::{ImageId, ModelVersion, Score};
 use tracing::{error, info};
 
 use crate::batch::ScoreOutcomes;
-use crate::refining::RefineError;
+
+/// Failure modes visible to the live-refine dispatcher after retries.
+///
+/// Transient `Completion` errors are already absorbed by the resilient
+/// wrapper upstream — anything that surfaces here means the wrapper has
+/// given up.
+#[derive(Debug, Clone, Copy, thiserror::Error)]
+pub enum ScoringFailure {
+    #[error("scoring fell back after exhausted retries; image left unscored for next tick")]
+    FallbackAfterRetries,
+}
+
+impl ScoringFailure {
+    pub const fn as_label(&self) -> &'static str {
+        match self {
+            Self::FallbackAfterRetries => "FallbackAfterRetries",
+        }
+    }
+}
 
 /// Running totals accumulated across all ticks, used to drive OTel counters.
 pub struct RunningTotals {
@@ -56,10 +74,14 @@ impl TickAccumulator {
     }
 
     /// Record per-image outcomes from a scored batch: log each, push successes
-    /// onto `pending_scores`, and bump per-reason error counts.
+    /// onto `pending_scores`, and bump per-reason failure counts.
+    ///
+    /// Failures here represent the wrapper-level outcome (`FallbackAfterRetries`),
+    /// not lower-level [`crate::refining::RefineError`] variants — those have
+    /// already been absorbed by retries upstream.
     pub fn record_outcomes(
         &mut self,
-        outcomes: ScoreOutcomes<RefineError>,
+        outcomes: ScoreOutcomes<ScoringFailure>,
         model_version: &ModelVersion,
     ) {
         for (id, score) in outcomes.successes {
@@ -68,7 +90,7 @@ impl TickAccumulator {
                 .push((id, score, model_version.clone()));
         }
         for (id, e) in outcomes.failures {
-            error!(image_id = %id, error = %e, "failed to refine");
+            error!(image_id = %id, error = %e, "scoring did not produce a saveable score");
             *self.errors.entry(e.as_label().to_string()).or_default() += 1;
         }
     }
@@ -126,7 +148,7 @@ mod tests {
     fn record_outcomes_pushes_successes_with_supplied_model_version() {
         let mut acc = TickAccumulator::new();
         let v = version("model@v1");
-        let outcomes = ScoreOutcomes::<RefineError> {
+        let outcomes = ScoreOutcomes::<ScoringFailure> {
             successes: vec![(id(1), score(0.4)), (id(2), score(0.7))],
             failures: vec![],
         };
@@ -139,35 +161,34 @@ mod tests {
     }
 
     #[test]
-    fn record_outcomes_bumps_per_reason_error_counts() {
+    fn record_outcomes_bumps_fallback_count_for_each_failure() {
         let mut acc = TickAccumulator::new();
         let v = version("model@v1");
-        let outcomes = ScoreOutcomes::<RefineError> {
+        let outcomes = ScoreOutcomes::<ScoringFailure> {
             successes: vec![],
             failures: vec![
-                (id(1), RefineError::Completion("a".into())),
-                (id(2), RefineError::Completion("b".into())),
-                (id(3), RefineError::ParseScore("c".into())),
+                (id(1), ScoringFailure::FallbackAfterRetries),
+                (id(2), ScoringFailure::FallbackAfterRetries),
+                (id(3), ScoringFailure::FallbackAfterRetries),
             ],
         };
         acc.record_outcomes(outcomes, &v);
-        assert_eq!(acc.errors.get("Completion"), Some(&2));
-        assert_eq!(acc.errors.get("ParseScore"), Some(&1));
+        assert_eq!(acc.errors.get("FallbackAfterRetries"), Some(&3));
         assert!(acc.pending_scores.is_empty());
     }
 
     #[test]
     fn record_outcomes_increments_existing_error_counts_rather_than_replacing() {
         let mut acc = TickAccumulator::new();
-        acc.errors.insert("Completion".to_string(), 3);
+        acc.errors.insert("FallbackAfterRetries".to_string(), 3);
         let v = version("model@v1");
-        let outcomes = ScoreOutcomes::<RefineError> {
+        let outcomes = ScoreOutcomes::<ScoringFailure> {
             successes: vec![],
-            failures: vec![(id(1), RefineError::Completion("a".into()))],
+            failures: vec![(id(1), ScoringFailure::FallbackAfterRetries)],
         };
         acc.record_outcomes(outcomes, &v);
         // 3 + 1 = 4 — kills `+= -=` and `+= *=` mutants on the error increment.
-        assert_eq!(acc.errors.get("Completion"), Some(&4));
+        assert_eq!(acc.errors.get("FallbackAfterRetries"), Some(&4));
     }
 
     #[test]

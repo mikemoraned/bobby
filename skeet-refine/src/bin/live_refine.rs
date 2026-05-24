@@ -1,6 +1,3 @@
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::Instant;
 use clap::Parser;
 use shared::ModelVersion;
 use skeet_refine::batch::Batch;
@@ -8,9 +5,13 @@ use skeet_refine::llm_metrics::LlmMetrics;
 use skeet_refine::metrics::LiveRefineMetrics;
 use skeet_refine::model::{Label, RefineModels};
 use skeet_refine::polling::PollingBatchSource;
-use skeet_refine::refining::{build_agent, create_client, refine_image, RefineAgent};
-use skeet_refine::tick::{RunningTotals, TickAccumulator};
+use skeet_refine::refining::{
+    RefineAgent, ScoringOutcome, build_agent, create_client, refine_image_resilient,
+};
+use skeet_refine::tick::{RunningTotals, ScoringFailure, TickAccumulator};
 use skeet_store::{StoreArgs, StoreMetrics};
+use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::info;
 
 #[derive(Parser)]
@@ -57,15 +58,19 @@ async fn dispatch(
     let model_name = ctx.model_name;
     let outcomes = batch
         .score_with(ctx.concurrency, move |img| async move {
-            let start = Instant::now();
-            match refine_image(agent, &img).await {
-                Ok((score, usage, duration)) => {
-                    llm_metrics.record_success(&usage, duration, model_name);
-                    Ok(score)
+            let r = refine_image_resilient(agent, &img).await;
+            match r.outcome {
+                ScoringOutcome::Scored => {
+                    llm_metrics.record_success(&r.usage, r.duration, model_name);
+                    Ok(r.score)
                 }
-                Err(e) => {
-                    llm_metrics.record_error(start.elapsed(), e.as_label(), model_name);
-                    Err(e)
+                ScoringOutcome::FallbackAfterRetries => {
+                    llm_metrics.record_error(
+                        r.duration,
+                        ScoringFailure::FallbackAfterRetries.as_label(),
+                        model_name,
+                    );
+                    Err(ScoringFailure::FallbackAfterRetries)
                 }
             }
         })

@@ -168,11 +168,11 @@ where
         .await
 }
 
-fn fallback_score() -> ResilientScore {
+fn fallback_score(duration: Duration) -> ResilientScore {
     ResilientScore {
         score: Score::new(0.0).expect("0.0 is within [0.0, 1.0]"),
         usage: Usage::new(),
-        duration: Duration::ZERO,
+        duration,
         outcome: ScoringOutcome::FallbackAfterRetries,
     }
 }
@@ -184,13 +184,19 @@ fn fallback_score() -> ResilientScore {
 /// ultimately fails, returns a fallback `ResilientScore` with `score = 0.0`
 /// and `outcome = FallbackAfterRetries` — the marker keeps the sentinel
 /// substitution honest at the call site.
+///
+/// `duration` measures total wall time including any backoff sleeps and
+/// failed attempts — the operation-level latency, not the last attempt's.
 #[instrument(skip(agent, image))]
 pub async fn refine_image_resilient(
     agent: &RefineAgent,
     image: &DynamicImage,
 ) -> ResilientScore {
-    match retry_refine_call(default_retry_policy(), || refine_image(agent, image)).await {
-        Ok((score, usage, duration)) => ResilientScore {
+    let start = Instant::now();
+    let result = retry_refine_call(default_retry_policy(), || refine_image(agent, image)).await;
+    let duration = start.elapsed();
+    match result {
+        Ok((score, usage, _attempt_duration)) => ResilientScore {
             score,
             usage,
             duration,
@@ -198,7 +204,7 @@ pub async fn refine_image_resilient(
         },
         Err(e) => {
             warn!(error = %e, "refine_image exhausted retries; substituting fallback score=0.0");
-            fallback_score()
+            fallback_score(duration)
         }
     }
 }
@@ -344,10 +350,11 @@ mod tests {
 
     #[test]
     fn fallback_score_uses_zero_with_marker() {
-        let f = fallback_score();
+        let f = fallback_score(Duration::from_millis(42));
         assert_eq!(f64::from(f.score), 0.0);
         assert_eq!(f.usage.input_tokens, 0);
         assert_eq!(f.usage.output_tokens, 0);
         assert_eq!(f.outcome, ScoringOutcome::FallbackAfterRetries);
+        assert_eq!(f.duration, Duration::from_millis(42));
     }
 }
