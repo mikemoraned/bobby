@@ -12,7 +12,9 @@ pub use metric_types::{
     F1, InvalidMetric, LabelledScore, PinnedPrecision, Precision, Recall, RocAuc, Threshold,
 };
 pub use metrics::{confusion_at, pin_at_precision, roc_auc_score};
-pub use pricing::{ModelPrices, PricingError};
+pub use pricing::{
+    InvalidSnapshotId, ModelPrice, PricesRegistry, PricingError, Snapshot, SnapshotId,
+};
 pub use results::{
     Evaluation, EvalResultsLog, EvalResultsLogError, Purpose, Resources, RunId, RunRecord,
 };

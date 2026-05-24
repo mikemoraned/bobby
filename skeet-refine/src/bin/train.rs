@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use chrono::Utc;
 use clap::Parser;
-use eval::{EvalResultsLog, EvalSplits, ModelPrices, Purpose, RunId, RunRecord, Usd};
+use eval::{EvalResultsLog, EvalSplits, PricesRegistry, Purpose, RunId, RunRecord, SnapshotId, Usd};
 use shared::refine_model::Label;
 use skeet_refine::model::RefineModels;
 use skeet_refine::train::gate::GateOutcome;
@@ -28,6 +28,11 @@ struct Args {
     /// regardless of gate outcome
     #[arg(long, default_value = "config/eval-results.toml")]
     eval_results_path: PathBuf,
+
+    /// Pricing snapshot id under which to cost this run. Defaults to whatever
+    /// the prices registry's `current` label points at when the binary starts.
+    #[arg(long)]
+    prices_snapshot_id: Option<SnapshotId>,
 
     /// Specific baseline run to compare this run against; defaults to the
     /// best-F1 run in the log that has the production model_version and the
@@ -126,7 +131,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "selected baseline run"
     );
 
-    let prices = ModelPrices::embedded()?;
+    let prices_registry = PricesRegistry::embedded()?;
+    let (prices_snapshot_id, prices) =
+        prices_registry.by_id_or_label(args.prices_snapshot_id, &Label::new("current"))?;
+    info!(prices_snapshot_id = %prices_snapshot_id, "resolved prices snapshot");
+
     let store = args.store.open_store("train").await?;
 
     let run_at = Utc::now();
@@ -135,7 +144,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         split,
         split_id: *split_id,
         baseline: &baseline,
-        prices: &prices,
+        prices,
+        prices_snapshot_id,
         openai_api_key: &args.openai_api_key,
         max_iterations: args.max_iterations,
         budget: args.budget,

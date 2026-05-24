@@ -1,20 +1,29 @@
 use std::path::PathBuf;
+use std::slice;
 
 use chrono::Utc;
 use clap::Parser;
-use eval::update_prices::{MODELS_DEV_URL, extract_prices, render_prices_toml};
+use eval::update_prices::{MODELS_DEV_URL, extract_prices};
+use eval::{PricesRegistry, Snapshot, SnapshotId};
+use shared::refine_model::Label;
 use tracing::info;
 
 #[derive(Parser)]
-#[command(about = "Fetch OpenAI pricing from models.dev and write eval/prices.toml with provenance")]
+#[command(
+    about = "Fetch OpenAI pricing from models.dev and append a snapshot to eval/prices.toml"
+)]
 struct Args {
     /// Comma-separated list of model names to include
     #[arg(long, value_delimiter = ',')]
     models: Vec<String>,
 
-    /// Output path for prices.toml
+    /// Path to the prices registry
     #[arg(long, default_value = "eval/prices.toml")]
     output: PathBuf,
+
+    /// Label moved onto the freshly inserted snapshot
+    #[arg(long, default_value = "current")]
+    label: String,
 }
 
 #[tokio::main]
@@ -37,12 +46,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let prices = extract_prices(&json, &args.models)?;
     info!(count = prices.len(), "extracted prices");
 
-    let body = render_prices_toml(&prices)?;
-    let now = Utc::now().to_rfc3339();
-    let content =
-        format!("# Source: {MODELS_DEV_URL}\n# Fetched: {now}\n\n{body}");
-    std::fs::write(&args.output, content)?;
-    info!(path = %args.output.display(), "wrote prices.toml");
+    let mut registry = PricesRegistry::load_or_empty(&args.output)?;
+    let label = Label::new(&args.label);
+    let snapshot_id = SnapshotId::new(Utc::now());
+    let snapshot = Snapshot {
+        source_url: MODELS_DEV_URL.to_string(),
+        note: None,
+        prices,
+    };
+    registry.insert(snapshot_id, snapshot, slice::from_ref(&label))?;
+    registry.save(&args.output)?;
+    info!(
+        path = %args.output.display(),
+        %label,
+        snapshot_id = %snapshot_id,
+        "inserted snapshot and moved label"
+    );
 
     Ok(())
 }

@@ -15,8 +15,6 @@ pub enum UpdatePricesError {
     ModelNotFound(String),
     #[error("model {0} has no cost field in response")]
     MissingCost(String),
-    #[error("failed to serialize prices.toml: {0}")]
-    Serialize(#[from] toml::ser::Error),
 }
 
 #[derive(Deserialize)]
@@ -71,13 +69,6 @@ pub fn extract_prices(
         );
     }
     Ok(prices)
-}
-
-/// Render a prices map as TOML body (no header comment).
-pub fn render_prices_toml(
-    prices: &BTreeMap<String, ModelPrice>,
-) -> Result<String, UpdatePricesError> {
-    Ok(toml::to_string_pretty(prices)?)
 }
 
 #[cfg(test)]
@@ -175,19 +166,5 @@ mod tests {
             result,
             Err(UpdatePricesError::MissingCost(name)) if name == "experimental"
         ));
-    }
-
-    #[test]
-    fn renders_toml_in_expected_format() {
-        let prices =
-            extract_prices(FIXTURE, &["gpt-4o".into(), "gpt-4o-mini".into()]).expect("parse");
-        let body = render_prices_toml(&prices).expect("render");
-        // The format must match what `ModelPrices::from_toml_str` expects, since
-        // `update-prices` writes the file that `ModelPrices::embedded()` reads.
-        let parsed = crate::ModelPrices::from_toml_str(&body).expect("round-trip");
-        assert_eq!(
-            parsed.cost_for("gpt-4o", 1_000_000, 0).expect("present"),
-            Usd::from_str("2.5").expect("valid")
-        );
     }
 }

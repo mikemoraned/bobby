@@ -6,8 +6,8 @@ pub mod setup;
 
 use chrono::{DateTime, Utc};
 use eval::{
-    Evaluation, EvalSplit, F1, ModelPrices, PricingError, Purpose, Resources, RunId, RunRecord,
-    SplitId, Usd, confusion_at, pin_at_precision, roc_auc_score,
+    Evaluation, EvalSplit, F1, PricingError, Purpose, Resources, RunId, RunRecord, Snapshot,
+    SnapshotId, SplitId, Usd, confusion_at, pin_at_precision, roc_auc_score,
 };
 use shared::ImageId;
 use shared::refine_model::RefineModel;
@@ -51,7 +51,8 @@ pub struct TrainingInputs<'a> {
     pub split: &'a EvalSplit,
     pub split_id: SplitId,
     pub baseline: &'a RunRecord,
-    pub prices: &'a ModelPrices,
+    pub prices: &'a Snapshot,
+    pub prices_snapshot_id: SnapshotId,
     pub openai_api_key: &'a str,
     pub max_iterations: u32,
     pub budget: Usd,
@@ -202,6 +203,7 @@ impl<'a> TrainingInputs<'a> {
             run_at: self.run_at,
             model_version: candidate_model.version(),
             split_id: self.split_id,
+            price_snapshot_id: self.prices_snapshot_id,
             purpose: self.purpose,
             evaluation: Evaluation {
                 precision: test_precision,

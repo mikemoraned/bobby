@@ -8,6 +8,7 @@ use uuid::{NoContext, Timestamp, Uuid};
 
 use crate::confusion::ConfusionMatrix;
 use crate::metric_types::{F1, PinnedPrecision, Precision, Recall, RocAuc};
+use crate::pricing::SnapshotId;
 use crate::split::SplitId;
 use crate::usd::Usd;
 
@@ -89,6 +90,7 @@ pub struct RunRecord {
     pub run_at: DateTime<Utc>,
     pub model_version: ModelVersion,
     pub split_id: SplitId,
+    pub price_snapshot_id: SnapshotId,
     pub purpose: Purpose,
     pub evaluation: Evaluation,
     pub resources: Resources,
@@ -247,12 +249,17 @@ mod tests {
         RunId::new(format!("01900000-0000-7000-8000-{n:012x}")).expect("valid uuid v7")
     }
 
+    fn snapshot_id() -> SnapshotId {
+        SnapshotId::new(DateTime::from_timestamp(1_700_000_000, 0).expect("valid"))
+    }
+
     fn sample_run(rid: RunId, mv: &str, f1: f64) -> RunRecord {
         RunRecord {
             run_id: rid,
             run_at: DateTime::from_timestamp(1_700_000_000, 0).expect("valid"),
             model_version: ModelVersion::from(mv),
             split_id: SplitId::new("00112233445566778899aabbccddeeff").expect("valid"),
+            price_snapshot_id: snapshot_id(),
             purpose: Purpose::new("test"),
             evaluation: Evaluation {
                 precision: Precision::new(0.85).expect("valid"),

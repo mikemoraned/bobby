@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use chrono::Utc;
 use clap::Parser;
 use eval::{
-    Evaluation, EvalResultsLog, EvalSplits, LabelledScore, ModelPrices, Purpose, Resources, RunId,
-    RunRecord, confusion_at, pin_at_precision, roc_auc_score,
+    Evaluation, EvalResultsLog, EvalSplits, LabelledScore, PricesRegistry, Purpose, Resources,
+    RunId, RunRecord, SnapshotId, confusion_at, pin_at_precision, roc_auc_score,
 };
 use futures::stream::{self, StreamExt};
 use shared::Score;
@@ -39,6 +39,11 @@ struct Args {
     /// Path to the refine model config under evaluation
     #[arg(long, default_value = "config/refine.toml")]
     model_path: PathBuf,
+
+    /// Pricing snapshot id under which to cost this run. Defaults to whatever
+    /// the prices registry's `current` label points at when the binary starts.
+    #[arg(long)]
+    prices_snapshot_id: Option<SnapshotId>,
 
     /// Free-text purpose for this run (e.g. "phase-4 gpt-4o-mini #1")
     #[arg(long)]
@@ -157,7 +162,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let roc_auc = roc_auc_score(&labelled);
     let pinned_precision = pin_at_precision(&labelled, precision);
 
-    let prices = ModelPrices::embedded()?;
+    let prices_registry = PricesRegistry::embedded()?;
+    let (prices_snapshot_id, prices) =
+        prices_registry.by_id_or_label(args.prices_snapshot_id, &Label::new("current"))?;
+    info!(prices_snapshot_id = %prices_snapshot_id, "resolved prices snapshot");
     let cost = prices.cost_for(model.model_name.as_str(), input_tokens, output_tokens)?;
 
     let run_at = Utc::now();
@@ -166,6 +174,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         run_at,
         model_version: model_version.clone(),
         split_id: *split_id,
+        price_snapshot_id: prices_snapshot_id,
         purpose: Purpose::new(args.purpose),
         evaluation: Evaluation {
             precision,

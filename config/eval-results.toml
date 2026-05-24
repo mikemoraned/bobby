@@ -3,6 +3,7 @@ run_id = "019e1407-5388-714f-8fd5-423953beed1c"
 run_at = "2026-05-10T22:34:45Z"
 model_version = "ea219ee0"
 split_id = "a746519149bafd1f9505f0869e04c8d3"
+price_snapshot_id = "2026-05-10T17:06:34.843738Z"
 purpose = "phase-2 baseline (seed prompt, gpt-4o)"
 
 [runs.evaluation]
@@ -31,6 +32,7 @@ run_id = "019e2c0f-74d8-7db6-afd6-3268d2791ee7"
 run_at = "2026-05-15T14:34:31Z"
 model_version = "34d8bec0"
 split_id = "a746519149bafd1f9505f0869e04c8d3"
+price_snapshot_id = "2026-05-10T17:06:34.843738Z"
 purpose = "phase-3 accepted retrain (gpt-4o)"
 
 [runs.evaluation]
@@ -59,6 +61,7 @@ run_id = "019e3782-3a30-79f6-ba50-93e2d044ecbd"
 run_at = "2026-05-17T19:55:42Z"
 model_version = "v2:30dca4b3"
 split_id = "a746519149bafd1f9505f0869e04c8d3"
+price_snapshot_id = "2026-05-10T17:06:34.843738Z"
 purpose = "phase-3 17-May regression (reverted at a940779)"
 
 [runs.evaluation]
