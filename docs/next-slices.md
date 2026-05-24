@@ -9,7 +9,7 @@ I want to get to the following different division of responsibilities:
     * lives at `bobby-staging.houseofmoran.io`
     * handles:
         * bluesky feed
-        * public website listing skeets ordered by band or by recency
+        * public website listing skeets ordered by recency and filtered by band >= MedHigh
     * bias is towards simplicity, reliability and speed (latency/cachability)
 * `skeet-appraise`:
     * lives at `bobby-appraisals-staging` within the hetzner cluster, accessible via tailscale
@@ -24,6 +24,7 @@ I want to get to the following different division of responsibilities:
     * handles:
         * watching for changes in what skeets / images have been found and scored by a model as well as what has been appraised
         * determining what needs to be published as the feed; this is the canonical single place we decide this
+        * this is we apply the "ordered by recency and filtered by band >= MedHigh" from above i.e. the `skeet-feed` just blindly accepts the ordering specified by the publisher
 * `skeet-refine` / `skeet-prune` stay as-is
 
 The parts are related as follows by introducing a new redis table in upstash that sits between publisher and feed:
