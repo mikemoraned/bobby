@@ -58,7 +58,7 @@ architecture-beta
 
 * [ ] it seems that docker rust chef based caching is no-longer working i.e. even if library dependencies haven't changed, it still recompiles everything
     1. what's up?
-    2. now that docker images are build and named based on git-hash, can we exploit that for a more exact caching of layers?
+    2. now that docker images are built and named based on git-hash, can we exploit that for a more exact caching of layers?
 
 ### Phases
 
@@ -93,13 +93,38 @@ Tasks:
 
 #### Phase 4: Expose `skeet-appraise` as a service inside hetzner via tailscale
 
+Use the [Tailscale Kubernetes Operator](https://tailscale.com/kb/1236/kubernetes-operator). It spins up a proxy pod per exposed resource that joins the tailnet and forwards to the backing `Service`. No public ingress, no per-service load balancer cost.
+
 This means we can now use tailscale to expose `skeet-appraise` running as a local k8s Service inside the cluster but still have it accessible from my phone and my laptop. As part of this we need to introduce a new type of identity of appraiser based on tailscale identity.
 
 We can do this like in Phase 3 where we run new/old alongside each other for a little while before we delete the fly.io website for `skeet-appraise`.
 
 At end of this we can probably do a code and infra cleanup/simplification as we should no-longer need the github app / redis auth / oauth login stuff.
 
-Tasks:
+##### Use `Ingress`, not `Service`, for identity
+
+Of the operator's exposure modes, only [`Ingress`](https://tailscale.com/kb/1439/kubernetes-operator-cluster-ingress) injects Tailscale identity headers, which is the whole point here. Every request gets:
+
+* `Tailscale-User-Login` — caller's login (e.g. `mike@example.com`)
+* `Tailscale-User-Name` — display name
+* `Tailscale-User-Profile-Pic` — profile image URL
+
+The proxy strips incoming versions of these headers before forwarding, so they can't be spoofed from the tailnet. Anything else in-cluster reaching the backend `Service` directly could spoof them, so add a `NetworkPolicy` restricting the `Service` to only the Tailscale proxy pod.
+
+[tailscale/tailscale#15657](https://github.com/tailscale/tailscale/issues/15657) tracks identity headers for bare `Service` resources but is open and unmoving — `Ingress` is the only option today.
+
+##### Constraints of `Ingress` mode
+
+* HTTPS-only, port 443 only; certs auto-provisioned from Let's Encrypt.
+* Requires HTTPS and MagicDNS enabled on the tailnet ([docs](https://tailscale.com/kb/1153/enabling-https)).
+* Reachable only by the full MagicDNS FQDN (e.g. `bobby-appraisals-staging.<tailnet>.ts.net`) so the cert matches.
+* First connection after deploy can be slow while the cert is provisioned.
+
+##### Prerequisite
+
+OAuth client created in the Tailscale admin console for the operator — see the operator [setup section](https://tailscale.com/kb/1236/kubernetes-operator#setup).
+
+##### Tasks
 ...
 
 
