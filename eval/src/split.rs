@@ -532,6 +532,37 @@ mod tests {
         assert_eq!(sample.len(), items.len());
     }
 
+    /// When `sample_size` hugely exceeds the pool — as when a cheap model's
+    /// budget-derived per-iteration size (e.g. 4486) dwarfs the train pool
+    /// (e.g. 588) — the sample must be the whole pool, each item exactly once:
+    /// no replacement, no duplicates, no growth past the pool. Uses uneven band
+    /// sizes (so per-band quota rounding is exercised) and an extreme multiplier
+    /// mirroring the production ratio.
+    #[test]
+    fn oversized_sample_returns_each_input_exactly_once() {
+        let mut bands: Vec<Band> = Vec::new();
+        for (band, n) in [
+            (Band::Low, 40),
+            (Band::MediumLow, 7),
+            (Band::MediumHigh, 25),
+            (Band::HighQuality, 3),
+        ] {
+            bands.extend(std::iter::repeat_n(band, n));
+        }
+        let items = make_items(&bands);
+
+        let sample = stratified_sample(&items, items.len() * 8, 7);
+
+        let mut got: Vec<String> = sample;
+        got.sort();
+        let mut expected: Vec<String> = items.iter().map(|(id, _)| id.clone()).collect();
+        expected.sort();
+        assert_eq!(
+            got, expected,
+            "oversized request must return the full pool, each item once"
+        );
+    }
+
     #[test]
     fn sample_includes_at_least_one_from_each_non_empty_band() {
         let items = enough_per_band();
