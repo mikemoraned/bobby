@@ -72,10 +72,10 @@ capture-appraisals:
     op run --env-file bobby-local.env -- cargo run --quiet --release --bin capture-appraisals -- --store-path {{ R2_STORE }}
 
 update-prices:
-    cargo run --quiet --release --bin update-prices -- --models gpt-4o,gpt-4o-mini
+    cargo run --quiet --release --bin update-prices -- --models gpt-4o,gpt-4o-mini,gpt-4.1-mini,gpt-4.1-nano
 
-train purpose:
-    op run --env-file bobby-local.env -- cargo run --quiet --release --bin train -- --store-path {{ R2_STORE }} --purpose "{{ purpose }}"
+train purpose model="gpt-4o":
+    op run --env-file bobby-local.env -- cargo run --quiet --release --bin train -- --store-path {{ R2_STORE }} --purpose "{{ purpose }}" --model "{{ model }}"
 
 refine-eval purpose:
     op run --env-file bobby-local.env -- cargo run --quiet --release --bin refine-eval -- --store-path {{ R2_STORE }} --purpose "{{ purpose }}"
