@@ -54,6 +54,12 @@ architecture-beta
 
 ### Bugs / Refactors
 
+#### Docker / chef broken?
+
+* [ ] it seems that docker rust chef based caching is no-longer working i.e. even if library dependencies haven't changed, it still recompiles everything
+    1. what's up?
+    2. now that docker images are build and named based on git-hash, can we exploit that for a more exact caching of layers?
+
 ### Phases
 
 We'll do this in phases, with a working system at each step
@@ -113,13 +119,7 @@ We can then exclude any images that have > threshold %-age in any Zone, and > nu
 
 ### Tasks
 
-#### Bugs
-
-* [ ] it seems that docker rust chef based caching is no-longer working i.e. even if library dependencies haven't changed, it still recompiles everything
-    1. what's up?
-    2. now that docker images are build and named based on git-hash, can we exploit that for a more exact caching of layers?
-
-Rest TBC
+...
 
 ## Slice: reducing unintentional bias
 
