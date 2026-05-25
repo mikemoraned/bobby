@@ -8,6 +8,7 @@ use rig::providers::openai::client::CompletionsClient;
 use shared::ImageId;
 
 use crate::loader::LabelledImage;
+use crate::refining::temperature_for;
 use crate::train::gate::training_loop_threshold;
 use crate::train::scoring::{ScoredCall, labelled_scores};
 
@@ -77,7 +78,11 @@ pub async fn refine_prompt(
     );
 
     let refinement_model = client.completion_model(model_name);
-    let agent = AgentBuilder::new(refinement_model).temperature(0.0).build();
+    let mut builder = AgentBuilder::new(refinement_model);
+    if let Some(t) = temperature_for(model_name) {
+        builder = builder.temperature(t);
+    }
+    let agent = builder.build();
     let response = agent.prompt(refinement_request).await?;
     Ok(response)
 }

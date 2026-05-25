@@ -209,16 +209,41 @@ pub async fn refine_image_resilient(
     }
 }
 
+/// Temperature pinned for reproducible scoring on every model that accepts a
+/// custom value.
+const REPRODUCIBLE_TEMPERATURE: f64 = 0.0;
+
+/// The temperature to request for `model`, or `None` to omit the field.
+///
+/// Scoring is pinned to a fixed low temperature for reproducibility. OpenAI's
+/// gpt-5 reasoning family rejects any non-default temperature with a 400 and
+/// must have the field omitted; the non-reasoning `gpt-5-chat` variant accepts
+/// it, as do the gpt-4o / gpt-4.1 families. Other reasoning families (o-series)
+/// share the gpt-5 constraint and would need adding here before use.
+pub fn temperature_for(model: &str) -> Option<f64> {
+    if rejects_custom_temperature(model) {
+        None
+    } else {
+        Some(REPRODUCIBLE_TEMPERATURE)
+    }
+}
+
+fn rejects_custom_temperature(model: &str) -> bool {
+    let m = model.to_ascii_lowercase();
+    m.starts_with("gpt-5") && !m.starts_with("gpt-5-chat")
+}
+
 pub fn build_agent(
     client: &openai::client::CompletionsClient,
     model_name: &str,
     refine_prompt: &str,
 ) -> RefineAgent {
     let model = client.completion_model(model_name);
-    AgentBuilder::new(model)
-        .preamble(refine_prompt)
-        .temperature(0.0)
-        .build()
+    let mut builder = AgentBuilder::new(model).preamble(refine_prompt);
+    if let Some(t) = temperature_for(model_name) {
+        builder = builder.temperature(t);
+    }
+    builder.build()
 }
 
 pub fn create_client(api_key: &str) -> openai::client::CompletionsClient {
@@ -263,6 +288,27 @@ mod tests {
     #[test]
     fn parse_score_rejects_garbage() {
         assert!(parse_score("hello world").is_err());
+    }
+
+    #[test]
+    fn temperature_pinned_to_zero_for_chat_models() {
+        assert_eq!(temperature_for("gpt-4o"), Some(0.0));
+        assert_eq!(temperature_for("gpt-4o-mini"), Some(0.0));
+        assert_eq!(temperature_for("gpt-4.1-mini"), Some(0.0));
+        assert_eq!(temperature_for("gpt-4.1-nano"), Some(0.0));
+    }
+
+    #[test]
+    fn temperature_omitted_for_gpt5_reasoning_models() {
+        assert_eq!(temperature_for("gpt-5"), None);
+        assert_eq!(temperature_for("gpt-5-mini"), None);
+        assert_eq!(temperature_for("gpt-5-nano"), None);
+    }
+
+    #[test]
+    fn temperature_pinned_for_gpt5_chat_variant() {
+        // The non-reasoning chat variant accepts a custom temperature.
+        assert_eq!(temperature_for("gpt-5-chat-latest"), Some(0.0));
     }
 
     use std::sync::Arc;
