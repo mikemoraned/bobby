@@ -1082,7 +1082,7 @@ Actual optimisation for costs:
         * [ ] `just train "phase-4 gpt-5 #1" gpt-5`
         * [ ] `just train "phase-4 gpt-5-mini #1" gpt-5-mini`
         * [ ] `just train "phase-4 gpt-5-nano #1" gpt-5-nano`
-        * [ ] `just train "phase-4 gpt-4o sanity #1" gpt-4o` — sanity-check run. The 4o-mini / 4.1-mini recall collapses (0.478, 0.435) sit far below the phase-3 gpt-4o range (0.696–0.870 across 11/15/17 May), so before concluding "no candidate is accepted" we want to rule out a regression in the test framework itself. Re-training with `gpt-4o` should land in that phase-3 range; if it doesn't, something in the training/eval/labelling path has shifted since 17 May. (A cheaper sanity check is `just refine-eval` against the production `v2:34d8bec0` directly — that re-scores the existing prompt and should reproduce P=0.800 / R=0.870 within model non-determinism. Both worth doing if the train run is ambiguous.)
+        * [x] `just train "phase-4 gpt-4o sanity #1" gpt-4o` — run_id `019e5c15-…`. **Framework confirmed healthy** (R=0.783, ROC-AUC=0.894 — squarely in the phase-3 cluster), but **also REJECTED**: gpt-4o cannot re-clear its own 15 May baseline, exposing the gate as training-variance-dominated. See Observations.
 * [ ] Apply the acceptance gate against the phase-3 baseline by querying the log rather than passing a path: `train.rs` resolves the production baseline via `log.for_model(&production_model_version).best_by(f1)` (the 15 May `v2:34d8bec0` run), or accepts an explicit `--baseline-run-id` for reproducibility. Pin precision to that baseline's precision on the candidate's test scores; compare recall.
 * [ ] Among accepted candidates (if any), pick the cheapest by querying the log over the phase-4 runs (filter by `purpose` or by `price_snapshot_id` = the pinned snapshot, then min on `cost_usd`); update `config/refine.toml` to label that candidate's `model_version` as production; deploy.
 * [ ] If no candidate is accepted, capture the negative result inline (which model, observed precision, recall when pinned, observed cost) and move on. The pre-phase-4 `refine.toml` stays in place
@@ -1154,3 +1154,31 @@ Because per-iteration sample size is derived from each model's *predicted* per-i
 For this slice's goal — match-or-beat baseline precision/recall at lower *production* cost — framing (1) is the right one. "Best model I can make" = "best model I can run in production," and a model being cheap enough to train on more data is part of what makes it the best deployable choice, not an unfair advantage. The comparison stays fair because the **test set is identical and frozen** (the 143-image split `a746519…`) across every candidate; only training *exposure* differs, and training exposure is a property of the candidate, not the measurement.
 
 The genuine weakness is that sample sizing keys off *predicted* cost (baseline's per-image token counts), which the `gpt-4o-mini` run proved can be wrong by ~21× (vision-token multiplier). So per-model training exposure is governed by a prediction that can be badly off, making the budget knob arbitrary in practice — two candidates under "the same $5 budget" can see very different amounts of data purely because of prediction error, not real cost.
+
+**25th May — sanity-check run, `gpt-4o` (run_id `019e5c15-44d6-776e-81ae-3b21f1f91237`):**
+
+| Metric | Baseline (15 May `v2:34d8bec0`, `gpt-4o`) | `gpt-4o` sanity #1 |
+|---|---|---|
+| Precision / Recall / F1 @ thr=0.5 | 0.800 / 0.870 / 0.833 | 0.750 / 0.783 / 0.766 |
+| ROC-AUC | 0.897 | 0.894 |
+| Pinned @ P=0.800 | thr=0.500, R=0.870 | thr=0.850, R=0.565 |
+| Test cost (143 images) | $0.397 | $0.385 |
+| Total run cost (USD) | $5.82 | $4.68 |
+| Per-iter train sample | 203 | 165 |
+
+Purpose: rule out a test-framework regression before concluding "no candidate accepted" (the cheap models' recall collapses looked suspiciously bad). Two findings:
+
+1. **Framework is healthy.** Re-trained `gpt-4o` lands at R=0.783, ROC-AUC=0.894 — squarely in the phase-3 `gpt-4o` cluster (R 0.696–0.870, ROC-AUC ~0.897 across 11/15/17 May), and test cost $0.385 ≈ the 15 May $0.397. Nothing in the eval / labelling / sampling path has drifted. **The cheap-model results stand as real**: their recall collapses and `gpt-4.1-nano`'s superior ROC-AUC are genuine signals, not artifacts.
+
+2. **The gate is training-variance-dominated — even the baseline model fails it.** This run was **REJECTED**: pinned @P=0.800 gives threshold=0.850, recall=0.565, well below the ≥0.860 bar. The gate compares every candidate against a *single best historical draw* (15 May, R=0.870), but a fresh `gpt-4o` run produces R=0.783@0.5 / 0.565 pinned. Recall across the four `gpt-4o` runs now on record spans **0.696–0.870**, and the 15 May 0.870 sits at the *top* of that spread, not its centre:
+
+   | gpt-4o run | recall @0.5 | ROC-AUC |
+   |---|---|---|
+   | 11 May (phase-3 #1) | 0.870 | 0.897 |
+   | 15 May (phase-3 #2, **baseline**) | 0.870 | 0.897 |
+   | 17 May (phase-3 #3, reverted) | 0.696 | 0.896 |
+   | 25 May (phase-4 sanity) | 0.783 | 0.894 |
+
+Fairness wrinkle (predicted by the methodology observation above): this run's per-iter sample was **165** (< 588, no clamp), so `gpt-4o` trained on the *least* data of any candidate — the cheap models each saw the full 588/iter. Under fixed-budget the priciest model is the most data-starved, yet still reproduces the phase-3 range.
+
+**Implication for the remaining gate / decision tasks:** rejecting a candidate against the single-best `gpt-4o` run conflates "genuinely worse" with "this draw was unluckier than 15 May." A defensible phase-4 conclusion needs a variance-aware baseline — either re-run `gpt-4o` a few times to establish its recall spread (mean/CI), or gate against that distribution rather than its best single draw. Until then, only a candidate that *clearly* beats the whole `gpt-4o` recall spread (≥0.870 at baseline precision) should count as an unambiguous accept; marginal misses are within noise.
