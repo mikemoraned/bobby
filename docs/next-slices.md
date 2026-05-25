@@ -62,6 +62,13 @@ architecture-beta
     1. what's up?
     2. now that docker images are built and named based on git-hash, can we exploit that for a more exact caching of layers?
 
+#### Deny `expect()` as well
+
+`expect()` is probably as bad an idea in main code as `unwrap()` so deny that as well, and instead prefer explicit Result+Err, unless in tests.
+
+* [ ] similar to `unwrap_used = "deny"` and `allow-unwrap-in-tests = true` do the same for expect, and fix all related issues
+* [ ] add a note about this to @rust.md like we do for `unwrap`
+
 ### Phases
 
 We'll do this in phases, with a working system at each step
