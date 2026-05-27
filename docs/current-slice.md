@@ -1080,8 +1080,8 @@ Actual optimisation for costs:
         * [x] `just train "phase-4 gpt-4.1-mini #1" gpt-4.1-mini` — REJECTED (run_id `019e5a1c-…`; see Observations)
         * [x] `just train "phase-4 gpt-4.1-nano #1" gpt-4.1-nano` — REJECTED (run_id `019e5ae2-…`; ROC-AUC 0.912 > baseline, but rejected on calibration — pinned @P=0.800 is degenerate thr=1.000, R=0.217; cheapest at $0.031, −92%)
         * [x] `just train "phase-4 gpt-5 #1" gpt-5` — REJECTED (run_id `019e616f-…`). Best classifier of the sweep (ROC-AUC 0.928, P=0.909, pinned R=0.696) but **not cheaper**: reasoning-token output makes it +26% vs baseline ($0.501), 389% budget overshoot. See Observations.
-        * [ ] `just train "phase-4 gpt-5-mini #1" gpt-5-mini` — first run (run_id `019e63db-…`) CONTAMINATED by the bare-number parse bug (15/143 test + 2498 training scores forced to 0.0); parse fix landed in `refining::parse_score`. Standout candidate even so (recall ≥0.826, ROC-AUC 0.922, −65% cheaper). **Needs a clean re-run** to supersede; see Observations.
-        * [ ] `just train "phase-4 gpt-5-mini #2" gpt-5-mini` : this is running with the parsing fix
+        * [x] `just train "phase-4 gpt-5-mini #1" gpt-5-mini` — REJECTED + CONTAMINATED (run_id `019e63db-…`): bare-number parse bug forced 15/143 test + 2498 training scores to 0.0. Parse fix landed in `refining::parse_score`. See Observations.
+        * [x] `just train "phase-4 gpt-5-mini #2" gpt-5-mini` — clean re-run with the parse fix (run_id `019e6953-…`, 0 fallbacks). REJECTED: came out *worse* than `#1` (R=0.609, ROC-AUC 0.868, no threshold reaching P=0.800) and only −9% cheaper. temperature=1 makes gpt-5-mini non-deterministic in accuracy and cost — "no clear win." See Observations.
         * [ ] `just train "phase-4 gpt-5-nano #1" gpt-5-nano`
         * [x] `just train "phase-4 gpt-4o sanity #1" gpt-4o` — run_id `019e5c15-…`. **Framework confirmed healthy** (R=0.783, ROC-AUC=0.894 — squarely in the phase-3 cluster), but **also REJECTED**: gpt-4o cannot re-clear its own 15 May baseline, exposing the gate as training-variance-dominated. See Observations.
 * [ ] Apply the acceptance gate against the phase-3 baseline by querying the log rather than passing a path: `train.rs` resolves the production baseline via `log.for_model(&production_model_version).best_by(f1)` (the 15 May `v2:34d8bec0` run), or accepts an explicit `--baseline-run-id` for reproducibility. Pin precision to that baseline's precision on the candidate's test scores; compare recall.
@@ -1228,3 +1228,30 @@ Gate **REJECTED**, but the run is **not trustworthy**: `fallbacks test=15` means
 * *Training:* ~14% bogus zeros were fed into the prompt-rewriter, so the chosen prompt was optimised against partly-garbage feedback — a clean re-run may produce a better prompt too.
 
 **Standing of this candidate:** even contaminated, `gpt-5-mini` is the **standout of the sweep** — best non-baseline recall (≥0.826), best non-baseline pinned recall (0.739), ROC-AUC 0.922 (2nd only to gpt-5), **and genuinely −65% cheaper** (unlike gpt-5, its $2/M output rate keeps reasoning-token cost down). It is the first candidate that is both competitive on accuracy and a real cost win. **A clean re-run after the parse fix supersedes this entry** — treat these metrics as a contaminated lower bound, not a result.
+
+> **Correction (28th May, after the clean re-run `#2`):** the "contaminated lower bound" framing above was wrong. It assumed the re-run would re-*evaluate the same prompt*; instead `#2` re-*trained* and produced a **different** prompt (`v2:33c81c64`) that came out *worse* (recall 0.609, ROC-AUC 0.868, no threshold reaching P=0.800) and pricier ($0.361, −9%). So `#1`'s numbers were an optimistic **outlier**, not a floor — `#1` vs `#2` differ by prompt-quality variance (gpt-5-mini is forced to temperature=1), not by contamination alone. The contamination's isolated effect on `#1`'s eval was never measured (that would need a clean re-eval of `v2:78aa12d7`, itself noisy at temp=1). See the `#2` entry below.
+
+**28th May — clean re-run, `gpt-5-mini` `#2` (run_id `019e6953-25e9-71ff-8532-a7fba90a40fd`, model `v2:33c81c64`):**
+
+The parse fix landed: **fallbacks training=0, test=0** — contamination eliminated. But the clean run is *worse and pricier* than the contaminated `#1`, because `#2` is a different prompt, not a re-eval:
+
+| Metric | Baseline (`gpt-4o`) | `gpt-5-mini` `#1` (contaminated) | `gpt-5-mini` `#2` (clean) |
+|---|---|---|---|
+| Precision @0.5 | 0.800 | 0.731 | 0.737 |
+| Recall @0.5 | 0.870 | 0.826 | **0.609** |
+| F1 @0.5 | 0.833 | 0.776 | 0.667 |
+| ROC-AUC | 0.897 | 0.922 | **0.868** |
+| Pinned @P=0.800 | thr=0.500, R=0.870 | thr=0.680, R=0.739 | **no qualifying threshold** |
+| Test cost | $0.397 | $0.139 (−65%) | **$0.361 (−9%)** |
+| Budget overshoot | — | 41.7% | 152.7% |
+| Fallbacks (train/test) | 0 / 0 | 2498 / 15 | **0 / 0** |
+
+`#2` can't reach 0.800 precision at any threshold and its ROC-AUC fell below baseline — a materially weaker classifier than `#1`. REJECTED.
+
+**Root cause of the `#1`↔`#2` swing: gpt-5-mini is forced to temperature=1 (reasoning model — see the per-model temperature fix), so it is doubly non-deterministic:**
+1. **Prompt-quality variance** — each training run lands a different-quality prompt (`#1` ROC-AUC 0.922, `#2` 0.868). Same lesson as the 25-May sanity run, but worse: gpt-4o could be pinned to temp=0, gpt-5-mini cannot.
+2. **Cost variance** — test cost swung 2.6× ($0.139 → $0.361) for the same 143 images, because reasoning-token volume varies with the prompt (and per call). The "−65% cheaper" headline was a one-prompt fluke; the robust figure is nearer −9%.
+
+**Methodological finding worth carrying forward: the eval framework assumes `fixed (prompt, test set) → fixed metrics`, which holds only for temperature-0 models.** For reasoning models forced to temp=1, even scoring a *fixed* prompt is non-deterministic — the metrics are a random variable, not a number. So a single gpt-5-mini run is a noisy sample stacked on the already variance-dominated gate (25-May observation); one run tells us very little, and a fair characterisation would need several runs per candidate to establish both accuracy and cost spreads.
+
+**Standing:** neither gpt-5-mini run cleared the gate (`#1` contaminated; `#2` missed badly), and the cost advantage is not robust (−65% → −9%). It is **not** the standout the `#1` entry claimed — it's "no clear win." A defensible accept would require multiple clean runs showing it *reliably* beats the gpt-4o recall spread while *reliably* staying cheaper; nothing observed supports that.
