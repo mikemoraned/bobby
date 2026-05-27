@@ -1080,7 +1080,8 @@ Actual optimisation for costs:
         * [x] `just train "phase-4 gpt-4.1-mini #1" gpt-4.1-mini` — REJECTED (run_id `019e5a1c-…`; see Observations)
         * [x] `just train "phase-4 gpt-4.1-nano #1" gpt-4.1-nano` — REJECTED (run_id `019e5ae2-…`; ROC-AUC 0.912 > baseline, but rejected on calibration — pinned @P=0.800 is degenerate thr=1.000, R=0.217; cheapest at $0.031, −92%)
         * [x] `just train "phase-4 gpt-5 #1" gpt-5` — REJECTED (run_id `019e616f-…`). Best classifier of the sweep (ROC-AUC 0.928, P=0.909, pinned R=0.696) but **not cheaper**: reasoning-token output makes it +26% vs baseline ($0.501), 389% budget overshoot. See Observations.
-        * [ ] `just train "phase-4 gpt-5-mini #1" gpt-5-mini`
+        * [ ] `just train "phase-4 gpt-5-mini #1" gpt-5-mini` — first run (run_id `019e63db-…`) CONTAMINATED by the bare-number parse bug (15/143 test + 2498 training scores forced to 0.0); parse fix landed in `refining::parse_score`. Standout candidate even so (recall ≥0.826, ROC-AUC 0.922, −65% cheaper). **Needs a clean re-run** to supersede; see Observations.
+        * [ ] `just train "phase-4 gpt-5-mini #2" gpt-5-mini` : this is running with the parsing fix
         * [ ] `just train "phase-4 gpt-5-nano #1" gpt-5-nano`
         * [x] `just train "phase-4 gpt-4o sanity #1" gpt-4o` — run_id `019e5c15-…`. **Framework confirmed healthy** (R=0.783, ROC-AUC=0.894 — squarely in the phase-3 cluster), but **also REJECTED**: gpt-4o cannot re-clear its own 15 May baseline, exposing the gate as training-variance-dominated. See Observations.
 * [ ] Apply the acceptance gate against the phase-3 baseline by querying the log rather than passing a path: `train.rs` resolves the production baseline via `log.for_model(&production_model_version).best_by(f1)` (the 15 May `v2:34d8bec0` run), or accepts an explicit `--baseline-run-id` for reproducibility. Pin precision to that baseline's precision on the candidate's test scores; compare recall.
@@ -1206,3 +1207,24 @@ Gate **REJECTED** — but `gpt-5` is the **strongest classifier of the entire sw
 **Verdict:** fails phase-4 on *both* axes — doesn't clearly beat the `gpt-4o` recall spread, *and* costs more per inference. The cost finding is decisive and structural: a reasoning model that emits reasoning tokens for a single-score-per-image task cannot be a cost win regardless of accuracy. (Ran at temperature=1 per the per-model fix, so accuracy is one noisy draw — but the cost conclusion doesn't depend on the draw.)
 
 **Reframe for `gpt-5-mini` / `gpt-5-nano`:** both are reasoning models too, so the cheaper *input* rates ($0.25 / $0.05 per M) won't save them if they emit reasoning tokens at $2 / $0.40 per M output. The earlier per-image cost predictions for them (−85% / −96%, computed input-only) are now suspect for the same reason. Worth running `gpt-5-nano` to confirm empirically, but they should no longer be assumed cost wins until the output-token volume is measured. General lesson: **for reasoning models, predict cost from output (reasoning) tokens, not input/image tokens** — the opposite of the `gpt-4o-mini` vision-multiplier failure mode, but the same root cause: the budget model assumes the `gpt-4o` token profile, which doesn't transfer across model classes.
+
+**27th May — fifth phase-4 run, `gpt-5-mini` (run_id `019e63db-a324-7499-a0e6-53082eb7c3c8`) — CONTAMINATED, superseded by a clean re-run.**
+
+| Metric | Baseline (15 May `v2:34d8bec0`, `gpt-4o`) | `gpt-5-mini` #1 (contaminated) |
+|---|---|---|
+| Precision / Recall / F1 @ thr=0.5 | 0.800 / 0.870 / 0.833 | 0.731 / 0.826 / 0.776 |
+| ROC-AUC | 0.897 | 0.922 |
+| Pinned @ P=0.800 | thr=0.500, R=0.870 | thr=0.680, R=0.739 |
+| Test cost (143 images) | $0.397 | **$0.139 (−65%)** |
+| Total run cost (USD) | $5.82 | $7.08 (41.7% over $5 budget) |
+| Fallbacks (training / test) | 0 / 0 | **2498 / 15** |
+
+Gate **REJECTED**, but the run is **not trustworthy**: `fallbacks test=15` means 15/143 (~10%) of test scores were forced to `0.0`, and `training=2498` (~14% of 17,350) of training scores too.
+
+**Root cause — a parser bug on our side, not a model/rate-limit/retry failure.** `gpt-5-mini` intermittently returns the score as a bare number (`0.05`) instead of the requested `{"score": 0.05}`. `parse_score` only accepted the object form: a bare number parses as a JSON *number*, `v.get("score")` returns `None`, and the valid score was discarded → `ParseScore` (correctly not retried) → fallback `0.0`. Only `gpt-5-mini` exhibited this; every prior run had 0 fallbacks. **Fixed** by accepting a top-level JSON number as well (`.or_else(|| v.as_f64())` in `refining::parse_score`, with bare-number tests).
+
+**Why the contamination biases against the candidate (so its real numbers are likely better):**
+* *Eval:* most dropped scores are low (already below threshold — no classification change), but the occasional high one (e.g. `0.60`) flips a true-positive to a false-negative, so the **true recall is ≥ 0.826**.
+* *Training:* ~14% bogus zeros were fed into the prompt-rewriter, so the chosen prompt was optimised against partly-garbage feedback — a clean re-run may produce a better prompt too.
+
+**Standing of this candidate:** even contaminated, `gpt-5-mini` is the **standout of the sweep** — best non-baseline recall (≥0.826), best non-baseline pinned recall (0.739), ROC-AUC 0.922 (2nd only to gpt-5), **and genuinely −65% cheaper** (unlike gpt-5, its $2/M output rate keeps reasoning-token cost down). It is the first candidate that is both competitive on accuracy and a real cost win. **A clean re-run after the parse fix supersedes this entry** — treat these metrics as a contaminated lower bound, not a result.

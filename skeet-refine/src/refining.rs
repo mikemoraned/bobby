@@ -65,8 +65,10 @@ fn parse_score(response: &str) -> Result<Score, RefineError> {
     let trimmed = response.trim();
     let json_str = extract_json(trimmed);
 
+    // Accept either the requested `{"score": X}` object or a bare numeric
+    // response `X` — some models drift to returning the number alone.
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(json_str)
-        && let Some(score) = v.get("score").and_then(|s| s.as_f64())
+        && let Some(score) = v.get("score").and_then(|s| s.as_f64()).or_else(|| v.as_f64())
     {
         return Score::new(score as f32).map_err(|e| RefineError::ParseScore(e.to_string()));
     }
@@ -283,6 +285,30 @@ mod tests {
     fn parse_score_rejects_out_of_range() {
         assert!(parse_score(r#"{"score": 1.5}"#).is_err());
         assert!(parse_score(r#"{"score": -0.1}"#).is_err());
+    }
+
+    #[test]
+    fn parse_score_from_bare_number() {
+        // Some models (e.g. gpt-5-mini) return the score alone, not wrapped.
+        let score: f32 = parse_score("0.05").expect("parse").into();
+        assert!((score - 0.05).abs() < 0.001);
+    }
+
+    #[test]
+    fn parse_score_from_bare_number_with_whitespace() {
+        let score: f32 = parse_score("  0.42\n").expect("parse").into();
+        assert!((score - 0.42).abs() < 0.001);
+    }
+
+    #[test]
+    fn parse_score_from_bare_zero() {
+        let score: f32 = parse_score("0").expect("parse").into();
+        assert_eq!(f32::from(score), 0.0);
+    }
+
+    #[test]
+    fn parse_score_rejects_bare_number_out_of_range() {
+        assert!(parse_score("1.5").is_err());
     }
 
     #[test]
