@@ -183,6 +183,17 @@ Ways to improve refine quality and cost, distilled from previous "Slice 16 — m
 
 ...
 
+## Slice: use embeddings for classification/scoring in refine
+
+### Target
+
+Refine currently routes every image through an LLM scorer — expensive, slow, and the prompt is the thing we're trying to optimise. Alternative worth measuring: embed each image once with a pre-trained vision model and learn a linear classifier on the embeddings. The embedding does the heavy lifting (visually/semantically similar → close in embedding space), so a linear SVM or logistic regression on top usually recovers a calibrated good/bad score that maps onto Low/MedLow/MedHigh/High bands. Inference drops from ~seconds and per-call cost to milliseconds and free; the prompt-optimisation problem disappears.
+
+- **Embedding model matters more than the classifier.** [OpenCLIP](https://github.com/mlfoundations/open_clip) or [SigLIP](https://huggingface.co/docs/transformers/en/model_doc/siglip) for broad visual-semantic; [DinoV2](https://github.com/facebookresearch/dinov2) for pure-visual fine-grained. If the embedding can't see the distinction, nothing downstream recovers it.
+- **Classifier choices.** Linear SVM or logistic regression via [`linfa-svm`](https://crates.io/crates/linfa-svm); kNN against curated prototypes as a no-training baseline; one-class SVM / SVDD if "bad" is too diffuse to label well. Wrap SVM output with Platt scaling for a calibrated 0–1 score.
+- **Runtime in Rust.** Embeddings via [`ort`](https://crates.io/crates/ort) (same dep we'd add for the skin-detection slice) or [`candle`](https://github.com/huggingface/candle) for pure-Rust.
+- **Tradeoff.** Gives up controllability over *which* aspect of similarity matters. If good/bad hinges on tone/intent the embedding can't see, the LLM scorer still wins. Likely complements rather than replaces — embedding classifier as the primary gate, LLM kept for borderline cases.
+
 ## Slice: reducing unintentional bias
 
 ### Target
