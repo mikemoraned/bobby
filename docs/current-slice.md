@@ -18,8 +18,16 @@ However, what I actually have, as of 19th Apr is:
 
 ### Summary as of 29th May
 
-1. R2 costs down to $0.60 per month
-2. 
+1. R2 costs down to $0.60 per month; which is £0.45
+2. live-refine LLM costs couldn't be improved in this slice. This approx $23 per month; which is £17
+    * "gpt-4o" (from model version `v2:34d8bec0`) has a per-image cost of $0.0028
+    * we look at approx 1.6 images per second and of those we save about 0.2%, so this 24 * 60 * 60 * 1.6 * (0.2 /100) =~ 276 per day
+    * which is approx 4 * 7 * 276 = 7728 per month. Let's call it 8000.
+    * so that's 8000 * $0.0028 =~ $23 per month
+3. prune + live-refine: hetzner cluster running code: €10 or approx £8.7 on hetzner cluster
+4. feed + admin/appraising running on fly.io: $1 or approx £0.74 per month
+
+So, a total of approx £0.45 + £17 + £8.7 + £0.74 =~ £27 per month
 
 ### Observations
 
@@ -1095,7 +1103,7 @@ Actual optimisation for costs:
 * [x] Among accepted candidates (if any), pick the cheapest by querying the log over the phase-4 runs (filter by `purpose` or by `price_snapshot_id` = the pinned snapshot, then min on `cost_usd`); update `config/refine.toml` to label that candidate's `model_version` as production; deploy. **Vacuously closed** — no candidate was accepted under the firm precision floor.
 * [x] If no candidate is accepted, capture the negative result inline (which model, observed precision, recall when pinned, observed cost) and move on. The pre-phase-4 `refine.toml` stays in place. **Closed without a deploy** — see the 29-May "phase-4 sweep close" observation below: under the firm precision floor of 0.800, no clean candidate keeps acceptable recall at lower cost. `gpt-5` holds the most recall at the floor (0.696, −17pp) but is +26% pricier; cheaper candidates (gpt-4.1-mini, gpt-4.1-nano, gpt-5-nano) lose 35–65pp of recall at the floor. Production stays on `v2:34d8bec0` (`gpt-4o`).
 * [-] **Possible follow-up (deferred — likely post-slice): single-pool contender evaluation.** Instead of a separate train+eval run per candidate (each sizing its training sample from *predicted* cost), build one `pool` = {baseline + contenders} under a single overall budget, run one training cycle that trains/evaluates every contender against an *equal* train and test dataset, and cost each on **real measured** per-item USD rather than predicted. Removes the predicted-cost arbitrariness flagged in the 24th-May methodology observation (where prediction error, not real cost, can hand two candidates very different training exposure under "the same budget"), and turns "pick the cheapest accepted contender" into a single comparison over real costs on equal footing. Too large to add to this already-large slice; recorded for a future slice. See methodology observation below for the framing this resolves.
-* [ ] **Future helper: `sample_costs` CLI in `skeet-refine`** for empirically characterising per-image cost before committing to a long training run. Motivated by the cost-prediction failures across phase-4 observations (`gpt-4o-mini`'s 33× vision-token multiplier, `gpt-5`'s reasoning-token output blowing the budget by 389%, `gpt-5-mini`'s 2.6× cost swing between two runs of the same model): instead of deriving the budget's per-image cost from the baseline model's token profile (which doesn't transfer across model classes), measure it directly on a tiny sample.
+* [x] **helper: `sample_costs` CLI in `skeet-refine`** for empirically characterising per-image cost before committing to a long training run. Motivated by the cost-prediction failures across phase-4 observations (`gpt-4o-mini`'s 33× vision-token multiplier, `gpt-5`'s reasoning-token output blowing the budget by 389%, `gpt-5-mini`'s 2.6× cost swing between two runs of the same model): instead of deriving the budget's per-image cost from the baseline model's token profile (which doesn't transfer across model classes), measure it directly on a tiny sample.
     * Location: `skeet-refine/src/bin/sample_costs.rs`.
     * Args (`clap`): `--store-path` (R2 store), `--split-label` (default `"default"`) or `--split-id`, `--sample-size` (default 10), `--prices-snapshot-id` (defaults to the prices registry's `current` label).
     * Models scanned: every entry in the chosen snapshot's `prices` map (whatever `update-prices` last fetched — so adding a candidate to the sweep is one edit to `just update-prices`).
@@ -1306,6 +1314,20 @@ Column glossary (applies to this table and the per-candidate tables above):
 | `gpt-5` | 0.435 | **0.928** | 0.696 | $0.501 | **+26%** |
 | `gpt-5-mini` (`#2`, clean) | 0.609 | 0.868 | — (max P < 0.800) | $0.361 | −9% |
 | `gpt-5-nano` | 0.783 | 0.926 | 0.304 | $0.076 | −81% |
+
+**Sample costs, 29th May**
+
+Sample costs: 10 images from split `default` (train side), snapshot `2026-05-24T16:55:51.154384Z`
+
+| model | input $/M | output $/M | min/image | max/image | avg/image |
+|---|---|---|---|---|---|
+| gpt-4.1-mini | $0.4000 | $1.6000 | $0.0002 | $0.0008 | $0.0006 |
+| gpt-4.1-nano | $0.1000 | $0.4000 | $0.0001 | $0.0003 | $0.0002 |
+| gpt-4o | $2.5000 | $10.0000 | $0.0017 | $0.0030 | $0.0028 |
+| gpt-4o-mini | $0.1500 | $0.6000 | $0.0013 | $0.0039 | $0.0035 |
+| gpt-5 | $1.2500 | $10.0000 | $0.0024 | $0.0066 | $0.0040 |
+| gpt-5-mini | $0.2500 | $2.0000 | $0.0004 | $0.0008 | $0.0006 |
+| gpt-5-nano | $0.0500 | $0.4000 | $0.0002 | $0.0003 | $0.0002 |
 
 **Operating-point preference (project owner, recorded for this decision and future phases):**
 * **Precision floor is firm.** For the *refine* step we care most about precision — false positives in the feed are the user-visible cost. Lowering precision below the baseline 0.800 is not an acceptable trade.

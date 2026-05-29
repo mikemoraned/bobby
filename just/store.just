@@ -80,6 +80,9 @@ train purpose model="gpt-4o":
 refine-eval purpose:
     op run --env-file bobby-local.env -- cargo run --quiet --release --bin refine-eval -- --store-path {{ R2_STORE }} --purpose "{{ purpose }}"
 
+sample-costs sample_size="10":
+    op run --env-file bobby-local.env -- cargo run --quiet --release --bin sample-costs -- --store-path {{ R2_STORE }} --sample-size {{ sample_size }}
+
 live-refine:
     op run --env-file bobby-local.env -- cargo run --quiet --release --bin live-refine -- --store-path {{ STORE }}
 

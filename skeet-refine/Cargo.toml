@@ -53,3 +53,7 @@ path = "src/bin/live_refine.rs"
 [[bin]]
 name = "refine-eval"
 path = "src/bin/refine_eval.rs"
+
+[[bin]]
+name = "sample-costs"
+path = "src/bin/sample_costs.rs"
