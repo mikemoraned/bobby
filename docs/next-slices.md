@@ -169,7 +169,9 @@ We can then exclude any images that have > threshold %-age in any Zone, and > nu
 
 ### Target: refine
 
-Ways to improve refine quality and cost, distilled from previous "Slice 16 — make costs visible and reduce them" slice:
+Ways to improve refine quality and cost, distilled from previous "Slice 16 — make costs visible and reduce them" slice.
+
+**Operating-point preference (governs how every candidate is judged).** The precision floor (0.800) is firm — false positives are the user-visible cost in the feed, so dropping below it is never an acceptable trade. Recall, by contrast, is negotiable: a candidate that holds the precision floor at meaningfully lower cost may lose *some* recall and still be worth deploying. So the baseline's 0.870 recall is a target, not a hard bar.
 
 - **Account for training variance.** A single training run is noisy — `gpt-4o` recall spanned 0.696–0.870 across runs, and the deployed baseline sits at the top of that spread. Gate candidates against a distribution (re-run N times, compare on mean and confidence interval) rather than one lucky draw, so "rejected" means genuinely worse rather than just unluckier. The in-loop also overfits to its own per-iteration sample (train F1 climbs while test recall drops), which larger samples or early-stopping would damp; and reasoning models can't run at `temperature=0`, so their scoring is non-deterministic and needs more repeats to compare fairly.
 
