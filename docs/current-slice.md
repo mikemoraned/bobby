@@ -8,11 +8,18 @@ I'd like to end up with a monthly cost profile which is roughly the following, o
 3. feed running on fly.io: small cost per call from blusky feed
 4. admin/appraising: small ad-hoc cost as I appraise images on fly.io
 
+### Summary as of 19th Apr
+
 However, what I actually have, as of 19th Apr is:
 1. Significant R2 costs, coming from Class A and B operations which go above the free allowance; this is easily $100's per month if left unchecked
 2. live-refine LLM costs: I've been manually topping this up by $5 a day, which easily get eaten-up; this may lessen once the effect of the more tight text-detection based pruning kicks in
 3. prune + live-refine: hetzner cluster running code: €10 or approx £8.7 on hetzner cluster
 4. feed + admin/appraising running on fly.io: $1 or approx £0.74 per month
+
+### Summary as of 29th May
+
+1. R2 costs down to $0.60 per month
+2. 
 
 ### Observations
 
@@ -1088,6 +1095,13 @@ Actual optimisation for costs:
 * [x] Among accepted candidates (if any), pick the cheapest by querying the log over the phase-4 runs (filter by `purpose` or by `price_snapshot_id` = the pinned snapshot, then min on `cost_usd`); update `config/refine.toml` to label that candidate's `model_version` as production; deploy. **Vacuously closed** — no candidate was accepted under the firm precision floor.
 * [x] If no candidate is accepted, capture the negative result inline (which model, observed precision, recall when pinned, observed cost) and move on. The pre-phase-4 `refine.toml` stays in place. **Closed without a deploy** — see the 29-May "phase-4 sweep close" observation below: under the firm precision floor of 0.800, no clean candidate keeps acceptable recall at lower cost. `gpt-5` holds the most recall at the floor (0.696, −17pp) but is +26% pricier; cheaper candidates (gpt-4.1-mini, gpt-4.1-nano, gpt-5-nano) lose 35–65pp of recall at the floor. Production stays on `v2:34d8bec0` (`gpt-4o`).
 * [-] **Possible follow-up (deferred — likely post-slice): single-pool contender evaluation.** Instead of a separate train+eval run per candidate (each sizing its training sample from *predicted* cost), build one `pool` = {baseline + contenders} under a single overall budget, run one training cycle that trains/evaluates every contender against an *equal* train and test dataset, and cost each on **real measured** per-item USD rather than predicted. Removes the predicted-cost arbitrariness flagged in the 24th-May methodology observation (where prediction error, not real cost, can hand two candidates very different training exposure under "the same budget"), and turns "pick the cheapest accepted contender" into a single comparison over real costs on equal footing. Too large to add to this already-large slice; recorded for a future slice. See methodology observation below for the framing this resolves.
+* [ ] **Future helper: `sample_costs` CLI in `skeet-refine`** for empirically characterising per-image cost before committing to a long training run. Motivated by the cost-prediction failures across phase-4 observations (`gpt-4o-mini`'s 33× vision-token multiplier, `gpt-5`'s reasoning-token output blowing the budget by 389%, `gpt-5-mini`'s 2.6× cost swing between two runs of the same model): instead of deriving the budget's per-image cost from the baseline model's token profile (which doesn't transfer across model classes), measure it directly on a tiny sample.
+    * Location: `skeet-refine/src/bin/sample_costs.rs`.
+    * Args (`clap`): `--store-path` (R2 store), `--split-label` (default `"default"`) or `--split-id`, `--sample-size` (default 10), `--prices-snapshot-id` (defaults to the prices registry's `current` label).
+    * Models scanned: every entry in the chosen snapshot's `prices` map (whatever `update-prices` last fetched — so adding a candidate to the sweep is one edit to `just update-prices`).
+    * Procedure: take a stratified sample of N image ids from the split's train side via `eval::stratified_sample`; load the **production**-labelled prompt from `refine.toml` (`RefineModels::by_label(&Label::production())`) and use **that prompt** when scoring each sample against every model via `refining::refine_image_resilient` (so the per-model temperature policy is respected and any retries/fallbacks surface honestly); record per-call `Usage` and cost via `Snapshot::cost_for`. Rationale for using the production prompt rather than `SEED_PROMPT`: it won't be the best prompt for every model, but it's the closest shape to what we'd actually deploy, so the per-image token counts (and therefore cost estimates) will be closer to real production cost than a seed-prompt baseline would give.
+    * Output: a markdown table to stdout, one row per model — `model name`, `input $/M`, `output $/M`, `min / max / avg cost per image` (rounded via `Usd::round_dp(4)`). No persistence; this is a planning tool, not a registry entry.
+    * Use case: run once per new candidate set, before kicking off long training runs, to pick a `--budget-usd` that reflects each model's empirical per-image cost rather than the baseline's. A 10-image sample would have caught every cost surprise in this slice's phase-4 sweep before any training cost was spent.
 
 ###### Observations
 
