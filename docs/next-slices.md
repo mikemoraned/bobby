@@ -181,6 +181,17 @@ Ways to improve refine quality and cost, distilled from previous "Slice 16 — m
 
 ### Tasks
 
+#### Tech-debt / bugs
+
+##### Classify retries by HTTP status, not the blanket `Completion(_)` match
+
+The `refine_image_resilient` wrapper's `is_transient` treats **every** `RefineError::Completion(_)` as retryable, so a permanent client error (e.g. the gpt-5 `temperature=0` HTTP 400) is retried 3× per call before falling back — wasted calls and a flood of WARN logs. Only 429, 5xx, and network errors are genuinely transient; a 4xx (other than 429) is permanent and should fail fast. The live trigger (the temperature-0/reasoning-model 400) is already resolved by the per-model `temperature_for`, so nothing is on fire — but any future permanent client error is still mis-retried.
+
+- [ ] Preserve rig's HTTP status on the `RefineError::Completion` variant rather than stringifying the error (today the status is discarded), so retry classification has something reliable to switch on
+- [ ] Rewrite `is_transient` to retry only on 429, 5xx, and network/transport errors; treat other 4xx as permanent (fail fast, no retry, no fallback churn)
+- [ ] Avoid string-matching `"400"` in the error message — it's fragile; switch on the preserved status class instead
+- [ ] Add unit tests: a permanent 4xx is not retried; a 429/5xx/network error is retried up to the bound
+
 ...
 
 ## Slice: use embeddings for classification/scoring in refine
