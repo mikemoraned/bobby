@@ -1082,11 +1082,11 @@ Actual optimisation for costs:
         * [x] `just train "phase-4 gpt-5 #1" gpt-5` — REJECTED (run_id `019e616f-…`). Best classifier of the sweep (ROC-AUC 0.928, P=0.909, pinned R=0.696) but **not cheaper**: reasoning-token output makes it +26% vs baseline ($0.501), 389% budget overshoot. See Observations.
         * [x] `just train "phase-4 gpt-5-mini #1" gpt-5-mini` — REJECTED + CONTAMINATED (run_id `019e63db-…`): bare-number parse bug forced 15/143 test + 2498 training scores to 0.0. Parse fix landed in `refining::parse_score`. See Observations.
         * [x] `just train "phase-4 gpt-5-mini #2" gpt-5-mini` — clean re-run with the parse fix (run_id `019e6953-…`, 0 fallbacks). REJECTED: came out *worse* than `#1` (R=0.609, ROC-AUC 0.868, no threshold reaching P=0.800) and only −9% cheaper. temperature=1 makes gpt-5-mini non-deterministic in accuracy and cost — "no clear win." See Observations.
-        * [ ] `just train "phase-4 gpt-5-nano #1" gpt-5-nano`
+        * [x] `just train "phase-4 gpt-5-nano #1" gpt-5-nano` — REJECTED (run_id `019e6bc2-…`). Cleanest cost+discrimination run of the sweep: ROC-AUC 0.926 (above baseline), R@0.5=0.783 (within gpt-4o spread), test cost $0.076 (−81%), total $3.05 (under budget, no overshoot). Pinned @P=0.800 still collapses to R=0.304 (same calibration ceiling). See Observations.
         * [x] `just train "phase-4 gpt-4o sanity #1" gpt-4o` — run_id `019e5c15-…`. **Framework confirmed healthy** (R=0.783, ROC-AUC=0.894 — squarely in the phase-3 cluster), but **also REJECTED**: gpt-4o cannot re-clear its own 15 May baseline, exposing the gate as training-variance-dominated. See Observations.
-* [ ] Apply the acceptance gate against the phase-3 baseline by querying the log rather than passing a path: `train.rs` resolves the production baseline via `log.for_model(&production_model_version).best_by(f1)` (the 15 May `v2:34d8bec0` run), or accepts an explicit `--baseline-run-id` for reproducibility. Pin precision to that baseline's precision on the candidate's test scores; compare recall.
-* [ ] Among accepted candidates (if any), pick the cheapest by querying the log over the phase-4 runs (filter by `purpose` or by `price_snapshot_id` = the pinned snapshot, then min on `cost_usd`); update `config/refine.toml` to label that candidate's `model_version` as production; deploy.
-* [ ] If no candidate is accepted, capture the negative result inline (which model, observed precision, recall when pinned, observed cost) and move on. The pre-phase-4 `refine.toml` stays in place
+* [x] Apply the acceptance gate against the phase-3 baseline by querying the log rather than passing a path: `train.rs` resolves the production baseline via `log.for_model(&production_model_version).best_by(f1)` (the 15 May `v2:34d8bec0` run), or accepts an explicit `--baseline-run-id` for reproducibility. Pin precision to that baseline's precision on the candidate's test scores; compare recall. (`pick_baseline` in `skeet-refine/src/bin/train.rs` implements exactly this; used by every phase-4 run.)
+* [x] Among accepted candidates (if any), pick the cheapest by querying the log over the phase-4 runs (filter by `purpose` or by `price_snapshot_id` = the pinned snapshot, then min on `cost_usd`); update `config/refine.toml` to label that candidate's `model_version` as production; deploy. **Vacuously closed** — no candidate was accepted under the firm precision floor.
+* [x] If no candidate is accepted, capture the negative result inline (which model, observed precision, recall when pinned, observed cost) and move on. The pre-phase-4 `refine.toml` stays in place. **Closed without a deploy** — see the 29-May "phase-4 sweep close" observation below: under the firm precision floor of 0.800, no clean candidate keeps acceptable recall at lower cost. `gpt-5` holds the most recall at the floor (0.696, −17pp) but is +26% pricier; cheaper candidates (gpt-4.1-mini, gpt-4.1-nano, gpt-5-nano) lose 35–65pp of recall at the floor. Production stays on `v2:34d8bec0` (`gpt-4o`).
 * [ ] **Possible follow-up (deferred — likely post-slice): single-pool contender evaluation.** Instead of a separate train+eval run per candidate (each sizing its training sample from *predicted* cost), build one `pool` = {baseline + contenders} under a single overall budget, run one training cycle that trains/evaluates every contender against an *equal* train and test dataset, and cost each on **real measured** per-item USD rather than predicted. Removes the predicted-cost arbitrariness flagged in the 24th-May methodology observation (where prediction error, not real cost, can hand two candidates very different training exposure under "the same budget"), and turns "pick the cheapest accepted contender" into a single comparison over real costs on equal footing. Too large to add to this already-large slice; recorded for a future slice. See methodology observation below for the framing this resolves.
 
 ###### Observations
@@ -1255,3 +1255,58 @@ The parse fix landed: **fallbacks training=0, test=0** — contamination elimina
 **Methodological finding worth carrying forward: the eval framework assumes `fixed (prompt, test set) → fixed metrics`, which holds only for temperature-0 models.** For reasoning models forced to temp=1, even scoring a *fixed* prompt is non-deterministic — the metrics are a random variable, not a number. So a single gpt-5-mini run is a noisy sample stacked on the already variance-dominated gate (25-May observation); one run tells us very little, and a fair characterisation would need several runs per candidate to establish both accuracy and cost spreads.
 
 **Standing:** neither gpt-5-mini run cleared the gate (`#1` contaminated; `#2` missed badly), and the cost advantage is not robust (−65% → −9%). It is **not** the standout the `#1` entry claimed — it's "no clear win." A defensible accept would require multiple clean runs showing it *reliably* beats the gpt-4o recall spread while *reliably* staying cheaper; nothing observed supports that.
+
+**28th May — sixth phase-4 run, `gpt-5-nano` (run_id `019e6bc2-3194-7d1a-af0a-5dcb5227db90`, model `v2:43e09f37`):**
+
+| Metric | Baseline (15 May `v2:34d8bec0`, `gpt-4o`) | `gpt-5-nano` #1 |
+|---|---|---|
+| Precision / Recall / F1 @ thr=0.5 | 0.800 / 0.870 / 0.833 | 0.621 / 0.783 / 0.692 |
+| ROC-AUC | 0.897 | **0.926** |
+| Pinned @ P=0.800 | thr=0.500, R=0.870 | thr=0.800, R=0.304 |
+| Test cost (143 images) | $0.397 | **$0.076 (−81%)** |
+| Total run cost (USD) | $5.82 | **$3.05 (under $5 budget)** |
+| Fallbacks (training / test) | 0 / 0 | 0 / 0 |
+
+Gate **REJECTED**, but this is the cleanest cost+discrimination run of the sweep:
+* **Cost:** lowest test cost of any reasoning-model run; only run since `gpt-4.1-nano` to come in *under* the $5 budget (no overshoot warning). The parse fix held — 0 fallbacks confirm `gpt-5-mini` was the unique JSON drifter.
+* **Discrimination:** ROC-AUC 0.926 — above baseline (0.897) and effectively tied with the more expensive `gpt-5` (0.928) and contaminated `gpt-5-mini` `#1` (0.922).
+* **Recall @0.5 = 0.783** — squarely inside the gpt-4o spread (0.696–0.870, 25-May observation), matching the gpt-4o sanity run exactly.
+
+The rejection is the same calibration ceiling we've seen across every cheap candidate: pinned @P=0.800 collapses to R=0.304 (threshold=0.800), because nano's score distribution doesn't reach baseline precision until very near the top of its range. Discrimination is fine; calibration to the baseline's precision target isn't.
+
+**29th May — phase-4 sweep close: candidates summary, operating-point preference, verdict.**
+
+Sweep complete. **Clean** per-candidate result against the 15-May `gpt-4o` baseline (one row per distinct candidate; the 25-May `gpt-4o` sanity run lives in its own observation as a methodology check; the contaminated `gpt-5-mini` `#1` is superseded by `#2`).
+
+Column glossary (applies to this table and the per-candidate tables above):
+* **R @0.5** — recall computed at the fixed decision threshold 0.5 (positive prediction iff `score ≥ 0.5`). This is the default operating point used during training and matches what the deployed scorer applies unless its `decision_threshold` is set higher.
+* **ROC-AUC** — threshold-free discrimination: probability that a random positive scores higher than a random negative. Insensitive to where the threshold sits; sensitive to whether the model orders examples correctly.
+* **Pinned R @P=0.800** — sweep all thresholds, keep those whose precision ≥ 0.800 (the baseline's precision floor), pick the one with highest recall, report that recall. Answers "at the precision floor I require, how much recall can I keep?". `— (max P < 0.800)` means no threshold reaches the floor at all.
+
+| Candidate | R @0.5 | ROC-AUC | Pinned R @P=0.800 | Test cost | vs baseline cost |
+|---|---|---|---|---|---|
+| `gpt-4o` (baseline) | 0.870 | 0.897 | 0.870 | $0.397 | — |
+| `gpt-4o-mini` | 0.478 | 0.657 | 0.304 | $0.500 | **+26%** |
+| `gpt-4.1-mini` | 0.435 | 0.825 | 0.522 | $0.074 | −81% |
+| `gpt-4.1-nano` | 0.696 | 0.912 | 0.217 | $0.031 | −92% |
+| `gpt-5` | 0.435 | **0.928** | 0.696 | $0.501 | **+26%** |
+| `gpt-5-mini` (`#2`, clean) | 0.609 | 0.868 | — (max P < 0.800) | $0.361 | −9% |
+| `gpt-5-nano` | 0.783 | 0.926 | 0.304 | $0.076 | −81% |
+
+**Operating-point preference (project owner, recorded for this decision and future phases):**
+* **Precision floor is firm.** For the *refine* step we care most about precision — false positives in the feed are the user-visible cost. Lowering precision below the baseline 0.800 is not an acceptable trade.
+* **Some recall reduction is OK in exchange for lower cost.** A candidate that hits the precision floor at a meaningfully lower cost can lose *some* recall and still be worth deploying.
+* **No further investigation appetite right now.** Phase-4 has already overrun the slice budget; we won't pay for more runs to characterise variance or recalibrate gates. The cheapest available candidates are not being accepted on the basis of this single round.
+
+**Reading the table under that preference:**
+* The "Pinned R @ P=0.800" column is the right column to look at — it asks "at the precision floor I require, how much recall do I keep?" — and none of the cheaper-than-baseline candidates hold up: best is `gpt-4.1-mini` at R=0.522 (−35pp recall vs baseline 0.870), which is more than "some" recall reduction.
+* `gpt-5` holds the most recall at the precision floor (R=0.696, −17pp) and has the best ROC-AUC overall, but it is **+26% more expensive**, so it fails the cost objective outright.
+* `gpt-5-mini` (clean `#2`) can't reach the precision floor at all (max precision < 0.800) — disqualified on the precision axis.
+* `gpt-5-nano` is the cleanest run by cost+discrimination, but pinned recall (0.304) is far below "some reduction."
+
+**Phase-4 verdict: closing without a deploy.** No candidate matches the firm precision floor at a recall the owner judges acceptable. The pre-phase-4 `refine.toml` (`v2:34d8bec0`, `gpt-4o`) remains production. This is captured under "If no candidate is accepted" above.
+
+**What this sweep showed that's worth carrying forward:**
+1. **Vision-token multipliers and reasoning-token output dominate cost predictions** — the baseline-token-profile budget model fails badly for cross-class candidates (`gpt-4o-mini`'s 33× image multiplier, `gpt-5`'s reasoning-token output). See 24-May and 26-May observations.
+2. **The gate is variance-dominated** — gpt-4o itself fails the gate it sets (25-May sanity), and reasoning models forced to temp=1 stack additional variance on both accuracy and cost (`gpt-5-mini` `#1` vs `#2`). Single-run accept/reject decisions are noisy.
+3. **Calibration, not discrimination, is the binding ceiling** — every cheap candidate has good ROC-AUC (most at or above baseline); none can match the baseline's precision at high recall because their score distributions sit elsewhere on the 0..1 scale. A future revisit could relax precision-pinning into a (P, R) Pareto-frontier comparison, but that's a phase-5+ design and out of scope here. The owner's precision-priority preference is the binding business constraint regardless, so a more lenient gate alone would not change this round's outcome — only re-training one of the gpt-5 candidates to land high-recall AT baseline precision would, and that requires the deferred multi-run characterisation we're explicitly not doing now.

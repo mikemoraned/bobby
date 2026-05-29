@@ -318,3 +318,37 @@ cost_usd = 0.361
 input_tokens = 17314292
 output_tokens = 3972747
 cost_usd = 12.2741
+
+[[runs]]
+run_id = "019e6bc2-3194-7d1a-af0a-5dcb5227db90"
+run_at = "2026-05-27T23:25:49.332551Z"
+model_version = "v2:43e09f37"
+split_id = "a746519149bafd1f9505f0869e04c8d3"
+price_snapshot_id = "2026-05-24T16:55:51.154384Z"
+purpose = "phase-4 gpt-5-nano #1"
+
+[runs.evaluation]
+precision = 0.6206896551724138
+recall = 0.782608695652174
+f1 = 0.6923076923076923
+roc_auc = 0.9264492753623188
+
+[runs.evaluation.pinned_precision]
+threshold = 0.800000011920929
+recall = 0.30434782608695654
+
+[runs.evaluation.confusion]
+true_pos = 18
+false_pos = 11
+true_neg = 109
+false_neg = 5
+
+[runs.resources]
+input_tokens = 246747
+output_tokens = 158361
+cost_usd = 0.0757
+
+[runs.training]
+input_tokens = 10303192
+output_tokens = 6143056
+cost_usd = 2.9724
