@@ -1,1348 +1,156 @@
-# Current Slice: Slice 16 — make costs visible and reduce them
+# Current Slice: Split out `skeet-feed`/`skeet-appraise`/`skeet-publish`
 
 ### Target
 
-I'd like to end up with a monthly cost profile which is roughly the following, ordered by intended dominant costs:
-1. prune + live-refine: fixed monthly cost of the hetzner cluster running them
-2. live-refine: there will be a variable some number of image candidates each month, but I'd like a per-day upper-bound on spend on LLM calls, which turns into effectively a fixed cost per month
-3. feed running on fly.io: small cost per call from blusky feed
-4. admin/appraising: small ad-hoc cost as I appraise images on fly.io
+I want to get to the following different division of responsibilities:
+* `skeet-feed`:
+    * lives at `bobby-staging.houseofmoran.io`
+    * handles:
+        * bluesky feed
+        * public website listing skeets ordered by recency and filtered by band >= MedHigh; this is a much simpler page than today's homepage (the current rich homepage moves to `skeet-appraise`)
+    * bias is towards simplicity, reliability and speed (latency/cachability)
+* `skeet-appraise`:
+    * lives at `bobby-appraisals-staging` (the eventual MagicDNS FQDN `bobby-appraisals-staging.<tailnet>.ts.net`) within the hetzner cluster, accessible via tailscale
+    * handles:
+        * showing current status and editable controls (appraisals) for:
+            * what is currently live as the feed (this is effectively the current `skeet-feed` homepage, moved here)
+            * what has been found by the pruner and refiner for each skeet and associated images
+        * manual appraisals (assigning High/MedHigh/MedLow/Low)
+    * bias is towards ease-of-use and quick interactive updates
+* `skeet-publish`:
+    * runs in hetnzer k8s cluster like `live-refine` looking for changes to dependent tables
+    * handles:
+        * watching for changes in what skeets / images have been found and scored by a model as well as what has been appraised
+        * determining what needs to be published as the feed; this is the canonical single place we decide this
+        * this is where we apply the "ordered by recency and filtered by band >= MedHigh" from above i.e. the `skeet-feed` just blindly accepts the ordering specified by the publisher
+        * deriving the image URL for each published image (the redis Feed stores `image-url:skeet-id` pairs)
+* `skeet-refine` / `skeet-prune` stay as-is
 
-### Summary as of 19th Apr
+The parts are related as follows by introducing a new redis table in upstash that sits between publisher and feed. The publisher writes `image-url:skeet-id` pairs to this table (it derives the image URL). The Bluesky feed reads the pairs and extracts a unique, ordered list of skeet-ids; the image URLs are used (from Phase 5 onwards) to render the public image grid:
 
-However, what I actually have, as of 19th Apr is:
-1. Significant R2 costs, coming from Class A and B operations which go above the free allowance; this is easily $100's per month if left unchecked
-2. live-refine LLM costs: I've been manually topping this up by $5 a day, which easily get eaten-up; this may lessen once the effect of the more tight text-detection based pruning kicks in
-3. prune + live-refine: hetzner cluster running code: €10 or approx £8.7 on hetzner cluster
-4. feed + admin/appraising running on fly.io: $1 or approx £0.74 per month
+```mermaid
+architecture-beta
+    group redis(cloud)[Upstash]
+    group fly(cloud)[Fly]
+    group r2(cloud)[R2]
+    group hetzner(cloud)[Hetzner Cluster]
 
-### Summary as of 29th May
+    service feed-table(database)[Feed] in redis
+    service pruned-table(database)[Pruned] in r2
+    service refined-table(database)[Refined] in r2
+    service appraised-table(database)[Appraised] in r2
+    service feed(server)[Bluesky Feed] in fly
+    service publisher(server)[Publisher] in hetzner
 
-1. R2 costs down to $0.60 per month; which is £0.45
-2. live-refine LLM costs couldn't be improved in this slice. This approx $23 per month; which is £17
-    * "gpt-4o" (from model version `v2:34d8bec0`) has a per-image cost of $0.0028
-    * we look at approx 1.6 images per second and of those we save about 0.2%, so this 24 * 60 * 60 * 1.6 * (0.2 /100) =~ 276 per day
-    * which is approx 4 * 7 * 276 = 7728 per month. Let's call it 8000.
-    * so that's 8000 * $0.0028 =~ $23 per month
-3. prune + live-refine: hetzner cluster running code: €10 or approx £8.7 on hetzner cluster
-4. feed + admin/appraising running on fly.io: $1 or approx £0.74 per month
+    junction publisherJunction in r2
 
-So, a total of approx £0.45 + £17 + £8.7 + £0.74 =~ £27 per month
-
-### Observations
-
-#### 24th Apr
-
-The `skeet-feed` sends about 2.5K Class B operations. This kinda makes sense now in that there is a background job that refreshes once a minute. 
-
-`skeet-prune` and `skeet-live-refine` seems to both do a *lot* of `get` and `get_range` requests (both send up to 30K per minute of each, for a period of about 4 minutes each). During this time other operations like `head`,`list` and `put` are tiny (10's per minute) I can sort-of understand why live-refine might need to do a lot of gets to get an image (though would be good if it's not lots of requests), however I don't see why pruner would have to.
-
-#### 25th Apr
-
-Tempo spike confirmed query plan data is available in traces. Two slow queries observed on every `list_unscored_image_ids_for_version` tick:
-
-* `list_unscored:scored_ids` — 1.51s. Plan: `LanceRead` on `images_score_v2.lance`, projection `[image_id]`, 4 fragments, uses `ScalarIndexQuery` on `model_version_idx`. Slow despite the index.
-* `list_all_image_ids_by_most_recent` — 2.04s. Plan: `LanceRead` on `images_v6.lance`, projection `[image_id, discovered_at]`, **66 fragments, no filter, no index** — full table scan every tick. This is almost certainly the dominant source of `get`/`get_range` R2 traffic from `skeet-live-refine`.
-
-Checked the `compact` cron job to test the hypothesis that fragments were piling up. They are not — the cron is healthy (running every 10 min, completing in ~60–140s). The fragment count is **stuck at ~64 by design**: `skeet-store/src/compact.rs:50` sets `target_rows_per_fragment: 500` (low on purpose, because each row carries a ~2MB PNG blob and the lance default of 1M would OOM the compactor). Lance's planner only flags fragments with `physical_rows < 500` as candidates, so anything ≥500 rows is left alone forever. Each cron run merges only the small stragglers (e.g. "365 rows across 2 fragments" + "4 rows across 4 fragments") and lands back at ~64 fragments (mean=433, p50=500, p99=2022). Implications:
-
-* Compaction is **not the lever** — pushing `target_rows_per_fragment` up would re-introduce OOM risk.
-* The full scan in `list_all_image_ids_by_most_recent` will remain expensive as long as it scans every fragment.
-* Our `RECOMMEND: compact: 64 small fragments (>10 threshold)` health line is misleading — it uses lance's default smallness threshold, not our chosen 500. (Worth fixing separately.)
-* This makes the case stronger for both *Idea: reduce cost of polling in live-refine* (version-snapshot early-abort skips the scan when nothing changed) and *Idea: make `list_all_image_ids_by_most_recent` use `discovered_at_idx`* (let lance scan the index instead of every fragment).
-
-
-#### 26th Apr
-
-##### R2 Class A + `list` operation usage regression
-
-Summary of issue / investigation:
-
-Observed in Grafana: large increase in Class A usage. Drilling per-CLI:
-* `pruner`: `list` operations spiked from a baseline of ~16/min to a steady ~250/min, with occasional bursts to ~350/min
-* `pruner`: `image` stage pipeline queue depth jumped from a typical 0 to regular spikes up to 60
-
-Deployed version: `1128a57c69acb6c1c7bbd70209eafce1f9983545`. Previously deployed: `cb840de2c9fb1146f8130d4794316cb7d05f67a7`. Commits in between (newest first):
-
-```
-1128a57 Add `table` label to r2.operations / r2.bytes via per-call path parsing
-bc59e99 Add lance.table.fragments gauge via SkeetStore::fragment_counts()
-a282968 Add r2.bytes counter to R2MetricsWrapper
-c69a4bf, c61ddb9, 2480e5a   docs-only edits to current-slice.md
+    feed:R -- L:feed-table
+    publisher:T --> B:feed-table
+    pruned-table:T -- B:publisherJunction
+    refined-table:R -- L:publisherJunction
+    appraised-table:B -- T:publisherJunction
+    publisherJunction:R --> L:publisher
 ```
 
-Of the three code commits, only `bc59e99` adds new R2 traffic. `a282968` and `1128a57` only label/observe existing calls.
+### Bugs / Refactors
 
-**Root cause: `SkeetStore::fragment_counts()` is mis-described as cheap.** Added in `bc59e99` (`skeet-store/src/lib.rs`), the doc comment reads *"Cheap: reads only the manifest"* but the implementation calls `lancedb::Table::stats()` once per table × 5 tables. Reading lancedb 0.27 source (`lancedb-0.27.2/src/table.rs:2563`), `stats()` actually:
+#### Docker / chef broken?
 
-1. `count_rows(None)`
-2. `list_indices()` → for each index, `index_statistics()` → `collect_regular_indices_statistics` opens `LanceIndexStore::from_dataset_for_existing` and calls `scalar::fetch_index_details` per index (LIST/HEAD per index uuid directory)
-3. `calculate_data_stats()` → for **every fragment, every column**: `FileFragment::storage_stats` → `open_readers` (file header GETs and HEAD/LIST per fragment dir)
-4. Per-fragment `physical_rows()`
+* [ ] it seems that docker rust chef based caching is no-longer working i.e. even if library dependencies haven't changed, it still recompiles everything
+    1. what's up?
+    2. now that docker images are built and named based on git-hash, can we exploit that for a more exact caching of layers?
 
-For `images_v6.lance` alone: ~64 fragments × multiple columns of opens, plus per-index stats for each scalar index (`discovered_at_idx`, `image_id_idx`). `images_score_v2.lance` adds `model_version_idx`, plus three more tables with their own indices.
+#### Deny `expect()` as well
 
-This call is invoked from two new sites:
+`expect()` is probably as bad an idea in main code as `unwrap()` so deny that as well, and instead prefer explicit Result+Err, unless in tests.
 
-* **skeet-prune** (`save_stage.rs:19-24`): inside the `rx.recv()` loop, gated by `is_time_to_log()`. But `is_time_to_log` only flips back to false when `maybe_log()` runs, and that only fires from `record_post()` (the `Post` arm). Until the next `Post`, every `Classified`/`Rejected` arrival re-enters the `if`, and `fragment_counts().await` runs again. Worse, the `.await` blocks the receiver, so the `image` MPSC backs up — explaining the queue-depth spike.
-* **skeet-refine** (`live_refine.rs:237-239`): once per tick (default `--interval-secs 60`). Smaller impact than pruner but still adds 5 stats calls/min.
+* [ ] similar to `unwrap_used = "deny"` and `allow-unwrap-in-tests = true` do the same for expect, and fix all related issues
+* [ ] add a note about this to @rust.md like we do for `unwrap`
 
-Default `--status-interval-secs 30` for pruner, default `--interval-secs 60` for live-refine. Even the floor (one stats call/30s × 5 tables for pruner, plus 1/60s × 5 for live-refine) is plausibly the ~234 LIST/min delta observed.
+### Phases
 
-Short-term workaround tasks:
+We'll do this in phases, with a working system at each step
 
-* [x] roll `pruner` back to the previous image tag — the per-hash tagging from `6a5010f` predates `cb840de`, so the image already exists in ghcr.io. No rebuild needed:
+#### Phase 1: Split out `skeet-appraise` as a standalone website
 
-  ```sh
-  just cluster-rollback-pruner cb840de
-  ```
+Even though we want to ultimately make this run within the hetzner cluster and be accessible over tailscale, initially we'll introduce a new fly.io website at `bobby-appraisals-staging.houseofmoran.io`. 
 
-  Re-renders `pruner-deployment.yaml` through `envsubst` with the supplied tag and `kubectl apply`s — keeps `image:` and `OTEL_RESOURCE_ATTRIBUTES.service.version` in sync. **Don't use `kubectl set image` for this**: it only updates the image field, leaving `service.version` pointing at the previous tag, so metrics in Grafana keep reporting the old version even though a different binary is running.
-* [x] verify in Grafana that `r2_operations_total{cli="pruner",operation="list"}` drops back to the ~16/min baseline within a few minutes
-* [x] verify the `image` stage `pipeline.depth` gauge drops back to ~0
-* [-] (optional) same rollback for `live-refine` if its contribution is still material once pruner is rolled back: `just cluster-rollback-live-refine cb840de`
-* [-] roll forward again once the long-term fix below is built — `just cluster-rollback-pruner <new-short-hash>` (or re-run `just cluster-deploy-pruner` from the new HEAD)
-
-Long-term fixes:
-
-Strategy: move fragment-count reporting out of the hot path entirely, and into the `compact` cron job — fragment count is a compaction concern. Cron cadence is 10 min (`compact-cronjob.yaml:8`), which is the right resolution for a "compaction drift" gauge. Also fix the underlying cheapness assumption so any future hot-path use is safe.
-
-* [x] in `skeet-store/src/lib.rs`, swap `table.stats().await?` → `table.as_native()?.count_fragments().await?` (lancedb 0.27 `NativeTable`). That just reads the cached `Dataset` manifest. Updated the (previously false) "Cheap: reads only the manifest" comment to be accurate. The optimisation matters even at 10-min cadence — `stats()` triggers index-stats reads + per-fragment per-column `open_readers`.
-* [x] in `skeet-store/src/bin/compact.rs`, construct `StoreMetrics` via `opentelemetry::global::meter("lance")`, call `store.fragment_counts().await?`, and `record_fragment_counts(&counts)` after the post-compact `storage_health` block. Emit **unconditionally** — even when `needs_action()` returns false and the binary exits early at line 38. Otherwise the gauge only updates after compactions actually run, which hides the drift signal we want to see *between* runs. The existing `TracingGuard` (held as `_guard` in `main`) flushes the `MetricsGuard` provider on drop before exit.
-* [x] in `skeet-prune/src/save_stage.rs`, remove the `is_time_to_log()` / `fragment_counts` block (lines 20–24) entirely.
-* [x] in `skeet-prune/src/status.rs`, remove the `store_metrics` and `fragment_counts` fields, the `is_time_to_log()` and `update_fragment_counts()` methods, the `record_fragment_counts` call in `log_summary`, and the `StoreMetrics` import.
-* [x] in `skeet-refine/src/bin/live_refine.rs`, remove the `let store_metrics = ...` line and the `if let Ok(counts) = store.fragment_counts().await { ... }` block at the end of the loop, plus the `StoreMetrics` import.
-* [x] redeploy `compact`, `pruner`, `live-refine` with the fix and seen no regressions
-
-Probes after the long-term fix is deployed:
-
-* `count_over_time(lance_table_fragments[15m])` should be ~5 (one emission per table per cron run, every 10 min)
-* `r2_operations_total{cli="pruner",operation="list"}` should stay at the ~16/min baseline
-* `r2_operations_total{cli="compact",operation="list"}` may rise slightly (one cheap manifest read per table per run) but should be negligible vs the cron's normal compaction traffic
-* `image` stage `pipeline.depth` gauge should stay at ~0 in steady state
-
-
-#### 30th Apr
-
-##### Watermark verification: traces (29th Apr) + R2 ops (28th Apr)
-
-Verifying the `since`/watermark optimisation in *Idea: reduce cost of polling in live-refine* (introduced in commit `eb4e0be`, deployed 2026-04-28 17:36–17:40).
-
-**Trace evidence (29th Apr, via `just trace-summary skeet-live-refine list_all_image_ids_by_most_recent`):** all 10 sampled `list_all_image_ids_by_most_recent` spans show the planner picking `ScalarIndexQuery` on `discovered_at_idx`, with the watermark pushed down as `discovered_at >= TimestampMicrosecond(...)`. The `fragments: 67` field in the plan is the table total — actual `read_fragment` calls visible in the child `DatasetRecordBatchStream` spans are typically 2–5 per query, confirming index pruning works. Span wall time is still ~1.3–1.9s, but that cost lives in the index lookup itself (the sibling `list_unscored:scored_ids` query against `model_version_idx` shows similar 1.2–2.6s) — not in fragment scans.
-
-**R2 op evidence (28th Apr, comparing 208 min before deploy to 220 min after):**
-
-| metric | before | after | Δ |
-|---|---|---|---|
-| mean `get` / min | 905 | 629 | -30% |
-| **median `get` / min** | **275** | **47** | **-83%** |
-| mean `get_range` / min | 685 | 579 | -16% |
-| spike count (>10K/min) | 7 min / 2 events | 6 min / 2 events | ~same |
-| peak ops / min | 48K | 45K | ~same |
-
-The watermark did exactly what it was meant to do *on the idle path*: median-minute `get` collapsed 6× as ticks where `images` table version + watermark say "nothing new" no longer fire the listing scan. Background `get` total (≤1K/min minutes) dropped 43K → 9K, a 78% cut.
-
-Spikes are unchanged because they're a different workload — image-fetch (`get_originals_by_ids` pulling ~4MB PNG blobs), which only runs when unscored candidates exist. The watermark suppresses the polling scan, not the scoring work.
-
-Spikes are 22–24K `get` + 22–24K `get_range` simultaneously (~1:1 ratio), 1.3–1.7h apart. Diagnosed below.
-
-##### Spike-cost diagnosis (30th Apr, follow-up)
-
-Pulled `r2.bytes / r2.operations` per minute and per-`(table, operation)` ops from Grafana. Two clear observations:
-
-1. **Spike `get_range` averages ~1.0 KiB/op** (consistent across all 16 spike minutes either side of the deploy). Idle minutes typically 4–8 KiB/op. The earlier framing was "many tiny page reads" vs "few large blob reads" — the data lands firmly on **many tiny page reads**. *(Caveat: our wrapper records bytes for `get_range` and `put` only — `get` bytes aren't captured because we'd need to consume the response. From the ops counters we know spike-minute `get` ops match `get_range` ~1:1, but their byte size is unknown.)*
-
-2. **The spike is on `images_score_v2.lance`, not `images_v6.lance`.** Per-table breakdown of the 19:19–19:20 spike (40K ops/min total): `images_score_v2.lance / get`: 20,234, `get_range`: 19,700; `images_v6.lance / get`: 53, `get_range`: 1. Confirmed across all 8 top spike minutes in the 7-hour window — every one is dominated by `images_score_v2.lance` at 20–24K `get` + 20–24K `get_range`, with `images_v6.lance` contributing <1%. That points at `batch_upsert_scores` (the upsert-merge has to read existing scores) or its read-side companion `cached_scores` rebuilding.
-
-3. **Window totals (before vs after deploy) reinforce both points:**
-
-   | table | before (208 min) | after (220 min) | Δ |
-   |---|---|---|---|
-   | `images_v6.lance` | 43,413 | 7,108 | **-84%** |
-   | `images_score_v2.lance` | 292,477 | 263,621 | -10% |
-
-   The watermark cut `images_v6.lance` ops 6× as designed. But `images_score_v2.lance` was already ~7× more expensive than `images_v6.lance` *before* the watermark, and is ~37× more expensive after — so the elephant in the room was always the scores table; the watermark just exposed it more starkly.
-
-Both observations re-frame the spike-cost problem and feed two new ideas (below): adding a `kind` sub-label to disambiguate within a table, and investigating scores-table read amplification.
-
-##### Spike-cost localisation by `kind` (30th Apr, after `kind` label deployed)
-
-`kind` label deployed; pulled per-`(table, kind, operation)` rates from Grafana for the 5 highest spike minutes (`metrics_dumps/live_refine operations total by table, kind & operation-…2026-04-30 12_24_58.csv`). Pattern is consistent — every spike is **~99%+ `images_score_v2.lance / _versions / {get, get_range}`**, split roughly 1:1:
-
-| time (UTC) | total ops/min | `_versions` (% of total) | `_indices` | `data` | other |
-|---|---|---|---|---|---|
-| 01:45 | 43,629 | 43,294 (99%) | 63 | 25 | 247 |
-| 11:11 | 41,900 | 41,701 (100%) | 7 | 17 | 175 |
-| 11:10 | 41,900 | 41,701 (100%) | 7 | 17 | 175 |
-| 11:09 | 41,850 | 41,693 (100%) | 13 | 11 | 133 |
-| 10:03 | 41,818 | 41,590 (99%) | 57 | 13 | 157 |
-
-Implications for *Idea: reduce scores-table read amplification on upsert*:
-* It is **not index amplification** (`_indices` is rounding error) and **not per-fragment data reads** (`data` is rounding error).
-* It is **manifest churn**: the scores table is at `_versions/N.manifest` files being read repeatedly. `get`/`get_range` ~1:1 fits "list-or-head a version, then range-read manifest bytes."
-* Direction shifts toward: how `batch_upsert_scores` (and its `cached_scores` reader counterpart) interact with manifests. Either the writer is producing many version bumps per batch (each a new manifest), or the reader is re-resolving versions per row. Either way the next step is to instrument or read the lance write path to confirm where the manifest reads originate.
-
-> **Forward-pointer (1st May):** Fix (1) below addressed the first horn (collapsed N+1 → 1 commit per batch), and was deployed — it did *not* measurably reduce spikes. The 1st-May manifest count (16k+ unpruned manifests on `images_score_v2`, 17 LIST pages per resolve) shows the dominant cost is the per-resolve floor, not how many commits the writer produces. See 1st May Observations.
-
-#### 1st May
-
-##### merge_insert verification (1st May, deployed ~15:35)
-
-Two data files:
-* `metrics_dumps/r2 operations rate — images_score_v2.lance (_versions)-data-as-joinbyfield-2026-05-01 21_27_10.csv` — all services (`r2_operations_total{table="images_score_v2.lance", kind="_versions"}`)
-* `metrics_dumps/r2 operations rate — images_score_v2.lance (_versions)-data-as-joinbyfield-2026-05-01 21_41_44.csv` — live-refine only (same query + `service_name="skeet-live-refine"`)
-
-**Result: inconclusive — spikes return later in the post-deploy window.**
-
-Data files:
-* Short post-deploy window (15:35–18:31, 177 min): 0 spikes from live-refine — looked promising initially.
-* Extended window (08:42–20:42) from `metrics_dumps/r2 operations rate — images_score_v2.lance (_versions)-data-as-joinbyfield-2026-05-01 21_44_23.csv`:
-
-| metric | live-refine only — before (08:42–15:34, 413 min) | live-refine only — after (15:35–20:42, 308 min) |
-|---|---|---|
-| spike events (>10 ops/s) | 2 (08:46, 14:03) | 3 (18:44, 19:20, 20:02) |
-| spike event rate | 0.29 /hr | 0.58 /hr |
-| peak `get`+`get_range` | 181 ops/s | 183 ops/s |
-
-Spike intensity is unchanged (~180 ops/s, 3 min each), and the rate if anything increased. The first 3h post-deploy happened to be quiet (no large batches to score); once scoring activity resumed the spikes came back at the same scale.
-
-Adding two more metrics for the same window (`metrics_dumps/live_refine images scored per minute-data-2026-05-01 21_48_09.csv`, `metrics_dumps/live_refine R2 ops per scored image-data-2026-05-01 21_49_17.csv`) reveals the pattern clearly:
-
-| condition | scored / min | R2 ops / scored image | `_versions` ops/s |
-|---|---|---|---|
-| normal scoring (61 minutes) | 0.5–1.3 | ~50–140 | < 1 |
-| spike scoring (7 minutes) | 0.3–1.0 | **11,000–32,000** | ~180 |
-
-Scoring happens regularly across 68 minutes in the window, but spikes occur in only 7 of them (10%). The scoring *rate* is similar in both cases — the only thing that changes is R2 ops/image jumps 100–160×, entirely attributable to `_versions` reads. The first minute of each spike always shows 0 images scored (R2 ops/image = inf), meaning the burst precedes scoring output, consistent with the read phase of the scoring cycle (`list_unscored_image_ids_for_version` + `merge_insert`'s table scan) driving the cost, not the image fetch.
-
-What distinguishes the 10% of cycles that spike from the 90% that don't is not visible from these metrics alone — candidates are batch size, gap since last activity, or accumulated manifests making the `LIST _versions/` walk longer. But the 160× R2/image ratio shows the spike is a qualitatively different operating mode, not just a larger version of normal.
-
-**Why spikes persist despite merge_insert:** unknown from these metrics alone. What we *do* know (from the manifest count below) is that the floor for any single Strong-mode manifest resolve on `images_score_v2` is ~18 R2 ops (17 LIST pages + 1 manifest GET). So whatever causes some cycles to issue many resolves, each resolve is ~18× more expensive than it would be after pruning. We have not traced whether the multi-resolve loop comes from `list_unscored:scored_ids`, the `merge_insert` internals, or somewhere else — that's a separate investigation.
-
-**What this means for the remaining fixes:**
-
-* **(2) Prune** is still needed: old manifests accumulate regardless, making the `LIST _versions/` walk progressively more expensive — likely the reason some cycles spike and others don't (manifest count growing over uptime).
-* **(3) Drop Strong mode** is the primary lever for spike intensity: a TTL on manifest resolution would remove the per-read `LIST _versions/` + `GET` from both `list_unscored_image_ids_for_version` and the `merge_insert` scan, collapsing the 160× R2/image spike back toward the normal ~100 ops/image baseline.
-
-##### Manifest count measurement (1st May, via `just count-versions`)
-
-Added a small CLI (`skeet-store/src/bin/count-versions.rs`) that uses the AWS SDK to LIST `<table>.lance/_versions/` for every table and report manifest count plus the number of R2 LIST API pages required (R2 returns max 1000 keys per page).
-
-```
-table                             manifests list_pages       oldest_h       newest_h
---------------------------------------------------------------------------------------
-images_v6                             12187         13          337.1            0.1
-images_score_v2                       16461         17          337.1            0.1
-manual_skeet_appraisal_v1                80          1          333.0            6.5
-manual_image_appraisal_v1               745          1          335.5            4.9
-validate_v1                              35          1          608.1            5.4
-```
-
-**Findings:**
-* `images_score_v2` has **16,461 manifests requiring 17 R2 LIST pages** per `LIST _versions/` call. `images_v6` is similar (12,187 / 13 pages). The other three tables fit in 1 page.
-* The oldest manifest is 337 hours (≈14 days) old. There is currently no pruning at all — manifests accumulate from the moment a table is created.
-* This makes the pagination hypothesis no longer a hypothesis: every Strong-mode refresh on `images_score_v2` does ~17 LIST page fetches + 1 manifest GET = ~18 R2 ops minimum, before any data read. Normal scoring at ~50–140 R2 ops/image is consistent with a small number of these refreshes per cycle plus image fetch.
-* This does not yet explain why only 10% of cycles spike to ~180 ops/s — that requires something doing many refreshes in a tight loop during those cycles. But it confirms that the per-refresh cost is structurally high *because of unpruned manifests*, and pruning would lower the floor for every Strong-mode operation regardless of why the spike-loop happens.
-
-**Implication for fix order:** Prune (fix 2) is now the obvious first step — measurable baseline (16k+ manifests, 17 pages), measurable target (≤1 page after prune), and it lowers the floor for fix (3) when we get there. Setting `older_than: 1h` on the cron prune action would shrink the active manifest count to ≈10–20 (one cron run's worth at most cadences), bringing the LIST cost back to a single page.
-
-#### 2nd May
-
-##### `compact` → `optimise` rename cutover (deployed ~18:40 UTC)
-
-Last `compact` cron run completed 19:36 UTC; first `optimise` cron run completed 19:47 UTC — no overlap. Verified via `OTEL_SERVICE_NAME=optimise` metrics in Grafana, `optimise starting` / `prune finished` log lines in `just cluster-logs-optimise`, and `lance_table_fragments` gauge (data file: `metrics_dumps/Lance Table Fragments by table & service_name-data-as-joinbyfield-2026-05-02 19_54_43.csv`).
-
-Fragment counts at cutover:
-
-| table | compact (last, 19:36) | optimise (first, 19:47) |
-|---|---|---|
-| `images_score_v2` | 1 | 2 |
-| `images_v6` | 69 | 70 |
-| `manual_image_appraisal_v1` | 667 | **1** |
-| `manual_skeet_appraisal_v1` | 47 | **1** |
-| `validate_v1` | 117 | **1** |
-
-The three previously-uncompacted tables (`manual_image_appraisal_v1`, `manual_skeet_appraisal_v1`, `validate_v1`) collapsed to 1 fragment each on the first `optimise` run, confirming the all-tables extension is working end-to-end. `images` and `scores` are stable (small delta from new writes between the two runs).
-
-##### Prune fix verification (`5ec2ad9`, deployed before 04:23 UTC)
-
-First cron run including the prune step ran 04:23–04:30 UTC. `just count-versions` (run at 12:51 UTC, ~9h post-deploy):
-
-```
-table                             manifests list_pages       oldest_h       newest_h
-images_v6                                22          1            0.9            0.0
-images_score_v2                          20          1            0.9            0.0
-manual_skeet_appraisal_v1                90          1          348.7            9.5
-manual_image_appraisal_v1               655          1          336.7            9.5
-validate_v1                              35          1          623.8           21.2
-```
-
-**Manifest counts collapsed**: `images_score_v2` 16461 → 20 (-99.9%), `images_v6` 12187 → 22 (-99.8%). All five tables fit in 1 R2 LIST page. The three appraisal/validate tables are unchanged — they're not in `selected_tables` (Follow-on item below).
-
-**R2 ops (data file: `metrics_dumps/prod r2 operations total by cli & r2_class-data-as-joinbyfield-2026-05-02 13_50_14.csv`, window 01:10–05:37 UTC):**
-
-| cli | pre-deploy spikes (B ops/min) | post-deploy spikes (B ops/min) |
-|---|---|---|
-| `live-refine` | 31,599 / 31,609 / 31,609 (02:01); 31,394 / 31,394 / 23,598 (02:39); 47,119 / 45,553 / 44,694 (01:31) | none > 300 |
-| `pruner` | 31,599 / 31,609 / 31,609 (02:01); 31,394 / 31,394 / 23,598 (02:39) | none > 100 |
-
-Pre-deploy, `live-refine` and `pruner` spike *simultaneously* on the same minutes — both pay the per-Strong-resolve LIST cost (17 pages on `images_score_v2`, 13 pages on `images_v6`) every read. Post-deploy, both tables resolve in 1 page and the spikes are gone.
-
-**Compact's first run was expensive but one-shot**: 04:23–04:30 cron showed elevated compact ops (A 12–17 ops/min, B 26K–72K ops/min) for ~7 min — the one-time cleanup of ~28K accumulated manifests across both tables. After that no compact entries appear in the metric stream up to 05:37, suggesting subsequent runs complete fast enough that the OTel batch exporter doesn't flush before pod termination (a metric-emission gap, not a behaviour problem; Grafana side, not lance).
-
-**Conclusions for "Idea: reduce scores-table read amplification on upsert":**
-
-1. **Fix (2) is the lever.** It eliminated >99% of spike-minute R2 traffic on its own. The 1st-May hypothesis ("the per-resolve floor is structurally high regardless of how many resolves happen") is confirmed.
-2. **Fix (1) `merge_insert` was correct but not load-bearing.** The 1st-May post-deploy data already showed it didn't reduce spikes; with prune in place, the writer-side commit count was never the bottleneck.
-3. **Fix (3) "drop Strong mode" priority drops.** The motivation was the 17-page LIST tax per resolve; with manifests at 1 page, Strong mode is much cheaper. Worth keeping in mind if costs creep back, but not urgent.
-4. **The cost wasn't unique to scores_v2.** `images_v6` resolves were ~13 pages and pruner spiked from the same source. The Idea title undersells the fix's scope — manifest pruning is a system-wide R2 cost-reduction lever, not a scores-table-specific one.
-
-**Per-`(table, kind)` confirmation** (data file: `metrics_dumps/live_refine operations total by table, kind & operation-data-as-joinbyfield-2026-05-02 14_03_15.csv`, 200 min pre + 68 min post):
-
-| kind | pre mean ops/min | post mean ops/min | reduction |
-|---|---|---|---|
-| `_versions` | 682.4 | 35.4 | **-94.8%** |
-| `data` | 170.1 | 33.3 | -80.4% |
-| `_indices` | 18.0 | 21.7 | ~unchanged |
-| `_transactions` | 0.8 | 0.7 | ~unchanged |
-
-The kind composition **inverted**. Worst pre-deploy spike (01:31, 47K ops/min): `images_score_v2.lance / _versions` = 42,372 (89.8%). Worst post-deploy minute (05:18, 320 ops/min): `images_v6.lance / data` = 168 (52.5%) — actual image bytes for scoring, the work we *want* to be doing. `_versions` is no longer the dominant kind in any post-deploy minute. Pre-deploy spike count (>5000 ops/min): 3; post-deploy: 0.
-
-This confirms the 30th-Apr diagnosis ("~99% of every spike is `_versions/{get,get_range}`") was load-bearing — pruning the manifests addressed the named cost source directly.
-
-#### 3rd May
-
-##### `optimise` R2 ops appearing to "start" at 18:12 UTC — likely a metrics-emission artefact
-
-Observed in Grafana: `r2_operations_total{cli="optimise"}` went from no visible activity to consistent ~800 ops/min peaks during each 4-min cron run, starting 18:12 UTC. No deploy correlates — `5282df0` had been the running binary since the 2nd-May cutover, and continued running until a redeploy to `1f88baf` at 19:51 UTC; the pattern straddles that cutover unchanged.
-
-Cross-checked against `lance_table_fragments` over the same window (`metrics_dumps/Lance Table Fragments by table & service_name-…2026-05-04 00_54_33.csv`): fragment counts are flat from 11:53 UTC onwards (`images_v6` 69–72, `images_score_v2` 1–3, others at 1), and each cycle's gauge-emission span is a steady 4–5 min from 11:53 onwards too. So the pod has been running the same length of time and doing the same work the whole window — no data-state inflection at 18:12. `just count-versions` also confirmed manifests are pruned across all 5 tables (≤37 each, 1 LIST page) — no pagination-tax growth.
-
-Most likely explanation: the same delta-temporality / short-lived-pod artefact already documented for `cloudflare-exporter` (above). `5282df0` predates `f006347`'s 60s → 5s export-interval fix, so under it the OTLP exporter only fires every 60s with `now`-stamped deltas. Whether `rate()` resolves into visible bars depends on where the periodic ticks land relative to Grafana's 1-min query buckets — flaky enough to look like "ops suddenly started at 18:12" without the underlying workload changing. The `1f88baf` cutover at 19:51 UTC includes the 5s exporter, and post-cutover data is denser/cleaner in the same CSV — consistent with the artefact theory.
-
-Comparing further back is harder than it could be because `optimise` was named `compact` before the 2nd-May rename, so the `cli` label changes across the boundary. Doable, just more hassle than was worth it for an investigation that already pointed at "metric visibility, not real workload."
-
-Leaving as: probable artefact, not a real cost regression. The ~800 ops/min × 4 min/cycle × 6 cycles/h ≈ 19K ops/h on `optimise` is the steady-state cost of the binary as written (`storage_health()` called twice + per-table `Table::stats()` inside `compact_and_reindex`); if it ever needs cutting, the lever is removing the post-optimisation `storage_health()` recomputation in `optimise.rs`, not investigating spikes.
-
-
-### Tasks
-
-#### Get visibility on R2 usage
-
-I've registered for grafana cloud, so can use that instead of honeycomb, which may be easier to use. 
-
-Docs:
-* traces: https://grafana.com/docs/grafana-cloud/send-data/traces/
-* metrics: https://grafana.com/docs/grafana-cloud/send-data/metrics/#ways-to-connect-your-data-to-grafana-cloud
-
-Details for OLTP:
-OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
-OTEL_EXPORTER_OTLP_ENDPOINT=op://Dev/bobby-grafanacloud-oltp-endpoint/password
-OTEL_EXPORTER_OTLP_HEADERS=op://Dev/bobby-grafanacloud-oltp-headers/password
-
-* [x] upgrade lancedb from 0.26 to 0.27 (lance-io 2.0.0 → 3.0.0)
-    * do this as a standalone task before the wrapper work
-    * check for breaking changes in lancedb 0.27 CHANGELOG
-* [x] migrate to grafana cloud as the endpoint to which traces are sent
-    * `shared::tracing` (`shared/src/tracing.rs`) already uses standard OTLP via env vars (`OTEL_EXPORTER_OTLP_ENDPOINT`); currently points at Honeycomb for all CLIs (Hetzner + fly.io)
-    * [x] create a small test CLI (`skeet-store/src/bin/otel-test.rs`) that sends sample trace spans using `shared::tracing::init_with_file`, then exits
-        * add a `just` target to run it via `op run` with the Grafana Cloud env vars
-        * still use standard opentelemetry apis; no grafana-specific code
-    * [x] if that works, update env files for Hetzner and fly.io deployments — should be env var changes only, no code changes
-* [x] implement a `WrappingObjectStore` to count R2 operations per CLI
-    * this should log a metric for every particular S3 API operation used
-    * ideally this should easily map to R2 Class A or Class B actions
-    * the outcome I want is a graph over time of operations per-cli so I can see which cli is using the most operations, and how those split out per operation for a particular cli
-    * **Approach: `lance_io::object_store::WrappingObjectStore` trait**
-        * trait has one method: `fn wrap(&self, store_prefix: &str, original: Arc<dyn ObjectStore>) -> Arc<dyn ObjectStore>`
-        * decorates the built-in S3 store — lance still handles credentials, multipart, commit semantics
-        * the wrapper delegates every call to the inner store but emits OTel metrics (counters by operation type + CLI name)
-        * S3 operations to track: GET/HEAD → R2 Class B; PUT/DELETE/LIST → R2 Class A
-    * **Plumbing into lancedb**
-        * pass wrapper via `ObjectStoreParams { object_store_wrapper: Some(Arc::new(wrapper)), .. }`
-        * thread into table operations via `lance_read_params()` / `lance_write_params()` on `OpenTableBuilder` etc.
-        * note: `ReadParams` uses field `store_options`, `WriteParams` uses field `store_params` (asymmetric naming)
-        * all table operations go through `SkeetStore` methods, so plumbing is contained
-    * **Dependency: `lance-io`**
-        * lancedb 0.26 → lance-io =2.0.0; lancedb 0.27 → lance-io =3.0.0
-        * upgrade lancedb first (task above), then add lance-io =3.0.0
-
-#### Get visibility on overall pipeline performance and content stats 
-
-* [x] `skeet-prune`: emit OTel metrics (same Grafana Cloud endpoint as R2 visibility) at the same cadence as the periodic status log line. Emit raw cumulative counts as counters (let Grafana compute rates). Example log output these are derived from:
-```
-2026-04-24T20:01:04.482091Z  INFO skeet_prune::status: skeets: 10443 (0.8/s) | images: 10391 | saved: 24 (0.2%) | rejected: 12695 (BlockedByMetadata: 2349 [17%], FaceNotInAcceptedZone: 153 [1%], FaceTooLarge: 30 [0%], FaceTooSmall: 1017 [7%], TooFewFrontalFaces: 7440 [54%], TooLittleFaceSkin: 382 [3%], TooManyFaces: 1289 [9%], TooMuchSkinOutsideFace: 538 [4%], TooMuchText: 529 [4%]) | categories: Face: 10253 [81%] (sole: 9817 [77%]), Text: 529 [4%] (sole: 93 [1%]), Metadata: 2349 [19%] (sole: 2349 [19%])
-2026-04-24T20:01:04.482139Z  INFO skeet_prune::status: pipeline | throughput: firehose=10461 (0.8/s), meta=10444 (0.8/s), image=8094 (0.6/s) | depth: firehose=16, meta=0, image=0
-```
-    * **Performance metrics** (from the `pipeline` log line):
-        * `skeet_prune.pipeline.throughput` — counter, label `stage` ∈ {`firehose`, `meta`, `image`}
-        * `skeet_prune.pipeline.depth` — gauge, label `stage` ∈ {`firehose`, `meta`, `image`}
-    * **Content metrics** (from the content log line):
-        * `skeet_prune.skeets.total` — counter (cumulative skeets seen)
-        * `skeet_prune.images.total` — counter (cumulative images seen)
-        * `skeet_prune.saved.total` — counter (cumulative images saved)
-        * `skeet_prune.rejected.total` — counter, label `reason` ∈ {`BlockedByMetadata`, `FaceNotInAcceptedZone`, `FaceTooLarge`, `FaceTooSmall`, `TooFewFrontalFaces`, `TooLittleFaceSkin`, `TooManyFaces`, `TooMuchSkinOutsideFace`, `TooMuchText`}
-        * `skeet_prune.categories.total` — counter, label `category` ∈ {`Face`, `Text`, `Metadata`}
-        * `skeet_prune.categories.sole.total` — counter, label `category` ∈ {`Face`, `Text`, `Metadata`} (images where that category was the sole detection)
-* [x] `skeet-live-refine`: emit OTel metrics at the end of each poll tick (after batch-saving scores). Cumulative counters; let Grafana compute rates.
-    * **Throughput metrics:**
-        * `skeet_live_refine.images.unscored` — counter (cumulative images found unscored at the start of each tick)
-        * `skeet_live_refine.images.scored` — counter (cumulative images successfully scored)
-        * `skeet_live_refine.images.errors` — counter, label `reason` ∈ {`ImageEncoding`, `Completion`, `ParseScore`}
-    * **Score distribution:**
-        * `skeet_live_refine.scores` — OTel `Histogram<f64>`, one observation per scored image, explicit bucket boundaries `[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]` (gives 10 buckets covering 0.0–1.0)
-    * **Approach:** add a `metrics.rs` module to `skeet-refine` (same pattern as `skeet-prune`); wire `PruneMetrics` → `LiveRefineMetrics` at the bottom of the `loop` body in `live_refine.rs` once per tick
-
-#### Bring k8s image tagging closer to best-practice by not using `latest` and instead the git hash
-
-* [x] add `envsubst` (part of GNU `gettext`) to the `prerequisites` target — already present on dev machine via Homebrew but should be explicit
-* [x] in `just/container.just`, add a second `-t` to each `push-*` target tagging the image with `{{ GIT_HASH }}` (keep `:latest` so existing references don't break)
-* [x] in each k8s manifest (`pruner-deployment.yaml`, `live-refine-deployment.yaml`, `compact-cronjob.yaml`):
-    * replace the hardcoded tag in the `image:` field with `${IMAGE_TAG}` (e.g. `image: ghcr.io/mikemoraned/bobby/pruner:${IMAGE_TAG}`)
-    * add `imagePullPolicy: IfNotPresent` — correct behaviour for immutable tags (no unnecessary re-pulls on pod restart)
-* [x] in `just/cluster.just`, change each `cluster-deploy-*` target to pipe through `envsubst` before applying: `IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/<name>.yaml | kubectl apply -f -` — all non-image changes in the YAML are still applied, and the tag is pinned to the exact pushed commit
-
-#### Add git hash to traces and metrics
-
-* [x] ensure that git-hash, as software version, is added to all traces and metrics as metadata
-    * do this in an OTEL-standard way e.g. anything that corresponds to a `version` or similar
-    * the intent is to allow all metrics and traces to be filtered in Grafana Cloud by what has been deployed, so that I know that a metric came from a particular version of the software
-
-#### Use Grafana API to extract Trace data
-
-I am using Grafana Cloud and there will be traces that correspond to things like `list_unscored_image_ids_for_version` which are objects of possible optimisation. There should also be lancedb query plans attached to these spans as tracing events (not span attributes).
-
-**How plan data gets into traces:** `execute_query` in `lancedb_utils.rs` calls `explain_plan(true)` and logs the result via `debug!`/`warn!`. These are tracing *events* (child items of a span), forwarded to Tempo by `tracing_opentelemetry`. Key implications:
-* You can't filter by plan content in TraceQL search (TraceQL filters on span attributes, not event fields)
-* You *can* see the plan once you fetch the full trace — events appear inside the span
-* Only plans on queries exceeding 100ms (`SLOW_QUERY_THRESHOLD`) are logged at `warn` level. Faster queries use `debug!`, and whether those reach Tempo depends on the RUST_LOG / default filter level. If the default is `info`, only slow query plans will be present.
-
-The goal is to ground optimisation decisions in real data (actual query plans, column projections, scan behaviour) rather than just textual analysis of code.
-
-* [x] quick spike to check the data is available at all
-    * [x] create a Grafana Cloud service account token with traces:read scope (if not already done)
-    * [x] store the Tempo endpoint URL and token in 1Password
-        * `bobby-grafanacloud-tempo-url` contains endpoint url in the `password` field
-        * `bobby-grafanacloud-tempo-token` contains token in the `password` field, and the username in the username field
-    * [x] use curl + jq to:
-        1. search for traces: `GET /api/search` with TraceQL `{resource.service.name="skeet-live-refine"}`
-        2. fetch one full trace by ID: `GET /api/traces/{traceID}`
-        3. confirm that query plan text appears in span events
-    * [x] example saved in `spans-example.json`
-* [x] if spike successful:
-    * [x] add Tempo read credentials (endpoint + token) to `bobby-grafana-otel.env` as 1Password refs
-    * [x] write a cli, in `skeet-store` which can:
-        1. Find a sample (e.g. 10) of traces within a time window which contain a call or calls to any `SkeetStore` method
-        2. Extract call hierarchy and any plans that were logged as events on the span
-        3. Summarise this textually in a way which will be understandable by a person and a reasonable LLM
-            * a particular focus should be on things which affect the cost of a query e.g. which columns were loaded and how many rows were loaded
-        * implemented in `skeet-store/src/tempo.rs` + `src/bin/trace-summary.rs`; run via `just trace-summary`
-    * [x] delete example saved in `spans-example.json` as shouldn't be needed anymore
-    * [x] remove any other Justfile rules or files we created for the spike e.g. `tempo-search`
-    * [x] add fixture-based tests to guard against parsing regressions (e.g. `traceID` vs `traceId`)
-        * add a `capture-trace-fixtures` just target (uses `bobby-grafana-otel.env`) that saves a real search response and one full trace response to `skeet-store/tests/fixtures/`; run once and commit
-        * inline unit tests in `tempo.rs` using `include_str!` over the fixtures: verify deserialization succeeds and key fields (e.g. `trace_id`) are non-empty
-        * inline unit tests in `trace_analysis.rs` using hardcoded plan strings (no fixture needed): cover full-scan detection, indexed-query detection, and slow-query event extraction
-    * [x] if needed, we can update `SkeetStore` to attach (via log/span entry) more useful data about query cost related metadata
-        * [x] replace bespoke plan string parsing in `trace_analysis.rs` with flat typed attributes emitted at log time in `lancedb_utils.rs` — parse the raw `explain_plan` once into a `QueryPlan` struct, then pass each field as a named arg to `warn!` (e.g. `plan.table`, `plan.num_fragments`, `plan.full_scan`, `plan.full_filter`, `plan.index`) so they land as native OTel event attributes. Removes `extract_field` / `plan_summary` string hacks in `trace_analysis.rs` (consumer just reads attributes, no JSON parse).
-            * **Status:** complete. `QueryPlan` parser in `skeet-store/src/query_plan.rs`, producer (`lancedb_utils.rs`) emits flat fields, consumer (`trace_analysis.rs`) reads them. `slow_query_extracted_from_real_fixture` test is active (not ignored) and passing — end-to-end validation confirmed against real Tempo fixture.
-            * **Why flat attributes, not a JSON blob:** OTel semconv for databases (`db.system`, `db.statement`, `db.operation`) has no convention for query plans, but the universal convention for everything else is flat KV — that's what Tempo/TraceQL can filter on. JSON-in-an-attribute is opaque to TraceQL, escapes badly in the Tempo UI, and forces the consumer to parse. Flat attributes make queries like `event.plan.full_scan=true` (a regression detector) possible.
-            * **Scope:** our plans are simple — one `LanceRead` plus optional `ScalarIndexQuery` — so flattening doesn't lose useful tree structure. If joins ever appear, revisit (could nest under `plan.read.*`, `plan.index.*`).
-            * **Note:** lancedb's `explain_plan` only returns a free-form `String` (datafusion's `Display` output, no `Serialize` impl). Parsing has to happen on our side regardless; this just moves it from consumer to producer and emits structured fields instead of a string.
-
-##### Add more detailed metrics
-
-* [x] add a bytes counter to `R2MetricsWrapper` alongside the existing `r2.operations` counter
-    * new metric `r2.bytes` — `Counter<u64>` with the same label set (`cli`, `store_prefix`, `operation`, `r2_class`)
-    * record `range.end - range.start` for `get_range`; sum of ranges for `get_ranges`; payload size for `put`/`put_opts`
-    * for `get`/`get_opts`/`head` either skip (no bytes signal without consuming the response) or record the resulting `ObjectMeta::size` if cheap to obtain
-    * goal: distinguish "many tiny page-header range reads" (unindexed scans needing per-page I/O) from "few large blob reads" (multi-MB image fetches) — a bytes/op ratio in Grafana makes this immediate
-* [x] emit a per-table fragment-count gauge so we can see if compaction is keeping up
-    * new metric `lance.table.fragments` — `Gauge<u64>` with label `table` ∈ {`images`, `scores`, `skeet_appraisal`, `image_appraisal`, `validate`}
-    * source the value from `Table::stats()` (already a lightweight manifest read; called at startup in `open.rs`)
-    * emit once per `live-refine` tick (and same cadence in `skeet-prune` / wherever cheap), not per query
-    * goal: detect compaction drift directly — if `images` fragments climb past the 25 Apr baseline of 66, the cron job is not keeping up and the cost of every full scan grows with it
-* [x] add a `table` label to `r2.operations` (and `r2.bytes`) by parsing the per-call `location: &Path`
-    * today `WrappingObjectStore::wrap()` is invoked once at connect time, so `store_prefix` is effectively a constant per-CLI (`s3$hom-bobby`) — useless for breaking R2 traffic down by table
-    * the per-call `location` argument carries the actual path, e.g. `encrypted-store/images_v6.lance/data/xxx.lance` or `encrypted-store/images_score_v2.lance/_versions/123.manifest`
-    * extract the first path segment ending in `.lance` (e.g. `images_v6.lance`) and emit it as a `table` label on every `record()` call; fall back to `unknown` if no segment matches
-    * goal: in Grafana, group `r2_operations_total` by `(table, operation)` for a given `cli` to confirm — concretely — that `images_v6.lance` is the dominant burst source and which operations dominate within it
-    * note: the `store_prefix` label can stay (still useful as a sanity check that the wrapper is wired) but `table` becomes the primary grouping dimension
-* [x] add a per-op latency histogram to `R2MetricsWrapper` alongside `r2.operations` and `r2.bytes`
-    * new metric `r2.duration` — `Histogram<f64>` (seconds), same labels as the others (`cli`, `store_prefix`, `table`, `kind`, `operation`, `r2_class`)
-    * record wall-clock around the inner-store delegate call in each wrapper method (`get`, `get_opts`, `get_range`, `get_ranges`, `head`, `list*`, `put*`, `delete*`)
-    * goal: distinguish "spike is many requests" from "spike is slow requests"; gives a baseline for any future infra change (e.g. evaluating SSE-C contribution, or comparing prefixes/regions). Confirmed (1st May, by reading `object_store` 0.12.5 + `lance-io` 4.0.0 source) that SSE-C does not defeat lance's or object_store's range-coalescing layers, so SSE-C is not a likely cost driver — but per-op latency is still useful as a general debugging tool independent of the SSE-C question.
-* [x] **Bug: short-lived `optimise` pods show gaps in Grafana rate panels.** Observed 2nd May — only long-running optimise cron runs (4–7 min) produce visible `r2_operations_total` series; short runs (< 60s, when no compaction is needed) leave gaps.
-
-    **Root cause (corrected):** the shutdown export (`collect_and_export` called by `MetricsGuard::drop`) *does* fire and the data point reaches Mimir. The gap is a Grafana display artefact: dashboards show `rate(r2_operations_total[1m])`, which needs at least two data points to compute a slope. A single shutdown export gives one point — no preceding point, rate undefined, panel shows nothing. Long runs get a 60s periodic export plus a shutdown export (two+ points), so rate is visible.
-
-    **Fix (`shared/src/tracing.rs`):** shorten `PeriodicReader` interval from the default 60s to 5s. Even a 30s pod now gets ~6 export windows, giving Grafana enough points to compute rates throughout the run. The existing shutdown export still catches any final metrics after the last periodic flush. Applies to all short-lived binaries (`optimise`, `count-versions`, `cloudflare-exporter sync`) with no per-binary changes needed.
-
-##### Get visibility of R2 metrics from Cloudflare in my Grafana metrics
-
-Intent:
-
-Pull R2 operation and storage metrics directly from Cloudflare's GraphQL Analytics API and push them into the same Grafana Cloud tenant we already use, so Cloudflare's ground truth sits alongside our in-app `r2.operations` / `r2.bytes` counters on the same dashboards. The motivation is twofold: (a) validate that the in-app `R2MetricsWrapper` numbers match Cloudflare's billing-aligned counts, and (b) any gap between the two reveals R2 traffic that isn't going through the wrapper (e.g. paths we missed, side-channels). Cost correlation with deploys then falls out for free, since `service.version` (git hash) is already on every other metric in the tenant.
-
-Design decisions:
-* New crate `cloudflare-exporter` with a single `sync` CLI
-* Source: Cloudflare GraphQL Analytics API, datasets `r2OperationsAdaptiveGroups` (Class A/B counts dimensioned by `actionType`, `bucketName`) and `r2StorageAdaptiveGroups` (`payloadSize`, `objectCount`). 31-day retention, ~5-min ingestion lag.
-* Sink: OTLP push via the existing `shared::tracing` setup — delta-temporality sums for operation counts, gauges for storage. No new auth path, no Prometheus scrape endpoint to host.
-* Schedule: k8s CronJob, once per minute. Default window queries `[now − 6min, now − 5min]` so we always read settled data; `--from`/`--to` flags override for ad-hoc runs.
-* Label parity with `r2_metrics.rs` (`bucket`, plus `action_type` / equivalent of our `operation`) so a Grafana panel can show Cloudflare-truth vs in-app counters with `join` on the same dimensions.
-* Grafana Cloud Mimir's 2h out-of-order window comfortably absorbs once-a-minute writes; no tenant config change needed.
-* Caveat: Cloudflare's API does **not** expose path-prefix (`data/` vs `_versions/` vs `_indices/`) — that detail still only exists in our in-app `kind` label. Cloudflare gives bucket-level totals only.
+This can effectively copy/clone setup we already have for `bobby-staging.houseofmoran.io` as we are largely splitting out existing code.
 
 Tasks:
+...
 
-* [x] provision a Cloudflare API token scoped `Account Analytics: Read`; store it in 1Password as `bobby-cloudflare-analytics-token` (and the account tag as `bobby-cloudflare-account-tag`)
-* [x] scaffold a new `cloudflare-exporter` crate in the workspace; add the corresponding `cloudflare-exporter.env` (1Password refs for the API token, account tag, and the existing Grafana Cloud OTLP env vars)
-* [x] implement `cloudflare.rs`: typed GraphQL client for `r2OperationsAdaptiveGroups` (group by `actionType`, `bucketName`) and `r2StorageAdaptiveGroups`. One integration test behind `op run` that hits the real API and asserts the response shape (kept small; gated like other live-API tests)
-* [x] implement `otlp.rs`: emit operation counts as OTel `Counter<u64>` (one observation per `(bucket, action_type)` per window) and storage as `Gauge<u64>`. Reuse `shared::tracing` for provider setup so `service.version` flows through automatically
-* [x] wire `sync` CLI (clap): `--from`, `--to` overrides, default to `[now − 6min, now − 5min]`. Capture invocations in the Justfile (`just cloudflare-sync`), running through `op run --env-file cloudflare-exporter.env`
-* [x] add a k8s CronJob manifest in `infra/k8s/` (once per minute, same image-tag pattern as the rest — `${IMAGE_TAG}` + `envsubst`); add a `cluster-deploy-cloudflare-exporter` just target
-* [-] verify in Grafana that a `cloudflare_r2_operations_total` (or whatever metric name we settle on) series appears with the expected labels and the per-minute count is non-zero (superseded by the migration below — verification happens against the `_prom_tmp` metric instead)
-* [-] build a Grafana panel that overlays Cloudflare-truth vs the in-app `r2_operations_total` for the same `bucket`, so a divergence is visually obvious — the comparison that actually validates this work (deferred until Phase 2 of the migration below — done against the `_prom_tmp` metric)
+#### Phase 2: Split out `skeet-publish` as a library
 
-##### Migrate cloudflare-exporter from OTLP to Prometheus remote_write
-
-Intent:
-
-Cloudflare's R2 metrics are inherently delayed by ~5 minutes (the API only returns settled data). The current OTLP path stamps each sample at "now", so a Cloudflare value summarising 12:00–12:01 lands in Mimir at 12:06 — breaking minute-precise alignment with the in-app `r2_operations_total` metrics emitted by our own services. Since the primary use of Cloudflare data is *joining* it against in-app data on a shared timestamp dimension, that misalignment defeats the purpose. Prometheus remote_write carries an explicit per-sample `timestamp_ms` as a first-class public field — purpose-built for "external snapshot" pushes.
-
-Design decisions:
-
-* Switch cloudflare-exporter from OTLP to Prometheus remote_write. cloudflare-exporter becomes the only Prom-speaking service in bobby; the rest of the fleet stays on OTLP. Deliberate split: Cloudflare data is sourced externally and joined against our internal metrics, so timestamp accuracy outweighs protocol consistency.
-* Set `timestamp_ms = midpoint(from, to).timestamp_millis()` on every sample, so each Cloudflare value lands at ~5.5 min ago — accurate to the data window it summarises.
-* Use an existing `prometheus-remote-write` crate where one is usable; only hand-roll the protobuf (with `prost` + `snap`) if no suitable crate exists. Less unique code is better.
-* Per-series labels are just the data dimensions Cloudflare gives us: `bucket` (and `action_type` for operations). No `service_*` / `deployment_environment` labels — R2 is not a system we own, so there is no source-side service identity to attach. The exporter is just a courier; its own `service.version` is irrelevant to a metric describing an external system.
-* Mimir's out-of-order ingestion window (default 1–2h on Grafana Cloud) absorbs the 5-min backdating with room to spare.
-
-Migration plan — run new and old in parallel for ~a day, then retire old:
-
-Phase 1 — add the Prom path alongside OTLP, with a `_prom_tmp` suffix so series don't collide:
-
-* [x] **Prerequisite: upgrade reqwest workspace dependency from 0.12 → 0.13** so we can use `prometheus-reqwest-remote-write` (which requires reqwest 0.13). Run the full test suite after to catch any breaking changes.
-* [x] provision Grafana Cloud Prometheus remote_write endpoint + API key (Connections → Prometheus → "Send Metrics"); store as 1Password items `bobby-grafanacloud-prom-endpoint` (URL in `password`) and `bobby-grafanacloud-prom-auth` (`instance_id:api_key`, basic-auth pre-formatted, in `password`)
-* [x] add the two new `OnePasswordItem` entries to `infra/k8s/onepassword-items.yaml`
-* [x] add `cloudflare-exporter/src/prom.rs` — wraps the `prometheus-reqwest-remote-write` crate. Builds `WriteRequest`, snappy-compresses, POSTs with basic auth
-* [x] add `cloudflare-exporter/src/bin/sync_prom_tmp.rs` — same flow as `sync.rs` but routes to `prom::push` instead of an OTel meter; reuses `cloudflare.rs` unchanged
-* [x] emit metrics with a temporary `_prom_tmp` suffix:
-    * `cloudflare_r2_operations_total_prom_tmp` (counter)
-    * `cloudflare_r2_storage_bytes_prom_tmp` (gauge)
-    * `cloudflare_r2_storage_objects_prom_tmp` (gauge)
-* [x] add `cloudflare-exporter-prom-tmp.env` referencing the new 1Password items
-* [x] add `infra/k8s/cloudflare-exporter-prom-tmp-cronjob.yaml` — same image as the OTLP cron, runs `sync_prom_tmp` once a minute
-* [x] add just targets: `cloudflare-sync-prom-tmp` (local), `cluster-deploy-cloudflare-exporter-prom-tmp`, `cluster-logs-cloudflare-exporter-prom-tmp`; chain `push-cloudflare-exporter` + the new deploy target into `cluster-deploy-all`
-
-* [x] build and deploy the prom-tmp cron to the cluster:
-    Apply the new 1Password items so the secrets are available:
-    ```sh
-    kubectl apply -f infra/k8s/onepassword-items.yaml
-    ```
-    Then:
-    ```sh
-    just push-cloudflare-exporter
-    just cluster-deploy-cloudflare-exporter-prom-tmp
-    ```
-
-**Storage metrics finding (3rd May):** `r2StorageAdaptiveGroups` has daily granularity — a 1-minute window always returns zero entries. The OTLP `sync` path had the same limitation (it emitted zero storage metrics silently). The GraphQL API only records storage snapshots once per day. The Cloudflare REST API (`GET /accounts/{account_id}/r2/buckets/{bucket_name}/usage`) returns a current point-in-time snapshot with no time-window constraint and is the right path for storage gauges. Tracked in Phase 4 below.
-
-Phase 2 — verify alignment:
-
-* [x] both crons run in parallel for ~a day
-* [x] in Grafana, overlay `cloudflare_r2_operations_total_prom_tmp` against the in-app `r2_operations_total` on a shared time axis (per `bucket`); confirm they line up at the 1-minute resolution with no 5-min lag. This is the comparison the "verify in Grafana" tasks above were aiming at — the `_prom_tmp` metric is what actually makes minute-precise overlay possible
-
-**Observations (4th May, `metrics_dumps/R2 Operations Total per Minute — Cloudflare vs In-app-data-as-joinbyfield-2026-05-04 23_51_23.csv`, ~27h window):**
-
-* **Time alignment confirmed** — spikes in CF and in-app occur at the same minute with no observable lag, validating the midpoint-timestamp approach and disproving the assumed 5-min lag.
-* **Magnitude: CF is ~1.2–1.5× higher than in-app on busy minutes** — expected, since Cloudflare counts all R2 operations on the account while in-app only tracks what bobby instruments.
-* **Coverage gaps in CF data** — 70 contiguous gaps (5–78 min) totalling ~959 of 1623 minutes. Root cause: the earliest failures (13:16–13:18 UTC 3rd May) were `StartError` due to `sync_prom_tmp` missing from the Dockerfile at that point (`exec: "sync_prom_tmp": executable file not found in $PATH`). The remaining gaps in the middle of the window cannot be confirmed from k8s — job history is only retained for the last 3 successes/failures and there is no log shipping. All runs from 22:59 UTC 4th May onward are `Completed`. The gaps do not affect the alignment conclusion — they reflect cron availability, not a systematic timing offset.
-
-**Observations (3rd May):** compared `sync` (OTLP) vs `sync_prom_tmp` over the same ~3h window (`metrics_dumps/R2 operations per minute by action_type*.csv`):
-
-* **Magnitude differs ~3× on mean, ~9× on max** — OTLP `GetObject` mean=71/min, max=344; prom_tmp mean=235/min, max=2981. Same ratio on `ListObjects`.
-* **prom_tmp captures 11 action types vs OTLP's 3** — `HeadObject`, `DeleteObjects`, `HeadBucket`, `ListMultipartUploads`, `CompleteMultipartUpload`, `CreateMultipartUpload`, `UploadPart` are absent from OTLP.
-* **Root cause:** `sync` is a short-lived pod — the OTel `Counter` resets to zero on every start and emits exactly one delta per run. The OTLP exporter uses delta temporality with a "now" timestamp, so Mimir sees one data point per minute stamped at pod-exit time rather than at the time the operations occurred. The missing action types are likely a side-effect of the same: low-frequency types that happened to be zero in the specific 1-minute window each pod queried don't appear in the OTel output. The prom_tmp path queries the same Cloudflare data but timestamps each sample to the window midpoint — it is the ground truth. The magnitude difference confirms the OTLP path was undercounting.
-
-**Observation (3rd May):** the ~5-min ingestion lag assumption in the design notes is not documented by Cloudflare — there is no official SLA or stated lag for the R2 GraphQL Analytics API. In practice, data is visible current to the last minute. The 11-minute lookback window in the cronjob (`[now−11min, now−1min]`) was sized conservatively around the assumed lag and is safe to leave as-is, but the lag assumption itself should not be relied upon as a Cloudflare guarantee.
-
-Phase 3 — retire the OTLP path:
-
-* [x] `kubectl delete cronjob cloudflare-exporter` to remove the OTLP cronjob from the cluster
-* [x] `kubectl delete cronjob cloudflare-exporter-prom-tmp` to remove the tmp cronjob from the cluster
-* [x] delete `cloudflare-exporter/src/bin/sync.rs` and `cloudflare-exporter/src/otlp.rs`
-* [x] rename `sync_prom_tmp` → `sync` in `Cargo.toml` (`[[bin]]` name and path) and in the Dockerfile
-* [x] drop `_prom_tmp` suffix from metric names in `prom.rs`
-* [x] rename `infra/k8s/cloudflare-exporter-prom-tmp-cronjob.yaml` → `cloudflare-exporter-cronjob.yaml`; update the CronJob name and app label to `cloudflare-exporter`; update the command to `sync`; the `--from`/`--to` shell args stay as-is (10-minute lookback window)
-* [x] rename `cloudflare-exporter-prom-tmp.env` → `cloudflare-exporter.env`
-* [x] delete `infra/k8s/cloudflare-exporter-cronjob.yaml` (old OTLP version), `cloudflare-exporter.env` (old OTLP version)
-* [x] update just targets: rename `cloudflare-sync-prom-tmp` / `cloudflare-sync-prom-tmp-window` → `cloudflare-sync` / `cloudflare-sync-window`; rename `cluster-deploy-cloudflare-exporter-prom-tmp` / `cluster-logs-cloudflare-exporter-prom-tmp` → `cluster-deploy-cloudflare-exporter` / `cluster-logs-cloudflare-exporter`; remove old OTLP targets
-* [x] `kubectl apply` the renamed manifest to create the new `cloudflare-exporter` cronjob
-* [x] update any Grafana panels/alerts to point at the renamed metrics
-* [x] add self-monitoring metrics to `sync`: emit a `cloudflare_exporter_run_total{status="success|failure"}` counter and a `cloudflare_exporter_datapoints_fetched` gauge via **OTLP** (not Prometheus remote_write) at the end of each run. Using a separate transport means a Prometheus remote_write failure (which could itself be causing gaps in R2 metrics) does not also silence the watchdog — correlated failure is the failure mode we most need to detect. Motivation: gaps in `cloudflare_r2_operations_total` during Phase 2 verification could not be explained because k8s only retains 3 jobs of history and we have no log shipping.
-* [x] investigate exporting k8s job/pod status metrics to Grafana via `kube-state-metrics` + Grafana Alloy (standard `kube_job_status_succeeded` / `kube_job_status_failed` metrics). This would give infra-level cronjob health for all crons, not just cloudflare-exporter, and would have made the May 3 StartError failures immediately visible in Grafana without needing `kubectl`.
-
-**Investigation outcome (5th May): decided against.** A minimum viable install needs two Helm releases (`prometheus-community/kube-state-metrics` + `grafana/alloy`), a values file each, an Alloy config file, a `monitoring` namespace, and a new `OnePasswordItem`-backed Secret to inject the existing Grafana Cloud creds into Alloy — plus collector allowlists / `metricDenylist` tuning to stop the bundled label/annotation metrics blowing up Grafana Cloud series cost. Too much surface area for a single-node hobby cluster. Equivalent coverage of the failure modes we actually care about can be had by combining the per-app self-monitoring metric task above with an `absent_over_time(cloudflare_exporter_run_total[Xm])` Grafana alert: the May 3 `StartError` case (binary missing → no metric ever emitted) is exactly what an absence alert detects, with zero new infra.
-
-Phase 4 — add REST-based storage metrics:
-
-The GraphQL `r2StorageAdaptiveGroups` dataset has daily granularity and is unsuitable for per-minute polling. The Cloudflare REST API returns a current point-in-time snapshot per bucket and is the right source for storage gauges.
-
-* [x] rename `sync` → `sync_operations` (binary, env file, k8s manifest, just targets); `kubectl delete cronjob cloudflare-exporter` to remove the old-named resource from the cluster before applying the renamed manifest
-* [x] add `cloudflare-exporter/src/bin/sync_storage.rs` — calls `GET /accounts/{account_id}/r2/buckets/{bucket_name}/usage` for each bucket (bucket list fetched via `GET /accounts/{account_id}/r2/buckets`); emits `cloudflare_r2_storage_bytes` and `cloudflare_r2_storage_objects` gauges via Prometheus remote_write with `timestamp_ms = now`
-* [x] add `cloudflare-storage-exporter.env` referencing the existing 1Password items (`bobby-cloudflare-analytics-token`, `bobby-cloudflare-account-tag`, `bobby-grafanacloud-prom-endpoint`, `bobby-grafanacloud-prom-auth`). The "no account-tag needed" assumption was wrong: the REST URL path requires `{account_id}`, and the analytics-scoped token cannot enumerate accounts via `GET /accounts` (returns empty list with `success: true`). Pass the same `BOBBY_CLOUDFLARE_ACCOUNT_TAG` env var that `sync_operations` uses.
-* [x] add `infra/k8s/cloudflare-storage-exporter-cronjob.yaml` — runs `sync_storage` once per minute (current snapshot, not historical window)
-* [x] add just targets: `cloudflare-sync-storage` (local), `cluster-deploy-cloudflare-storage-exporter`, `cluster-logs-cloudflare-storage-exporter`; add to `cluster-deploy-all`
-* [x] verify in Grafana that `cloudflare_r2_storage_bytes` and `cloudflare_r2_storage_objects` appear with non-zero values and update each minute
-
-##### Get visibility of LLM-related metrics in my Grafana metrics
-
-Intent:
-
-As of 3rd May observability of LLM-related metrics, particularly related to what affects costs, is rudimentary or missing. What I'd like to have (in Grafana) is:
-* a lagging measure, but which is an actual measure of ground truth i.e. metrics sourced from OpenAI themselves that shows my current usage as measured on their side + a billing-focussed view. Ideally this would measure actual spend. This could perhaps be modelled after the Cloudflare R2 exporter. It's ok if these metrics aren't very granular or lagging as long as they measure actual reality of what is billed for.
-* a leading measure of things like model used, tokens sent, etc. this should be live and up-to-date down to the minute, and should be sent from anything which uses an LLM (right now, this is just `live-refine`). These metrics should be operationally-useful for non-cost usages (e.g. seeing failures or how latency etc varies over time or with token amount), but also should be able to be used to derive a cost prediction.
-
-Note that I am using OpenAI right now, and so measures of real costs need to be coupled to them. However, I may move to others later, combine providers or even host my own models. So, this gives a bias of:
-* use standards or methods which are provider-neutral where possible, particularly for operational leading metrics
-* make it easy to plug in other providers later, particularly for lagging metrics tied to real costs
-    * so, for example, since my ultimate costs are in pounds, if I get billed in Euros (e.g. Mistral) and dollars (e.g. OpenAI) then any cost-related metrics should record a normalised pounds value as well as the billed currency (this may require lookups of third-party services for currency conversion data)
+This is not introducing a new service, but instead is factoring out the code already in `skeet-feed` which is to do with caching and generating a feed to instead live in `skeet-publish` crate. This should live behind a trait which abstracts away as much detail as possible. The `skeet-feed` should depend only on this trait.
 
 Tasks:
+...
 
-Phased plan — each phase ships a standalone increment. Phase 1 + 2 are in-scope for this slice; further work is captured below as a future direction rather than committed phases.
+#### Phase 3: Turn `skeet-publish` into a service
 
-Phase 1 — minimum leading metrics from live-refine (OpenAI-only, semconv-named):
+This is where we introduce a new redis `feed` storage to act as the publishing destination which links `skeet-feed` and `skeet-publish`. we can do this in steps:
+1. Create a new redis list in upstash called `feeds` which will contain a list of `image-url:skeet-id` pairs (the publisher derives the image URL), which represent the images which have been allowed through. `skeet-feed` reads these pairs and extracts a unique, ordered list of skeet-ids for the Bluesky feed
+2. Create a new service which works like `live-refine` except it monitors and periodically recalculates the pairs (based on same logic as was in `skeet-feed` but has now been moved to this library), and then publishes this to the redis list. Deploy this to hetzner and leave running for an afternoon (verify manually that redis list makes sense).
+3. Update `skeet-feed` to be configurable (via config flag) to either continue using the library implementation or reading from redis (using different implementations of same trait). Deploy this to staging with it told to use the redis input. Deploy and leave running for an afternoon and manually verify it makes sense.
+4. If all good, remove implementation of trait that does live calculation and instead rely only on redis implementation.
+5. Switch `skeet-feed` to be a suspendable service (see below)
 
-Live tokens / latency / errors per LLM call, useful operationally even before any cross-validation against OpenAI's ground truth. Follows the OTel GenAI semantic conventions exactly — which means provider-neutral metric names from day one, even though we only have one provider today (it costs nothing extra).
+##### `skeet-feed` as a suspendable Fly service: things to know
 
-* [x] in `skeet-refine/src/refining.rs`, switch from `agent.prompt(msg)` to `agent.completion(...)` so the typed `CompletionResponse<_>` carrying `.usage` is returned. Change `refine_image` to return `Result<(Score, rig::completion::Usage, Duration), RefineError>`.
-* [x] add `LlmMetrics` (new `skeet-refine/src/llm_metrics.rs`) emitting two histograms following the OTel GenAI semconv:
-    * `gen_ai.client.token.usage` — bucket boundaries `[1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576, 4194304, 16777216, 67108864]`; attrs `gen_ai.token.type` ∈ {`input`, `output`}, `gen_ai.provider.name="openai"`, `gen_ai.request.model`, `gen_ai.operation.name="chat"`.
-    * `gen_ai.client.operation.duration` — boundaries `[0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28, 2.56, 5.12, 10.24, 20.48, 40.96, 81.92]`, same attrs minus `token.type`, plus `error.type` on failure paths.
-* [x] set `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental` in the live-refine deployment manifest. Document in a comment in `llm_metrics.rs` that the GenAI semconv is currently in Development status and names may shift.
-* [x] in `bin/live_refine.rs::dispatch`, observe both histograms per-request inside the `score_with` closure (success and error paths) — *not* end-of-tick. The existing tick-aggregated `LiveRefineMetrics` counters stay as-is; they answer a different question (queue movement vs per-call performance).
-* [x] one Grafana dashboard, four panels: tokens/min by `gen_ai_token_type` (`sum(rate(gen_ai_client_token_usage_sum[5m])) by (gen_ai_token_type)`), p50/p95/p99 latency, errors/min by `error_type`, mean tokens-per-request split input/output. Verified rendering with non-zero data = Phase 1 done.
-
-Phase 2 — minimum real cost in Grafana (USD, daily, OpenAI-coupled):
-
-The smallest possible thing that answers "what is bobby costing me on OpenAI?". Deliberately skips the Usage API, currency normalisation, and the `prom.rs` refactor — all out of scope for this slice (see future direction below).
-
-* [x] gating curl: confirmed via `just openai-costs-check`. Findings:
-    * Shape: `{object, has_more, next_page, data: [{start_time, end_time, results: [{line_item, project_id, amount: {value, currency}}]}]}`
-    * Bobby's project appears with `gpt-4o-2024-08-06, input` / `output` / `cached input` line items (separate line_item for cached, billed ~50%)
-    * A second project appears with `ada v2` — both should be emitted; `project_id` label distinguishes them
-    * `amount.value` is a **string** in the JSON (not a number) — must deserialize as `String` and parse to `f64`
-    * Pagination is cursor-based via `next_page` token; `has_more: true` — client must loop until `has_more: false`
-    * "Cost & Usage" scope was not available in the OpenAI admin key UI; "Usage API Read" scope suffices for the Costs endpoint
-* [x] provision an OpenAI Admin API key. Stored in 1Password as `bobby-openai-admin-usage-key` (not `bobby-openai-admin-key` — that scope didn't exist). Add to `infra/k8s/onepassword-items.yaml`.
-* [x] scaffold an `openai-exporter` crate in the workspace. Copied `prom.rs` from `cloudflare-exporter` verbatim (adapted for `CostEntry`); did not factor out yet.
-* [x] `openai-exporter/src/openai.rs` — typed REST client for `GET /v1/organization/costs`. Handles pagination via `next_page` cursor loop. `amount.value` deserialized as `String` and parsed to `f64`. One `#[ignore]`d integration test `fetch_costs_real_api` gated behind `op run --env-file openai-exporter.env`.
-* [x] `openai-exporter/src/bin/sync_costs.rs` — daily cron, default window `[start_of_yesterday, start_of_today]` UTC, `--from`/`--to` overrides; pushes `openai_cost_usd_total{line_item, project_id}` with `timestamp_ms = midpoint(bucket)`.
-* [x] `Dockerfile.openai-exporter`; `infra/k8s/openai-cost-exporter-cronjob.yaml` (daily at 01:00 UTC); `openai-exporter.env`; just targets `openai-sync-costs` (in `just/openai.just`), `cluster-deploy-openai-cost-exporter`, `cluster-logs-openai-cost-exporter`; chained into `cluster-deploy-all`.
-    * Secret name in k8s is `bobby-openai-admin-usage-key` (matches 1Password item name and `onepassword-items.yaml` entry added)
-    * Timestamp strategy: samples are stamped at `Utc::now()` rather than bucket midpoint. Mimir's `past-grace-period` (~1h) rejects daily bucket midpoints (always many hours old); sub-day accuracy doesn't matter for a daily cost panel.
-* [-] one Grafana panel: cumulative `openai_cost_usd_total` over the last 30 days, broken down by `line_item`. Verify it matches the OpenAI billing dashboard within ~$0.01 — Phase 2 done.
-
-Future direction — captured, not committed:
-
-The Mimir-resident cost data from Phase 2 is the right shape for an *operational* snapshot — what is bobby costing me right now, with enough resolution to spot a spike. But anything involving cross-provider aggregation, currency normalisation, or long-term retention is a poor fit for a metrics store. The natural home for that is a small data lake on R2 using Iceberg via the R2 Data Catalog (queryable from DuckDB v1.3+), structured as a medallion:
-
-* **Bronze** — raw per-vendor cost data, written by each cost exporter alongside its Mimir push. Schema-per-vendor, partitioned by date, captures the unmodified API response (or as close as practical) so derivations stay re-derivable. FX rates from a source like frankfurter.app land in their own Bronze table for historical accuracy.
-* **Silver** — normalised, FX-converted unified schema (e.g. `{provider, date, line_item, project, cost_billed, currency_billed, cost_gbp, cost_usd}`). Built by a scheduled DuckDB job reading from Bronze.
-* **Gold** — time rollups (daily, monthly, by-provider, by-project) and any cross-provider totals for static cost reports.
-
-Why a lake rather than more Mimir recording rules for the cost-normalisation work:
-
-* Currency normalisation is a data-engineering concern, not an observability one — it belongs where you can audit and re-derive.
-* Bronze gives an audit trail decoupled from Mimir retention.
-* Removes the Grafana dependency for non-operational analytical questions — anything that speaks SQL (DuckDB CLI, a Jupyter notebook, a future-self one-off script) can query the lake.
-* When a second cost-emitting provider's exporter exists (Cloudflare R2 already qualifies; LLM providers beyond OpenAI later), Silver is the natural place to unify schemas — neutral ground rather than a renaming-then-recording-rule cascade in Mimir.
-
-Other directions worth keeping on the radar but not yet shaped into tasks:
-
-* **Cross-validate leading vs OpenAI ground truth.** Add a `sync_usage` binary to `openai-exporter` calling `/v1/organization/usage/completions` with `bucket_width=1m`, build a leading-vs-lagging overlay panel. That's the comparison that proves Phase 1's numbers and surfaces LLM call sites outside live-refine. Could also feed Bronze directly. See gotchas in the notes section below.
-* **Cost prediction from leading metrics.** A pricing table joined against Phase 1's token-rate metrics gives a live predicted-spend metric that would catch e.g. a runaway prompt before the daily Cost API confirms it the next day. Could live as a Mimir recording rule, or as a Silver-table derivation if the prediction is more useful as a daily report than a live panel.
-
-Notes preserved for future work:
-
-Findings from the research / design phase, useful regardless of which direction the post-Phase-2 work takes:
-
-* **OTel GenAI semconv quirks:**
-    * The required attribute is `gen_ai.provider.name`, not the older `gen_ai.system`. Spec was renamed.
-    * `gen_ai.client.operation.duration` is the *required* metric; `gen_ai.client.token.usage` is recommended.
-    * Spec is currently in Development status; opt-in via `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental` env var.
-    * `time_to_first_chunk` / `time_per_output_chunk` are streaming-only — not relevant to our non-streaming `agent.completion(...)` path, but would matter if we ever stream.
-* **OpenAI APIs:**
-    * Admin API key is a separate credential from project keys (different provisioning, different scope) — must be created explicitly.
-    * Costs API: `/v1/organization/costs`, `bucket_width=1d` is the *only* supported value; fields `amount.value`/`amount.currency`/`line_item`/`project_id`. Group by `line_item` and `project_id`.
-    * Usage API: `/v1/organization/usage/completions`, supports `1m`/`1h`/`1d`. Must pass `group_by[]=model&group_by[]=project_id` explicitly; otherwise those fields come back null. Pagination is cursor-based via `next_page`. Lag time before data settles is undocumented — measure empirically before setting any cron's lookback default.
-    * Useful response fields beyond the obvious: `input_cached_tokens` (separate from `input_tokens`, billed ~50% — important for any leading-vs-lagging reconciliation), `input_audio_tokens`, `output_audio_tokens`.
-    * API retention is undocumented — verify before relying on any backfill window.
-* **Currency / FX:**
-    * frankfurter.app is a free ECB-backed JSON FX API, no auth, daily granularity, immutable historic rates. Suitable as a Bronze-feeder cron.
-    * Keep billed currency separate from normalised currency in whichever store holds the canonical record: emit `cost_total{currency=…}` raw, derive GBP downstream. Lets you reconcile against the original invoice without ambiguity.
-* **Data-lake path on Grafana Cloud:**
-    * R2 Data Catalog (Iceberg) is currently in beta with no egress/op cost — favourable for our scale.
-    * The DuckDB Grafana plugin exists but is unsigned-only, and Grafana Cloud forbids unsigned plugins (no overrides). So lake-resident data isn't directly queryable from Grafana Cloud. If Grafana access is ever needed for analytical (non-operational) views, the realistic options are self-hosting Grafana, or fronting the lake with Athena/BigQuery — neither is needed for the lake to be useful on its own.
-* **Prior art:**
-    * Grafana Cloud's "OpenAI integration" is a Python in-process decorator, not a Prom exporter, not Rust. Validates the in-process approach for leading metrics but offers nothing reusable.
-
-#### Idea: Remove inline compaction in favour of the cron job
-
-The `compact` cron job already runs every 10 minutes against all tables. The `compact_every_n_writes` mechanism duplicates this inline, blocking the save path and generating large GET/GET_RANGE bursts against R2 during each run.
-
-* [x] remove `compact_every_n_writes` from `StoreArgs` and `SkeetStore` entirely
-* [x] remove the `compact_if_needed` call sites in `lib.rs` and `scores.rs`
-* [x] remove the `writes_since_compact` counter from `SkeetStore`
-
-#### Idea: Batch image fetches in live-refine
-
-`live_refine.rs` fetches images one at a time via `get_by_id` inside a loop, generating O(N) separate R2 queries each returning a full `StoredImage` (~4MB: original + annotated PNG blobs). Live-refine only needs the original image for scoring.
-
-* [x] replace the per-image `get_by_id` loop (`live_refine.rs:78-97`) with a single `store.get_by_ids(&batch_ids)` call before dispatching the scoring batch
-* [x] make `annotated_image` optional in `StoredImage` (e.g. `Option<DynamicImage>`), and add a fetch mode or separate query path that skips the `annotated_image` column — so callers like live-refine that don't need it don't pay the R2 cost
-
-#### Idea: Only update feed cache on version change
-
-Ultimately it'd be good for this to be more of a push-on-change approach, where a central cache is updated when something has changed about scoring or similar. However, for now, I think we can have a different approach i.e.
-
-* [x] update `SkeetStore` to have a `version_snapshot` method which returns a `HashSet<Version>` where
-    * `Version` is a struct with a `name` and `tag`
-        * `name` is the name of the underlying table
-        * `value` is an opaque identifier capturing the version of the table
-    * this `value` should be a `String` to keep non-coupled to the underlying implementation, but which should be derived from the `version` of each underlying lancedb table
-* [x] update the `skeet-feed` cache so that it still runs once a minute but functions as follows when it wants to test if cache needs updated:
-    1. fetch `version_snapshot`
-    2. filter `HashSet<Version>` down to only the `name`'s it depends to invalidate the cache:
-        * so, for example, it is only a change in appraisals or image scores that should effect the cache; changes to images or skeets does not affect it
-    3. (assuming this `HashSet<Version>` has been previously saved on the cache) compare those against what has just been found
-    4. if they are different then proceed as now in invalidating and updating the cache
-* [x] we can also remove the staleness check as this method should mean we don't need it anymore
-* [x] all of the above should be done in a failing-test-first way as we are introducing more complexity here
-
-The outcome of this should be that we only incur the cost of updating the in-memory cache when something has changed.
-
-#### Idea: reduce cost of polling in live-refine
-
-Every poll tick, `live-refine` runs `list_unscored_image_ids_for_version`, which scans both `images` and `scores` tables — reading LanceDB's arrow fragment files from R2 to filter IDs. This generates `get`/`get_range` calls even though no image blobs are fetched. If unscored IDs are found, `get_originals_by_ids` then fetches the actual image data (~4MB per image). The ID scans are paid every tick regardless of whether anything has changed.
-
-`SkeetStore` will expose a `version_snapshot` as part of "Idea: Only update feed cache on version change". We can use the `images` table version from that snapshot as a cheap early-abort: if the table version hasn't changed since the last tick, no new images were committed and the expensive scan can be skipped entirely. `table.version()` is already used in `cached_scores()` and is a lightweight manifest read — not a scan.
-
-We'll do this in stages:
-* [x] (observation) emit an OTel gauge from `SkeetStore` reporting the observed `version` for each table (label `table` ∈ {`images`, `scores`, ...}), updated on each access. This lets us see in Grafana how often the `images` table version actually changes per minute — if it changes every tick, the early-abort optimization gives no benefit and we should reconsider before building it.
-* [x] implement a dashboard/panel in Grafana that shows how version changes over time for each table
-    * **Result (27th Apr overnight):** `images_v6` has gaps of up to 40 minutes with no version change, more commonly ~6 minutes, and is frequently ≥2 minutes between changes. This confirms the early-abort is worth building — many ticks fire with no new images, each paying a full 64-fragment scan unnecessarily.
-* [x] (prerequisite) "Idea: Only update feed cache on version change" is implemented, giving us `version_snapshot` on `SkeetStore`
-* within `skeet-refine`, separate polling from dispatch:
-    * [x] extract the poll-and-fetch step from `live_refine.rs` into a `PollingBatchSource` struct in `skeet-refine/src/polling.rs`:
-        * holds `store: Arc<SkeetStore>`, `model_version: ModelVersion`, and `last_images_version: Option<u64>` as state between ticks
-        * exposes an async `fetch(&mut self) -> Result<Batch, StoreError>` method; `Batch` is constructed via `From<Vec<StoredOriginal>>`
-        * on each call: fetch `table_versions()`, extract the `images` table version, and return an empty `Batch` immediately if unchanged since last call
-        * if changed: run `list_unscored_image_ids_for_version` + `get_originals_by_ids`, update `last_images_version`, and return the candidates
-    * [x] update `live_refine.rs` main loop to call `source.fetch()` instead of doing the query inline; dispatch is a single `dispatch(&mut candidates, ...)` call
-
-##### Variation: hold `last_discovered_at` and push it down as a filter
-
-The version-snapshot above is binary (changed / not changed). When the table *has* changed, we still scan every fragment looking for unscored ids. A finer variation: also remember the maximum `discovered_at` that `PollingBatchSource` has seen successfully scored, and pass it back into the store as a `WHERE discovered_at > last_discovered_at` filter on the next tick. That filter is exactly the predicate the `discovered_at_idx` BTree (created in `open.rs:90-98`) can satisfy, and the projection `[image_id, discovered_at]` is covered by the index — so when a tick does run, it should pay a BTree range read instead of a 64-fragment scan.
-
-Naming/type notes (cross-checked with `skeet-refine/src/polling.rs` + `skeet-store/src/types.rs`):
-* the existing struct is `PollingBatchSource` (not `PollingImageSource`); state is held there
-* the timestamp newtype in this codebase is `DiscoveredAt` (wraps `DateTime<Utc>`); use that for the cutoff
-* `Batch` currently exposes only `ids` + `images` — it needs to carry per-candidate `DiscoveredAt` plus per-id completion bookkeeping internally, so the live-refine loop reports completions back through the batch object itself
-
-Edge case (decided): if scoring fails (e.g. `Completion`/`ParseScore` errors), the image stays unscored but its `discovered_at` is in the past — a strictly-monotonic cutoff would never retry it. We'll go with **option (a): only advance the watermark up to but not past the oldest unscored image in the batch**, leaving stragglers in-window. (Considered (b): keep the cutoff but run a periodic full-reconciliation pass — rejected as more complex for no extra correctness.)
-
-Watermark rule (computed inside `Batch` at commit time):
-* if every batch member was marked completed → watermark = `max(discovered_at)` of all members (we've fully processed them)
-* if any batch member was not marked completed → watermark = `min(discovered_at)` of the not-completed members (advancing past those would lose them)
-
-The store-side filter must be **inclusive (`discovered_at >= since`)** so the oldest-not-completed member is re-fetched on the next tick. (Already-scored members caught by the same filter are then weeded out by `list_unscored_image_ids_for_version`'s scored-id join — i.e. inclusive `>=` is safe even when the watermark sits on a completed boundary.)
-
-* [x] add a `since: Option<DiscoveredAt>` parameter to `list_unscored_image_ids_for_version` (threading through to `list_all_image_ids_by_most_recent`) — when `Some`, push down a `discovered_at >= <ts>` filter on the `images` table query; when `None`, behave as today. TDD: add a store-level test that adds rows with two timestamps and asserts the `since` form returns only the newer subset (and includes the boundary row).
-* [x] extend `Batch` (in `skeet-refine/src/polling.rs`) with private `discovered_at_by_id: HashMap<ImageId, DiscoveredAt>` (sourced from `StoredOriginal::summary::discovered_at` in `From<Vec<StoredOriginal>>`) and `completed: HashSet<ImageId>` plus a public `mark_completed(&id)` method. The live-refine loop calls `batch.mark_completed(&id)` for each successfully scored candidate during dispatch.
-* [x] extend `PollingBatchSource` with `last_discovered_at: Option<DiscoveredAt>` state and a `commit(&mut self, batch: Batch)` method that consumes the batch, computes the watermark as above, and advances `last_discovered_at` (monotonically — never goes backwards). `fetch()` passes `self.last_discovered_at.clone()` as the `since` arg. Tests: (1) cold start with `None` returns full scan; (2) after `commit` of a fully-completed batch, next `fetch` skips already-scored items via the watermark; (3) after `commit` of a batch with stragglers, the oldest straggler is the watermark and re-appears on the next tick; (4) `commit` is monotonic — earlier watermarks don't roll back.
-* [x] in `live_refine.rs`, drive the loop as: `let mut batch = source.fetch().await?;` → dispatch, calling `batch.mark_completed(&id)` for each successful scoring → `store.batch_upsert_scores(...)` → `source.commit(batch)`. Errors leave that id un-marked, so the watermark won't advance past it.
-* [x] cold-start / restart behaviour: in-memory state means a fresh pod takes one full scan to bootstrap `last_discovered_at` — acceptable, no persistence needed.
-* [x] verify in a real trace that when `since` is set, lance picks a `ScalarIndexQuery` on `discovered_at_idx` rather than a full `LanceRead` over the 64 fragments, and that R2 op counts per tick drop accordingly. **Verified 30th Apr — see Observations.** Trace plans show `ScalarIndexQuery` on `discovered_at_idx` on every sampled span (only 2–5 actual `read_fragment` calls per query, not 67). R2 ops: median `get`/min dropped 275 → 47 (-83%) on idle ticks. Spikes unchanged because they're image-fetch, not polling-scan — separate optimisation thread.
-
-#### Idea: tie R2 metrics to current trace (exemplars)
-
-The R2 metrics emitted by `R2MetricsWrapper` are not currently linked to any trace. Ideally each `counter.add(...)` would carry an OTel exemplar with the originating `trace_id`/`span_id`, so a spike in R2 ops in Grafana could be clicked through to the exact `SkeetStore` method span that caused it. Rust OTel SDK 0.31 attaches exemplars automatically from `Context::current()` — no API changes needed at the call site.
-
-**Blocker: context propagation through lancedb/datafusion.** `tokio::spawn` does not carry tracing context into spawned tasks, and lancedb/datafusion spawn their own tasks for query execution. By the time the wrapper's `record()` runs, `Context::current()` is empty.
-
-**Per-call wrapper workaround (writes only).** `write_options()` in `lib.rs:64` is called per-call inside an `#[instrument]`'d method, so `Context::current()` is correct at that point. We could capture it into a per-call `ContextualR2Wrapper`, then re-attach inside `record()`. Works cleanly for writes — but writes are <1% of our R2 cost.
-
-**Read path: no per-query injection in lancedb 0.27.** Verified by reading the lancedb source:
-* `QueryExecutionOptions` only exposes `max_batch_length` and `timeout` (`query.rs:582`)
-* `ExecutableQuery` trait has no read-params hook (`query.rs:621`)
-* `OpenTableBuilder.lance_read_params()` is the only `ReadParams` injection point (`table.rs:164`) — set once at table-open time
-* Workaround would be re-opening the table per query (one extra `list_indices` + manifest GET per call) — likely not worth it
-
-**Upstream context:** two open lancedb issues exist around `WrappingObjectStore` ergonomics — both about hoisting the wrapper to *connection* level, not per-query:
-* [lancedb#3072](https://github.com/lancedb/lancedb/issues/3072) — Allow custom object store at connect time (open, quiet)
-* [lancedb#3106](https://github.com/lancedb/lancedb/issues/3106) — Pluggable caching layer; maintainer endorses `WrappingObjectStore` as the right hook and supports connection-level inheritance
-* No issues exist for per-query injection, OTel context propagation, or observability through the data path. We'd be the first to ask.
-
-**Decision:** deferred. The pragmatic alternative — using the existing `store_prefix` (table name) label plus time-window correlation in Grafana, combined with the trace-summary tool — is good enough to ground cost-reduction work. Revisit if exemplar correlation becomes a recurring need, in which case file an upstream issue for per-query `object_store_wrapper` first.
-
-#### Idea: add a `kind` sub-label to R2 metrics
-
-Today `table_from_path` (`r2_metrics.rs:233`) extracts only the first `.lance` segment. Reads to `images_score_v2.lance/data/...`, `images_score_v2.lance/_indices/...`, `images_score_v2.lance/_versions/...`, and manifest files all roll up to the same `table` value. With the 30th-Apr finding that spikes hit `images_score_v2.lance` at ~20K `get`+`get_range`/min, we can't currently tell whether that's data-fragment reads, index-uuid lookups, or manifest churn — each points at a different fix.
-
-* [x] add a `kind` label to `r2.operations` and `r2.bytes`, derived from the path segment immediately after the `<table>.lance/` directory: `data` / `_indices` / `_versions` / `_transactions` / `manifest` (top-level `.manifest` files) / `other`. Inline unit tests covering each path shape.
-* [x] re-pull the per-`(table, kind, operation)` breakdown for a spike minute on `images_score_v2.lance` to localise the cost source within the table; record the result in Observations. **Result: ~99% of every spike is `_versions/{get,get_range}` — see Observations.**
-
-#### Idea: reduce scores-table read amplification on upsert
-
-The 30th-Apr per-table breakdown shows spike-minute R2 cost lives almost entirely on `images_score_v2.lance` (>99% of the 40K ops/min spike), not on the image-data table. Image-fetch batching is already done; that is *not* where the cost is. Per-`kind` follow-up confirmed **~99% of every spike is `_versions/{get,get_range}`** — manifest reads, not index lookups, not data fragments. See Observations 30th Apr.
-
-Diagnosis (originally from lancedb 0.27 source review; items 2 and 3 confirmed by direct R2 measurement on 1st May — see Observations):
-
-1. **Write side: N+1 commits per batch.** `batch_upsert_scores` (`scores.rs:54-96`) does `delete()` in a loop (one per row in the batch) followed by a single `add()`. In lance, every `delete()` and every `add()` is its own commit and writes a fresh `_versions/N.manifest` (confirmed in `lancedb-0.27.2/src/table/delete.rs:24-35` — even a delete with predicate `"false"` increments the version). A batch of N rows → N+1 manifests. *Fix (1) below collapses this to 1 commit per batch — verified correct by version-delta test, but did not measurably reduce spikes (see 1st May observations); the dominant cost turned out to be unpruned manifests making each Strong-mode refresh expensive, not the per-batch commit count.*
-2. **Read side: every read resolves the latest manifest.** We open the DB with `read_consistency_interval(Duration::ZERO)` (`open.rs:28`), which puts the wrapper in lancedb's *Strong* mode. In Strong mode every `Table::version()` and every read calls `refresh_latest` → `LIST _versions/` + manifest GET. The 1:1 `get`/`get_range` ratio in our spikes is exactly that pattern (R2 LIST shows up as a `get_range`-style op). **Confirmed 1st May:** the 17-page LIST per resolve on `images_score_v2.lance/_versions/` is the concrete cost.
-3. **No version cleanup.** `compact.rs:60-95` runs `OptimizeAction::Compact` + `Index` only, never `OptimizeAction::Prune` / `cleanup_old_versions`. Old manifests accumulate forever, so every `LIST _versions/` walks more keys over time. **Confirmed 1st May:** 16,461 manifests on `images_score_v2`, oldest 14 days — quantified via `just count-versions`.
-
-Three fixes, ranked. They compose — none substitutes for another.
-
-* [x] **(1) Replace the delete-loop in `batch_upsert_scores` with `merge_insert`** — collapses N+1 commits to 1 per batch. The lancedb `Table::update` doc explicitly recommends this pattern over per-row loops. Approximate shape:
-    ```rust
-    self.scores_table
-        .merge_insert(&["image_id"])
-        .when_matched_update_all(None)
-        .when_not_matched_insert_all()
-        .execute(Box::new(reader_over(batch)))
-        .await?;
-    ```
-    Build one Arrow `RecordBatch` covering all rows, wrap in a `RecordBatchReader`, run a single `merge_insert`. Drop the `delete()`+`add()` pair. `merge_insert` retries on conflict by default — keep that. TDD: extend `store_tests::batch_upsert_scores_*` tests to assert the table version increments by exactly 1 per call regardless of batch size.
-
-    **Post-deploy result (1st May, deployed ~15:35 — see Observations for data files):** the fix is *correct* (single commit per batch verified by version-delta test) but *insufficient on its own*. The expected R2 reductions did not materialise:
-    * Spike intensity unchanged (~180 ops/s, 3 min each); spike-event rate if anything increased (0.29/hr → 0.58/hr) once scoring activity resumed post-deploy.
-    * Peak ops/s on `images_score_v2.lance` essentially identical (181 → 183).
-    * `_versions` ops/s during spikes still dominate at ~99%+ of the spike traffic — same shape as before.
-
-    Why the prediction was wrong: either typical batch sizes were already small (so N+1 ≈ 1 and the writer-side saving is negligible), or the spikes were never write-driven in the first place. The 1st-May manifest measurement (16k+ manifests, 17 LIST pages) shows the per-resolve floor is structurally high regardless of how many resolves happen — pointing at fix (2) as the next lever.
-* [x] **(2) Add `OptimizeAction::Prune` to the compact cron** — without it, `_versions/` grows unbounded. Picked the explicit-third-step form (`OptimizeAction::Prune { older_than: Some(chrono::Duration::hours(1)), delete_unverified: None, error_if_tagged_old_versions: None }`) over `OptimizeAction::All` so `older_than` is tunable: 1h is plenty given the 10-min cron, where 7d would let weeks of manifests accumulate between deploys.
-    * **Implementation:** added `SkeetStore::prune_old_versions(target)` (`skeet-store/src/compact.rs`). The compact binary now always calls it, regardless of `health.needs_action()` — manifests accumulate from writes whether or not fragments need merging, so prune cadence is decoupled from compaction cadence.
-    * **Refactor:** introduced a `selected_tables(target)` helper that yields `(name, table, compact_options)` for `images`/`scores`. `compact_table`, `prune_old_versions`, and `storage_health` all walk this single source of truth via `compact_one` / `prune_one` free functions, removing the previous per-table copy-paste blocks.
-    * **`delete_unverified: None` is safe** — it gates whether unreferenced *file* cleanup waits 7 days for in-progress writes to settle. Old *manifest* deletion uses `older_than` directly with no extra safeguard, so 1h pruning takes effect regardless. Setting it `Some(true)` while pruner/live-refine are actively writing would risk corruption.
-    * Verify via Grafana post-deploy: `LIST` ops on `_versions/` for `cli=skeet-live-refine` should plateau rather than drift up; `just count-versions` should report ≤1 LIST page on `images_score_v2` and `images_v6`.
-* [x] **Follow-on: extend compact + prune to all tables.** `CompactTarget::All` previously covered only `images` + `scores`; `validate`, `skeet_appraisal`, `image_appraisal` were never compacted or pruned. Manifest counts on those are small (1st May: 35 / 80 / 745) but accumulate forever — same structural cost source as `images_score_v2`, just slower.
-    * **Implementation:** dropped `CompactTarget` entirely. `SkeetStore::compact` and `SkeetStore::prune_old_versions` now walk every entry in the `SkeetStore::tables` registry via a private `maintenance_tables()` helper, so adding a table is one edit (in `open.rs`). The compact CLI binary keeps `--check-only` but no longer takes `--table` — there's no operational use case for compacting a single table.
-    * **Per-table compact options:** `compact_options_for(name)` returns the special `target_rows_per_fragment=500, batch_size=64` config only for the images table (PNG blobs). Every other table (scores, validate, skeet/image appraisal) gets the default `num_threads=1` config — small rows, no memory concern.
-    * **Test:** added `prune_old_versions_walks_all_tables` — writes to all five tables, asserts `table_versions().len() == 5` (registry covers everything), then runs prune and verifies data on each table is preserved.
-* [x] **Follow-on: rename `compact` → `optimise`.** Now that the binary does compact + index + prune, the name `compact` isn't correct. `optimise` mirrors lancedb's own vocabulary (`table.optimize()`, `OptimizeAction::{Compact,Index,Prune}`).
-    * [x] Code: `skeet-store/src/compact.rs` → `optimise.rs`; `bin/compact.rs` → `bin/optimise.rs`; `mod compact` → `mod optimise` in `lib.rs`; `SkeetStore::compact()` → `optimise()`; rename `compact_succeeds_on_empty_store` / `compact_preserves_data` tests. Keep `compact_options_for`, `compact_and_reindex`, `prune_old_versions` — they're genuinely about compaction sub-step.
-    * [x] Build/infra: `Dockerfile.compact` → `Dockerfile.optimise`; `infra/k8s/compact-cronjob.yaml` → `optimise-cronjob.yaml` (rename CronJob, container, image path, `OTEL_SERVICE_NAME`); update `just/container.just`, `just/cluster.just`, `just/store.just`.
-    * [x] Cutover: `kubectl apply` is name-keyed, so deploying the new cron does *not* remove the old `compact` CronJob — it would keep firing every 10 min on a stale image. Order: deploy `optimise` cron → verify clean tick in Grafana → `kubectl delete cronjob compact`. Add a `cluster-undeploy-compact` recipe so the deletion is captured rather than ad-hoc.
-
-* [x] Re-run `just count-versions` on 3rd May (24h+) to confirm manifest counts stabilise around 20–30 per cron tick rather than drifting up. **Result (3rd May, 12:56 UTC):** all 5 tables at 1 LIST page, manifests 7–29 — stable and within expected range. Pruning confirmed working across all tables.
-* [-] **(3) Drop `read_consistency_interval(Duration::ZERO)`** — deferred indefinitely. With manifests pruned to 1 LIST page, the per-resolve cost of Strong mode is now negligible. The behaviour change (staleness implications for `cached_scores`) isn't worth taking on until/unless costs climb again.
-
-#### Idea: tune OpenAI model choice to be cheaper and have similar accuracy
-
-Intent:
-
-The current training regime is very simplistic in that we train it to maximise accuracy against the small set of manually chosen examples. The initial prompt (`SEED_PROMPT`) already gets these correct, and so we don't even iterate or tune anything further. Since we initially chose those small set of examples we have now manually appraised 685 examples.
-
-Now, the intent of this idea is not to necessarily optimise to improve accuracy on this wider dataset. Instead the intent is something like:
-* put in place a more robust test framework that uses this larger set of examples
-* given that safety, try to optimise for lower costs
-
-So, we should do something like, the following:
-* keeping the `train.rs` process mostly the same, but with a held-out test set:
-    1. take the set of image appraisals and split 80/20 into train/test, stratified by `Band`, then capture the chosen ID lists into a config file so the split stays frozen as more appraisals are added over time
-    2. inside the training loop, score on the **train** set and pick the best prompt by the train-set metric — do not peek at the test set during the loop
-    3. once training has chosen its best prompt, evaluate it once against the held-out **test** set — this is the comparable number across runs
-* given this more robust measurement method, make the model choice parameterisable and evaluate cheaper candidates, accepting only those that don't regress against baseline
-
-To emphasise: the intent of this is to find a cheaper model that still is good enough or better compared to the baseline current choice.
+- **Eligibility:** ≤ 2 GB RAM, no swap, no GPU, machine updated since June 2024.
+- **Redis connection dies on resume.** Upstash's idle timeout fires during suspension; local socket doesn't notice. Need a pool that validates before use, or retry-on-failure that reconnects + re-auths.
+- **Same for any other long-lived outbound HTTP pools**
+- **Every deploy invalidates the snapshot** — first request after deploy is a real cold start, not a resume. Keep the cold-start path fast (lazy-load from Redis, don't preload).
+- **Tune `soft_limit`** on the HTTP service in `fly.toml` — controls how aggressively the proxy suspends. Default is too high for low-traffic staging.
+- **Timers pause during suspend** and clock can lag a few seconds on resume. Use wall-clock for anything time-sensitive; don't trust `tokio::time::interval` cadence as real-time.
+- **Logs and metric pushes can drop** across the suspend boundary. Don't alert on metric absence.
+- **Keep health checks shallow**, or have them go through the same retry path as real requests.
 
 Tasks:
+...
 
-##### Phase 1 — refactors that introduce the new abilities, not yet wired into any deployed path
-
-* [x] Scaffold a new workspace crate `eval` to hold shared evaluation primitives:
-    * [x] lift `ConfusionMatrix` + `precision`/`recall`/`f1` out of `skeet-prune/src/bin/eval.rs:35-85` (now returning `Option<Precision>` etc. so undefined cases don't return sentinel `0.0`)
-    * [x] add `smartcore` as a dep (0.5.0 — supports `Option<u64>` seed in `train_test_split`)
-    * [x] use smartcore for `roc_auc_score` and seeded `train_test_split` (called per-band from `stratified_split`)
-    * [x] `stratified_split(items, train_ratio, seed)` — calls smartcore's `train_test_split` once per `Band::ALL` value and concatenates
-    * [x] `pin_at_precision(labelled, target_precision) -> Option<PinnedPrecision>` — sweep distinct observed scores as candidate thresholds; among those whose precision ≥ target, return the operating point with the **highest recall**
-    * [x] newtypes for unit-interval metrics: `Precision`, `Recall`, `F1`, `RocAuc`, `Threshold` (plus `LabelledScore` and `PinnedPrecision`); `Score`/`Threshold`/`Recall` implement `Eq` + `Ord` via `total_cmp` (NaN-free by construction)
-    * skip PR-AUC for now — not load-bearing under the pinned-precision rule; revisit only if ROC-AUC is too coarse during phase 4
-* [x] Refactor `skeet-prune/src/bin/eval.rs` to use the new `eval` crate. CSV format **does** change deliberately: `None` metrics now serialise as empty cells (via `csv` + `serde`) rather than `0.000` sentinel; numeric values use `ryu` shortest-round-trip rather than `:.3` truncation. Both honest, neither a regression.
-* [x] Define an `EvalResults` serde struct in the `eval` crate covering: `split_config_path`, `split_config_hash`, `model_version`, `model_name`, typed `Precision`/`Recall`/`F1`, `Option<RocAuc>`, `Option<PinnedPrecision>`, `tp/fp/tn/fn_`, `input_tokens`, `output_tokens`, `cost_usd`. Round-trip tests for both populated and `None`-heavy cases.
-* [x] Add a new binary `skeet-refine/src/bin/capture_appraisals.rs` (and `just capture-appraisals` recipe) that loads all image appraisals, calls `eval::stratified_split`, writes `config/eval-split.toml` with `seed`, `captured_at`, `train`, `test`. The ID lists are the durable artefact — future eval/train runs load them verbatim.
-* [x] In `skeet-refine/src/refining.rs`, token counts already surfaced — `refine_image` returns `(Score, Usage, Duration)` and `Usage` exposes `input_tokens`/`output_tokens`. No code change needed.
-* [x] Add `eval/prices.toml` keyed on model name (`gpt-4o`, `gpt-4o-mini`); expose `ModelPrices::embedded()` and `.cost_for(model, input, output)` on the `eval` crate. Tests use a dummy TOML, not the real one.
-* [x] Parameterise the OpenAI model name in `skeet-refine/src/bin/train.rs`: `--model` CLI flag (default `"gpt-4o"`), flows into both scoring and prompt-rewriting agents. Saved `RefineModel` records the chosen model.
-* [x] `temperature=0` on both `train.rs` completions via `AgentBuilder::temperature(0.0)` — verified `rig` 0.33 exposes this on `AgentBuilder`.
-* [x] Add a `update-prices` binary in the `eval` crate (and `just update-prices` recipe) that fetches OpenAI pricing from [models.dev's public API](https://models.dev/api.json) — single unauthenticated GET returning `{ provider: { models: { id: { cost: { input, output, cache_read } } } } }` with values **already in $/M tokens** (no per-token conversion). Reads at `.openai.models["<model-id>"].cost`. Takes `--models gpt-4o,gpt-4o-mini`, writes `eval/prices.toml` with a header comment recording the source URL + fetch timestamp. Inline test against a captured fixture so the parser is exercised offline. **Why this matters:** the current `prices.toml` values were hand-written from memory without provenance; `cost_usd` in eval-results files is only as trustworthy as those numbers. (Verified 2026-05-10: hand-written values match models.dev exactly, but no provenance trail in the file.) Run this once before Phase 2 so the baseline cost figure has a verifiable source.
-* [x] Phase-1 done when: `eval` crate is in place; `skeet-prune` eval refactored (CSV format intentionally changed for honesty, see above); `update-prices` binary added and run once so `prices.toml` has provenance. `just train` output **will** differ slightly from prior runs because `temperature=0` is deliberate.
-
-##### Phase 2 — establish the current baseline measured against the appraised images
-
-* [x] Run `just capture-appraisals` once against the current store; **commit** `config/eval-split.toml`. This is the frozen split that all later phases load — adding more appraisals after this point will not affect it. Re-capturing is a deliberate act that establishes a new baseline (re-run phase 2 onward)
-* [x] Add a new binary `skeet-refine/src/bin/refine_eval.rs`:
-    * load `config/eval-split.toml` (the frozen split — phase 2 does not re-roll)
-    * fetch the listed `test` image IDs from the store (warn + abort if any are no longer present, so the test set never drifts silently)
-    * derive the binary label from `Band`: `band.is_visible_in_feed()` ⇒ positive class (matches the refine score's 0.5 threshold)
-    * load `config/refine.toml` as-is (no re-training in phase 2)
-    * score the held-out test set; capture per-call input/output tokens
-    * compute precision/recall/F1 at threshold 0.5, ROC-AUC, and the precision-pinned threshold (pinned to the baseline's own precision — this just records the threshold + recall + cost as the comparison target for later phases)
-    * record the loaded `eval-split.toml`'s path and content hash in the output
-    * write `config/eval-results-baseline.toml`; print a stdout summary
-* [x] Add a `just refine-eval` recipe
-* [x] Run `just refine-eval config/eval-results-baseline.toml` once against production `refine.toml`; **commit** the resulting file. This is the frozen baseline phases 3 and 4 must not regress against
-
-###### Observations
-
-**10th May — baseline `gpt-4o` against the frozen 143-image test set:**
-
-| Metric                | Value |
-| --------------------- | ----- |
-| Precision @0.5        | 0.762 |
-| Recall    @0.5        | 0.696 |
-| F1        @0.5        | 0.727 |
-| ROC-AUC               | 0.860 |
-| Pinned @P=0.762       | threshold=0.500, recall=0.696 |
-| Input tokens          | 126,489 |
-| Output tokens         | 1,144 |
-| Cost (USD)            | $0.3277 |
-| Cost / image          | $0.0023 |
-
-* The pinned operating point lands exactly on the default 0.5 threshold: no other score in the test set hits ≥0.762 precision with higher recall. So phases 3 and 4 inherit a sharp comparison bar — a candidate has to clear **precision ≥ 0.762** with **recall > 0.696** at *some* threshold to pass the acceptance gate, not just match recall at any threshold.
-* ROC-AUC 0.860 confirms the model has meaningful discrimination — the 0.762/0.696 numbers aren't an artefact of a near-random classifier sitting at the 0.5 boundary.
-* `cost_usd` is internally consistent with `eval/prices.toml`: $2.5/M × 126,489 + $10/M × 1,144 = $0.3273 vs reported $0.3277 (rounding-level). External Grafana / OpenAI org-costs cross-check still outstanding.
-
-##### Phase 3 — train on the wider dataset; deploy if it doesn't regress
-
-Decisions (10th May):
-* **Cost management → dollar budget**: `train.rs` takes `--budget-usd` (default `5` meaning $5) and works backwards to a per-iteration train sample size, using the per-image cost derived from the baseline's `input_tokens / output_tokens` and `eval/prices.toml`. After reserving the cost of the final 143-image test eval (which is **never** sampled), the residual budget is divided across `--max-iterations` to set the per-iteration sample size. Sample is **stratified by `Band`** so each iteration sees a class-balanced slice. Different per-iteration seed so iterations see different subsets.
-* **Acceptance gate tolerance → 1pp absolute**: `recall ≥ baseline_recall - 0.01`. Bootstrap CI deferred; cheap-and-dirty is fine for the one-shot gate.
-* **Hash drift check**: `train.rs` refuses to run if `config/eval-split.toml`'s content hash differs from the hash recorded in `config/eval-results-baseline.toml`.
-
-* [x] Extract the appraisal loader from `refine_eval.rs` into `skeet-refine/src/lib.rs` so `train.rs` can share it
-* [x] Add `eval::stratified_sample(items, sample_size, seed)` alongside `stratified_split` — same per-band partition logic, returns a single sampled `Vec<T>`. Reuses `smartcore::train_test_split` per band so no new RNG dependency.
-* [x] Update `skeet-refine/src/bin/train.rs` to use the wider dataset:
-    * replace the `examples/`-based flags with `--store-path` (via `StoreArgs`), `--split-path` (default `config/eval-split.toml`), `--baseline-path` (default `config/eval-results-baseline.toml`), `--eval-output` (required — no default, since each run produces a versioned eval file the caller chooses a name for)
-    * load `config/eval-split.toml` and assert its content hash matches the baseline's `split_config_hash` — refuse to run on mismatch (so a re-rolled split can't silently invalidate phase 2)
-    * fetch the listed **train** image IDs from the store; labels from `Band::is_visible_in_feed()` (matches phase-2 convention)
-    * inside the iterative loop: take a stratified `--budget-usd`-derived subsample of train, score it, refine prompt using results, pick the best prompt by **train F1** — do not peek at the test set during the loop
-    * after the loop, score the chosen prompt on the held-out **test** set (full 143 images, no sampling) and write to `--eval-output`
-    * keep `--model` defaulted to `gpt-4o` (no model swap in this phase)
-* [x] Acceptance gate in `train.rs`: read baseline `precision` + `recall` from `eval-results-baseline.toml`; call `pin_at_precision(phase3_labelled, baseline_precision)`. `None` ⇒ gate fail. `Some(PinnedPrecision { recall, .. })` ⇒ pass iff `recall.f64() ≥ baseline_recall.f64() - 0.01`.
-    * **Pass:** save the new `config/refine.toml`, log pass; commit `refine.toml` + `eval-results-phase3.toml` together. Phase 4 inherits `eval-results-phase3.toml` as the new baseline
-    * **Fail:** do not overwrite `config/refine.toml`. Phase 3 eval is still written for inspection. Investigate (label noise on misclassified images? insufficient iterations? prompt drift?). Phase 4 is gated on a successful phase 3
-* [x] Run the training pass once: `just train config/eval-results-phase3.toml`. Gate accepted (test P=0.769, R=0.870, F1=0.816 vs baseline P=0.762, R=0.696). **However**, the pinned operating point landed at `threshold=0.600`, not 0.500 — so the candidate clears baseline precision at a different threshold than the deployed default. The accepted-but-unsaved threshold is the deployment gap captured by the next task.
-* [x] **Capture the operating threshold in `refine.toml`** so the deployed scorer uses the threshold the gate actually accepted at, not the hardcoded 0.5. Concretely:
-    * Added `decision_threshold: Threshold` field to `RefineModel` (and therefore `refine.toml`); included it in the `version()` hash; updated `config/refine.toml` in place to `decision_threshold = 0.6` (the phase-3 pinned threshold from `eval-results-phase3.toml`).
-    * `train.rs` now saves `pinned_at_baseline_precision.threshold` into the field on `GateOutcome::Accepted`. The Accepted summary prints the saved threshold.
-    * Audit findings:
-      * `refine_eval.rs` — switched: confusion matrix now uses `model.decision_threshold` instead of `Threshold::new(0.5)`.
-      * `train.rs` in-loop F1 — kept at 0.5 (training *produces* the model; constant renamed to `TRAINING_LOOP_THRESHOLD_F64` to disambiguate from the deployed threshold).
-      * `live-refine` — no direct Score-vs-0.5 comparison; stores raw scores tagged with `model_version` (which now folds `decision_threshold` into its hash).
-      * **Gap:** `Band::is_visible_in_feed`'s feed-path callers go through `Band::from_score`'s hardcoded 0.5 boundary, so feed visibility doesn't yet honour `decision_threshold`. Closing this means plumbing `refine.toml` into `skeet-feed`, or having `live-refine` derive a visible flag, or parameterising `Band::from_score` — bigger than the threshold-capture task, captured here for the deploy-time follow-up.
-* [x] Report budget overshoot at end of `train.rs` run: compare `total_cost` to `--budget-usd` and emit a warning (and a line in the printed summary) if `total_cost > budget_usd`. The 13% overshoot in the first run was the refinement-call text-token cost, which the per-image cost model doesn't reserve for — surfacing it makes the gap visible without forcing a model change.
-* [x] Re-run training after the threshold-capture fix: `just train config/eval-results-phase3.toml`. Gate accepted (test P=0.800, R=0.870, F1=0.833); saved `decision_threshold = 0.500`.
-* [x] **Close the feed-visibility gap via a per-model lookup** so each stored score is interpreted with the threshold of the model that produced it (not a global hardcoded 0.5). `refine.toml` becomes a *history* of models keyed by `version()`, with a top-level `[labels]` map (e.g. `production = "v2:<hash>"`) so exactly one model is live at a time. Score consumers look up the model by the `model_version` already stored alongside each score. Concretely:
-    * **TOML format**: top-level `[labels]` map + `[[models]]` array; each `[[models]]` entry persists its `model_version` (a prefix-encoded `ModelVersion`, see the hash-method task below) alongside its fields, and `RefineModels::load` rejects mismatch between the persisted `model_version` and a recomputed `RefineModel::version()`. Labels must reference known versions and each label may map to at most one.
-    * Move `RefineModel`, the new `RefineModels`, and a `Label(String)` newtype (with a `Label::production()` constructor) into the `shared` crate so `skeet-feed` can depend on them without pulling `rig-core`/the OpenAI client transitively. `skeet-refine` re-exports if convenient.
-    * Add `RefineModel::is_positive(&self, score: Score) -> bool` (i.e. `Threshold::from(score) >= self.decision_threshold`). Naming kept to "positive" so the type stays a pure data carrier — the feed maps "positive" to "visible" itself.
-    * `RefineModels` API: `load(path)`, `save(path)`, `get(&ModelVersion) -> Option<&RefineModel>`, `by_label(&Label) -> Option<&RefineModel>`, `insert(model, labels: &[Label])`. Errors as a `thiserror` enum (`VersionMismatch`, `UnknownLabelVersion`, `DuplicateVersion`).
-    * `train.rs`: on Accept, load existing `RefineModels` (or fresh), append the new entry, reassign `production` to the new version, save. Don't overwrite history.
-    * `live-refine`: pick the agent's model via `models.by_label(&Label::production())`. `model_version` tagging of stored scores is unchanged.
-    * `refine-eval`: defaults to `production`; phase 4 will likely want a `--label` / `--version` flag for non-production candidates — leave that for then.
-    * `skeet-feed` visibility path: replace the score → `Band::from_score` → `Band::is_visible_in_feed` chain with a lookup of the stored score's `model_version` in `RefineModels`, then `model.is_positive(score)`. Manual-band overrides keep using `Band::is_visible_in_feed`. **Policy for unknown `model_version`**: treat as not-visible and log — the prompt/threshold that produced the score is no longer retained, so we can't honestly interpret it.
-    * `Band::from_score` and `Band::is_visible_in_feed` stay as-is — they remain the quality-bucket helpers for admin views and manual labelling. Out of the score-driven visibility path; not deleted.
-    * **Migration of `config/refine.toml`**: backfill all model_versions that have live scores in R2 (see the backfill task below) so historical scores remain interpretable, and label the current `v2:34d8bec0` entry `production`. Any model_version found in the store but unrecoverable from git history degrades to not-visible.
-    * **Tests**: replace `tests/model_version.rs` with a `tests/refine_models.rs` load test (verifies `RefineModels::load(config/refine.toml)` succeeds and `production` resolves to `v2:34d8bec0`). Unit tests for the three load-error modes and roundtrip. A feed-visibility test exercising lookup + unknown-`model_version` fallback.
-* [x] **Make the hash method a per-entry property of `RefineModel`, encoded as a prefix on `ModelVersion`** (following the `ImageId` `V1`/`V2` versioning idea, but without rewriting any stored hashes) so old versions in storage remain round-trippable alongside new ones. Concretely:
-    * `shared::ModelVersion` becomes a struct combining a `HashScheme` and the hash digits. Parsing rules: no prefix → `HashScheme::V1`; `v2:` prefix → `HashScheme::V2`. Display: V1 → `"ea219ee0"`; V2 → `"v2:34d8bec0"`. The scheme is therefore embedded in every persisted `ModelVersion` (R2 stores, `refine.toml` entries, `refine.toml` labels) — no separate `hash_scheme` field.
-    * `RefineModel::version()` runs the algorithm named by its `hash_scheme` field (in-memory only, derived from / consumed by the prefix when serialised):
-      * `V1`: `model_provider + model_name + prompt` (the original scheme; `decision_threshold` ignored).
-      * `V2`: as today (includes `decision_threshold`).
-      Newly-trained models are built with `HashScheme::V2`; backfilled historical entries with `HashScheme::V1`.
-    * `refine.toml` `[[models]]` entries carry a single `model_version` field (e.g. `"v2:34d8bec0"` or `"ea219ee0"`) — no separate `hash` + `hash_scheme`. `RefineModels::load` parses the prefix, populates `RefineModel.hash_scheme`, recomputes `RefineModel::version()`, and verifies it equals the persisted `model_version`. Drift detection works for both schemes; no per-entry opt-out needed.
-    * **No store migration**: the only `model_version` currently in R2 is `ea219ee0` (V1, no prefix). It parses correctly under the new rules. Future scores written by `live-refine` against the new production model will land as `v2:<hash>` automatically via the new `Display` impl.
-    * Tests: round-trip a `RefineModels` containing both V1 and V2 entries; version-mismatch test per scheme; verify a V1 entry's recomputed version ignores `decision_threshold`.
-* [x] **Backfill historical models into the new `refine.toml` format** so prior-prompt scores already in the store remain interpretable rather than degrading to not-visible. Steps:
-    1. Add a small read-only CLI (e.g. `skeet-store/src/bin/model-versions.rs`) that connects to R2 (`StoreArgs`), scans the scores table, and prints the distinct `model_version` values with a count per version. No mutation. Capture this list as input to the backfill.
-    2. Walk `git log -p config/refine.toml` and `skeet-refine/tests/model_version.rs` to recover the `(model_version, model_provider, model_name, prompt)` tuple for each historical revision. The test file records the canonical version at each commit; `refine.toml` at the same commit carries the prompt.
-    3. Cross-reference (1) and (2): for every distinct `model_version` from the store, locate the matching prompt from git. Versions that don't match anything in git should be investigated before discarding (could be pre-`version()` tracking, or test-only data that leaked in).
-    4. For each backfilled entry: choose the scheme that recomputes back to the stored version. Pre-`decision_threshold` entries go in as V1 (`model_version = "<hash>"`, no prefix, `decision_threshold = 0.5` implied); post-`decision_threshold` entries go in as V2 (`model_version = "v2:<hash>"`).
-    5. Write the backfilled entries into `config/refine.toml` alongside the current `v2:34d8bec0` (V2) entry, with `production` pointing at `v2:34d8bec0`.
-
-###### Observations
-
-**11th May — first phase-3 training run, `gpt-4o`, 10 iterations, per-iter sample 203:**
-
-| Metric                       | Baseline      | Phase-3 candidate | Δ            |
-| ---------------------------- | ------------- | ----------------- | ------------ |
-| Precision @0.5               | 0.762         | 0.769             | +0.007       |
-| Recall    @0.5               | 0.696         | 0.870             | +0.174       |
-| F1        @0.5               | 0.727         | 0.816             | +0.089       |
-| ROC-AUC                      | 0.860         | 0.897             | +0.037       |
-| Pinned @P=0.762               | thr=0.500, R=0.696 | thr=**0.600**, R=0.870 | recall +0.174 at same precision floor |
-| Best train F1 (in-loop)      | —             | 0.917             |              |
-| Test cost (USD)              | $0.3277       | $0.3841           | +$0.056      |
-| Total run cost (USD)         | —             | $5.6387           | over $5 budget by 13% |
-
-* Gate **ACCEPTED**: the candidate clears the baseline precision floor *and* lifts recall by ~17pp at that floor. The training loop genuinely improved the prompt on held-out data, not just on the in-loop sample.
-* **The pinned threshold is 0.600, not 0.500** — meaning the saved `refine.toml` (which today carries only the prompt) is under-specified: deploying it at the hardcoded 0.5 would give a different precision/recall point than the one the gate accepted. The threshold-capture task above closes this gap, and the committed `refine.toml`/`eval-results-phase3.toml` pair will follow a re-run with that fix in place.
-* Train F1 0.917 vs test F1 0.816 — 10pp gap is generalisation slack, not alarming for an LLM-in-the-loop classifier on 23 held-out positives. Phase 4 will inherit `eval-results-phase3.toml` as the new baseline, so this isn't a free lunch we get to spend twice.
-* Total cost overshot the $5 budget by $0.64 (13%). The reservation model in `per_iteration_sample_size` only counts per-image scoring tokens; it doesn't reserve for the iteration-end prompt-refinement call (one full text completion per iteration). Adequate for a one-shot run but worth surfacing — captured as the budget-overshoot reporting task above.
-
-**15th May — second phase-3 training run, post-`decision_threshold` capture, `gpt-4o`, 10 iterations, per-iter sample 203:**
-
-| Metric                       | Baseline      | 1st phase-3 run | 2nd phase-3 run | Δ vs baseline |
-| ---------------------------- | ------------- | --------------- | --------------- | ------------- |
-| Precision @ saved threshold  | 0.762 (@0.5)  | 0.769 (@0.5)    | 0.800 (@0.5)    | +0.038        |
-| Recall    @ saved threshold  | 0.696         | 0.870           | 0.870           | +0.174        |
-| F1        @ saved threshold  | 0.727         | 0.816           | 0.833           | +0.106        |
-| ROC-AUC                      | 0.860         | 0.897           | 0.897           | +0.037        |
-| Pinned @P=0.762              | thr=0.500     | thr=0.600       | **thr=0.500**   |               |
-| Best train F1 (in-loop)      | —             | 0.917           | 0.901           |               |
-| Test cost (USD)              | $0.3277       | $0.3841         | $0.3974         | +$0.070       |
-| Total run cost (USD)         | —             | $5.6387         | $5.8239         | over $5 by 16.5% |
-
-* Gate **ACCEPTED**. Saved `decision_threshold = 0.500` — the second run's pinned operating point landed back at 0.5 (the prompt is different and happens to put more positives above 0.5 than the first prompt did).
-* Precision went up (+3pp) without sacrificing recall — slightly better calibrated than the first phase-3 candidate.
-* Budget overshoot ($5.82 vs $5, 16.5%) reported by the new end-of-run warning. Same root cause as run 1: per-image cost model doesn't reserve for the prompt-refinement call. Adequate to live with for phase 4; revisit if a cheaper model widens the gap.
-
-**17th May — third phase-3 training run, post-`Usd`/per-model-registry refactors, `gpt-4o`, 10 iterations, per-iter sample 204:**
-
-| Metric                       | Baseline      | 2nd run (15 May, saved) | 3rd run (17 May) |
-| ---------------------------- | ------------- | ----------------------- | ---------------- |
-| Precision @ saved threshold  | 0.762 (@0.5)  | **0.800 (@0.5)**        | 0.762 (@0.6)     |
-| Recall    @ saved threshold  | 0.696         | **0.870**               | 0.696            |
-| F1        @ saved threshold  | 0.727         | **0.833**               | 0.727            |
-| ROC-AUC                      | 0.860         | 0.897                   | 0.896            |
-| Pinned @P=0.762              | thr=0.500     | thr=0.500               | thr=0.600        |
-| Best train F1 (in-loop)      | —             | 0.901                   | 0.917            |
-| Test cost (USD)              | $0.3277       | $0.3974                 | $0.3934          |
-| Total run cost (USD)         | —             | $5.8239                 | $5.8034          |
-
-* Purpose of the run was to confirm the recent refactors (HashScheme prefix on `ModelVersion`, per-model `RefineModels` registry, historical backfill, `Usd` newtype) still produce a working end-to-end training run. The pipeline machinery worked: gate accepted, `v2:30dca4b3` written, threshold captured, budget overshoot reported.
-* **Result regressed materially vs the 15 May run.** Test recall fell 17pp (0.870 → 0.696) while in-loop train F1 *rose* (0.901 → 0.917) — the classic "loop is overfitting to its own per-iter sample" signature. The candidate just scrapes the gate (`recall=0.696` equals baseline recall, against the `≥ baseline − 0.01` floor).
-* Saved threshold flipped 0.500 → 0.600 again, matching the 1st (11 May) run. Different prompts naturally calibrate to different thresholds; the saved threshold is sensitive to which side of the in-loop noise the chosen prompt lands.
-* **Decision: do not adopt this run as production.** The 15 May `v2:34d8bec0` prompt + threshold=0.500 remain the deployed model. To preserve the regressed run for future audit (training-variance evidence), we commit it as its own commit and then `git revert` that commit — leaving forward-only history with both states recoverable.
-* Phase 4 will therefore inherit the **15 May** `eval-results-phase3.toml` (P=0.800, R=0.870) as its baseline, not this run.
-* Lesson for phase 4: a single training run is a noisy sample. When evaluating cheaper candidates, treat one accepted run with caution — re-running or widening the per-iter sample may be necessary if the gate margin is thin.
-
-End-of-phase refactor (do before closing the slice):
-* [x] Replace bare `f64` dollar amounts (`--budget-usd`, `EvalResults.cost_usd`, `ModelPrice.{input,output}_per_million_usd`, `ModelPrices::cost_for` return) with a `Usd` newtype in the `eval` crate. Currently violates the rust.md NewType rule for bare `f64`s; left as a deliberate follow-up to keep this phase focused.
-    * **Backing type:** wrap `rust_decimal::Decimal` (latest 1.42.0). Chosen over a bare-`f64` newtype so monetary arithmetic stops being float-rounded, and over `rusty-money` (overkill — single-currency project, currency-aware abstraction adds friction without benefit) and `uom` (wrong tool — units-of-measurement framework for dimensional analysis, not a decimal-precision money type; doesn't address precision at all since it's generic over `f64`).
-    * **API shape:** `#[serde(transparent)]` newtype with `Display` (`"${:.4}"`), `From<u64>` / `Decimal::from` for token-count multiplication, `Add`/`Sub`/`Mul<u64>`/`Div<u64>` impls, parsed from TOML via serde-float (keeps existing `cost_usd = 0.175` form readable).
-    * **Migration caveat:** existing `eval-results-*.toml` files were written with `f64` rounding; the next save under `Decimal` may emit more digits. Apply `Decimal::round_dp(4)` (or `(6)`) before serialisation so the on-disk form stays stable run-to-run and re-saving the existing files produces a minimal diff.
-    * **Callsites touched:** `ModelPrice.{input,output}_per_million_usd`, `ModelPrices::cost_for(...) -> Usd`, `Cost.{input,output}` in `update_prices`, `EvalResults.cost_usd`, `train.rs::Args::budget_usd` + `per_iteration_sample_size(budget_usd: Usd, ...)` + overshoot arithmetic, `refine_eval.rs` cost log line.
-
-Validation before closing the phase:
-* [x] Re-run `just train config/eval-results-phase3.toml` to confirm recent changes (HashScheme prefix, per-model `RefineModels` registry, backfill) work end-to-end in a training run
-* [x] Commit the new `config/refine.toml` and `config/eval-results-phase3.toml` together (in the new history format, with the per-model-lookup change in place) so the deployed prompt, its threshold, and its accompanying eval are versioned in lockstep
-* [x] Run feed + prune + refine locally end-to-end to confirm the per-model lookup and threshold-capture changes work together against the live pipeline
-* [x] Deploy to fly.io and hetzner to confirm the rollout works in production
-* [x] **Stop `live-refine` from backfilling every image when the production model_version changes.** Discovered during the hetzner deploy: with the v2:34d8bec0 production model and ~34k images already scored under the prior `ea219ee0` model, `list_unscored_image_ids_for_version(production)` returned every image, the polling source then asked for all 34k originals in one go, and the pod CrashLoopBackOff'd before any score landed. Today the predicate is "image not scored *under this specific model_version*" — but the desired behaviour is "image not scored by *any* model"; re-scoring under a new prompt is a deliberate decision (offline batch) not an automatic side-effect of a deploy.
-    * Rename `SkeetStore::list_unscored_image_ids_for_version(model_version, since)` → `list_unscored_image_ids(since)`; drop the `model_version` filter so the query becomes `all_image_ids - any_scored_image_ids` (any row in `scores_table`, regardless of `model_version`).
-    * Drop the `model_version` field + ctor arg from `PollingBatchSource` — it was only there to drive the per-version filter; the *write* path (`live_refine.rs` → `batch_upsert_scores`) keeps tagging new scores with the live production `model_version` unchanged.
-    * Re-purpose the `list_unscored_includes_images_scored_with_different_version` store-test: invert the assertion (a row scored under any model version is now excluded from the unscored set) so the new contract is locked in.
-    * Update the `tempo.rs` trace-shape assertion and the `trace-summary.rs` doc example that reference the old span name.
-    * Re-deploy hetzner once landed; expect `count=0` (or only genuinely new images since the last prune-tick) rather than 34077.
-
-##### Phase 4 — evaluate cheaper model choices against the phase-3 baseline
-
-Enabling refactors/robustness/cleanups:
-* [x] refactor: `train.rs` is really big and does multiple things. Split it into logical chunks. These chunks can just be methods or can be separate mods. A good hint of where logical boundaries are is where we have placed `info!` calls.
-* [x] **Refactor eval results + splits into registries** so no run ever has to be discarded. Today each evaluation lives in its own file (`config/eval-results-baseline.toml`, `config/eval-results-phase3.toml`, …) and a regressed run can only be preserved via a commit-then-revert dance (see 17 May above). Phase 4 will produce one run per candidate model × any re-runs for variance, so the per-file shape will scale poorly. Move toward an mlflow/wandb-shaped layout, sized for this project:
-    * **`config/eval-results.toml`** — single file with `[[runs]]` entries. Each run carries: `run_id` (random or timestamp-based, e.g. `20260517T1940`), `run_at` (UTC), `model_version` (FK → `refine.toml`), `split_id` (FK → `eval-splits.toml`), all the existing metrics (`precision`, `recall`, `f1`, `roc_auc`, `pinned_precision`, confusion counts, token counts, `cost_usd`), and the `purpose` (free-text: "phase-3 baseline candidate", "phase-4 gpt-4o-mini #1", etc.). **Drop `model_name`** — it's already on the referenced `RefineModel`. **Drop `split_config_path` / `split_config_hash`** — replaced by `split_id` + the registry's own hash check.
-    * **`config/eval-splits.toml`** — top-level `[labels]` + `[[splits]]` mirroring the `refine.toml` shape. Each `[[splits]]` entry has `split_id`, `content_hash`, the train/test image-id lists. Labels point at canonical splits (`default = "20260420T..."`). `RefineModels`'s drift-check pattern (recompute hash, refuse on mismatch) ports directly. Today's single split becomes the first entry.
-    * **Run-id ≠ model-version.** Two runs with the same `model_version` are valid and expected (re-run to check variance, like the 11 May / 15 May / 17 May runs all on different phase-3 prompts but conceptually "phase-3 candidate runs"). Keying runs by model_version would collide; use a distinct `run_id`.
-    * **APIs:** `EvalResultsLog::load/save`, `EvalResultsLog::append(run)`, `EvalResultsLog::for_model(&ModelVersion) -> Vec<&RunRecord>`, `EvalResultsLog::best_by(metric_fn) -> Option<&RunRecord>`. `EvalSplits::load/save`, `EvalSplits::by_label`, `EvalSplits::by_id`. Both live in the `eval` crate.
-    * **Acceptance gate against history:** `train.rs` no longer hardcodes `--baseline-path`; it picks the production baseline by querying the log (e.g. `log.for_model(&production_model_version).best_by(|r| r.f1)`), or accepts an explicit `--baseline-run-id` for reproducibility. Phase 4's "compare to phase-3" becomes a log query rather than a path argument.
-    * **Migration:** ingest `eval-results-baseline.toml`, `eval-results-phase3.toml` (and `5142d2b` / `51ad076` from git history if we want the 17 May regression preserved) as entries in the new `eval-results.toml`. Existing `eval-split.toml` becomes the first `[[splits]]` entry. Old files deleted in the same commit — git history is the archive.
-    * **Why TOML rather than SQLite (like mlflow does):** at ~10 runs/year, a single TOML file stays diffable, human-greppable, and zero-dependency. Cross-over point for SQLite would be either (a) wanting a UI to browse runs, or (b) hundreds of runs making the file unwieldy — neither is plausible here. The shape is mlflow-inspired; the storage is appropriate to the scale.
-    * **Scope discipline:** this refactor doesn't change which models are evaluated or how — only how the results are stored and looked up. Do it *before* the phase-4 candidate sweep so phase 4 lands runs into the new format from day one.
-* [x] **Refactor `prices.toml` into a price-snapshot registry** so each run's `cost_usd` is interpretable later and so phase-4 candidates are compared against a single pinned snapshot. Today `update-prices` overwrites `eval/prices.toml`; a recorded `cost_usd` becomes unmoored from its prices the moment models.dev changes a number, and a phase-4 sweep that straddles a price update would compare apples to oranges. Same registry shape as `refine.toml` / `eval-splits.toml`:
-    * **`eval/prices.toml`** — top-level `[labels]` + `[[snapshots]]`. `SnapshotId` is a typed wrapper around `DateTime<Utc>` — the id *is* the fetch time, so there is no separate `fetched_at` field. Each `[[snapshots]]` carries `snapshot_id`, `source_url` (today's `https://models.dev/api.json`), an optional free-text `note`, and the per-model `input_per_million` / `output_per_million` map currently sitting at file root. Labels point at canonical snapshots (`current = "2026-05-10T17:06:34.843738Z"`). The existing single-snapshot file becomes the first entry.
-    * **`update-prices` behaviour change:** always inserts a new `[[snapshots]]` entry timestamped at fetch time and moves `current` to it. Existing snapshots are never mutated or deleted — even when the fetched prices are identical to the previous `current`. Over time the registry grows linearly with fetches, which is fine at this scale (a handful of fetches per phase) and keeps `update-prices` a pure append that doesn't have to know anything about `eval-results.toml`.
-    * **`PricesRegistry` API:** `PricesRegistry::load/save/embedded`, `by_label(&Label) -> Option<(&SnapshotId, &Snapshot)>`, `by_id(&SnapshotId)`, `insert(id, snapshot, &[label])`; `Snapshot::cost_for(...)`. Callers use `Label::new("current")` rather than a dedicated helper.
-    * **Schema extension to `eval-results.toml` runs** (couples to the previous task — design the runs schema with this field included from day one): each `[[runs]]` entry carries `price_snapshot_id` (FK → prices registry). `train.rs` / `refine_eval.rs` write whichever snapshot they used; readers can re-derive `cost_usd` if a price changes or compute a what-if cost under a different snapshot without re-running.
-    * **Phase-4 sweep control:** `train.rs` and `refine_eval.rs` gain an optional `--prices-snapshot-id` flag (default = resolve the `current` label at startup). Phase 4 pins one snapshot for the whole candidate sweep so the "pick the cheapest accepted candidate" comparison is over a single price column, not whatever happened to be current at each run's wall clock. Without pinning, a long sweep can silently change its own units mid-run.
-    * **Migration:** the current `prices.toml` content (`gpt-4o` + `gpt-4o-mini` @ models.dev 2026-05-10) becomes the first `[[snapshots]]` entry, with `current` labelling it. Backfilled `[[runs]]` from the eval-results migration point their `price_snapshot_id` at this same entry (we have no record of earlier prices, and the hand-written pre-`update-prices` numbers happened to match this snapshot exactly per the 10 May verification).
-* [x] Add LLM-call resilience to `refine_image` before running phase 4 (transient empty/no-message responses from OpenAI are likely to recur more under cheaper models):
-    * Wrap `refine_image` with bounded retries (3) and exponential backoff (e.g. 500ms × 2^attempt); use existing functionality in crates we have or third-party crates (i.e. don't implement our own exponential backoff)
-      * Use `backon` 1.6.0 — already in the dependency graph (transitive via `opendal` ← `rig`), so add it directly to `skeet-refine/Cargo.toml` at no extra cost
-      * `ExponentialBuilder::default().with_min_delay(500ms).with_factor(2.0).with_max_times(3)` maps exactly to the spec
-      * Use `.when(|e| matches!(e, RefineError::Completion(_)))` to restrict retries to transient errors only — `ImageEncoding` and `ParseScore` are not transient and should not be retried
-    * On exhausted retries, return a fallback `ScoredCall` with `score = 0.0` and `outcome = ScoringOutcome::FallbackAfterRetries`. **Do not** silently substitute a sentinel into the `Score` field without an accompanying outcome marker — the marker is what makes the substitution honest (per `feedback_no_sentinel_values`).
-    * Make `score_concurrent` infallible: it now returns `Vec<ScoredCall>` rather than `Result<Vec<...>, _>`.
-    * Surface the fallback count both in the per-iteration logs and in the final printed summary so a high fallback rate is visible at a glance.
-    * Consider also wiring this into `refine_eval.rs` for symmetry, since phase 4 will use refine_eval on each candidate.
-
-Actual optimisation for costs:
-* [x] Pick a small candidate list. Start with `gpt-4o-mini`. Optionally add 1–2 other OpenAI vision models cheaper than `gpt-4o`. Ensure each candidate is listed in the `update-prices` just rule, run it to append a fresh `[[snapshots]]` entry to `eval/prices.toml`, and note the resulting `snapshot_id` — phase-4 will pin every candidate run to this single snapshot.
-    * Candidates: initial set `gpt-4o-mini`, `gpt-4.1-mini`, `gpt-4.1-nano`; expanded mid-phase with the gpt-5 family `gpt-5`, `gpt-5-mini`, `gpt-5-nano` after the gpt-5 image-token formulas (tile base **70** / per-tile **140**; same 1.62×/2.46× patch multipliers as the 4.1 family) showed gpt-5 is *cheaper per image than `gpt-4o`* despite being a more capable model — a qualitatively different proposition than the mini/nano-only initial set.
-    * `just/store.just` `update-prices` recipe now requests `gpt-4o,gpt-4o-mini,gpt-4.1-mini,gpt-4.1-nano,gpt-5,gpt-5-mini,gpt-5-nano`.
-    * Pinned snapshots for phase-4:
-        * `2026-05-24T01:51:14.922566Z` — original 4-model snapshot. `gpt-4o-mini`, `gpt-4.1-mini`, `gpt-4.1-nano` runs resolved against this.
-        * `2026-05-24T16:55:51.154384Z` — expanded 7-model snapshot (adds gpt-5 family). gpt-5* candidate runs resolve against this. Prices for the four models that appear in both snapshots are identical, so apples-to-apples cross-snapshot cost comparisons are valid.
-* [x] For each candidate: run `just train` with `--model <candidate>`, `--split-id <label or id from eval-splits.toml>` (the same split used in phases 2–3), and `--prices-snapshot-id <pinned snapshot from step above>`. The candidate is used as scorer *and* rewriter, per the agreed simplification. Each run appends a new `[[runs]]` entry to `config/eval-results.toml` with `purpose = "phase-4 <candidate> #<n>"`; the previous per-file `eval-results-<candidate>.toml` shape is gone.
-    * `just train` takes a second positional `model` arg (default `gpt-4o`). `--split-label` defaults to `"default"` (the phase-2/3 split `a746519149bafd1f9505f0869e04c8d3`); `--prices-snapshot-id` defaults to whatever the prices registry's `current` label resolves to at startup. Re-running `update-prices` mid-sweep is safe — in-flight runs keep the snapshot they resolved at startup.
-    * Per-candidate runs:
-        * [x] `just train "phase-4 gpt-4o-mini #1" gpt-4o-mini` — REJECTED (run_id `019e57c2-…`; see Observations)
-        * [x] `just train "phase-4 gpt-4.1-mini #1" gpt-4.1-mini` — REJECTED (run_id `019e5a1c-…`; see Observations)
-        * [x] `just train "phase-4 gpt-4.1-nano #1" gpt-4.1-nano` — REJECTED (run_id `019e5ae2-…`; ROC-AUC 0.912 > baseline, but rejected on calibration — pinned @P=0.800 is degenerate thr=1.000, R=0.217; cheapest at $0.031, −92%)
-        * [x] `just train "phase-4 gpt-5 #1" gpt-5` — REJECTED (run_id `019e616f-…`). Best classifier of the sweep (ROC-AUC 0.928, P=0.909, pinned R=0.696) but **not cheaper**: reasoning-token output makes it +26% vs baseline ($0.501), 389% budget overshoot. See Observations.
-        * [x] `just train "phase-4 gpt-5-mini #1" gpt-5-mini` — REJECTED + CONTAMINATED (run_id `019e63db-…`): bare-number parse bug forced 15/143 test + 2498 training scores to 0.0. Parse fix landed in `refining::parse_score`. See Observations.
-        * [x] `just train "phase-4 gpt-5-mini #2" gpt-5-mini` — clean re-run with the parse fix (run_id `019e6953-…`, 0 fallbacks). REJECTED: came out *worse* than `#1` (R=0.609, ROC-AUC 0.868, no threshold reaching P=0.800) and only −9% cheaper. temperature=1 makes gpt-5-mini non-deterministic in accuracy and cost — "no clear win." See Observations.
-        * [x] `just train "phase-4 gpt-5-nano #1" gpt-5-nano` — REJECTED (run_id `019e6bc2-…`). Cleanest cost+discrimination run of the sweep: ROC-AUC 0.926 (above baseline), R@0.5=0.783 (within gpt-4o spread), test cost $0.076 (−81%), total $3.05 (under budget, no overshoot). Pinned @P=0.800 still collapses to R=0.304 (same calibration ceiling). See Observations.
-        * [x] `just train "phase-4 gpt-4o sanity #1" gpt-4o` — run_id `019e5c15-…`. **Framework confirmed healthy** (R=0.783, ROC-AUC=0.894 — squarely in the phase-3 cluster), but **also REJECTED**: gpt-4o cannot re-clear its own 15 May baseline, exposing the gate as training-variance-dominated. See Observations.
-* [x] Apply the acceptance gate against the phase-3 baseline by querying the log rather than passing a path: `train.rs` resolves the production baseline via `log.for_model(&production_model_version).best_by(f1)` (the 15 May `v2:34d8bec0` run), or accepts an explicit `--baseline-run-id` for reproducibility. Pin precision to that baseline's precision on the candidate's test scores; compare recall. (`pick_baseline` in `skeet-refine/src/bin/train.rs` implements exactly this; used by every phase-4 run.)
-* [x] Among accepted candidates (if any), pick the cheapest by querying the log over the phase-4 runs (filter by `purpose` or by `price_snapshot_id` = the pinned snapshot, then min on `cost_usd`); update `config/refine.toml` to label that candidate's `model_version` as production; deploy. **Vacuously closed** — no candidate was accepted under the firm precision floor.
-* [x] If no candidate is accepted, capture the negative result inline (which model, observed precision, recall when pinned, observed cost) and move on. The pre-phase-4 `refine.toml` stays in place. **Closed without a deploy** — see the 29-May "phase-4 sweep close" observation below: under the firm precision floor of 0.800, no clean candidate keeps acceptable recall at lower cost. `gpt-5` holds the most recall at the floor (0.696, −17pp) but is +26% pricier; cheaper candidates (gpt-4.1-mini, gpt-4.1-nano, gpt-5-nano) lose 35–65pp of recall at the floor. Production stays on `v2:34d8bec0` (`gpt-4o`).
-* [-] **Possible follow-up (deferred — likely post-slice): single-pool contender evaluation.** Instead of a separate train+eval run per candidate (each sizing its training sample from *predicted* cost), build one `pool` = {baseline + contenders} under a single overall budget, run one training cycle that trains/evaluates every contender against an *equal* train and test dataset, and cost each on **real measured** per-item USD rather than predicted. Removes the predicted-cost arbitrariness flagged in the 24th-May methodology observation (where prediction error, not real cost, can hand two candidates very different training exposure under "the same budget"), and turns "pick the cheapest accepted contender" into a single comparison over real costs on equal footing. Too large to add to this already-large slice; recorded for a future slice. See methodology observation below for the framing this resolves.
-* [x] **helper: `sample_costs` CLI in `skeet-refine`** for empirically characterising per-image cost before committing to a long training run. Motivated by the cost-prediction failures across phase-4 observations (`gpt-4o-mini`'s 33× vision-token multiplier, `gpt-5`'s reasoning-token output blowing the budget by 389%, `gpt-5-mini`'s 2.6× cost swing between two runs of the same model): instead of deriving the budget's per-image cost from the baseline model's token profile (which doesn't transfer across model classes), measure it directly on a tiny sample.
-    * Location: `skeet-refine/src/bin/sample_costs.rs`.
-    * Args (`clap`): `--store-path` (R2 store), `--split-label` (default `"default"`) or `--split-id`, `--sample-size` (default 10), `--prices-snapshot-id` (defaults to the prices registry's `current` label).
-    * Models scanned: every entry in the chosen snapshot's `prices` map (whatever `update-prices` last fetched — so adding a candidate to the sweep is one edit to `just update-prices`).
-    * Procedure: take a stratified sample of N image ids from the split's train side via `eval::stratified_sample`; load the **production**-labelled prompt from `refine.toml` (`RefineModels::by_label(&Label::production())`) and use **that prompt** when scoring each sample against every model via `refining::refine_image_resilient` (so the per-model temperature policy is respected and any retries/fallbacks surface honestly); record per-call `Usage` and cost via `Snapshot::cost_for`. Rationale for using the production prompt rather than `SEED_PROMPT`: it won't be the best prompt for every model, but it's the closest shape to what we'd actually deploy, so the per-image token counts (and therefore cost estimates) will be closer to real production cost than a seed-prompt baseline would give.
-    * Output: a markdown table to stdout, one row per model — `model name`, `input $/M`, `output $/M`, `min / max / avg cost per image` (rounded via `Usd::round_dp(4)`). No persistence; this is a planning tool, not a registry entry.
-    * Use case: run once per new candidate set, before kicking off long training runs, to pick a `--budget-usd` that reflects each model's empirical per-image cost rather than the baseline's. A 10-image sample would have caught every cost surprise in this slice's phase-4 sweep before any training cost was spent.
-
-###### Observations
-
-**24th May — first phase-4 run, `gpt-4o-mini` (run_id `019e57c2-78c7-72c8-aced-3102e8671a7c`):**
-
-| Metric | Baseline (`v2:34d8bec0`, `gpt-4o`) | `gpt-4o-mini` #1 |
-|---|---|---|
-| Precision / Recall / F1 @ thr=0.5 | 0.800 / 0.870 / 0.833 | 0.786 / 0.478 / 0.595 |
-| ROC-AUC | 0.897 | 0.657 |
-| Pinned @ P=0.800 | thr=0.500, R=0.870 | thr=0.700, R=0.304 |
-| Test input tokens / cost (143 images) | 154,374 / $0.397 | 3,330,965 / $0.500 |
-| Total run cost (USD) | $5.82 | $21.45 (329% over the $5 budget) |
-
-Gate **REJECTED** — recall collapses far below the `≥ baseline − 0.01` floor at any threshold matching baseline precision.
-
-Cost: `gpt-4o-mini` was *more* expensive than the baseline on the same 143 test images, not cheaper. Per OpenAI's published vision-token formulas, mini uses **33.3× more tokens per image** than gpt-4o (base 2833 vs 85; per-tile 5667 vs 170). The per-token price is only 16.7× cheaper, so the net per-image cost is ~2× *higher*. By design — Romain Huet (OpenAI DevRel) [stated](https://community.openai.com/t/gpt-4-o-mini-vision-token-cost-issue/989143) the intent was per-image cost parity (not cheaper). The training-side overshoot is the same effect amplified: budget-derived sample sizing assumes the baseline's per-image cost, so `gpt-4o-mini`'s ~21.6× input-token blow-up scaled the per-iter sample to 2986 (vs 203 for `gpt-4o` under the same $5 budget), then paid mini's actual cost on all of it.
-
-Implication for the remaining candidates: `gpt-4.1-mini` and `gpt-4.1-nano` use 32px patch-based tokenisation (cap 1536 patches) with much smaller multipliers — **1.62×** and **2.46×** respectively per the [OpenAI vision docs](https://developers.openai.com/api/docs/guides/images-vision). Predicted per-image cost at the patch cap: `gpt-4.1-mini` ~$0.001 (~64% cheaper than baseline), `gpt-4.1-nano` ~$0.0004 (~86% cheaper). `gpt-4o-mini` was the worst-case candidate by design; the 4.1 family should land genuinely cheaper — accuracy is the open question.
-
-References for the multipliers above:
-* [Images and vision | OpenAI API docs](https://developers.openai.com/api/docs/guides/images-vision) — canonical per-model image-token formulas (tile-based for `gpt-4o` / `gpt-4o-mini`, 32px patch-based for the 4.1 family) and the published multipliers
-* [GPT-4o-Mini Vision Token Cost Issue thread](https://community.openai.com/t/gpt-4-o-mini-vision-token-cost-issue/989143) — Huet quote on intended per-image cost parity
-
-**24th May — second phase-4 run, `gpt-4.1-mini` (run_id `019e5a1c-edcd-7b2f-a245-50d2bdd9298a`):**
-
-| Metric | Baseline (`v2:34d8bec0`, `gpt-4o`) | `gpt-4.1-mini` #1 |
-|---|---|---|
-| Precision / Recall / F1 @ thr=0.5 | 0.800 / 0.870 / 0.833 | 0.833 / 0.435 / 0.571 |
-| ROC-AUC | 0.897 | 0.825 |
-| Pinned @ P=0.800 | thr=0.500, R=0.870 | thr=0.400, R=0.522 |
-| Test input tokens / cost (143 images) | 154,374 / $0.397 | — / **$0.074** (−81%) |
-| Total run cost (USD) | $5.82 | $4.39 (under $5 budget) |
-
-Gate **REJECTED**.
-
-Cost: the patch-based-multiplier prediction held — actual −81% on the test set (predicted ~−64%); the per-iter-sample sizing carried baseline-cost assumptions, so the candidate's lower per-image cost left the $5 budget with slack rather than overshooting.
-
-Accuracy: same shape as `gpt-4o-mini` — precision at thr=0.5 is actually slightly *better* than baseline (0.833 vs 0.800), but recall collapses (0.435 vs 0.870); pinning at baseline precision lifts recall only to 0.522, still ~35pp below. ROC-AUC 0.825 is much healthier than `gpt-4o-mini`'s 0.657, so the model *can* discriminate — it just calibrates true positives lower on the 0..1 score scale than `gpt-4o` does, and the gate (precision pinned to baseline) is hard to clear without recovering recall.
-
-Cross-candidate pattern so far: both mini-class models keep precision but lose recall at the baseline precision floor. Could be the rewriter producing prompts the smaller models read more conservatively, or an inherent visual-reasoning capability gap on edge cases. Re-running with a fresh seed or a higher iteration count would test the rewriter hypothesis; running `gpt-4.1-nano` next gives one more datapoint on whether dropping further down the capability ladder makes recall worse (likely) or the rewriter the actual culprit (unlikely).
-
-**24th May — third phase-4 run, `gpt-4.1-nano` (run_id `019e5ae2-61b6-761e-815d-dd35455cbcd5`):**
-
-| Metric | Baseline (`v2:34d8bec0`, `gpt-4o`) | `gpt-4.1-nano` #1 |
-|---|---|---|
-| Precision / Recall / F1 @ thr=0.5 | 0.800 / 0.870 / 0.833 | 0.615 / 0.696 / 0.653 |
-| ROC-AUC | 0.897 | **0.912** |
-| Pinned @ P=0.800 | thr=0.500, R=0.870 | thr=1.000, R=0.217 |
-| Test cost (143 images) | $0.397 | **$0.031 (−92%)** |
-| Total run cost (USD) | $5.82 | $1.25 (under $5 budget) |
-
-Gate **REJECTED** — but on *calibration*, not discrimination.
-
-Cost: cheapest candidate by far. $0.031 test cost (−92% vs baseline), total run $1.25 well under the $5 budget — the patch-based 2.46× multiplier prediction held.
-
-Accuracy/calibration: the strongest counter so far to "the cheap models are just bad." ROC-AUC 0.912 *exceeds* the baseline's 0.897 — nano's *ranking* of images is better than `gpt-4o`'s. The rejection is purely calibration: precision @0.5 is only 0.615, and the pinned-at-baseline-precision point is degenerate (threshold=**1.000**, recall=0.217) — nano can reach 0.800 precision only at the extreme top of its score range, because its scores pile up near the extremes (small-model overconfidence), leaving no useful operating threshold. The ROC-AUC ordering across the cheap candidates is coherent (`gpt-4o-mini` 0.657 → `gpt-4.1-mini` 0.825 → `gpt-4.1-nano` 0.912), which argues the eval path is sound rather than regressed — corroborated by the sampling regression test `eval::split::oversized_sample_returns_each_input_exactly_once` and discussed in the methodology observation below.
-
-**24th May — evaluation methodology: fixed-budget vs fixed-examples, and predicted-vs-real cost.**
-
-Because per-iteration sample size is derived from each model's *predicted* per-image cost against a fixed $5 budget, cheaper candidates train on more of the pool than `gpt-4o` did: `gpt-4o` at 203/iter (203 < 588 train pool, no clamp) vs the cheap candidates at the full 588/iter (their budget-derived target exceeds 588 and `stratified_sample` clamps to the pool — confirmed correct + a regression test added, `eval::split::oversized_sample_returns_each_input_exactly_once`). Two framings of what we're measuring:
-
-1. **Fixed training budget** (what we do now): "best model achievable under a cost ceiling." Cheaper-to-train models legitimately get to see more data.
-2. **Fixed training examples** (equal across all candidates): "best model under equal data."
-
-For this slice's goal — match-or-beat baseline precision/recall at lower *production* cost — framing (1) is the right one. "Best model I can make" = "best model I can run in production," and a model being cheap enough to train on more data is part of what makes it the best deployable choice, not an unfair advantage. The comparison stays fair because the **test set is identical and frozen** (the 143-image split `a746519…`) across every candidate; only training *exposure* differs, and training exposure is a property of the candidate, not the measurement.
-
-The genuine weakness is that sample sizing keys off *predicted* cost (baseline's per-image token counts), which the `gpt-4o-mini` run proved can be wrong by ~21× (vision-token multiplier). So per-model training exposure is governed by a prediction that can be badly off, making the budget knob arbitrary in practice — two candidates under "the same $5 budget" can see very different amounts of data purely because of prediction error, not real cost.
-
-**25th May — sanity-check run, `gpt-4o` (run_id `019e5c15-44d6-776e-81ae-3b21f1f91237`):**
-
-| Metric | Baseline (15 May `v2:34d8bec0`, `gpt-4o`) | `gpt-4o` sanity #1 |
-|---|---|---|
-| Precision / Recall / F1 @ thr=0.5 | 0.800 / 0.870 / 0.833 | 0.750 / 0.783 / 0.766 |
-| ROC-AUC | 0.897 | 0.894 |
-| Pinned @ P=0.800 | thr=0.500, R=0.870 | thr=0.850, R=0.565 |
-| Test cost (143 images) | $0.397 | $0.385 |
-| Total run cost (USD) | $5.82 | $4.68 |
-| Per-iter train sample | 203 | 165 |
-
-Purpose: rule out a test-framework regression before concluding "no candidate accepted" (the cheap models' recall collapses looked suspiciously bad). Two findings:
-
-1. **Framework is healthy.** Re-trained `gpt-4o` lands at R=0.783, ROC-AUC=0.894 — squarely in the phase-3 `gpt-4o` cluster (R 0.696–0.870, ROC-AUC ~0.897 across 11/15/17 May), and test cost $0.385 ≈ the 15 May $0.397. Nothing in the eval / labelling / sampling path has drifted. **The cheap-model results stand as real**: their recall collapses and `gpt-4.1-nano`'s superior ROC-AUC are genuine signals, not artifacts.
-
-2. **The gate is training-variance-dominated — even the baseline model fails it.** This run was **REJECTED**: pinned @P=0.800 gives threshold=0.850, recall=0.565, well below the ≥0.860 bar. The gate compares every candidate against a *single best historical draw* (15 May, R=0.870), but a fresh `gpt-4o` run produces R=0.783@0.5 / 0.565 pinned. Recall across the four `gpt-4o` runs now on record spans **0.696–0.870**, and the 15 May 0.870 sits at the *top* of that spread, not its centre:
-
-   | gpt-4o run | recall @0.5 | ROC-AUC |
-   |---|---|---|
-   | 11 May (phase-3 #1) | 0.870 | 0.897 |
-   | 15 May (phase-3 #2, **baseline**) | 0.870 | 0.897 |
-   | 17 May (phase-3 #3, reverted) | 0.696 | 0.896 |
-   | 25 May (phase-4 sanity) | 0.783 | 0.894 |
-
-Fairness wrinkle (predicted by the methodology observation above): this run's per-iter sample was **165** (< 588, no clamp), so `gpt-4o` trained on the *least* data of any candidate — the cheap models each saw the full 588/iter. Under fixed-budget the priciest model is the most data-starved, yet still reproduces the phase-3 range.
-
-**Implication for the remaining gate / decision tasks:** rejecting a candidate against the single-best `gpt-4o` run conflates "genuinely worse" with "this draw was unluckier than 15 May." A defensible phase-4 conclusion needs a variance-aware baseline — either re-run `gpt-4o` a few times to establish its recall spread (mean/CI), or gate against that distribution rather than its best single draw. Until then, only a candidate that *clearly* beats the whole `gpt-4o` recall spread (≥0.870 at baseline precision) should count as an unambiguous accept; marginal misses are within noise.
-
-**25th May — `temperature=0` incompatible with gpt-5 reasoning models, and a latent retry-classification gap it exposed.**
-
-The first `gpt-5` run failed every scoring call with HTTP 400: `'temperature' does not support 0.0 with this model. Only the default (1) value is supported`. We set `temperature(0.0)` unconditionally (chosen for reproducible scoring) at both agent-build sites, but the gpt-5 reasoning family rejects any non-default temperature. Fixed by making temperature per-model — `refining::temperature_for(model)` returns `Some(0.0)` for the gpt-4o / gpt-4.1 families and the non-reasoning `gpt-5-chat` variant, and `None` (omit the field) for the gpt-5 reasoning family (o-series share the constraint and would need adding before use). Consequence: gpt-5 candidates run at temperature 1 (non-deterministic), which compounds the training-variance caveat above — gpt-5 results carry more run-to-run noise than the temperature-0 `gpt-4o` baseline did.
-
-Latent issue worth a future fix (recorded, not done): the resilience wrapper's `is_transient` treats **every** `RefineError::Completion(_)` as retryable, so this permanent 400 was retried 3× per call before substituting a fallback score — wasted calls and a flood of WARN logs. A 400 (invalid request) is permanent; only 429 (rate limit), 5xx, and network errors are genuinely transient. The temperature fix removes the *only* 400 we actually hit, so nothing is on fire — but any future permanent client error is still mis-retried. Fixing it properly means preserving rig's HTTP status on the `Completion` variant (today we stringify the error, discarding the status) and classifying retry by status class rather than the blanket `Completion(_)` match. String-matching `"400"` in the message would work but is fragile; the clean fix touches `RefineError`. Deferred because the live failure mode is resolved and the change is bigger than this slice warrants.
-
-**26th May — fourth phase-4 run, `gpt-5` (run_id `019e616f-16fd-7177-b359-5c784833f3f0`):**
-
-| Metric | Baseline (15 May `v2:34d8bec0`, `gpt-4o`) | `gpt-5` #1 |
-|---|---|---|
-| Precision / Recall / F1 @ thr=0.5 | 0.800 / 0.870 / 0.833 | **0.909** / 0.435 / 0.588 |
-| ROC-AUC | 0.897 | **0.928** |
-| Pinned @ P=0.800 | thr=0.500, R=0.870 | thr=0.220, R=0.696 |
-| Test cost (143 images) | $0.397 | **$0.501 (+26%)** |
-| Total run cost (USD) | $5.82 | $24.46 (**389% over** $5 budget) |
-
-Gate **REJECTED** — but `gpt-5` is the **strongest classifier of the entire sweep**: highest ROC-AUC (0.928 > baseline 0.897 > nano 0.912), highest precision (0.909), and the best non-baseline pinned recall (0.696 @ thr 0.220, vs 4.1-mini 0.522, nano 0.217). It calibrates *low* — conservative scores needing a 0.22 threshold, the opposite of nano's overconfidence. Recall still ceilings below the 0.860 bar, so it fails the gate; but it fails by the smallest margin of any candidate.
-
-**Cost correction — `gpt-5` is more expensive, not cheaper. This overturns the earlier prediction.** Pre-run I estimated `gpt-5` at ~−65% per image, reasoning only from its image-tile token math (tile base 70 / per-tile 140, cheaper than `gpt-4o`'s 85/170; input $1.25/M vs $2.5/M). That was wrong: **`gpt-5` is a reasoning model and bills hidden reasoning tokens as output** at $10/M. Test cost landed at $0.501 (+26% vs baseline), and back-of-envelope that implies ~30k output tokens across 143 images (~230/image) vs `gpt-4o`'s ~8/image — ~28× more output, which swamps the cheaper input. The 389% budget overshoot is the same mechanism amplified: budget-derived sample sizing predicted `gpt-5` cheap (from `gpt-4o`'s token profile), sized the per-iter sample to 335, then paid reasoning-heavy real cost on all 10 iterations — and the per-iteration prompt-rewrite call (gpt-5 reasoning over a full prompt-improvement task) is likely costlier still.
-
-**Verdict:** fails phase-4 on *both* axes — doesn't clearly beat the `gpt-4o` recall spread, *and* costs more per inference. The cost finding is decisive and structural: a reasoning model that emits reasoning tokens for a single-score-per-image task cannot be a cost win regardless of accuracy. (Ran at temperature=1 per the per-model fix, so accuracy is one noisy draw — but the cost conclusion doesn't depend on the draw.)
-
-**Reframe for `gpt-5-mini` / `gpt-5-nano`:** both are reasoning models too, so the cheaper *input* rates ($0.25 / $0.05 per M) won't save them if they emit reasoning tokens at $2 / $0.40 per M output. The earlier per-image cost predictions for them (−85% / −96%, computed input-only) are now suspect for the same reason. Worth running `gpt-5-nano` to confirm empirically, but they should no longer be assumed cost wins until the output-token volume is measured. General lesson: **for reasoning models, predict cost from output (reasoning) tokens, not input/image tokens** — the opposite of the `gpt-4o-mini` vision-multiplier failure mode, but the same root cause: the budget model assumes the `gpt-4o` token profile, which doesn't transfer across model classes.
-
-**27th May — fifth phase-4 run, `gpt-5-mini` (run_id `019e63db-a324-7499-a0e6-53082eb7c3c8`) — CONTAMINATED, superseded by a clean re-run.**
-
-| Metric | Baseline (15 May `v2:34d8bec0`, `gpt-4o`) | `gpt-5-mini` #1 (contaminated) |
-|---|---|---|
-| Precision / Recall / F1 @ thr=0.5 | 0.800 / 0.870 / 0.833 | 0.731 / 0.826 / 0.776 |
-| ROC-AUC | 0.897 | 0.922 |
-| Pinned @ P=0.800 | thr=0.500, R=0.870 | thr=0.680, R=0.739 |
-| Test cost (143 images) | $0.397 | **$0.139 (−65%)** |
-| Total run cost (USD) | $5.82 | $7.08 (41.7% over $5 budget) |
-| Fallbacks (training / test) | 0 / 0 | **2498 / 15** |
-
-Gate **REJECTED**, but the run is **not trustworthy**: `fallbacks test=15` means 15/143 (~10%) of test scores were forced to `0.0`, and `training=2498` (~14% of 17,350) of training scores too.
-
-**Root cause — a parser bug on our side, not a model/rate-limit/retry failure.** `gpt-5-mini` intermittently returns the score as a bare number (`0.05`) instead of the requested `{"score": 0.05}`. `parse_score` only accepted the object form: a bare number parses as a JSON *number*, `v.get("score")` returns `None`, and the valid score was discarded → `ParseScore` (correctly not retried) → fallback `0.0`. Only `gpt-5-mini` exhibited this; every prior run had 0 fallbacks. **Fixed** by accepting a top-level JSON number as well (`.or_else(|| v.as_f64())` in `refining::parse_score`, with bare-number tests).
-
-**Why the contamination biases against the candidate (so its real numbers are likely better):**
-* *Eval:* most dropped scores are low (already below threshold — no classification change), but the occasional high one (e.g. `0.60`) flips a true-positive to a false-negative, so the **true recall is ≥ 0.826**.
-* *Training:* ~14% bogus zeros were fed into the prompt-rewriter, so the chosen prompt was optimised against partly-garbage feedback — a clean re-run may produce a better prompt too.
-
-**Standing of this candidate:** even contaminated, `gpt-5-mini` is the **standout of the sweep** — best non-baseline recall (≥0.826), best non-baseline pinned recall (0.739), ROC-AUC 0.922 (2nd only to gpt-5), **and genuinely −65% cheaper** (unlike gpt-5, its $2/M output rate keeps reasoning-token cost down). It is the first candidate that is both competitive on accuracy and a real cost win. **A clean re-run after the parse fix supersedes this entry** — treat these metrics as a contaminated lower bound, not a result.
-
-> **Correction (28th May, after the clean re-run `#2`):** the "contaminated lower bound" framing above was wrong. It assumed the re-run would re-*evaluate the same prompt*; instead `#2` re-*trained* and produced a **different** prompt (`v2:33c81c64`) that came out *worse* (recall 0.609, ROC-AUC 0.868, no threshold reaching P=0.800) and pricier ($0.361, −9%). So `#1`'s numbers were an optimistic **outlier**, not a floor — `#1` vs `#2` differ by prompt-quality variance (gpt-5-mini is forced to temperature=1), not by contamination alone. The contamination's isolated effect on `#1`'s eval was never measured (that would need a clean re-eval of `v2:78aa12d7`, itself noisy at temp=1). See the `#2` entry below.
-
-**28th May — clean re-run, `gpt-5-mini` `#2` (run_id `019e6953-25e9-71ff-8532-a7fba90a40fd`, model `v2:33c81c64`):**
-
-The parse fix landed: **fallbacks training=0, test=0** — contamination eliminated. But the clean run is *worse and pricier* than the contaminated `#1`, because `#2` is a different prompt, not a re-eval:
-
-| Metric | Baseline (`gpt-4o`) | `gpt-5-mini` `#1` (contaminated) | `gpt-5-mini` `#2` (clean) |
-|---|---|---|---|
-| Precision @0.5 | 0.800 | 0.731 | 0.737 |
-| Recall @0.5 | 0.870 | 0.826 | **0.609** |
-| F1 @0.5 | 0.833 | 0.776 | 0.667 |
-| ROC-AUC | 0.897 | 0.922 | **0.868** |
-| Pinned @P=0.800 | thr=0.500, R=0.870 | thr=0.680, R=0.739 | **no qualifying threshold** |
-| Test cost | $0.397 | $0.139 (−65%) | **$0.361 (−9%)** |
-| Budget overshoot | — | 41.7% | 152.7% |
-| Fallbacks (train/test) | 0 / 0 | 2498 / 15 | **0 / 0** |
-
-`#2` can't reach 0.800 precision at any threshold and its ROC-AUC fell below baseline — a materially weaker classifier than `#1`. REJECTED.
-
-**Root cause of the `#1`↔`#2` swing: gpt-5-mini is forced to temperature=1 (reasoning model — see the per-model temperature fix), so it is doubly non-deterministic:**
-1. **Prompt-quality variance** — each training run lands a different-quality prompt (`#1` ROC-AUC 0.922, `#2` 0.868). Same lesson as the 25-May sanity run, but worse: gpt-4o could be pinned to temp=0, gpt-5-mini cannot.
-2. **Cost variance** — test cost swung 2.6× ($0.139 → $0.361) for the same 143 images, because reasoning-token volume varies with the prompt (and per call). The "−65% cheaper" headline was a one-prompt fluke; the robust figure is nearer −9%.
-
-**Methodological finding worth carrying forward: the eval framework assumes `fixed (prompt, test set) → fixed metrics`, which holds only for temperature-0 models.** For reasoning models forced to temp=1, even scoring a *fixed* prompt is non-deterministic — the metrics are a random variable, not a number. So a single gpt-5-mini run is a noisy sample stacked on the already variance-dominated gate (25-May observation); one run tells us very little, and a fair characterisation would need several runs per candidate to establish both accuracy and cost spreads.
-
-**Standing:** neither gpt-5-mini run cleared the gate (`#1` contaminated; `#2` missed badly), and the cost advantage is not robust (−65% → −9%). It is **not** the standout the `#1` entry claimed — it's "no clear win." A defensible accept would require multiple clean runs showing it *reliably* beats the gpt-4o recall spread while *reliably* staying cheaper; nothing observed supports that.
-
-**28th May — sixth phase-4 run, `gpt-5-nano` (run_id `019e6bc2-3194-7d1a-af0a-5dcb5227db90`, model `v2:43e09f37`):**
-
-| Metric | Baseline (15 May `v2:34d8bec0`, `gpt-4o`) | `gpt-5-nano` #1 |
-|---|---|---|
-| Precision / Recall / F1 @ thr=0.5 | 0.800 / 0.870 / 0.833 | 0.621 / 0.783 / 0.692 |
-| ROC-AUC | 0.897 | **0.926** |
-| Pinned @ P=0.800 | thr=0.500, R=0.870 | thr=0.800, R=0.304 |
-| Test cost (143 images) | $0.397 | **$0.076 (−81%)** |
-| Total run cost (USD) | $5.82 | **$3.05 (under $5 budget)** |
-| Fallbacks (training / test) | 0 / 0 | 0 / 0 |
-
-Gate **REJECTED**, but this is the cleanest cost+discrimination run of the sweep:
-* **Cost:** lowest test cost of any reasoning-model run; only run since `gpt-4.1-nano` to come in *under* the $5 budget (no overshoot warning). The parse fix held — 0 fallbacks confirm `gpt-5-mini` was the unique JSON drifter.
-* **Discrimination:** ROC-AUC 0.926 — above baseline (0.897) and effectively tied with the more expensive `gpt-5` (0.928) and contaminated `gpt-5-mini` `#1` (0.922).
-* **Recall @0.5 = 0.783** — squarely inside the gpt-4o spread (0.696–0.870, 25-May observation), matching the gpt-4o sanity run exactly.
-
-The rejection is the same calibration ceiling we've seen across every cheap candidate: pinned @P=0.800 collapses to R=0.304 (threshold=0.800), because nano's score distribution doesn't reach baseline precision until very near the top of its range. Discrimination is fine; calibration to the baseline's precision target isn't.
-
-**29th May — phase-4 sweep close: candidates summary, operating-point preference, verdict.**
-
-Sweep complete. **Clean** per-candidate result against the 15-May `gpt-4o` baseline (one row per distinct candidate; the 25-May `gpt-4o` sanity run lives in its own observation as a methodology check; the contaminated `gpt-5-mini` `#1` is superseded by `#2`).
-
-Column glossary (applies to this table and the per-candidate tables above):
-* **R @0.5** — recall computed at the fixed decision threshold 0.5 (positive prediction iff `score ≥ 0.5`). This is the default operating point used during training and matches what the deployed scorer applies unless its `decision_threshold` is set higher.
-* **ROC-AUC** — threshold-free discrimination: probability that a random positive scores higher than a random negative. Insensitive to where the threshold sits; sensitive to whether the model orders examples correctly.
-* **Pinned R @P=0.800** — sweep all thresholds, keep those whose precision ≥ 0.800 (the baseline's precision floor), pick the one with highest recall, report that recall. Answers "at the precision floor I require, how much recall can I keep?". `— (max P < 0.800)` means no threshold reaches the floor at all.
-
-| Candidate | R @0.5 | ROC-AUC | Pinned R @P=0.800 | Test cost | vs baseline cost |
-|---|---|---|---|---|---|
-| `gpt-4o` (baseline) | 0.870 | 0.897 | 0.870 | $0.397 | — |
-| `gpt-4o-mini` | 0.478 | 0.657 | 0.304 | $0.500 | **+26%** |
-| `gpt-4.1-mini` | 0.435 | 0.825 | 0.522 | $0.074 | −81% |
-| `gpt-4.1-nano` | 0.696 | 0.912 | 0.217 | $0.031 | −92% |
-| `gpt-5` | 0.435 | **0.928** | 0.696 | $0.501 | **+26%** |
-| `gpt-5-mini` (`#2`, clean) | 0.609 | 0.868 | — (max P < 0.800) | $0.361 | −9% |
-| `gpt-5-nano` | 0.783 | 0.926 | 0.304 | $0.076 | −81% |
-
-**Sample costs, 29th May**
-
-Sample costs: 10 images from split `default` (train side), snapshot `2026-05-24T16:55:51.154384Z`
-
-| model | input $/M | output $/M | min/image | max/image | avg/image |
-|---|---|---|---|---|---|
-| gpt-4.1-mini | $0.4000 | $1.6000 | $0.0002 | $0.0008 | $0.0006 |
-| gpt-4.1-nano | $0.1000 | $0.4000 | $0.0001 | $0.0003 | $0.0002 |
-| gpt-4o | $2.5000 | $10.0000 | $0.0017 | $0.0030 | $0.0028 |
-| gpt-4o-mini | $0.1500 | $0.6000 | $0.0013 | $0.0039 | $0.0035 |
-| gpt-5 | $1.2500 | $10.0000 | $0.0024 | $0.0066 | $0.0040 |
-| gpt-5-mini | $0.2500 | $2.0000 | $0.0004 | $0.0008 | $0.0006 |
-| gpt-5-nano | $0.0500 | $0.4000 | $0.0002 | $0.0003 | $0.0002 |
-
-**Operating-point preference (project owner, recorded for this decision and future phases):**
-* **Precision floor is firm.** For the *refine* step we care most about precision — false positives in the feed are the user-visible cost. Lowering precision below the baseline 0.800 is not an acceptable trade.
-* **Some recall reduction is OK in exchange for lower cost.** A candidate that hits the precision floor at a meaningfully lower cost can lose *some* recall and still be worth deploying.
-* **No further investigation appetite right now.** Phase-4 has already overrun the slice budget; we won't pay for more runs to characterise variance or recalibrate gates. The cheapest available candidates are not being accepted on the basis of this single round.
-
-**Reading the table under that preference:**
-* The "Pinned R @ P=0.800" column is the right column to look at — it asks "at the precision floor I require, how much recall do I keep?" — and none of the cheaper-than-baseline candidates hold up: best is `gpt-4.1-mini` at R=0.522 (−35pp recall vs baseline 0.870), which is more than "some" recall reduction.
-* `gpt-5` holds the most recall at the precision floor (R=0.696, −17pp) and has the best ROC-AUC overall, but it is **+26% more expensive**, so it fails the cost objective outright.
-* `gpt-5-mini` (clean `#2`) can't reach the precision floor at all (max precision < 0.800) — disqualified on the precision axis.
-* `gpt-5-nano` is the cleanest run by cost+discrimination, but pinned recall (0.304) is far below "some reduction."
-
-**Phase-4 verdict: closing without a deploy.** No candidate matches the firm precision floor at a recall the owner judges acceptable. The pre-phase-4 `refine.toml` (`v2:34d8bec0`, `gpt-4o`) remains production. This is captured under "If no candidate is accepted" above.
-
-**What this sweep showed that's worth carrying forward:**
-1. **Vision-token multipliers and reasoning-token output dominate cost predictions** — the baseline-token-profile budget model fails badly for cross-class candidates (`gpt-4o-mini`'s 33× image multiplier, `gpt-5`'s reasoning-token output). See 24-May and 26-May observations.
-2. **The gate is variance-dominated** — gpt-4o itself fails the gate it sets (25-May sanity), and reasoning models forced to temp=1 stack additional variance on both accuracy and cost (`gpt-5-mini` `#1` vs `#2`). Single-run accept/reject decisions are noisy.
-3. **Calibration, not discrimination, is the binding ceiling** — every cheap candidate has good ROC-AUC (most at or above baseline); none can match the baseline's precision at high recall because their score distributions sit elsewhere on the 0..1 scale. A future revisit could relax precision-pinning into a (P, R) Pareto-frontier comparison, but that's a phase-5+ design and out of scope here. The owner's precision-priority preference is the binding business constraint regardless, so a more lenient gate alone would not change this round's outcome — only re-training one of the gpt-5 candidates to land high-recall AT baseline precision would, and that requires the deferred multi-run characterisation we're explicitly not doing now.
+#### Phase 4: Expose `skeet-appraise` as a service inside hetzner via tailscale
+
+Use the [Tailscale Kubernetes Operator](https://tailscale.com/kb/1236/kubernetes-operator). It spins up a proxy pod per exposed resource that joins the tailnet and forwards to the backing `Service`. No public ingress, no per-service load balancer cost.
+
+This means we can now use tailscale to expose `skeet-appraise` running as a local k8s Service inside the cluster but still have it accessible from my phone and my laptop. As part of this we need to introduce a new type of identity of appraiser based on tailscale identity.
+
+We can do this like in Phase 3 where we run new/old alongside each other for a little while before we delete the fly.io website for `skeet-appraise`.
+
+At end of this we can probably do a code and infra cleanup/simplification as we should no-longer need the github app / redis auth / oauth login stuff.
+
+##### Use `Ingress`, not `Service`, for identity
+
+Of the operator's exposure modes, only [`Ingress`](https://tailscale.com/kb/1439/kubernetes-operator-cluster-ingress) injects Tailscale identity headers, which is the whole point here. Every request gets:
+
+* `Tailscale-User-Login` — caller's login (e.g. `mike@example.com`)
+* `Tailscale-User-Name` — display name
+* `Tailscale-User-Profile-Pic` — profile image URL
+
+The proxy strips incoming versions of these headers before forwarding, so they can't be spoofed from the tailnet. Anything else in-cluster reaching the backend `Service` directly could spoof them, so add a `NetworkPolicy` restricting the `Service` to only the Tailscale proxy pod.
+
+[tailscale/tailscale#15657](https://github.com/tailscale/tailscale/issues/15657) tracks identity headers for bare `Service` resources but is open and unmoving — `Ingress` is the only option today.
+
+##### Constraints of `Ingress` mode
+
+* HTTPS-only, port 443 only; certs auto-provisioned from Let's Encrypt.
+* Requires HTTPS and MagicDNS enabled on the tailnet ([docs](https://tailscale.com/kb/1153/enabling-https)).
+* Reachable only by the full MagicDNS FQDN (e.g. `bobby-appraisals-staging.<tailnet>.ts.net`) so the cert matches.
+* First connection after deploy can be slow while the cert is provisioned.
+
+##### Prerequisite
+
+OAuth client created in the Tailscale admin console for the operator — see the operator [setup section](https://tailscale.com/kb/1236/kubernetes-operator#setup).
+
+##### Tasks
+...
+
+#### Phase 5: turn `skeet-feed` homepage into a simple-but-nice list of images
+
+What I am envisaging here is a pinterest-style layout using css-grid. This should show all images seens in past week, and a click on each goes to the skeet. This may involve extending the publisher to publish a larger list of all images seen in past week (not just past couple of days that show in feed).
+
+This should be as server-rendered as possible, with associated cache headers on images and similar to maximise cache-ability.
+
+Tasks:
+...
