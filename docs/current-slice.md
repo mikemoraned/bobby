@@ -106,21 +106,21 @@ This is a pure refactor: no new service, no infra, no behaviour change. The exis
 
 Tasks:
 
-* [ ] **Create the `skeet-publish` crate** (lib only): add to workspace `members` and a `skeet-publish = { path = "skeet-publish" }` entry in `[workspace.dependencies]`; `[lints] workspace = true`. Deps: `skeet-store`, `shared`, `chrono`, `tokio`, `tracing` (add `image` only if a moved type needs it).
-* [ ] **Move feed-generation policy** out of `skeet-feed` into `skeet-publish`, with its unit tests:
+* [x] **Create the `skeet-publish` crate** (lib only): add to workspace `members` and a `skeet-publish = { path = "skeet-publish" }` entry in `[workspace.dependencies]`; `[lints] workspace = true`. Deps: `skeet-store`, `shared`, `chrono`, `tokio`, `tracing` (add `image` only if a moved type needs it). *(Also added `async-trait` for the `FeedSource` trait; no `image` needed.)*
+* [x] **Move feed-generation policy** out of `skeet-feed` into `skeet-publish`, with its unit tests:
     * `effective_band.rs` (`image_effective_band`, `image_score_is_positive`) — this is the per-model visibility/scoring decision; per the rust rule, policy belongs in the crate that owns the decision (`skeet-publish`).
-    * `visible_skeet_ids` / `visible_entries` (currently in `handlers.rs:26-68`).
-* [ ] **Move the cache** `feed_cache.rs` (`FeedCache`, `CachedFeed`, `spawn_background_refresh`) into `skeet-publish`, with its tests. Keep the cot middleware `FeedCacheLayer`/`FeedCacheExtractor` in the web crate(s) for now — they wrap the relocated `FeedCache`; only the cache type + refresh logic move.
-* [ ] **Define the trait + live impl** in `skeet-publish`:
-    * `trait FeedSource` (async) → returns ordered, unique, visibility-filtered `Vec<SkeetId>` + `refreshed_at: Option<DateTime<Utc>>`, with a force-refresh path (to back `cache-control: no-cache`).
+    * `visible_skeet_ids` / `visible_entries` (now in `skeet-publish/src/visibility.rs`).
+* [x] **Move the cache** `feed_cache.rs` (`FeedCache`, `CachedFeed`, `spawn_background_refresh`) into `skeet-publish`, with its tests. Keep the cot middleware `FeedCacheLayer`/`FeedCacheExtractor` in the web crate(s) for now — they wrap the relocated `FeedCache`; only the cache type + refresh logic move. *(Middleware stays in `skeet-feed/src/feed_cache_middleware.rs`.)*
+* [x] **Define the trait + live impl** in `skeet-publish` (`source.rs`):
+    * `trait FeedSource` (async) → returns ordered, unique, visibility-filtered `Vec<SkeetId>` + `refreshed_at: Option<DateTime<Utc>>` (wrapped in `FeedSkeleton`), with a force-refresh path (to back `cache-control: no-cache`).
     * `LiveFeedSource` implementing it over `FeedCache` + `visible_entries`.
-* [ ] **Rewire `skeet-feed`**:
-    * `get_feed_skeleton` depends only on `Arc<dyn FeedSource>` (injected via a layer/extractor) instead of `FeedCacheExtractor`; apply `take(limit)` + last-modified exactly as today.
+* [x] **Rewire `skeet-feed`**:
+    * `get_feed_skeleton` depends only on `Arc<dyn FeedSource>` (injected via `FeedSourceLayer`/`FeedSourceExtractor`) instead of `FeedCacheExtractor`; applies `take(limit)` + last-modified exactly as today.
     * `did_document` / `describe_feed_generator` are unchanged (use `FeedConfig`).
-    * `home` / `annotated_image` stay (transitional) using the relocated `CachedFeed`.
-    * Add `skeet-publish` to `skeet-feed/Cargo.toml`; delete the now-moved local modules.
-* [ ] **Wire the bin** `skeet_feed.rs`: construct `FeedCache` → wrap in `LiveFeedSource` → inject as `Arc<dyn FeedSource>`; keep `spawn_background_refresh`.
-* [ ] **Verify**: `just clippy`; `just test-no-docker` (the existing feed tests must pass unchanged); confirm both `lib.rs` files stay < 300 lines.
+    * `home` / `annotated_image` stay (transitional) using the relocated `CachedFeed` via `FeedCacheExtractor`.
+    * Added `skeet-publish` to `skeet-feed/Cargo.toml`; deleted the now-moved local modules (`effective_band.rs`, `feed_cache.rs`, `visibility.rs`).
+* [x] **Wire the bin** `skeet_feed.rs`: construct `FeedCache` → wrap in `LiveFeedSource` → inject as `Arc<dyn FeedSource>` via `FeedSourceLayer`; keep `spawn_background_refresh`.
+* [x] **Verify**: `just clippy` (clean); `just test-no-docker` (442 passed, 5 skipped — feed tests pass unchanged); both `lib.rs` files well under 300 lines (`skeet-publish` 10, `skeet-feed` 22).
 
 #### Phase 2: Split out `skeet-appraise` as a standalone website
 
