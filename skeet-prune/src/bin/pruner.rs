@@ -7,7 +7,7 @@ use clap::Parser;
 use shared::{PruneConfig, RejectionCategory};
 use skeet_prune::firehose::SkeetCandidate;
 use skeet_prune::pipeline::{ChannelMonitors, ImageResult, MetaResult, PipelineCounters};
-use skeet_store::{SkeetStore, StoreArgs};
+use skeet_store::StoreArgs;
 use tokio::sync::mpsc;
 use tracing::info;
 
@@ -19,10 +19,6 @@ struct Args {
     /// Path to prune.toml config file
     #[arg(long)]
     config_path: PathBuf,
-
-    /// Local fallback store path for when remote saves fail
-    #[arg(long)]
-    fallback_local_store: Option<String>,
 
     /// Status log interval in seconds (default: 30)
     #[arg(long, default_value = "30")]
@@ -67,18 +63,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("text detection models validated");
     }
 
-    let store = args.store.open_store().await?;
+    let store = args.store.open_store("pruner").await?;
     store.validate().await?;
     info!("storage validation passed");
-
-    let fallback = match &args.fallback_local_store {
-        Some(path) => {
-            let fallback_store = SkeetStore::open(path, vec![], None).await?;
-            info!(path = %path, "fallback local store opened");
-            Some(fallback_store)
-        }
-        None => None,
-    };
 
     // Pipeline: firehose → meta prune → image prune → save
     let (firehose_tx, mut firehose_rx) = mpsc::channel::<SkeetCandidate>(16);
@@ -86,8 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (image_tx, mut image_rx) = mpsc::channel::<ImageResult>(100);
 
     let counters = Arc::new(PipelineCounters::default());
-    let channels =
-        ChannelMonitors::new(firehose_tx.clone(), meta_tx.clone(), image_tx.clone());
+    let channels = ChannelMonitors::new(firehose_tx.clone(), meta_tx.clone(), image_tx.clone());
 
     let meta_http = http.clone();
     let firehose_counters = Arc::clone(&counters);
@@ -118,15 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let log_interval = std::time::Duration::from_secs(args.status_interval_secs);
-    skeet_prune::save_stage::run(
-        &mut image_rx,
-        &store,
-        fallback.as_ref(),
-        counters,
-        channels,
-        log_interval,
-    )
-    .await;
+    skeet_prune::save_stage::run(&mut image_rx, &store, counters, channels, log_interval).await;
 
     Ok(())
 }

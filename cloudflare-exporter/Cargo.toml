@@ -1,0 +1,35 @@
+[package]
+name = "cloudflare-exporter"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "sync_operations"
+path = "src/bin/sync_operations.rs"
+
+[[bin]]
+name = "sync_storage"
+path = "src/bin/sync_storage.rs"
+
+[dependencies]
+chrono = { workspace = true }
+clap = { workspace = true }
+opentelemetry = { workspace = true }
+prometheus-reqwest-remote-write = "0.5"
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+shared = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
+test-support = { workspace = true }
+
+[build-dependencies]
+build-support = { workspace = true }
+
+[lints]
+workspace = true

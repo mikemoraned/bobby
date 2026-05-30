@@ -1,7 +1,9 @@
 <tr id="row-{{ row.row_id }}">
     <td class="thumb"><img src="/skeet/{{ row.image_id }}/annotated.png" alt="Annotated" loading="lazy"></td>
     <td class="id">{{ row.item_id }}</td>
+    <td class="version">{{ row.pruner }}</td>
     <td class="score">{{ row.score }}</td>
+    <td class="version">{{ row.refiner }}</td>
     <td><span class="band-tag {{ row.auto_band }}">{{ row.auto_band }}</span></td>
     <td>
 {% if row.manual_band.is_some() %}

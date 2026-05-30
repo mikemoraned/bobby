@@ -1,0 +1,3572 @@
+{
+  "batches": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "hetzner"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "7a5a688"
+            }
+          },
+          {
+            "key": "telemetry.sdk.language",
+            "value": {
+              "stringValue": "rust"
+            }
+          },
+          {
+            "key": "telemetry.sdk.name",
+            "value": {
+              "stringValue": "opentelemetry"
+            }
+          },
+          {
+            "key": "telemetry.sdk.version",
+            "value": {
+              "stringValue": "0.31.0"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "skeet-live-refine"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "bobby"
+          },
+          "spans": [
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "hrI5kjxLsV4=",
+              "parentSpanId": "UORU84Zb0C0=",
+              "name": "serialize_to_arrow",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501968905659679",
+              "endTimeUnixNano": "1777501968905672119",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/lance-index-4.0.0/src/scalar/expression.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "lance_index::scalar::expression"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "1380"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "lance_index::scalar::expression"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "11000"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "2160"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "vg4P+krWJY4=",
+              "parentSpanId": "UORU84Zb0C0=",
+              "name": "plan_scan",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501968905907681",
+              "endTimeUnixNano": "1777501968905953441",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/lance-4.0.0/src/io/exec/filtered_read.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "lance::io::exec::filtered_read"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "500"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "lance::io::exec::filtered_read"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "42960"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "3480"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "iauPJ5F+y/0=",
+              "parentSpanId": "UORU84Zb0C0=",
+              "name": "init_filtered_read_stream",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501968906015361",
+              "endTimeUnixNano": "1777501968906242403",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/lance-4.0.0/src/io/exec/filtered_read.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "lance::io::exec::filtered_read"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "359"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "lance::io::exec::filtered_read"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "224002"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "3240"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "25LtMIJDmb0=",
+              "parentSpanId": "UORU84Zb0C0=",
+              "name": "read_fragment",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501968906308003",
+              "endTimeUnixNano": "1777501968906394244",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/lance-4.0.0/src/io/exec/filtered_read.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "lance::io::exec::filtered_read"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "1047"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "4"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "tokio-rt-worker"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "lance::io::exec::filtered_read"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "81121"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "5560"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "Ns2rFQTeavk=",
+              "parentSpanId": "UORU84Zb0C0=",
+              "name": "read_fragment",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501968906824966",
+              "endTimeUnixNano": "1777501969029293925",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/lance-4.0.0/src/io/exec/filtered_read.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "lance::io::exec::filtered_read"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "1047"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "5"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "tokio-rt-worker"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "lance::io::exec::filtered_read"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "471243"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "121998196"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "UORU84Zb0C0=",
+              "parentSpanId": "lShDQMjcTpc=",
+              "name": "DatasetRecordBatchStream",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501968905548439",
+              "endTimeUnixNano": "1777501969163856999",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/lance-4.0.0/src/dataset/scanner.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "lance::dataset::scanner"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "4506"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "lance::dataset::scanner"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "2514375"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "255795785"
+                  }
+                }
+              ],
+              "events": [
+                {
+                  "timeUnixNano": "1777501969163805479",
+                  "name": "event /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/lance-datafusion-4.0.0/src/exec.rs:535",
+                  "attributes": [
+                    {
+                      "key": "level",
+                      "value": {
+                        "stringValue": "INFO"
+                      }
+                    },
+                    {
+                      "key": "target",
+                      "value": {
+                        "stringValue": "lance::execution"
+                      }
+                    },
+                    {
+                      "key": "type",
+                      "value": {
+                        "stringValue": "plan_run"
+                      }
+                    },
+                    {
+                      "key": "plan_summary",
+                      "value": {
+                        "stringValue": "FilteredRead(ScalarIndex)"
+                      }
+                    },
+                    {
+                      "key": "output_rows",
+                      "value": {
+                        "stringValue": "2"
+                      }
+                    },
+                    {
+                      "key": "iops",
+                      "value": {
+                        "stringValue": "7"
+                      }
+                    },
+                    {
+                      "key": "requests",
+                      "value": {
+                        "stringValue": "7"
+                      }
+                    },
+                    {
+                      "key": "bytes_read",
+                      "value": {
+                        "stringValue": "65646"
+                      }
+                    },
+                    {
+                      "key": "indices_loaded",
+                      "value": {
+                        "stringValue": "0"
+                      }
+                    },
+                    {
+                      "key": "parts_loaded",
+                      "value": {
+                        "stringValue": "0"
+                      }
+                    },
+                    {
+                      "key": "index_comparisons",
+                      "value": {
+                        "stringValue": "63"
+                      }
+                    },
+                    {
+                      "key": "code.file.path",
+                      "value": {
+                        "stringValue": "/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/lance-datafusion-4.0.0/src/exec.rs"
+                      }
+                    },
+                    {
+                      "key": "code.module.name",
+                      "value": {
+                        "stringValue": "lance_datafusion::exec"
+                      }
+                    },
+                    {
+                      "key": "code.line.number",
+                      "value": {
+                        "intValue": "535"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "vyxO8qGR5Tc=",
+              "parentSpanId": "lShDQMjcTpc=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501969164024800",
+              "endTimeUnixNano": "1777501969164036400",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "3040"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "9640"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "xgMi8dcnC74=",
+              "parentSpanId": "lShDQMjcTpc=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501969164045320",
+              "endTimeUnixNano": "1777501969164049040",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "discovered_at"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "1640"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "2480"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "NwxZXirWnXk=",
+              "parentSpanId": "lShDQMjcTpc=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501969164056760",
+              "endTimeUnixNano": "1777501969164059600",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "960"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "2240"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "dnpcHZ3Cwb0=",
+              "parentSpanId": "lShDQMjcTpc=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501969164063880",
+              "endTimeUnixNano": "1777501969164066360",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "discovered_at"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "760"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "2080"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "lShDQMjcTpc=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "list_all_image_ids_by_most_recent",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501967791880218",
+              "endTimeUnixNano": "1777501969164083401",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/lib.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "325"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store"
+                  }
+                },
+                {
+                  "key": "since",
+                  "value": {
+                    "stringValue": "Some(DiscoveredAt(2026-04-29T22:28:46.321894Z))"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "21576453"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "1350626930"
+                  }
+                }
+              ],
+              "events": [
+                {
+                  "timeUnixNano": "1777501969164015320",
+                  "name": "slow query",
+                  "attributes": [
+                    {
+                      "key": "level",
+                      "value": {
+                        "stringValue": "WARN"
+                      }
+                    },
+                    {
+                      "key": "target",
+                      "value": {
+                        "stringValue": "skeet_store::lancedb_utils"
+                      }
+                    },
+                    {
+                      "key": "label",
+                      "value": {
+                        "stringValue": "list_all_image_ids_by_most_recent"
+                      }
+                    },
+                    {
+                      "key": "elapsed",
+                      "value": {
+                        "stringValue": "1.371991541s"
+                      }
+                    },
+                    {
+                      "key": "plan.table",
+                      "value": {
+                        "stringValue": "images_v6.lance"
+                      }
+                    },
+                    {
+                      "key": "plan.columns",
+                      "value": {
+                        "stringValue": "image_id, discovered_at"
+                      }
+                    },
+                    {
+                      "key": "plan.num_fragments",
+                      "value": {
+                        "stringValue": "68"
+                      }
+                    },
+                    {
+                      "key": "plan.full_scan",
+                      "value": {
+                        "boolValue": false
+                      }
+                    },
+                    {
+                      "key": "plan.full_filter",
+                      "value": {
+                        "stringValue": "discovered_at >= TimestampMicrosecond(1777501726321894"
+                      }
+                    },
+                    {
+                      "key": "plan.refine_filter",
+                      "value": {
+                        "stringValue": ""
+                      }
+                    },
+                    {
+                      "key": "plan.range_before",
+                      "value": {
+                        "stringValue": ""
+                      }
+                    },
+                    {
+                      "key": "plan.range_after",
+                      "value": {
+                        "stringValue": ""
+                      }
+                    },
+                    {
+                      "key": "plan.row_id",
+                      "value": {
+                        "boolValue": false
+                      }
+                    },
+                    {
+                      "key": "plan.row_addr",
+                      "value": {
+                        "boolValue": false
+                      }
+                    },
+                    {
+                      "key": "plan.index",
+                      "value": {
+                        "stringValue": "ScalarIndexQuery: query=[discovered_at >= 1777501726321894]@discovered_at_idx"
+                      }
+                    },
+                    {
+                      "key": "code.file.path",
+                      "value": {
+                        "stringValue": "skeet-store/src/lancedb_utils.rs"
+                      }
+                    },
+                    {
+                      "key": "code.module.name",
+                      "value": {
+                        "stringValue": "skeet_store::lancedb_utils"
+                      }
+                    },
+                    {
+                      "key": "code.line.number",
+                      "value": {
+                        "intValue": "43"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "28kbUQOmI8U=",
+              "parentSpanId": "6mql6tq3D3A=",
+              "name": "serialize_to_arrow",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970205438493",
+              "endTimeUnixNano": "1777501970205459373",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/lance-index-4.0.0/src/scalar/expression.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "lance_index::scalar::expression"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "1380"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "lance_index::scalar::expression"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "17440"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "4080"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "kJjnT2EP000=",
+              "parentSpanId": "6mql6tq3D3A=",
+              "name": "plan_scan",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970205497053",
+              "endTimeUnixNano": "1777501970205806895",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/lance-4.0.0/src/io/exec/filtered_read.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "lance::io::exec::filtered_read"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "500"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "lance::io::exec::filtered_read"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "308282"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "1920"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "lvyj+7Bp7O4=",
+              "parentSpanId": "6mql6tq3D3A=",
+              "name": "init_filtered_read_stream",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970205814815",
+              "endTimeUnixNano": "1777501970205876296",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/lance-4.0.0/src/io/exec/filtered_read.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "lance::io::exec::filtered_read"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "359"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "lance::io::exec::filtered_read"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "58161"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "3520"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "z4186dg0J2I=",
+              "parentSpanId": "6mql6tq3D3A=",
+              "name": "read_fragment",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970205936096",
+              "endTimeUnixNano": "1777501970206020336",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/lance-4.0.0/src/io/exec/filtered_read.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "lance::io::exec::filtered_read"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "1047"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "5"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "tokio-rt-worker"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "lance::io::exec::filtered_read"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "79640"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "5000"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "gemm5T02J5s=",
+              "parentSpanId": "6mql6tq3D3A=",
+              "name": "read_fragment",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970206341978",
+              "endTimeUnixNano": "1777501970206393339",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/lance-4.0.0/src/io/exec/filtered_read.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "lance::io::exec::filtered_read"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "1047"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "4"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "tokio-rt-worker"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "lance::io::exec::filtered_read"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "46961"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "4840"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "6mql6tq3D3A=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "DatasetRecordBatchStream",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970204753049",
+              "endTimeUnixNano": "1777501970378130883",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/lance-4.0.0/src/dataset/scanner.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "lance::dataset::scanner"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "4506"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "lance::dataset::scanner"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "2550658"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "170828056"
+                  }
+                }
+              ],
+              "events": [
+                {
+                  "timeUnixNano": "1777501970378104883",
+                  "name": "event /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/lance-datafusion-4.0.0/src/exec.rs:535",
+                  "attributes": [
+                    {
+                      "key": "level",
+                      "value": {
+                        "stringValue": "INFO"
+                      }
+                    },
+                    {
+                      "key": "target",
+                      "value": {
+                        "stringValue": "lance::execution"
+                      }
+                    },
+                    {
+                      "key": "type",
+                      "value": {
+                        "stringValue": "plan_run"
+                      }
+                    },
+                    {
+                      "key": "plan_summary",
+                      "value": {
+                        "stringValue": "FilteredRead(ScalarIndex)"
+                      }
+                    },
+                    {
+                      "key": "output_rows",
+                      "value": {
+                        "stringValue": "28795"
+                      }
+                    },
+                    {
+                      "key": "iops",
+                      "value": {
+                        "stringValue": "4"
+                      }
+                    },
+                    {
+                      "key": "requests",
+                      "value": {
+                        "stringValue": "4"
+                      }
+                    },
+                    {
+                      "key": "bytes_read",
+                      "value": {
+                        "stringValue": "1238503"
+                      }
+                    },
+                    {
+                      "key": "indices_loaded",
+                      "value": {
+                        "stringValue": "0"
+                      }
+                    },
+                    {
+                      "key": "parts_loaded",
+                      "value": {
+                        "stringValue": "0"
+                      }
+                    },
+                    {
+                      "key": "index_comparisons",
+                      "value": {
+                        "stringValue": "28795"
+                      }
+                    },
+                    {
+                      "key": "code.file.path",
+                      "value": {
+                        "stringValue": "/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/lance-datafusion-4.0.0/src/exec.rs"
+                      }
+                    },
+                    {
+                      "key": "code.module.name",
+                      "value": {
+                        "stringValue": "lance_datafusion::exec"
+                      }
+                    },
+                    {
+                      "key": "code.line.number",
+                      "value": {
+                        "intValue": "535"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "xcbeKjRR46Y=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970378193363",
+              "endTimeUnixNano": "1777501970378330724",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "2800"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "135161"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "AdFwxfJwQHM=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970378534685",
+              "endTimeUnixNano": "1777501970378538045",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "1000"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "2960"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "ClJpHL7E3VM=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970378684766",
+              "endTimeUnixNano": "1777501970378686326",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "440"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "1320"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "iex0gy8ze6U=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970378789127",
+              "endTimeUnixNano": "1777501970378792327",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "1080"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "2560"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "EzlxyjaV1+U=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970379041568",
+              "endTimeUnixNano": "1777501970379044849",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "1040"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "2681"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "wP4zz0zTlos=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970379133329",
+              "endTimeUnixNano": "1777501970379134689",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "520"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "1000"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "0jWsBSXUh3c=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970379224290",
+              "endTimeUnixNano": "1777501970379225690",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "680"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "920"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "s88HO5nZ1GE=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970379320130",
+              "endTimeUnixNano": "1777501970379321650",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "560"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "1120"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "ZBcJL3zZvRA=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970379763173",
+              "endTimeUnixNano": "1777501970379768413",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "1120"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "4600"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "7eC938x11Qw=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970379869854",
+              "endTimeUnixNano": "1777501970379871334",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "680"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "1040"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "yMtGYY//dZc=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970380005414",
+              "endTimeUnixNano": "1777501970380007974",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "760"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "2240"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "Sq6ta9JSBMQ=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970380112055",
+              "endTimeUnixNano": "1777501970380113855",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "440"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "1600"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "d/LBSYK4HZc=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970380216896",
+              "endTimeUnixNano": "1777501970380218296",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "560"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "960"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "FDq50b6VSec=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970380322656",
+              "endTimeUnixNano": "1777501970380324016",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "520"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "1080"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "zkHog/y6iwU=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970380430217",
+              "endTimeUnixNano": "1777501970380431617",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "480"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "1040"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "f+V+pMURwPs=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970381438423",
+              "endTimeUnixNano": "1777501970381444063",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "1920"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "4360"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "Ag8P0uzDG5M=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970381557824",
+              "endTimeUnixNano": "1777501970381559504",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "680"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "1200"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "XU4IuQ2jhoc=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970381668345",
+              "endTimeUnixNano": "1777501970381669825",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "400"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "1200"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "MtN59aX5q8c=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970381807386",
+              "endTimeUnixNano": "1777501970381810386",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "1080"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "2320"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "PgHT3ME/3Do=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970381920266",
+              "endTimeUnixNano": "1777501970381922306",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "600"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "1640"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "EOL8z3AsKTw=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970382080107",
+              "endTimeUnixNano": "1777501970382083267",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "880"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "2640"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "OGeMJV12o/k=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970382198228",
+              "endTimeUnixNano": "1777501970382199628",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "560"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "1000"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "wiDc7VWfBmo=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970382314029",
+              "endTimeUnixNano": "1777501970382315429",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "480"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "1040"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "RXJEXxiiSW0=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970382427749",
+              "endTimeUnixNano": "1777501970382429629",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "440"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "1600"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "oJo3mAsbzcQ=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970382543870",
+              "endTimeUnixNano": "1777501970382545230",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "520"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "960"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "7Id2Cj0NCgU=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970382657431",
+              "endTimeUnixNano": "1777501970382658751",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "600"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "880"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "k6pqy8lleIU=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970382805792",
+              "endTimeUnixNano": "1777501970382808552",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "960"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "2320"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "VVNnUB4uiss=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970382928793",
+              "endTimeUnixNano": "1777501970382930673",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "520"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "1520"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "4h7dR4SV1Dc=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970383069833",
+              "endTimeUnixNano": "1777501970383071793",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "760"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "1560"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "0xhXaa8lFCk=",
+              "parentSpanId": "h2oXUnK69wM=",
+              "name": "typed_column",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501970385339048",
+              "endTimeUnixNano": "1777501970385346848",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/arrow_utils.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "10"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::arrow_utils"
+                  }
+                },
+                {
+                  "key": "name",
+                  "value": {
+                    "stringValue": "image_id"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "3000"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "5560"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "5oEZQ2jyAqK6XYuYYS0hWw==",
+              "spanId": "h2oXUnK69wM=",
+              "name": "list_unscored_image_ids_for_version",
+              "kind": "SPAN_KIND_INTERNAL",
+              "startTimeUnixNano": "1777501967791867417",
+              "endTimeUnixNano": "1777501970387671622",
+              "attributes": [
+                {
+                  "key": "code.file.path",
+                  "value": {
+                    "stringValue": "skeet-store/src/scores.rs"
+                  }
+                },
+                {
+                  "key": "code.module.name",
+                  "value": {
+                    "stringValue": "skeet_store::scores"
+                  }
+                },
+                {
+                  "key": "code.line.number",
+                  "value": {
+                    "intValue": "122"
+                  }
+                },
+                {
+                  "key": "thread.id",
+                  "value": {
+                    "intValue": "1"
+                  }
+                },
+                {
+                  "key": "thread.name",
+                  "value": {
+                    "stringValue": "main"
+                  }
+                },
+                {
+                  "key": "target",
+                  "value": {
+                    "stringValue": "skeet_store::scores"
+                  }
+                },
+                {
+                  "key": "model_version",
+                  "value": {
+                    "stringValue": "ModelVersion(\"ea219ee0\")"
+                  }
+                },
+                {
+                  "key": "since",
+                  "value": {
+                    "stringValue": "Some(DiscoveredAt(2026-04-29T22:28:46.321894Z))"
+                  }
+                },
+                {
+                  "key": "busy_ns",
+                  "value": {
+                    "intValue": "50032111"
+                  }
+                },
+                {
+                  "key": "idle_ns",
+                  "value": {
+                    "intValue": "2545772814"
+                  }
+                }
+              ],
+              "events": [
+                {
+                  "timeUnixNano": "1777501970378187283",
+                  "name": "slow query",
+                  "attributes": [
+                    {
+                      "key": "level",
+                      "value": {
+                        "stringValue": "WARN"
+                      }
+                    },
+                    {
+                      "key": "target",
+                      "value": {
+                        "stringValue": "skeet_store::lancedb_utils"
+                      }
+                    },
+                    {
+                      "key": "label",
+                      "value": {
+                        "stringValue": "list_unscored:scored_ids"
+                      }
+                    },
+                    {
+                      "key": "elapsed",
+                      "value": {
+                        "stringValue": "1.214051442s"
+                      }
+                    },
+                    {
+                      "key": "plan.table",
+                      "value": {
+                        "stringValue": "images_score_v2.lance"
+                      }
+                    },
+                    {
+                      "key": "plan.columns",
+                      "value": {
+                        "stringValue": "image_id"
+                      }
+                    },
+                    {
+                      "key": "plan.num_fragments",
+                      "value": {
+                        "stringValue": "2"
+                      }
+                    },
+                    {
+                      "key": "plan.full_scan",
+                      "value": {
+                        "boolValue": false
+                      }
+                    },
+                    {
+                      "key": "plan.full_filter",
+                      "value": {
+                        "stringValue": "model_version = Utf8(\"ea219ee0\")"
+                      }
+                    },
+                    {
+                      "key": "plan.refine_filter",
+                      "value": {
+                        "stringValue": ""
+                      }
+                    },
+                    {
+                      "key": "plan.range_before",
+                      "value": {
+                        "stringValue": ""
+                      }
+                    },
+                    {
+                      "key": "plan.range_after",
+                      "value": {
+                        "stringValue": ""
+                      }
+                    },
+                    {
+                      "key": "plan.row_id",
+                      "value": {
+                        "boolValue": false
+                      }
+                    },
+                    {
+                      "key": "plan.row_addr",
+                      "value": {
+                        "boolValue": false
+                      }
+                    },
+                    {
+                      "key": "plan.index",
+                      "value": {
+                        "stringValue": "ScalarIndexQuery: query=[model_version = ea219ee0]@model_version_idx"
+                      }
+                    },
+                    {
+                      "key": "code.file.path",
+                      "value": {
+                        "stringValue": "skeet-store/src/lancedb_utils.rs"
+                      }
+                    },
+                    {
+                      "key": "code.module.name",
+                      "value": {
+                        "stringValue": "skeet_store::lancedb_utils"
+                      }
+                    },
+                    {
+                      "key": "code.line.number",
+                      "value": {
+                        "intValue": "43"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "status": {}
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

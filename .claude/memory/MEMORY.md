@@ -1,0 +1,5 @@
+- [feedback_no_bespoke_bash.md](feedback_no_bespoke_bash.md) — Avoid complex bash scripts in just targets; prefer simple declarative approaches
+- [feedback_use_jq.md](feedback_use_jq.md) — Use jq for JSON parsing, never inline python
+- [feedback_use_just_test.md](feedback_use_just_test.md) — Use `just test` for the full test suite; not `cargo test --workspace` or `cargo nextest run` directly (Justfile carries `--release --features integ`)
+- [feedback_canonical_struct_hash.md](feedback_canonical_struct_hash.md) — Drift-detection hashes go through `std::hash::Hash` + `DefaultHasher` on struct fields, never raw file bytes or sha2; follow the `RefineModel::version()` shape
+- [reference_grafana_traces.md](reference_grafana_traces.md) — Grafana Cloud traces dashboard URL (replaced Honeycomb)

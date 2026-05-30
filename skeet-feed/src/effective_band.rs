@@ -1,8 +1,34 @@
-use shared::{Band, Score};
+use shared::{Band, RefineModels, Score};
+use skeet_store::ModelVersion;
+use tracing::warn;
 
 /// Per-image effective band: manual override wins, otherwise derived from score.
+///
+/// Used for admin display and manual labelling.  For feed visibility, use
+/// `image_score_is_positive` instead.
 pub fn image_effective_band(score: Score, manual_image_band: Option<Band>) -> Band {
     manual_image_band.unwrap_or_else(|| Band::from_score(score))
+}
+
+/// Whether a score is positive according to the model that produced it.
+///
+/// Unknown `model_version` → not positive (logged as a warning).  This is the
+/// policy applied to scores whose producing model is no longer in `refine.toml`.
+pub fn image_score_is_positive(
+    score: Score,
+    model_version: &ModelVersion,
+    models: &RefineModels,
+) -> bool {
+    models.get(model_version).map_or_else(
+        || {
+            warn!(
+                %model_version,
+                "model_version not found in RefineModels — treating score as not-positive"
+            );
+            false
+        },
+        |model| model.is_positive(score),
+    )
 }
 
 /// Whether a skeet should appear in the feed.

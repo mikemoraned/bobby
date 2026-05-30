@@ -14,9 +14,10 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     shared::tracing::init("info");
+    info!(git_hash = env!("BUILD_GIT_HASH"), "summarise starting");
 
     let args = Args::parse();
-    let store = args.store.open_store().await?;
+    let store = args.store.open_store("summarise").await?;
 
     info!("generating summary");
     let summary = store.summarise().await?;

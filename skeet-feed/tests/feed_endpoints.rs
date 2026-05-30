@@ -18,6 +18,7 @@ use skeet_feed::project::FeedProject;
 use skeet_feed::{AppraiserLayer, FeedCacheLayer, OAuthConfigLayer, StartedAtLayer, StoreLayer};
 use skeet_store::test_utils::{make_record, make_record_at, open_temp_store};
 use skeet_store::{DiscoveredAt, ModelVersion, Score, SkeetStore};
+use test_support::test_models;
 use wiremock::MockServer;
 
 fn test_params() -> FeedParams {
@@ -34,6 +35,7 @@ async fn client_for(store: SkeetStore, params: FeedParams) -> Client {
     let store = Arc::new(store);
     let cache = Arc::new(FeedCache::new(
         Arc::clone(&store),
+        test_models(),
         params.max_entries,
         params.max_age_hours,
     ));
@@ -721,6 +723,7 @@ async fn oauth_client(
     let params = test_params();
     let cache = Arc::new(FeedCache::new(
         Arc::clone(&store),
+        test_models(),
         params.max_entries,
         params.max_age_hours,
     ));

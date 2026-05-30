@@ -1,12 +1,12 @@
 STORE := "store"
 R2_STORE := "s3://hom-bobby/encrypted-store"
-FALLBACK_STORE := "fallback-store"
-OTEL_ENDPOINT := "https://api.honeycomb.io"
 
 import 'just/store.just'
 import 'just/feed.just'
 import 'just/container.just'
 import 'just/cluster.just'
+import 'just/cloudflare.just'
+import 'just/openai.just'
 
 default:
     just --list
@@ -21,18 +21,24 @@ convert-models: download-models
     cd model-conversion && uv run python convert_yunet.py
 
 prerequisites: convert-models
-    brew install protobuf openssl cargo-nextest
+    brew install protobuf openssl cargo-nextest gettext
     cargo install --locked cargo-mutants
 
 build:
     cargo build --quiet
 
 test:
-    cargo nextest run --release -p skeet-feed --features test
-    cargo nextest run --release
+    cargo nextest run --release --features integ
+
+# Omits tests marked _docker; safe to run without Docker
+test-no-docker:
+    cargo nextest run --release --features integ --profile no-docker
+
+end_to_end_test: end_to_end_test_cloudflare end_to_end_test_openai end_to_end_test_staging
 
 mutants-on-diff:
-    git diff main | cargo mutants --in-diff -
+    git diff main > /tmp/bobby-mutants-diff.patch
+    cargo mutants --in-diff /tmp/bobby-mutants-diff.patch
 
 clippy:
     cargo clippy --quiet --workspace -- -D warnings

@@ -8,14 +8,18 @@ workspace = true
 
 [dependencies]
 atrium-api = { version = "0.25", default-features = false, features = ["namespace-appbsky"] }
+eval = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
+csv = "1"
 face-detection = { path = "../face-detection" }
 fastrand = "2"
 image = { workspace = true }
 jetstream-oxide = "0.1"
 reqwest = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
+opentelemetry = { workspace = true }
 shared = { workspace = true }
 skin-detection = { path = "../skin-detection" }
 text-detection = { path = "../text-detection" }
@@ -23,9 +27,13 @@ skeet-store = { path = "../skeet-store" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 
+[build-dependencies]
+build-support = { workspace = true }
+
 [dev-dependencies]
 libtest-mimic = "0.8"
-serde = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
+test-support = { workspace = true }
 toml = { workspace = true }
 
 [[bin]]
@@ -47,10 +55,6 @@ path = "src/bin/at_metadata_dump.rs"
 [[bin]]
 name = "add-to-blocklist"
 path = "src/bin/add_to_blocklist.rs"
-
-[[bin]]
-name = "bench-firehose"
-path = "src/bin/bench_firehose.rs"
 
 [[bin]]
 name = "eval"

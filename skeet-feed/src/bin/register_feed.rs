@@ -1,6 +1,7 @@
 #![warn(clippy::all, clippy::nursery)]
 
 use clap::Parser;
+use tracing::info;
 
 #[derive(Parser)]
 struct Args {
@@ -31,6 +32,9 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    shared::tracing::init("info");
+    info!(git_hash = env!("BUILD_GIT_HASH"), "register_feed");
+
     let args = Args::parse();
 
     let did = format!("did:web:{}", args.hostname);

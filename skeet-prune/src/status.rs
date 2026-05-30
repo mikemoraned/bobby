@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use shared::{Rejection, RejectionCategory};
 use tracing::info;
 
+use crate::metrics::PruneMetrics;
 use crate::pipeline::{ChannelMonitors, PipelineCounters};
 
 const ALL_CATEGORIES: [RejectionCategory; 3] = [
@@ -18,8 +19,6 @@ pub struct Status {
     post_count: u64,
     image_count: u64,
     saved_count: u64,
-    saved_remote: u64,
-    saved_fallback: u64,
     rejected_count: u64,
     rejection_counts: HashMap<Rejection, u64>,
     category_counts: HashMap<RejectionCategory, u64>,
@@ -30,6 +29,7 @@ pub struct Status {
     started_at: Instant,
     counters: Arc<PipelineCounters>,
     channels: ChannelMonitors,
+    metrics: PruneMetrics,
 }
 
 impl Status {
@@ -43,8 +43,6 @@ impl Status {
             post_count: 0,
             image_count: 0,
             saved_count: 0,
-            saved_remote: 0,
-            saved_fallback: 0,
             rejected_count: 0,
             rejection_counts: HashMap::new(),
             category_counts: HashMap::new(),
@@ -55,6 +53,7 @@ impl Status {
             started_at: Instant::now(),
             counters,
             channels,
+            metrics: PruneMetrics::new(&opentelemetry::global::meter("skeet_prune")),
         }
     }
 
@@ -66,16 +65,6 @@ impl Status {
 
     pub const fn record_saved(&mut self) {
         self.saved_count += 1;
-    }
-
-    pub const fn record_saved_remote(&mut self) {
-        self.saved_count += 1;
-        self.saved_remote += 1;
-    }
-
-    pub const fn record_saved_fallback(&mut self) {
-        self.saved_count += 1;
-        self.saved_fallback += 1;
     }
 
     pub fn record_rejected(&mut self, reasons: &[Rejection]) {
@@ -108,7 +97,7 @@ impl Status {
         }
     }
 
-    fn log_summary(&self) {
+    fn log_summary(&mut self) {
         let hit_rate = if self.image_count > 0 {
             (self.saved_count as f64 / self.image_count as f64) * 100.0
         } else {
@@ -127,14 +116,7 @@ impl Status {
             0.0
         };
 
-        let saved_detail = if self.saved_fallback > 0 {
-            format!(
-                "saved: {saved} ({hit_rate:.1}%) [remote: {}, fallback: {}]",
-                self.saved_remote, self.saved_fallback
-            )
-        } else {
-            format!("saved: {saved} ({hit_rate:.1}%)")
-        };
+        let saved_detail = format!("saved: {saved} ({hit_rate:.1}%)");
 
         let mut msg = format!(
             "skeets: {posts} ({skeets_per_sec:.1}/s) | images: {images} | {saved_detail} | rejected: {rejected}"
@@ -200,13 +182,29 @@ impl Status {
             0.0
         };
 
+        let firehose_depth = self.channels.firehose_depth();
+        let meta_depth = self.channels.meta_depth();
+        let image_depth = self.channels.image_depth();
+
         info!(
             "pipeline | throughput: firehose={firehose} ({firehose_per_sec:.1}/s), \
              meta={meta} ({meta_per_sec:.1}/s), image={image} ({image_per_sec:.1}/s) \
-             | depth: firehose={}, meta={}, image={}",
-            self.channels.firehose_depth(),
-            self.channels.meta_depth(),
-            self.channels.image_depth(),
+             | depth: firehose={firehose_depth}, meta={meta_depth}, image={image_depth}",
+        );
+
+        self.metrics.emit(
+            firehose,
+            meta,
+            image,
+            firehose_depth,
+            meta_depth,
+            image_depth,
+            posts,
+            images,
+            saved,
+            &self.rejection_counts,
+            &self.category_counts,
+            &self.sole_category_counts,
         );
     }
 }

@@ -17,7 +17,7 @@ pub enum StoreError {
     ColumnTypeMismatch { column: String },
 
     #[error("invalid image_id in store: {0}")]
-    InvalidImageId(#[from] crate::types::InvalidImageId),
+    InvalidImageId(#[from] shared::InvalidImageId),
 
     #[error("invalid skeet_id in store: {0}")]
     InvalidSkeetId(#[from] shared::skeet_id::SkeetIdError),
@@ -36,4 +36,7 @@ pub enum StoreError {
 
     #[error("limit {requested} exceeds maximum {maximum}")]
     LimitExceeded { requested: usize, maximum: usize },
+
+    #[error("cannot get fragment count for table '{table}': {reason}")]
+    CannotGetFragmentCount { table: String, reason: String },
 }

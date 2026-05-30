@@ -3,7 +3,8 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use skeet_store::{ImageId, StoreArgs};
+use shared::ImageId;
+use skeet_store::StoreArgs;
 use tracing::info;
 
 #[derive(Parser)]
@@ -26,10 +27,11 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     shared::tracing::init("info");
+    info!(git_hash = env!("BUILD_GIT_HASH"), "export-image starting");
 
     let args = Args::parse();
 
-    let store = args.store.open_store().await?;
+    let store = args.store.open_store("export_image").await?;
     let stored = store
         .get_by_id(&args.image_id)
         .await?

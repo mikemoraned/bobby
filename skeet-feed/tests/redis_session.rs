@@ -23,6 +23,7 @@ use skeet_feed::project::FeedProject;
 use skeet_feed::{AppraiserLayer, FeedCacheLayer, OAuthConfigLayer, StartedAtLayer, StoreLayer};
 use skeet_store::test_utils::{make_record, open_temp_store};
 use skeet_store::{ModelVersion, Score, SkeetStore};
+use test_support::test_models;
 use testcontainers::core::{IntoContainerPort, WaitFor};
 use testcontainers::runners::AsyncRunner;
 use testcontainers::{ContainerAsync, CopyTargetOptions, GenericImage, ImageExt};
@@ -48,6 +49,7 @@ async fn oauth_client_with_redis(
     let params = test_params();
     let cache = Arc::new(FeedCache::new(
         Arc::clone(&store),
+        test_models(),
         params.max_entries,
         params.max_age_hours,
     ));
@@ -180,7 +182,7 @@ async fn start_redis_with_tls() -> (ContainerAsync<GenericImage>, String) {
 // ─── Plain TCP ────────────────────────────────────────────────
 
 #[tokio::test]
-async fn login_and_admin_with_redis_session_store() {
+async fn login_and_admin_with_redis_session_store_docker() {
     let container = testcontainers_modules::redis::Redis::default()
         .start()
         .await
@@ -229,7 +231,7 @@ async fn login_and_admin_with_redis_session_store() {
 // ─── TLS ──────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn login_and_admin_with_redis_over_tls() {
+async fn login_and_admin_with_redis_over_tls_docker() {
     // Reproduces the original deploy bug: cot's RedisStore with a `rediss://`
     // URL failed at startup with "can't connect with TLS, the feature is not
     // enabled". This test starts Redis with TLS (self-signed certs), does a

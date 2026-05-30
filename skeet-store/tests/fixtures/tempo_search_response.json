@@ -1,0 +1,217 @@
+{
+  "traces": [
+    {
+      "traceID": "e681194368f202a2ba5d8b98612d215b",
+      "rootServiceName": "skeet-live-refine",
+      "rootTraceName": "list_unscored_image_ids_for_version",
+      "startTimeUnixNano": "1777501967791867417",
+      "durationMs": 2595,
+      "spanSet": {
+        "spans": [
+          {
+            "spanID": "876a175272baf703",
+            "name": "list_unscored_image_ids_for_version",
+            "startTimeUnixNano": "1777501967791867417",
+            "durationNanos": "2595804205",
+            "attributes": [
+              {
+                "key": "service.name",
+                "value": {
+                  "stringValue": "skeet-live-refine"
+                }
+              }
+            ]
+          }
+        ],
+        "matched": 1
+      },
+      "spanSets": [
+        {
+          "spans": [
+            {
+              "spanID": "876a175272baf703",
+              "name": "list_unscored_image_ids_for_version",
+              "startTimeUnixNano": "1777501967791867417",
+              "durationNanos": "2595804205",
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "skeet-live-refine"
+                  }
+                }
+              ]
+            }
+          ],
+          "matched": 1
+        }
+      ],
+      "serviceStats": {
+        "skeet-live-refine": {
+          "spanCount": 48
+        }
+      }
+    },
+    {
+      "traceID": "1cd7521d8b441da3b7ebcf2bd6e49f7e",
+      "rootServiceName": "skeet-live-refine",
+      "rootTraceName": "list_unscored_image_ids_for_version",
+      "startTimeUnixNano": "1777501847873453211",
+      "durationMs": 3661,
+      "spanSet": {
+        "spans": [
+          {
+            "spanID": "78a647c7c4056f95",
+            "name": "list_unscored_image_ids_for_version",
+            "startTimeUnixNano": "1777501847873453211",
+            "durationNanos": "3661348757",
+            "attributes": [
+              {
+                "key": "service.name",
+                "value": {
+                  "stringValue": "skeet-live-refine"
+                }
+              }
+            ]
+          }
+        ],
+        "matched": 1
+      },
+      "spanSets": [
+        {
+          "spans": [
+            {
+              "spanID": "78a647c7c4056f95",
+              "name": "list_unscored_image_ids_for_version",
+              "startTimeUnixNano": "1777501847873453211",
+              "durationNanos": "3661348757",
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "skeet-live-refine"
+                  }
+                }
+              ]
+            }
+          ],
+          "matched": 1
+        }
+      ],
+      "serviceStats": {
+        "skeet-live-refine": {
+          "spanCount": 45
+        }
+      }
+    },
+    {
+      "traceID": "15a404c0d774756c65a77af3c5fc1b71",
+      "rootServiceName": "skeet-live-refine",
+      "rootTraceName": "list_unscored_image_ids_for_version",
+      "startTimeUnixNano": "1777501787760072480",
+      "durationMs": 2590,
+      "spanSet": {
+        "spans": [
+          {
+            "spanID": "a7b88c8264945e30",
+            "name": "list_unscored_image_ids_for_version",
+            "startTimeUnixNano": "1777501787760072480",
+            "durationNanos": "2590557867",
+            "attributes": [
+              {
+                "key": "service.name",
+                "value": {
+                  "stringValue": "skeet-live-refine"
+                }
+              }
+            ]
+          }
+        ],
+        "matched": 1
+      },
+      "spanSets": [
+        {
+          "spans": [
+            {
+              "spanID": "a7b88c8264945e30",
+              "name": "list_unscored_image_ids_for_version",
+              "startTimeUnixNano": "1777501787760072480",
+              "durationNanos": "2590557867",
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "skeet-live-refine"
+                  }
+                }
+              ]
+            }
+          ],
+          "matched": 1
+        }
+      ],
+      "serviceStats": {
+        "skeet-live-refine": {
+          "spanCount": 48
+        }
+      }
+    },
+    {
+      "traceID": "a6b870e21e9d331660c28cb730d43194",
+      "rootServiceName": "skeet-live-refine",
+      "rootTraceName": "list_unscored_image_ids_for_version",
+      "startTimeUnixNano": "1777501727607875035",
+      "durationMs": 3439,
+      "spanSet": {
+        "spans": [
+          {
+            "spanID": "d5850d0c6c71ac7c",
+            "name": "list_unscored_image_ids_for_version",
+            "startTimeUnixNano": "1777501727607875035",
+            "durationNanos": "3439185156",
+            "attributes": [
+              {
+                "key": "service.name",
+                "value": {
+                  "stringValue": "skeet-live-refine"
+                }
+              }
+            ]
+          }
+        ],
+        "matched": 1
+      },
+      "spanSets": [
+        {
+          "spans": [
+            {
+              "spanID": "d5850d0c6c71ac7c",
+              "name": "list_unscored_image_ids_for_version",
+              "startTimeUnixNano": "1777501727607875035",
+              "durationNanos": "3439185156",
+              "attributes": [
+                {
+                  "key": "service.name",
+                  "value": {
+                    "stringValue": "skeet-live-refine"
+                  }
+                }
+              ]
+            }
+          ],
+          "matched": 1
+        }
+      ],
+      "serviceStats": {
+        "skeet-live-refine": {
+          "spanCount": 46
+        }
+      }
+    }
+  ],
+  "metrics": {
+    "inspectedBytes": "388757",
+    "completedJobs": 3,
+    "totalJobs": 3
+  }
+}

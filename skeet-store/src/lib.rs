@@ -1,37 +1,48 @@
 #![warn(clippy::all, clippy::nursery)]
+mod appraisals;
 mod args;
 mod arrow_utils;
-mod compact;
+mod optimise;
 mod error;
 pub mod health;
 mod lancedb_utils;
 mod open;
 mod paging;
-mod appraisals;
+pub mod query_plan;
+mod r2_metrics;
 mod schema;
+pub mod store_metrics;
 mod scores;
 mod stored;
 mod summary;
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod test_utils;
+pub mod tempo;
+pub mod trace_analysis;
 mod types;
+mod version;
 
 pub use appraisals::Appraisal;
 pub use args::StoreArgs;
-pub use compact::CompactTarget;
 pub use error::StoreError;
+pub use schema::{
+    IMAGE_APPRAISAL_TABLE_NAME, SCORE_TABLE_NAME, SKEET_APPRAISAL_TABLE_NAME, TABLE_NAME,
+    VALIDATE_TABLE_NAME,
+};
 pub use shared::{Appraiser, Band, ModelVersion, Score};
-pub use stored::{StoredImage, StoredImageSummary};
+pub use stored::{StoredImage, StoredImageSummary, StoredOriginal};
+pub use store_metrics::StoreMetrics;
 pub use summary::SkeetStoreSummary;
-pub use types::{DiscoveredAt, ImageId, ImageRecord, InvalidImageId, OriginalAt, SkeetId, Zone};
+pub use types::{DiscoveredAt, ImageRecord, OriginalAt, SkeetId, Zone};
+pub use version::Version;
 
-use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
+use lance_io::object_store::WrappingObjectStore;
 use tokio::sync::RwLock;
 
 use arrow_array::{
-    Int64Array, LargeBinaryArray, RecordBatch, RecordBatchIterator, StringArray,
+    Int64Array, LargeBinaryArray, RecordBatch, StringArray,
     TimestampMicrosecondArray,
 };
 use chrono::Utc;
@@ -39,9 +50,13 @@ use lancedb::query::QueryBase;
 use tracing::instrument;
 
 use arrow_utils::{encode_image_as_png, typed_column};
+use shared::ImageId;
+use lance::dataset::{WriteMode, WriteParams};
+use lance_io::object_store::ObjectStoreParams;
+use lancedb::table::WriteOptions;
 use lancedb_utils::execute_query;
 use schema::{images_v6_schema, validate_v1_schema};
-use stored::{batches_to_stored_images, batches_to_summaries};
+use stored::{batches_to_original_images, batches_to_stored_images, batches_to_summaries};
 
 pub struct SkeetStore {
     pub(crate) images_table: lancedb::Table,
@@ -49,12 +64,56 @@ pub struct SkeetStore {
     validate_table: lancedb::Table,
     pub(crate) skeet_appraisal_table: lancedb::Table,
     pub(crate) image_appraisal_table: lancedb::Table,
-    pub(crate) writes_since_compact: AtomicU64,
-    pub(crate) compact_every_n_writes: Option<u64>,
+    /// All tables, paired with their canonical name. Source of truth for
+    /// per-table iteration (fragment counts, version snapshots). Populated in
+    /// `SkeetStore::open` so adding or removing a table is a single edit.
+    pub(crate) tables: Vec<(&'static str, lancedb::Table)>,
     pub(crate) scores_cache: RwLock<Option<scores::ScoresCache>>,
+    pub(crate) store_wrapper: Option<Arc<dyn WrappingObjectStore>>,
 }
 
 impl SkeetStore {
+    /// Return the current version counter for each table. Cheap: reads only the cached manifest.
+    pub async fn table_versions(&self) -> Result<Vec<(&'static str, u64)>, StoreError> {
+        let mut versions = Vec::with_capacity(self.tables.len());
+        for (name, table) in &self.tables {
+            let v = table.version().await?;
+            versions.push((*name, v));
+        }
+        Ok(versions)
+    }
+
+    /// Return the fragment count for each table.
+    /// Cheap: reads only the cached manifest, no per-fragment or per-column I/O.
+    pub async fn fragment_counts(&self) -> Result<Vec<(&'static str, u64)>, StoreError> {
+        let mut counts = Vec::with_capacity(self.tables.len());
+        for (name, table) in &self.tables {
+            let native = table
+                .as_native()
+                .ok_or_else(|| StoreError::CannotGetFragmentCount {
+                    table: (*name).to_string(),
+                    reason: "table is not a native LanceDB table".to_string(),
+                })?;
+            let count = native.count_fragments().await?;
+            counts.push((*name, count as u64));
+        }
+        Ok(counts)
+    }
+
+    /// Build `WriteOptions` that include the R2 metrics wrapper, if configured.
+    pub(crate) fn write_options(&self) -> WriteOptions {
+        WriteOptions {
+            lance_write_params: self.store_wrapper.as_ref().map(|wrapper| WriteParams {
+                mode: WriteMode::Append,
+                store_params: Some(ObjectStoreParams {
+                    object_store_wrapper: Some(wrapper.clone()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+        }
+    }
+
     #[instrument(skip(self, record), fields(image_id = %record.image_id, skeet_id = %record.skeet_id))]
     pub async fn add(&self, record: &ImageRecord) -> Result<(), StoreError> {
         let schema = images_v6_schema();
@@ -80,29 +139,18 @@ impl SkeetStore {
                 ),
                 Arc::new(StringArray::from(vec![record.zone.to_string().as_str()])),
                 Arc::new(LargeBinaryArray::from_vec(vec![&annotated_bytes])),
-                Arc::new(StringArray::from(vec![record.config_version.as_str()])),
+                Arc::new(StringArray::from(vec![record.config_version.to_string().as_str()])),
                 Arc::new(StringArray::from(vec![record.detected_text.as_str()])),
             ],
         )?;
 
-        let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
-        self.images_table.add(batches).execute().await?;
-        self.compact_if_needed().await?;
+        self.images_table
+            .add(vec![batch])
+            .write_options(self.write_options())
+            .execute()
+            .await?;
 
         Ok(())
-    }
-
-    #[instrument(skip(self))]
-    pub async fn list_all(&self) -> Result<Vec<StoredImage>, StoreError> {
-        let batches = execute_query(&self.images_table.query(), "list_all").await?;
-        batches_to_stored_images(&batches)
-    }
-
-    #[instrument(skip(self))]
-    pub async fn list_all_by_most_recent(&self) -> Result<Vec<StoredImage>, StoreError> {
-        let mut images = self.list_all().await?;
-        images.sort_by(|a, b| b.summary.discovered_at.cmp(&a.summary.discovered_at));
-        Ok(images)
     }
 
     #[instrument(skip(self))]
@@ -139,17 +187,38 @@ impl SkeetStore {
         if image_ids.is_empty() {
             return Ok(vec![]);
         }
-        let id_list = image_ids
-            .iter()
-            .map(|id| format!("'{id}'"))
-            .collect::<Vec<_>>()
-            .join(", ");
         let query = self
             .images_table
             .query()
-            .only_if(format!("image_id IN ({id_list})"));
+            .only_if(id_in_list_filter(image_ids));
         let batches = execute_query(&query, "get_by_ids").await?;
         batches_to_stored_images(&batches)
+    }
+
+    #[instrument(skip(self, image_ids), fields(count = image_ids.len()))]
+    pub async fn get_originals_by_ids(
+        &self,
+        image_ids: &[ImageId],
+    ) -> Result<Vec<StoredOriginal>, StoreError> {
+        if image_ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let query = self
+            .images_table
+            .query()
+            .only_if(id_in_list_filter(image_ids))
+            .select(lancedb::query::Select::columns(&[
+                "image_id",
+                "skeet_id",
+                "discovered_at",
+                "original_at",
+                "archetype",
+                "config_version",
+                "detected_text",
+                "image",
+            ]));
+        let batches = execute_query(&query, "get_originals_by_ids").await?;
+        batches_to_original_images(&batches)
     }
 
     #[instrument(skip(self))]
@@ -169,7 +238,6 @@ impl SkeetStore {
         self.images_table
             .delete(&format!("image_id = '{image_id}'"))
             .await?;
-        self.compact_if_needed().await?;
         Ok(())
     }
 
@@ -195,8 +263,11 @@ impl SkeetStore {
             ],
         )?;
 
-        let batches = RecordBatchIterator::new(vec![Ok(batch)], schema);
-        self.validate_table.add(batches).execute().await?;
+        self.validate_table
+            .add(vec![batch])
+            .write_options(self.write_options())
+            .execute()
+            .await?;
 
         let query = self
             .validate_table
@@ -252,14 +323,23 @@ impl SkeetStore {
     }
 
     #[instrument(skip(self))]
-    pub async fn list_all_image_ids_by_most_recent(&self) -> Result<Vec<ImageId>, StoreError> {
-        let query = self
+    pub async fn list_all_image_ids_by_most_recent(
+        &self,
+        since: Option<&DiscoveredAt>,
+    ) -> Result<Vec<ImageId>, StoreError> {
+        let mut query = self
             .images_table
             .query()
             .select(lancedb::query::Select::columns(&[
                 "image_id",
                 "discovered_at",
             ]));
+        if let Some(ts) = since {
+            let cutoff_us = ts.timestamp_micros();
+            query = query.only_if(format!(
+                "discovered_at >= arrow_cast({cutoff_us}, 'Timestamp(Microsecond, Some(\"UTC\"))')"
+            ));
+        }
         let batches = execute_query(&query, "list_all_image_ids_by_most_recent").await?;
 
         let mut id_times = Vec::new();
@@ -275,6 +355,15 @@ impl SkeetStore {
         Ok(id_times.into_iter().map(|(id, _)| id).collect())
     }
 
+}
+
+fn id_in_list_filter(image_ids: &[ImageId]) -> String {
+    let id_list = image_ids
+        .iter()
+        .map(|id| format!("'{id}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("image_id IN ({id_list})")
 }
 
 #[cfg(test)]

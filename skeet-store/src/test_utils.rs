@@ -1,7 +1,9 @@
 use chrono::Utc;
 use image::{DynamicImage, ImageBuffer, Rgba};
 
-use crate::{DiscoveredAt, ImageId, ImageRecord, ModelVersion, OriginalAt, SkeetStore, Zone};
+use shared::ImageId;
+
+use crate::{DiscoveredAt, ImageRecord, ModelVersion, OriginalAt, SkeetStore, Zone};
 
 pub fn test_image() -> DynamicImage {
     test_image_with_color(255, 0, 0)
@@ -39,7 +41,7 @@ pub fn make_record_at(
 }
 
 pub async fn open_temp_store(dir: &tempfile::TempDir) -> SkeetStore {
-    SkeetStore::open(dir.path().to_str().expect("valid path"), vec![], None)
+    SkeetStore::open(dir.path().to_str().expect("valid path"), vec![], "test")
         .await
         .expect("open store")
 }

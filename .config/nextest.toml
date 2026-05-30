@@ -1,0 +1,12 @@
+[profile.default]
+default-filter = "not test(/end_to_end/)"
+status-level = "skip"
+final-status-level = "skip"
+
+[profile.no-docker]
+default-filter = "not test(/end_to_end/) and not test(/docker/)"
+status-level = "skip"
+final-status-level = "skip"
+
+[profile.end-to-end]
+default-filter = "test(/end_to_end/)"

@@ -7,10 +7,15 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+backon = "1.6"
 base64 = "0.22"
+chrono = { workspace = true }
 clap = { workspace = true }
+eval = { workspace = true }
 futures = "0.3"
 image = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry-semantic-conventions = { version = "0.31.0", features = ["semconv_experimental"] }
 rig-core = "0.33"
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -22,17 +27,33 @@ toml = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
+[build-dependencies]
+build-support = { workspace = true }
+
 [dev-dependencies]
+chrono = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
+proptest = { workspace = true }
+skeet-store = { path = "../skeet-store", features = ["test-helpers"] }
 tempfile = { workspace = true }
+test-support = { workspace = true }
+
+[[bin]]
+name = "capture-appraisals"
+path = "src/bin/capture_appraisals.rs"
 
 [[bin]]
 name = "train"
 path = "src/bin/train.rs"
 
 [[bin]]
-name = "refine"
-path = "src/bin/refine.rs"
-
-[[bin]]
 name = "live-refine"
 path = "src/bin/live_refine.rs"
+
+[[bin]]
+name = "refine-eval"
+path = "src/bin/refine_eval.rs"
+
+[[bin]]
+name = "sample-costs"
+path = "src/bin/sample_costs.rs"

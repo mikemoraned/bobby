@@ -1,0 +1,9 @@
+[package]
+name = "test-support"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+image = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
+shared = { workspace = true, features = ["test-helpers"] }

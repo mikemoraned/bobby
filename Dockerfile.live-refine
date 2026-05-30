@@ -22,4 +22,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 COPY --from=builder /build/target/release/live-refine /usr/local/bin/live-refine
 COPY config/refine.toml /etc/bobby/refine.toml
 
-CMD ["live-refine"]
+CMD ["live-refine", "--model-path", "/etc/bobby/refine.toml"]

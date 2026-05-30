@@ -7,8 +7,12 @@ paths:
 # Rust Rules
 
 - Follow [Rust doc guidelines](https://doc.rust-lang.org/stable/rustdoc/write-documentation/what-to-include.html) if comments are needed
+- **Comments describe long-lived properties of the code, not the workflow that produced it.** Apply this test to every candidate comment: *would it still read correctly to a stranger if every caller, every input value, every motivating task, and every surrounding circumstance changed?* Only the function's own contract and invariants survive that test — everything else is leakage and will rot the moment work moves on. The principle is the test, not a list. Things that typically fail it: slice/phase/PR/task references, "previously did X, now does Y" framing, the calling site that motivated the change, and current snapshots of inputs (specific counts, specific file paths a caller happens to use today, the current default of a flag, the current name of a model). Describe the contract in terms of the parameters, not the values they hold this week. If the only honest justification is "the current task needs this," it belongs in the task/slice doc, not the code.
 
-- Use external crates for core things (datetimes, etc); don't write our own
+- **Prefer adding a battle-tested dependency over hand-rolling non-trivial logic.** Datetimes, RNG, statistics, ML metrics, parsers — if a published crate solves it, take the dep.
+  - Default to the dep even when the standard-library or hand-rolled version "looks short". Bespoke code accumulates: it needs tests, edge-case handling, and ongoing maintenance.
+  - Before claiming a library doesn't support what you need, check the *latest* version's docs (the API may have changed since older releases). State the version you checked.
+  - Hand-rolling is acceptable only for genuinely application-specific logic (e.g. domain enums, business rules) — not for replicable algorithms like ROC-AUC, train/test split, or seeded shuffling.
 - When multiple crates share a dependency, pull it to workspace-level `[workspace.dependencies]`
 - Always use latest stable Rust version and edition; do not use nightly
   - Specify version in `rust-toolchain.toml` and edition in `Cargo.toml`
@@ -38,7 +42,16 @@ paths:
   - All binaries must be named files in `src/bin/` (e.g. `src/bin/finder.rs`), never `src/main.rs` or subdirectories like `src/bin/finder/main.rs`
   - Modules used by binaries live under `src/` and are exposed through `lib.rs`, not placed alongside binaries in `src/bin/`
 - Use `Option<T>` (with `None`) to represent "not set" / "disabled" — never use sentinel values like `0`, `-1`, or empty strings to encode absence
+- **Identity-keyed maps over positionally-aligned `Vec`s for parallel/async work.** When a function takes `&[Input]` and produces one output per input, return `HashMap<Id, Output>` keyed by something derived from the input — not a `Vec<Output>` that callers zip by index. Positional alignment depends on the implementation preserving order: `futures::Stream::buffered` does today, `buffer_unordered` does not, and a `par_iter` or task-pool scheduler may not either. A future switch silently desyncs each output from its input, the bug is invisible at the call site (`scored[i]` looks correct), and only manifests as wrong downstream results. Look up by id at the call site instead — making mismatched positions structurally impossible.
 - Keep feature enablement flags (e.g. `--use-redis`) separate from their configuration values (e.g. `--redis-url`). A feature's on/off switch should not be derived from whether its config happens to be present — these are independent concerns.
 - CLI apps: all config via named CLI params (`--long-form VALUE`); no env vars except `RUST_LOG`
 - Prefer functions over macros — only use `macro_rules!` when you genuinely need syntax or control flow that a function can't express
+- **Avoid `continue`.** It makes control flow indirect — the conditions for skipping live separately from the body of the loop. Prefer:
+  - `Iterator::filter_map` / `filter` / `?` inside a closure for skip-on-condition patterns
+  - Extract the inner body into a helper function that returns `Option<T>` and use `filter_map` over it
+  - `if let Some(x) = ... { ... }` for guarded execution
+  - Restructure so the loop body has a single straight-line path
+- Prefer simple, readable techniques over clever ones until profiling identifies a real hotspot.
+  - When the borrow checker pushes back, reach for `.clone()` first. Only escalate to tricks like `std::mem::take`, manual index loops, `RefCell`, or restructuring fields once a benchmark or trace shows the clone matters.
+  - Example: in a per-tick loop that needs `&mut self` access while iterating one field, `let xs = self.xs.clone(); for x in xs { self.do_something(&x); }` beats `for x in std::mem::take(&mut self.xs) { ... }`. Both work; the clone is one line, obvious to read, and ~free for small Vecs of small values. Save the cleverness for when it's earned.
 - We should aim to keep `lib.rs` files below 300 lines (found via a command like `find . -name "lib.rs" | grep -v "target" | xargs wc -l`). Any `lib.rs` file going above this limit should trigger us to apply other rules, for example related to extracting modules, that will allow us to split into into logical chunks.

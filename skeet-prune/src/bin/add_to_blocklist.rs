@@ -20,6 +20,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     shared::tracing::init("info");
+    info!(git_hash = env!("BUILD_GIT_HASH"), "add-to-blocklist starting");
 
     let args = Args::parse();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");

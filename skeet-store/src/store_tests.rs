@@ -30,13 +30,12 @@ async fn roundtrip_store_and_retrieve() {
     store.add(&record).await.unwrap();
     assert_eq!(store.count().await.unwrap(), 1);
 
-    let images = store.list_all().await.unwrap();
-    assert_eq!(images.len(), 1);
-    assert_eq!(images[0].summary.image_id, record.image_id);
-    assert_eq!(images[0].summary.skeet_id, record.skeet_id);
-    assert_eq!(images[0].image.width(), 2);
-    assert_eq!(images[0].image.height(), 2);
-    assert_eq!(images[0].summary.zone, Zone::TopRight);
+    let stored = store.get_by_id(&record.image_id).await.unwrap().unwrap();
+    assert_eq!(stored.summary.image_id, record.image_id);
+    assert_eq!(stored.summary.skeet_id, record.skeet_id);
+    assert_eq!(stored.image.width(), 2);
+    assert_eq!(stored.image.height(), 2);
+    assert_eq!(stored.summary.zone, Zone::TopRight);
 }
 
 #[tokio::test]
@@ -176,6 +175,57 @@ async fn upsert_overwrites_existing_score() {
 }
 
 #[tokio::test]
+async fn scores_roundtrip_preserves_v1_and_v2_schemes() {
+    use shared::HashScheme;
+
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let r_v1 = make_record("mix_v1");
+    let r_v2 = make_record("mix_v2");
+    store.add(&r_v1).await.unwrap();
+    store.add(&r_v2).await.unwrap();
+
+    let v1_mv = ModelVersion::new(HashScheme::V1, "abc12345");
+    let v2_mv = ModelVersion::new(HashScheme::V2, "def67890");
+    assert_eq!(v1_mv.to_string(), "abc12345");
+    assert_eq!(v2_mv.to_string(), "v2:def67890");
+
+    store
+        .upsert_score(&r_v1.image_id, &Score::new(0.4).expect("valid"), &v1_mv)
+        .await
+        .unwrap();
+    store
+        .upsert_score(&r_v2.image_id, &Score::new(0.9).expect("valid"), &v2_mv)
+        .await
+        .unwrap();
+
+    // Single-row path (get_score) preserves the scheme on each entry.
+    let (_, mv_back_v1) = store.get_score(&r_v1.image_id).await.unwrap().unwrap();
+    let (_, mv_back_v2) = store.get_score(&r_v2.image_id).await.unwrap().unwrap();
+
+    assert_eq!(mv_back_v1.scheme(), HashScheme::V1);
+    assert_eq!(mv_back_v1.hash(), "abc12345");
+    assert_eq!(mv_back_v1, v1_mv);
+
+    assert_eq!(mv_back_v2.scheme(), HashScheme::V2);
+    assert_eq!(mv_back_v2.hash(), "def67890");
+    assert_eq!(mv_back_v2, v2_mv);
+
+    // Bulk path (list_scored_summaries_by_score → cached_scores) also preserves each scheme.
+    let summaries = store
+        .list_scored_summaries_by_score(10, None)
+        .await
+        .unwrap();
+    let by_id: std::collections::HashMap<_, _> = summaries
+        .iter()
+        .map(|(s, _, mv)| (s.image_id.clone(), mv.clone()))
+        .collect();
+    assert_eq!(by_id.get(&r_v1.image_id), Some(&v1_mv));
+    assert_eq!(by_id.get(&r_v2.image_id), Some(&v2_mv));
+}
+
+#[tokio::test]
 async fn list_unscored_returns_images_without_scores() {
     let dir = tempfile::tempdir().unwrap();
     let store = open_temp_store(&dir).await;
@@ -194,7 +244,7 @@ async fn list_unscored_returns_images_without_scores() {
         .unwrap();
 
     let unscored = store
-        .list_unscored_image_ids_for_version(&mv)
+        .list_unscored_image_ids(None)
         .await
         .unwrap();
     assert_eq!(unscored.len(), 2);
@@ -204,7 +254,7 @@ async fn list_unscored_returns_images_without_scores() {
 }
 
 #[tokio::test]
-async fn list_unscored_includes_images_scored_with_different_version() {
+async fn list_unscored_excludes_images_scored_under_any_model_version() {
     let dir = tempfile::tempdir().unwrap();
     let store = open_temp_store(&dir).await;
 
@@ -212,18 +262,68 @@ async fn list_unscored_includes_images_scored_with_different_version() {
     store.add(&r1).await.unwrap();
 
     let old_mv = ModelVersion::from("old_v1");
-    let new_mv = ModelVersion::from("new_v2");
     store
         .upsert_score(&r1.image_id, &Score::new(0.8).expect("valid"), &old_mv)
         .await
         .unwrap();
 
+    let unscored = store.list_unscored_image_ids(None).await.unwrap();
+    assert!(
+        unscored.is_empty(),
+        "an image scored under any model_version is not unscored"
+    );
+}
+
+#[tokio::test]
+async fn list_unscored_with_since_filter_returns_only_newer() {
+    use chrono::TimeZone as _;
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let t_old = chrono::Utc.with_ymd_and_hms(2026, 4, 1, 0, 0, 0).unwrap();
+    let t_mid = chrono::Utc.with_ymd_and_hms(2026, 4, 15, 0, 0, 0).unwrap();
+    let t_new = chrono::Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap();
+
+    let r_old = make_record_at("old", 10, 0, 0, DiscoveredAt::new(t_old));
+    let r_mid = make_record_at("mid", 20, 0, 0, DiscoveredAt::new(t_mid));
+    let r_new = make_record_at("new", 30, 0, 0, DiscoveredAt::new(t_new));
+    store.add(&r_old).await.unwrap();
+    store.add(&r_mid).await.unwrap();
+    store.add(&r_new).await.unwrap();
+
+    let cutoff = DiscoveredAt::new(t_mid);
     let unscored = store
-        .list_unscored_image_ids_for_version(&new_mv)
+        .list_unscored_image_ids(Some(&cutoff))
         .await
         .unwrap();
-    assert_eq!(unscored.len(), 1);
-    assert!(unscored.contains(&r1.image_id));
+
+    assert_eq!(unscored.len(), 2, "rows at or after cutoff");
+    assert!(unscored.contains(&r_new.image_id));
+    assert!(unscored.contains(&r_mid.image_id), "cutoff is inclusive");
+    assert!(!unscored.contains(&r_old.image_id));
+}
+
+#[tokio::test]
+async fn list_all_image_ids_with_since_filter_returns_only_newer() {
+    use chrono::TimeZone as _;
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let t_old = chrono::Utc.with_ymd_and_hms(2026, 4, 1, 0, 0, 0).unwrap();
+    let t_new = chrono::Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap();
+
+    let r_old = make_record_at("all_old", 10, 0, 0, DiscoveredAt::new(t_old));
+    let r_new = make_record_at("all_new", 30, 0, 0, DiscoveredAt::new(t_new));
+    store.add(&r_old).await.unwrap();
+    store.add(&r_new).await.unwrap();
+
+    let cutoff = DiscoveredAt::new(t_new);
+    let ids = store
+        .list_all_image_ids_by_most_recent(Some(&cutoff))
+        .await
+        .unwrap();
+    assert_eq!(ids.len(), 1);
+    assert!(ids.contains(&r_new.image_id));
 }
 
 #[tokio::test]
@@ -266,7 +366,10 @@ async fn list_scored_summaries_ordered_by_score() {
         .unwrap();
     // r3 not scored
 
-    let scored = store.list_scored_summaries_by_score(10, None).await.unwrap();
+    let scored = store
+        .list_scored_summaries_by_score(10, None)
+        .await
+        .unwrap();
     assert_eq!(scored.len(), 2);
     assert_eq!(scored[0].0.image_id, r2.image_id);
     assert_eq!(scored[0].1, Score::new(0.9).expect("valid"));
@@ -297,11 +400,19 @@ async fn setup_cache_test(prefix: &str) -> CacheTestFixture {
         .unwrap();
 
     // Populate any internal cache
-    let scored = store.list_scored_summaries_by_score(10, None).await.unwrap();
+    let scored = store
+        .list_scored_summaries_by_score(10, None)
+        .await
+        .unwrap();
     assert_eq!(scored.len(), 1);
     assert_eq!(scored[0].0.image_id, r1.image_id);
 
-    CacheTestFixture { store, r1, r2, _dir: dir }
+    CacheTestFixture {
+        store,
+        r1,
+        r2,
+        _dir: dir,
+    }
 }
 
 async fn assert_scores_reflect_update(
@@ -311,11 +422,20 @@ async fn assert_scores_reflect_update(
     expected_second: &ImageId,
     expected_second_score: Score,
 ) {
-    let scored = store.list_scored_summaries_by_score(10, None).await.unwrap();
+    let scored = store
+        .list_scored_summaries_by_score(10, None)
+        .await
+        .unwrap();
     assert_eq!(scored.len(), 2);
-    assert_eq!(scored[0].0.image_id, *expected_first, "wrong image in first position");
+    assert_eq!(
+        scored[0].0.image_id, *expected_first,
+        "wrong image in first position"
+    );
     assert_eq!(scored[0].1, expected_first_score);
-    assert_eq!(scored[1].0.image_id, *expected_second, "wrong image in second position");
+    assert_eq!(
+        scored[1].0.image_id, *expected_second,
+        "wrong image in second position"
+    );
     assert_eq!(scored[1].1, expected_second_score);
 }
 
@@ -331,9 +451,12 @@ async fn scores_cache_invalidated_after_write() {
         .unwrap();
     assert_scores_reflect_update(
         &f.store,
-        &f.r2.image_id, Score::new(0.8).expect("valid"),
-        &f.r1.image_id, Score::new(0.5).expect("valid"),
-    ).await;
+        &f.r2.image_id,
+        Score::new(0.8).expect("valid"),
+        &f.r1.image_id,
+        Score::new(0.5).expect("valid"),
+    )
+    .await;
 
     // Update an existing score
     f.store
@@ -342,9 +465,12 @@ async fn scores_cache_invalidated_after_write() {
         .unwrap();
     assert_scores_reflect_update(
         &f.store,
-        &f.r1.image_id, Score::new(0.95).expect("valid"),
-        &f.r2.image_id, Score::new(0.8).expect("valid"),
-    ).await;
+        &f.r1.image_id,
+        Score::new(0.95).expect("valid"),
+        &f.r2.image_id,
+        Score::new(0.8).expect("valid"),
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -355,16 +481,57 @@ async fn scores_cache_invalidated_after_batch_upsert() {
     // Batch write: updates r1 and adds r2 in one call
     f.store
         .batch_upsert_scores(&[
-            (f.r1.image_id.clone(), Score::new(0.6).expect("valid"), mv.clone()),
-            (f.r2.image_id.clone(), Score::new(0.9).expect("valid"), mv.clone()),
+            (
+                f.r1.image_id.clone(),
+                Score::new(0.6).expect("valid"),
+                mv.clone(),
+            ),
+            (
+                f.r2.image_id.clone(),
+                Score::new(0.9).expect("valid"),
+                mv.clone(),
+            ),
         ])
         .await
         .unwrap();
     assert_scores_reflect_update(
         &f.store,
-        &f.r2.image_id, Score::new(0.9).expect("valid"),
-        &f.r1.image_id, Score::new(0.6).expect("valid"),
-    ).await;
+        &f.r2.image_id,
+        Score::new(0.9).expect("valid"),
+        &f.r1.image_id,
+        Score::new(0.6).expect("valid"),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn batch_upsert_scores_version_increments_by_one() {
+    let f = setup_cache_test("batch_version").await;
+    let mv = test_model_version();
+
+    let version_before = f.store.scores_table.version().await.unwrap();
+    f.store
+        .batch_upsert_scores(&[
+            (
+                f.r1.image_id.clone(),
+                Score::new(0.6).expect("valid"),
+                mv.clone(),
+            ),
+            (
+                f.r2.image_id.clone(),
+                Score::new(0.9).expect("valid"),
+                mv.clone(),
+            ),
+            (
+                make_record("batch_version_extra").image_id.clone(),
+                Score::new(0.3).expect("valid"),
+                mv.clone(),
+            ),
+        ])
+        .await
+        .unwrap();
+    let version_after = f.store.scores_table.version().await.unwrap();
+    assert_eq!(version_after - version_before, 1, "batch_upsert_scores must produce exactly one commit regardless of batch size");
 }
 
 fn test_appraiser() -> Appraiser {
@@ -391,7 +558,11 @@ async fn skeet_band_set_get_roundtrip() {
         .await
         .unwrap();
 
-    let appraisal = store.get_skeet_band(&skeet_id).await.unwrap().expect("should exist");
+    let appraisal = store
+        .get_skeet_band(&skeet_id)
+        .await
+        .unwrap()
+        .expect("should exist");
     assert_eq!(appraisal.band, Band::HighQuality);
     assert_eq!(appraisal.appraiser, test_appraiser());
 }
@@ -414,7 +585,11 @@ async fn skeet_band_set_overwrites_previous() {
         .await
         .unwrap();
 
-    let appraisal = store.get_skeet_band(&skeet_id).await.unwrap().expect("should exist");
+    let appraisal = store
+        .get_skeet_band(&skeet_id)
+        .await
+        .unwrap()
+        .expect("should exist");
     assert_eq!(appraisal.band, Band::MediumHigh);
     assert_eq!(appraisal.appraiser, other_appraiser());
 }
@@ -449,15 +624,33 @@ async fn list_all_skeet_appraisals_returns_all() {
         .parse()
         .expect("valid");
 
-    store.set_skeet_band(&id1, Band::Low, &test_appraiser()).await.unwrap();
-    store.set_skeet_band(&id2, Band::HighQuality, &other_appraiser()).await.unwrap();
+    store
+        .set_skeet_band(&id1, Band::Low, &test_appraiser())
+        .await
+        .unwrap();
+    store
+        .set_skeet_band(&id2, Band::HighQuality, &other_appraiser())
+        .await
+        .unwrap();
 
     let all = store.list_all_skeet_appraisals().await.unwrap();
     assert_eq!(all.len(), 2);
 
     let by_id: std::collections::HashMap<_, _> = all.into_iter().collect();
-    assert_eq!(by_id[&id1], Appraisal { band: Band::Low, appraiser: test_appraiser() });
-    assert_eq!(by_id[&id2], Appraisal { band: Band::HighQuality, appraiser: other_appraiser() });
+    assert_eq!(
+        by_id[&id1],
+        Appraisal {
+            band: Band::Low,
+            appraiser: test_appraiser()
+        }
+    );
+    assert_eq!(
+        by_id[&id2],
+        Appraisal {
+            band: Band::HighQuality,
+            appraiser: other_appraiser()
+        }
+    );
 }
 
 #[tokio::test]
@@ -475,7 +668,11 @@ async fn image_band_set_get_roundtrip() {
         .await
         .unwrap();
 
-    let appraisal = store.get_image_band(&record.image_id).await.unwrap().expect("should exist");
+    let appraisal = store
+        .get_image_band(&record.image_id)
+        .await
+        .unwrap()
+        .expect("should exist");
     assert_eq!(appraisal.band, Band::MediumLow);
     assert_eq!(appraisal.appraiser, test_appraiser());
 }
@@ -497,7 +694,11 @@ async fn image_band_set_overwrites_previous() {
         .await
         .unwrap();
 
-    let appraisal = store.get_image_band(&record.image_id).await.unwrap().expect("should exist");
+    let appraisal = store
+        .get_image_band(&record.image_id)
+        .await
+        .unwrap()
+        .expect("should exist");
     assert_eq!(appraisal.band, Band::HighQuality);
     assert_eq!(appraisal.appraiser, other_appraiser());
 }
@@ -529,15 +730,33 @@ async fn list_all_image_appraisals_returns_all() {
     store.add(&r1).await.unwrap();
     store.add(&r2).await.unwrap();
 
-    store.set_image_band(&r1.image_id, Band::MediumLow, &test_appraiser()).await.unwrap();
-    store.set_image_band(&r2.image_id, Band::HighQuality, &other_appraiser()).await.unwrap();
+    store
+        .set_image_band(&r1.image_id, Band::MediumLow, &test_appraiser())
+        .await
+        .unwrap();
+    store
+        .set_image_band(&r2.image_id, Band::HighQuality, &other_appraiser())
+        .await
+        .unwrap();
 
     let all = store.list_all_image_appraisals().await.unwrap();
     assert_eq!(all.len(), 2);
 
     let by_id: std::collections::HashMap<_, _> = all.into_iter().collect();
-    assert_eq!(by_id[&r1.image_id], Appraisal { band: Band::MediumLow, appraiser: test_appraiser() });
-    assert_eq!(by_id[&r2.image_id], Appraisal { band: Band::HighQuality, appraiser: other_appraiser() });
+    assert_eq!(
+        by_id[&r1.image_id],
+        Appraisal {
+            band: Band::MediumLow,
+            appraiser: test_appraiser()
+        }
+    );
+    assert_eq!(
+        by_id[&r2.image_id],
+        Appraisal {
+            band: Band::HighQuality,
+            appraiser: other_appraiser()
+        }
+    );
 }
 
 #[tokio::test]
@@ -576,6 +795,31 @@ async fn get_by_id_returns_none_for_nonexistent() {
 }
 
 #[tokio::test]
+async fn get_originals_by_ids_returns_images() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+    let record1 = make_record("orig1");
+    let record2 = make_record("orig2");
+    store.add(&record1).await.unwrap();
+    store.add(&record2).await.unwrap();
+
+    let ids = vec![record1.image_id.clone(), record2.image_id.clone()];
+    let originals = store.get_originals_by_ids(&ids).await.unwrap();
+    assert_eq!(originals.len(), 2);
+    let original_ids: Vec<_> = originals.iter().map(|o| &o.summary.image_id).collect();
+    assert!(original_ids.contains(&&record1.image_id));
+    assert!(original_ids.contains(&&record2.image_id));
+}
+
+#[tokio::test]
+async fn get_originals_by_ids_returns_empty_for_no_ids() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+    let originals = store.get_originals_by_ids(&[]).await.unwrap();
+    assert!(originals.is_empty());
+}
+
+#[tokio::test]
 async fn exists_returns_false_for_nonexistent() {
     let dir = tempfile::tempdir().unwrap();
     let store = open_temp_store(&dir).await;
@@ -601,34 +845,6 @@ async fn validate_succeeds_on_healthy_store() {
     let dir = tempfile::tempdir().unwrap();
     let store = open_temp_store(&dir).await;
     store.validate().await.unwrap();
-}
-
-#[tokio::test]
-async fn list_all_by_most_recent_orders_newest_first() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = open_temp_store(&dir).await;
-
-    let old = make_record_at(
-        "old",
-        100,
-        0,
-        0,
-        DiscoveredAt::new(Utc::now() - chrono::Duration::hours(2)),
-    );
-    let new = make_record_at(
-        "new",
-        200,
-        0,
-        0,
-        DiscoveredAt::new(Utc::now()),
-    );
-    store.add(&old).await.unwrap();
-    store.add(&new).await.unwrap();
-
-    let result = store.list_all_by_most_recent().await.unwrap();
-    assert_eq!(result.len(), 2);
-    assert_eq!(result[0].summary.image_id, new.image_id);
-    assert_eq!(result[1].summary.image_id, old.image_id);
 }
 
 #[tokio::test]
@@ -660,7 +876,7 @@ async fn list_scores_for_ids_returns_matching() {
         .await
         .unwrap();
     assert_eq!(scores.len(), 1);
-    assert_eq!(scores[&r1.image_id], s1);
+    assert_eq!(scores[&r1.image_id], (s1, mv));
 }
 
 #[tokio::test]
@@ -708,35 +924,17 @@ async fn list_scored_summaries_filters_by_max_age() {
 }
 
 #[tokio::test]
-async fn content_matches_identical_and_different() {
+async fn optimise_succeeds_on_empty_store() {
     let dir = tempfile::tempdir().unwrap();
     let store = open_temp_store(&dir).await;
-
-    let r1 = make_record("cm1");
-    let r3 = make_record_at("cm2", 0, 255, 0, DiscoveredAt::now());
-    store.add(&r1).await.unwrap();
-    store.add(&r3).await.unwrap();
-
-    let img1 = store.get_by_id(&r1.image_id).await.unwrap().unwrap();
-    let img1_again = store.get_by_id(&r1.image_id).await.unwrap().unwrap();
-    let img3 = store.get_by_id(&r3.image_id).await.unwrap().unwrap();
-
-    assert!(img1.content_matches(&img1_again).unwrap());
-    assert!(!img1.content_matches(&img3).unwrap());
+    store.optimise().await.unwrap();
 }
 
 #[tokio::test]
-async fn compact_succeeds_on_empty_store() {
+async fn optimise_preserves_data() {
     let dir = tempfile::tempdir().unwrap();
     let store = open_temp_store(&dir).await;
-    store.compact().await.unwrap();
-}
-
-#[tokio::test]
-async fn compact_preserves_data() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = open_temp_store(&dir).await;
-    let record = make_record("compact1");
+    let record = make_record("optimise1");
     store.add(&record).await.unwrap();
 
     let mv = test_model_version();
@@ -745,12 +943,89 @@ async fn compact_preserves_data() {
         .await
         .unwrap();
 
-    store.compact().await.unwrap();
+    store.optimise().await.unwrap();
 
     assert_eq!(store.count().await.unwrap(), 1);
     assert!(store.exists(&record.image_id).await.unwrap());
     let score = store.get_score(&record.image_id).await.unwrap();
     assert_eq!(score, Some((Score::new(0.8).expect("valid"), mv)));
+}
+
+#[tokio::test]
+async fn prune_old_versions_succeeds_on_empty_store() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+    store.prune_old_versions().await.unwrap();
+}
+
+#[tokio::test]
+async fn prune_old_versions_preserves_data() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+    let record = make_record("prune1");
+    store.add(&record).await.unwrap();
+
+    let mv = test_model_version();
+    store
+        .upsert_score(&record.image_id, &Score::new(0.8).expect("valid"), &mv)
+        .await
+        .unwrap();
+
+    store.prune_old_versions().await.unwrap();
+
+    assert_eq!(store.count().await.unwrap(), 1);
+    assert!(store.exists(&record.image_id).await.unwrap());
+    let score = store.get_score(&record.image_id).await.unwrap();
+    assert_eq!(score, Some((Score::new(0.8).expect("valid"), mv)));
+}
+
+#[tokio::test]
+async fn prune_old_versions_walks_all_tables() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    // Write to every table so each one has manifests that prune must visit.
+    let record = make_record("prune-all");
+    store.add(&record).await.unwrap();
+    let mv = test_model_version();
+    store
+        .upsert_score(&record.image_id, &Score::new(0.6).expect("valid"), &mv)
+        .await
+        .unwrap();
+    store.validate().await.unwrap();
+    store
+        .set_skeet_band(&record.skeet_id, Band::HighQuality, &test_appraiser())
+        .await
+        .unwrap();
+    store
+        .set_image_band(&record.image_id, Band::MediumLow, &test_appraiser())
+        .await
+        .unwrap();
+
+    // Sanity: registry covers all five tables.
+    let versions = store.table_versions().await.unwrap();
+    assert_eq!(versions.len(), 5);
+
+    store.prune_old_versions().await.unwrap();
+
+    // Data on every table is still readable after prune.
+    assert!(store.exists(&record.image_id).await.unwrap());
+    assert_eq!(
+        store.get_score(&record.image_id).await.unwrap(),
+        Some((Score::new(0.6).expect("valid"), mv))
+    );
+    let skeet_appraisal = store
+        .get_skeet_band(&record.skeet_id)
+        .await
+        .unwrap()
+        .expect("skeet appraisal preserved");
+    assert_eq!(skeet_appraisal.band, Band::HighQuality);
+    let image_appraisal = store
+        .get_image_band(&record.image_id)
+        .await
+        .unwrap()
+        .expect("image appraisal preserved");
+    assert_eq!(image_appraisal.band, Band::MediumLow);
 }
 
 #[tokio::test]

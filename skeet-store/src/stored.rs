@@ -1,10 +1,10 @@
 use arrow_array::{LargeBinaryArray, RecordBatch, StringArray, TimestampMicrosecondArray};
 use image::DynamicImage;
-use shared::ModelVersion;
+use shared::{ImageId, ModelVersion};
 use tracing::instrument;
 
-use crate::arrow_utils::{encode_image_as_png, micros_to_datetime, typed_column};
-use crate::types::{DiscoveredAt, ImageId, ImageRecord, OriginalAt, SkeetId, Zone};
+use crate::arrow_utils::{micros_to_datetime, typed_column};
+use crate::types::{DiscoveredAt, ImageRecord, OriginalAt, SkeetId, Zone};
 use crate::StoreError;
 
 pub struct StoredImage {
@@ -13,12 +13,11 @@ pub struct StoredImage {
     pub annotated_image: DynamicImage,
 }
 
-impl StoredImage {
-    pub fn content_matches(&self, other: &Self) -> Result<bool, StoreError> {
-        let self_bytes = encode_image_as_png(&self.image)?;
-        let other_bytes = encode_image_as_png(&other.image)?;
-        Ok(self_bytes == other_bytes)
-    }
+/// A fetched image without the annotated overlay — used by callers that only
+/// need the original pixels (e.g. live-refine scoring).
+pub struct StoredOriginal {
+    pub summary: StoredImageSummary,
+    pub image: DynamicImage,
 }
 
 impl From<StoredImage> for ImageRecord {
@@ -126,6 +125,23 @@ pub fn batches_to_stored_images(
                 image,
                 annotated_image,
             });
+        }
+    }
+    Ok(results)
+}
+
+#[instrument(skip(batches))]
+pub fn batches_to_original_images(
+    batches: &[RecordBatch],
+) -> Result<Vec<StoredOriginal>, StoreError> {
+    let mut results = Vec::new();
+    for batch in batches {
+        let cols = SummaryColumns::extract(batch)?;
+        let images = typed_column::<LargeBinaryArray>(batch, "image")?;
+        for i in 0..batch.num_rows() {
+            let summary = cols.to_summary(i)?;
+            let image = image::load_from_memory(images.value(i))?;
+            results.push(StoredOriginal { summary, image });
         }
     }
     Ok(results)

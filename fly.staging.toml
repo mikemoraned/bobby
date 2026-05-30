@@ -5,11 +5,11 @@ image = "ghcr.io/mikemoraned/bobby/skeet-feed:latest"
 primary_region = "lhr"
 
 [processes]
-app = "skeet-feed --store-path s3://hom-bobby/encrypted-store --hostname bobby-staging.houseofmoran.io --publisher-did did:plc:cjvdzmk4iapi5p5orrasehxp --bind 0.0.0.0:8080 --use-redis"
+app = "skeet-feed --store-path s3://hom-bobby/encrypted-store --hostname bobby-staging.houseofmoran.io --publisher-did did:plc:cjvdzmk4iapi5p5orrasehxp --bind 0.0.0.0:8080 --use-redis --model-path /etc/bobby/refine.toml"
 
 [env]
 RUST_LOG = "skeet_feed=info,skeet_store=info"
-OTEL_EXPORTER_OTLP_ENDPOINT = "https://api.honeycomb.io"
+OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf"
 OTEL_SERVICE_NAME = "skeet-feed"
 
 [http_service]

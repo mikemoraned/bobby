@@ -27,6 +27,7 @@ fn parse_s3_path(store_path: &str) -> Option<(String, String)> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     shared::tracing::init("info");
+    info!(git_hash = env!("BUILD_GIT_HASH"), "abort-multipart-uploads starting");
 
     let args = Args::parse();
 

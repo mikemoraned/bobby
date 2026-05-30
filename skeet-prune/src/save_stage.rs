@@ -10,7 +10,6 @@ use crate::{persistence, status};
 pub async fn run(
     rx: &mut mpsc::Receiver<ImageResult>,
     store: &SkeetStore,
-    fallback: Option<&SkeetStore>,
     counters: Arc<PipelineCounters>,
     channels: ChannelMonitors,
     log_interval: std::time::Duration,
@@ -23,17 +22,7 @@ pub async fn run(
                 status.record_post(image_count);
             }
             ImageResult::Classified(record) => {
-                if let Some(fallback_store) = fallback {
-                    persistence::save_with_fallback(
-                        store,
-                        fallback_store,
-                        &record,
-                        &mut status,
-                    )
-                    .await;
-                } else {
-                    persistence::save(store, &record, &mut status).await;
-                }
+                persistence::save(store, &record, &mut status).await;
             }
             ImageResult::Rejected(reasons) => {
                 status.record_rejected(&reasons);

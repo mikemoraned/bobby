@@ -1,26 +1,46 @@
 use std::path::PathBuf;
 
+use chrono::Utc;
 use clap::Parser;
-use rig::agent::AgentBuilder;
-use rig::client::CompletionClient;
-use rig::completion::request::Prompt;
-use skeet_refine::examples::{Example, load_examples};
-use skeet_refine::model::{ModelName, ModelProvider, RefineModel, RefinePrompt, save_model};
-use skeet_refine::refining::{SEED_PROMPT, build_agent, create_client, refine_image};
-use tracing::{error, info, warn};
+use eval::{EvalResultsLog, EvalSplits, PricesRegistry, Purpose, RunId, RunRecord, SnapshotId, Usd};
+use shared::refine_model::Label;
+use skeet_refine::model::RefineModels;
+use skeet_refine::train::gate::GateOutcome;
+use skeet_refine::train::TrainingInputs;
+use skeet_store::StoreArgs;
+use tracing::{info, warn};
 
 #[derive(Parser)]
-#[command(name = "train", about = "Train a scoring prompt by iterating over examples")]
+#[command(name = "train", about = "Train a scoring prompt against the wider appraised dataset")]
 struct Args {
-    /// Path to expected.toml
-    #[arg(long, default_value = "examples/expected.toml")]
-    examples_path: PathBuf,
+    #[command(flatten)]
+    store: StoreArgs,
 
-    /// Directory containing example images
-    #[arg(long, default_value = "examples")]
-    examples_dir: PathBuf,
+    /// Path to the eval-splits registry
+    #[arg(long, default_value = "config/eval-splits.toml")]
+    splits_path: PathBuf,
 
-    /// Path to write the resulting refine.toml
+    /// Which split (by label) to train against
+    #[arg(long, default_value = "default")]
+    split_label: String,
+
+    /// Path to the eval-results log; this run's results are always appended,
+    /// regardless of gate outcome
+    #[arg(long, default_value = "config/eval-results.toml")]
+    eval_results_path: PathBuf,
+
+    /// Pricing snapshot id under which to cost this run. Defaults to whatever
+    /// the prices registry's `current` label points at when the binary starts.
+    #[arg(long)]
+    prices_snapshot_id: Option<SnapshotId>,
+
+    /// Specific baseline run to compare this run against; defaults to the
+    /// best-F1 run in the log that has the production model_version and the
+    /// same split_id as this run
+    #[arg(long)]
+    baseline_run_id: Option<RunId>,
+
+    /// Path to write the resulting refine.toml — only written if the acceptance gate accepts
     #[arg(long, default_value = "config/refine.toml")]
     model_output: PathBuf,
 
@@ -32,110 +52,45 @@ struct Args {
     #[arg(long, default_value_t = 10)]
     max_iterations: u32,
 
-    /// Target accuracy threshold (0.0-1.0) to stop early
-    #[arg(long, default_value_t = 0.8)]
-    target_accuracy: f32,
+    /// Approximate dollar budget for the entire training run, including the
+    /// final full-test-set evaluation. Per-iteration sample size is derived
+    /// from this budget and the baseline's per-image scoring cost.
+    #[arg(long = "budget-usd", default_value = "5.0")]
+    budget: Usd,
+
+    /// OpenAI model name to use for both scoring and prompt rewriting
+    #[arg(long, default_value = "gpt-4o")]
+    model: String,
+
+    /// Maximum concurrent OpenAI scoring requests
+    #[arg(long, default_value_t = 4)]
+    concurrency: usize,
+
+    /// Random seed for per-iteration subsampling
+    #[arg(long, default_value_t = 42)]
+    seed: u64,
+
+    /// Free-text purpose for this run (e.g. "phase-4 gpt-4o-mini #1")
+    #[arg(long)]
+    purpose: String,
 }
 
-struct ScoredExample {
-    path: String,
-    exemplar: bool,
-    score: f32,
-    correct: bool,
-}
-
-fn is_correct(exemplar: bool, score: f32) -> bool {
-    if exemplar { score > 0.5 } else { score <= 0.5 }
-}
-
-async fn score_examples(
-    agent: &rig::agent::Agent<rig::providers::openai::CompletionModel>,
-    examples: &[Example],
-    examples_dir: &std::path::Path,
-) -> Vec<ScoredExample> {
-    let mut results = Vec::new();
-
-    for example in examples {
-        let image_path = examples_dir.join(&example.path);
-        let image = match image::open(&image_path) {
-            Ok(img) => img,
-            Err(e) => {
-                warn!(path = %image_path.display(), error = %e, "failed to load example image, skipping");
-                continue;
-            }
-        };
-
-        match refine_image(agent, &image).await {
-            Ok(score) => {
-                let score_f32: f32 = score.into();
-                let correct = is_correct(example.exemplar, score_f32);
-                info!(
-                    path = %example.path,
-                    exemplar = example.exemplar,
-                    score = score_f32,
-                    correct,
-                    "scored example"
-                );
-                results.push(ScoredExample {
-                    path: example.path.clone(),
-                    exemplar: example.exemplar,
-                    score: score_f32,
-                    correct,
-                });
-            }
-            Err(e) => {
-                error!(path = %example.path, error = %e, "failed to score example");
-            }
-        }
-    }
-
-    results
-}
-
-fn accuracy(results: &[ScoredExample]) -> f32 {
-    if results.is_empty() {
-        return 0.0;
-    }
-    let correct = results.iter().filter(|r| r.correct).count();
-    correct as f32 / results.len() as f32
-}
-
-fn format_results_for_refinement(results: &[ScoredExample]) -> String {
-    let mut s = String::from("Here are the scoring results for each example:\n\n");
-    for r in results {
-        let status = if r.correct { "CORRECT" } else { "WRONG" };
-        let expected = if r.exemplar { "high (>0.5)" } else { "low (<=0.5)" };
-        s.push_str(&format!(
-            "- {}: score={:.2}, expected={}, status={}\n",
-            r.path, r.score, expected, status
-        ));
-    }
-    s
-}
-
-async fn refine_prompt(
-    client: &rig::providers::openai::client::CompletionsClient,
-    current_prompt: &str,
-    results: &[ScoredExample],
-) -> Result<String, Box<dyn std::error::Error>> {
-    let results_summary = format_results_for_refinement(results);
-    let acc = accuracy(results);
-
-    let refinement_request = format!(
-        "You are helping improve a scoring prompt for an image classification system.\n\n\
-         The current scoring prompt is:\n\
-         ---\n{current_prompt}\n---\n\n\
-         {results_summary}\n\
-         Current accuracy: {acc:.0}%\n\n\
-         The exemplar=true images are good selfies with landmarks. The exemplar=false images should get low scores.\n\n\
-         Please provide an improved scoring prompt that would better distinguish between good and bad examples.\n\
-         Respond with ONLY the new prompt text, nothing else. Do not include any preamble or explanation."
-    );
-
-    let refinement_model = client.completion_model("gpt-4o");
-    let agent = AgentBuilder::new(refinement_model).build();
-    let response = agent.prompt(refinement_request).await?;
-    Ok(response)
+#[derive(Debug, thiserror::Error)]
+enum TrainCliError {
+    #[error("split label {0} not found in {1}")]
+    UnknownSplitLabel(String, PathBuf),
+    #[error("no production label in {0} — cannot select a default baseline")]
+    NoProductionModel(PathBuf),
+    #[error(
+        "no run in {path} matches model_version {model_version} and split_id {split_id} — pass --baseline-run-id to override"
+    )]
+    NoBaselineCandidate {
+        path: PathBuf,
+        model_version: String,
+        split_id: String,
+    },
+    #[error("baseline run_id {0} not found in {1}")]
+    UnknownBaselineRunId(RunId, PathBuf),
 }
 
 #[tokio::main]
@@ -146,62 +101,211 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
+    info!(git_hash = env!("BUILD_GIT_HASH"), "train starting");
 
     let args = Args::parse();
-    let examples = load_examples(&args.examples_path)?;
-    info!(count = examples.len(), "loaded examples");
 
-    let client = create_client(&args.openai_api_key);
+    let mut models = RefineModels::load_or_empty(&args.model_output)?;
+    info!(path = %args.model_output.display(), "loaded refine models");
 
-    let mut current_prompt = SEED_PROMPT.to_string();
-    let mut best_prompt = current_prompt.clone();
-    let mut best_accuracy = 0.0_f32;
+    let splits = EvalSplits::load(&args.splits_path)?;
+    let split_label = Label::new(&args.split_label);
+    let (split_id, split) = splits.by_label(&split_label).ok_or_else(|| {
+        TrainCliError::UnknownSplitLabel(args.split_label.clone(), args.splits_path.clone())
+    })?;
+    info!(
+        path = %args.splits_path.display(),
+        %split_id,
+        train_count = split.train.len(),
+        test_count = split.test.len(),
+        "loaded split"
+    );
 
-    for iteration in 1..=args.max_iterations {
-        info!(iteration, "starting training iteration");
+    let mut log = EvalResultsLog::load(&args.eval_results_path)?;
+    let baseline = pick_baseline(&log, &models, &args, split_id)?.clone();
+    info!(
+        run_id = %baseline.run_id,
+        model_version = %baseline.model_version,
+        precision = %baseline.evaluation.precision,
+        recall = %baseline.evaluation.recall,
+        "selected baseline run"
+    );
 
-        let agent = build_agent(&client, "gpt-4o", &current_prompt);
-        let results = score_examples(&agent, &examples, &args.examples_dir).await;
-        let acc = accuracy(&results);
+    let prices_registry = PricesRegistry::embedded()?;
+    let (prices_snapshot_id, prices) =
+        prices_registry.by_id_or_label(args.prices_snapshot_id, &Label::new("current"))?;
+    info!(prices_snapshot_id = %prices_snapshot_id, "resolved prices snapshot");
 
-        info!(iteration, accuracy = format!("{:.0}%", acc * 100.0), "iteration complete");
+    let store = args.store.open_store("train").await?;
 
-        if acc > best_accuracy {
-            best_accuracy = acc;
-            best_prompt = current_prompt.clone();
-            info!(best_accuracy = format!("{:.0}%", best_accuracy * 100.0), "new best prompt");
+    let run_at = Utc::now();
+    let inputs = TrainingInputs {
+        store: &store,
+        split,
+        split_id: *split_id,
+        baseline: &baseline,
+        prices,
+        prices_snapshot_id,
+        openai_api_key: &args.openai_api_key,
+        max_iterations: args.max_iterations,
+        budget: args.budget,
+        model: args.model.clone(),
+        concurrency: args.concurrency,
+        seed: args.seed,
+        purpose: Purpose::new(args.purpose.clone()),
+        run_at,
+    };
+
+    let report = inputs.train().await?;
+
+    log.append(report.run.clone())?;
+    log.save(&args.eval_results_path)?;
+
+    print_metrics(&args, &baseline, &report);
+
+    match report.outcome {
+        GateOutcome::Accepted => {
+            models.insert(report.candidate_model.clone(), &[Label::production()]);
+            models.save(&args.model_output)?;
+            print_accepted(&args, &baseline, &report);
+            info!(
+                path = %args.model_output.display(),
+                decision_threshold = %report.candidate_model.decision_threshold,
+                "saved new refine.toml"
+            );
         }
-
-        if acc >= args.target_accuracy {
-            info!("target accuracy reached, stopping");
-            break;
-        }
-
-        if iteration < args.max_iterations {
-            info!("refining prompt...");
-            match refine_prompt(&client, &current_prompt, &results).await {
-                Ok(new_prompt) => {
-                    info!(prompt_length = new_prompt.len(), "got refined prompt");
-                    current_prompt = new_prompt;
-                }
-                Err(e) => {
-                    error!(error = %e, "failed to refine prompt, keeping current");
-                }
-            }
+        GateOutcome::Rejected => {
+            print_rejected(&args, &baseline);
+            warn!("acceptance gate rejected candidate; refine.toml left untouched");
         }
     }
 
-    let model = RefineModel {
-        model_provider: ModelProvider::openai(),
-        model_name: ModelName::gpt_4o(),
-        prompt: RefinePrompt::new(best_prompt),
-    };
-    save_model(&args.model_output, &model)?;
-    info!(
-        path = %args.model_output.display(),
-        accuracy = format!("{:.0}%", best_accuracy * 100.0),
-        "saved model"
-    );
+    let total_cost = report.run.total_cost();
+    if total_cost > args.budget {
+        let overshoot = total_cost - args.budget;
+        let pct = overshoot.ratio_as_f64(args.budget) * 100.0;
+        println!();
+        println!(
+            "  BUDGET OVERSHOOT   : total {total_cost} exceeds --budget-usd {} by {overshoot} ({pct:.1}%)",
+            args.budget,
+        );
+        warn!(
+            total_cost = %total_cost,
+            budget = %args.budget,
+            overshoot = %overshoot,
+            overshoot_pct = pct,
+            "training run exceeded budget"
+        );
+    }
 
     Ok(())
+}
+
+fn pick_baseline<'a>(
+    log: &'a EvalResultsLog,
+    models: &RefineModels,
+    args: &Args,
+    split_id: &eval::SplitId,
+) -> Result<&'a RunRecord, TrainCliError> {
+    if let Some(run_id) = args.baseline_run_id {
+        return log
+            .runs()
+            .iter()
+            .find(|r| r.run_id == run_id)
+            .ok_or_else(|| {
+                TrainCliError::UnknownBaselineRunId(
+                    run_id,
+                    args.eval_results_path.clone(),
+                )
+            });
+    }
+    let production = models
+        .by_label(&Label::production())
+        .ok_or_else(|| TrainCliError::NoProductionModel(args.model_output.clone()))?;
+    let prod_version = production.version();
+    log.best_by(|r| {
+        if r.model_version == prod_version && &r.split_id == split_id {
+            Some(r.evaluation.f1)
+        } else {
+            None
+        }
+    })
+    .ok_or_else(|| TrainCliError::NoBaselineCandidate {
+        path: args.eval_results_path.clone(),
+        model_version: prod_version.to_string(),
+        split_id: split_id.to_string(),
+    })
+}
+
+fn print_metrics(args: &Args, baseline: &RunRecord, report: &skeet_refine::train::TrainingReport) {
+    let candidate_version = report.candidate_model.version();
+    let run = &report.run;
+
+    println!();
+    println!("=== Training results ===");
+    println!("  run_id             : {}", run.run_id);
+    println!("  purpose            : {}", run.purpose);
+    println!("  model              : {} ({})", args.model, candidate_version);
+    println!("  iterations         : {}", args.max_iterations);
+    println!("  per-iter sample    : {}", report.per_iter_size);
+    println!(
+        "  fallbacks          : training={}, test={} (score=0.0 substitutions after exhausted retries)",
+        report.training_fallbacks, report.test_fallbacks,
+    );
+    println!("  test precision     : {}", run.evaluation.precision);
+    println!("  test recall        : {}", run.evaluation.recall);
+    println!("  test F1            : {}", run.evaluation.f1);
+    match run.evaluation.roc_auc {
+        Some(v) => println!("  test ROC-AUC       : {v}"),
+        None => println!("  test ROC-AUC       : (undefined — only one class present)"),
+    }
+    println!(
+        "  baseline           : {} ({}; P={}, R={})",
+        baseline.run_id,
+        baseline.model_version,
+        baseline.evaluation.precision,
+        baseline.evaluation.recall,
+    );
+    match run.evaluation.pinned_precision {
+        Some(p) => println!(
+            "  pinned@baseline P  : threshold={}, recall={}",
+            p.threshold, p.recall
+        ),
+        None => println!("  pinned@baseline P  : no qualifying threshold"),
+    }
+    println!(
+        "  test cost          : {}  (total run incl. iterations: {})",
+        run.resources.cost,
+        run.total_cost(),
+    );
+    println!("  appended to log    : {}", args.eval_results_path.display());
+}
+
+fn print_accepted(args: &Args, baseline: &RunRecord, report: &skeet_refine::train::TrainingReport) {
+    println!();
+    println!(
+        "  ACCEPTED: candidate clears baseline precision={} with recall ≥ {} - {}",
+        baseline.evaluation.precision,
+        baseline.evaluation.recall,
+        skeet_refine::train::gate::GATE_RECALL_TOLERANCE,
+    );
+    println!(
+        "  saved decision_threshold : {}",
+        report.candidate_model.decision_threshold
+    );
+    println!("  written model      : {}", args.model_output.display());
+}
+
+fn print_rejected(args: &Args, baseline: &RunRecord) {
+    println!();
+    println!(
+        "  REJECTED: candidate did not match baseline precision={} at recall ≥ {} - {}",
+        baseline.evaluation.precision,
+        baseline.evaluation.recall,
+        skeet_refine::train::gate::GATE_RECALL_TOLERANCE,
+    );
+    println!(
+        "  refine.toml at {} left untouched",
+        args.model_output.display()
+    );
 }

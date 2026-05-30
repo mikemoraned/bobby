@@ -1,0 +1,32 @@
+[package]
+name = "openai-exporter"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "sync_costs"
+path = "src/bin/sync_costs.rs"
+
+[dependencies]
+chrono = { workspace = true }
+clap = { workspace = true }
+prometheus-reqwest-remote-write = "0.5"
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+shared = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
+test-support = { workspace = true }
+
+[build-dependencies]
+build-support = { workspace = true }
+
+[lints]
+workspace = true

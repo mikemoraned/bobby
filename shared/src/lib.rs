@@ -8,8 +8,11 @@ use image::DynamicImage;
 pub mod appraiser;
 pub mod band;
 mod blocklist;
+mod image_id;
 pub mod labels;
+pub mod model_version;
 mod rejection;
+pub mod refine_model;
 pub mod score;
 pub mod skeet_id;
 pub mod tracing;
@@ -18,8 +21,13 @@ mod zone;
 pub use appraiser::{Appraiser, ParseAppraiserError};
 pub use band::{Band, ParseBandError};
 pub use blocklist::{BlockedEntry, BlocklistConfig};
+pub use image_id::{ImageId, InvalidImageId};
+pub use model_version::{HashScheme, ModelVersion};
+pub use refine_model::{
+    Label, ModelName, ModelProvider, RefineModel, RefineModels, RefineModelsError, RefinePrompt,
+};
 pub use rejection::{Rejection, RejectionCategories, RejectionCategory};
-pub use score::{InvalidScore, Score};
+pub use score::{InvalidScore, InvalidThreshold, Score, Threshold};
 use serde::Deserialize;
 use skeet_id::SkeetId;
 pub use zone::Zone;
@@ -62,28 +70,6 @@ impl PartialEq for Percentage {
 impl PartialOrd for Percentage {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.0.partial_cmp(&other.0)
-    }
-}
-
-/// A short hash string identifying a particular model or config version.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ModelVersion(String);
-
-impl ModelVersion {
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::fmt::Display for ModelVersion {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<&str> for ModelVersion {
-    fn from(s: &str) -> Self {
-        Self(s.to_string())
     }
 }
 
@@ -150,7 +136,7 @@ impl PruneConfig {
         let mut version = String::with_capacity(8);
         write!(version, "{hash:016x}").expect("write to String");
         version.truncate(8);
-        ModelVersion(version)
+        ModelVersion::new(HashScheme::V1, version)
     }
 }
 
@@ -171,13 +157,6 @@ pub struct SkeetImage {
 mod tests {
     use super::*;
     use proptest::prelude::*;
-
-    #[test]
-    fn model_version_roundtrips_through_string() {
-        let v = ModelVersion::from("abc123");
-        let roundtripped = ModelVersion::from(v.to_string().as_str());
-        assert_eq!(roundtripped, v);
-    }
 
     fn make_config(a: u32, b: u32, c: u32, d: u32) -> PruneConfig {
         PruneConfig {

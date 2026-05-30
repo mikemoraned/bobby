@@ -18,7 +18,8 @@ spec:
         - name: ghcr-pull-secret
       containers:
         - name: live-refine
-          image: ghcr.io/mikemoraned/bobby/live-refine:latest
+          image: ghcr.io/mikemoraned/bobby/live-refine:${IMAGE_TAG}
+          imagePullPolicy: IfNotPresent
           command: ["live-refine"]
           args:
             - "--model-path"
@@ -51,18 +52,23 @@ spec:
                 secretKeyRef:
                   name: bobby-openai-api-key
                   key: password
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "http/protobuf"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "https://api.honeycomb.io"
-            - name: HONEYCOMB_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: bobby-otel-headers
+                  name: bobby-grafana-oltp-endpoint
                   key: password
             - name: OTEL_EXPORTER_OTLP_HEADERS
-              value: "x-honeycomb-team=$(HONEYCOMB_API_KEY)"
+              valueFrom:
+                secretKeyRef:
+                  name: bobby-grafana-oltp-headers
+                  key: password
             - name: OTEL_SERVICE_NAME
               value: "skeet-live-refine"
             - name: OTEL_RESOURCE_ATTRIBUTES
-              value: "deployment.environment=hetzner"
+              value: "deployment.environment=hetzner,service.version=${IMAGE_TAG}"
+            - name: OTEL_SEMCONV_STABILITY_OPT_IN
+              value: "gen_ai_latest_experimental"
             - name: RUST_LOG
               value: "info"

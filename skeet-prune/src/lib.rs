@@ -2,6 +2,7 @@
 
 mod classify;
 pub mod content_filter;
+mod metrics;
 pub mod prune_image_stage;
 pub mod prune_meta_stage;
 pub mod firehose;
