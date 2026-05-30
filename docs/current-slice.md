@@ -93,18 +93,18 @@ architecture-beta
 
 We'll do this in phases, with a working system at each step
 
-#### Phase 1: Split out `skeet-appraise` as a standalone website
+#### Phase 1: Split out `skeet-publish` as a library
 
-Even though we want to ultimately make this run within the hetzner cluster and be accessible over tailscale, initially we'll introduce a new fly.io website at `bobby-appraisals-staging.houseofmoran.io`. 
-
-This can effectively copy/clone setup we already have for `bobby-staging.houseofmoran.io` as we are largely splitting out existing code.
+This is not introducing a new service, but instead is factoring out the code already in `skeet-feed` which is to do with caching and generating a feed to instead live in a `skeet-publish` crate. This should live behind a trait which abstracts away as much detail as possible. The `skeet-feed` should depend only on this trait.
 
 Tasks:
 ...
 
-#### Phase 2: Split out `skeet-publish` as a library
+#### Phase 2: Split out `skeet-appraise` as a standalone website
 
-This is not introducing a new service, but instead is factoring out the code already in `skeet-feed` which is to do with caching and generating a feed to instead live in `skeet-publish` crate. This should live behind a trait which abstracts away as much detail as possible. The `skeet-feed` should depend only on this trait.
+Even though we want to ultimately make this run within the hetzner cluster and be accessible over tailscale, initially we'll introduce a new fly.io website at `bobby-appraisals-staging.houseofmoran.io`. 
+
+This can effectively copy/clone setup we already have for `bobby-staging.houseofmoran.io` as we are largely splitting out existing code.
 
 Tasks:
 ...
