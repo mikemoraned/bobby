@@ -1,4 +1,3 @@
-use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 use std::sync::Arc;
 
@@ -9,63 +8,15 @@ use cot::response::Response;
 use cot::{Body, StatusCode, Template};
 use serde::{Deserialize, Serialize};
 use shared::{Band, ImageId};
-use skeet_store::{ModelVersion, Score, SkeetId, StoredImageSummary};
+use skeet_publish::effective_band::image_effective_band;
+use skeet_publish::{CachedFeed, FeedCache, visible_entries};
 use crate::Store;
-use crate::effective_band::{image_effective_band, image_score_is_positive};
 use tracing::{info, instrument, warn};
 
 use crate::AppraiserExtractor;
 use crate::FeedCacheExtractor;
-use crate::feed_cache::{CachedFeed, FeedCache};
+use crate::FeedSourceExtractor;
 use crate::feed_config::FeedConfig;
-
-/// Compute the set of skeet IDs whose effective band makes them visible in the feed.
-///
-/// Score-based visibility uses the per-model threshold from `feed.models`.
-/// Manual band overrides bypass the model lookup and use `Band::is_visible_in_feed`.
-fn visible_skeet_ids(feed: &CachedFeed) -> HashSet<SkeetId> {
-    // For each image: manual override wins; otherwise use per-model positive check.
-    // Track per-skeet whether every image clears its bar.
-    let mut skeet_visible: HashMap<&SkeetId, bool> = HashMap::new();
-    for (summary, score, model_version) in &feed.entries {
-        let manual_image = feed.image_appraisals.get(&summary.image_id).map(|a| a.band);
-        let image_ok = manual_image.map_or_else(
-            || image_score_is_positive(*score, model_version, &feed.models),
-            |band| band.is_visible_in_feed(),
-        );
-        let entry = skeet_visible.entry(&summary.skeet_id).or_insert(true);
-        *entry = *entry && image_ok;
-    }
-
-    skeet_visible
-        .into_iter()
-        .filter(|(skeet_id, all_images_ok)| {
-            if !all_images_ok {
-                return false;
-            }
-            let manual_skeet = feed.skeet_appraisals.get(skeet_id).map(|a| a.band);
-            manual_skeet.is_none_or(|b| b.is_visible_in_feed())
-        })
-        .map(|(skeet_id, _)| skeet_id.clone())
-        .collect()
-}
-
-/// Return scored entries filtered to only those from visible skeets,
-/// sorted best-to-worst by score, deduplicated by skeet_id.
-pub fn visible_entries(feed: &CachedFeed) -> Vec<(StoredImageSummary, Score, ModelVersion)> {
-    let visible = visible_skeet_ids(feed);
-
-    let mut seen = HashSet::new();
-    feed.entries
-        .iter()
-        .filter(|(summary, _, _)| {
-            summary.skeet_id.collection() == "app.bsky.feed.post"
-                && visible.contains(&summary.skeet_id)
-        })
-        .filter(|(summary, _, _)| seen.insert(summary.skeet_id.clone()))
-        .cloned()
-        .collect()
-}
 
 fn wants_no_cache(head: &RequestHead) -> bool {
     head.headers
@@ -188,7 +139,7 @@ struct SkeletonFeedPost {
 #[instrument(skip_all, fields(feed = %query.feed))]
 pub async fn get_feed_skeleton(
     head: RequestHead,
-    FeedCacheExtractor(cache): FeedCacheExtractor,
+    FeedSourceExtractor(source): FeedSourceExtractor,
     FeedConfig(config): FeedConfig,
     UrlQuery(query): UrlQuery<FeedSkeletonQuery>,
 ) -> cot::Result<Response> {
@@ -208,13 +159,21 @@ pub async fn get_feed_skeleton(
 
     let limit = query.limit.unwrap_or(config.max_entries).min(config.max_entries);
 
-    let feed = get_feed(&cache, &head).await?;
+    let force_refresh = wants_no_cache(&head);
+    if force_refresh {
+        info!("cache-control: no-cache — forcing refresh");
+    }
+    let skeleton = source
+        .skeleton(force_refresh)
+        .await
+        .map_err(|e| cot::Error::internal(format!("failed to read feed source: {e}")))?;
 
-    let posts: Vec<SkeletonFeedPost> = visible_entries(&feed)
+    let posts: Vec<SkeletonFeedPost> = skeleton
+        .skeet_ids
         .into_iter()
         .take(limit)
-        .map(|(summary, _score, _model_version)| SkeletonFeedPost {
-            post: summary.skeet_id.to_string(),
+        .map(|skeet_id| SkeletonFeedPost {
+            post: skeet_id.to_string(),
         })
         .collect();
 
@@ -225,7 +184,7 @@ pub async fn get_feed_skeleton(
         cursor: None,
     };
     let mut response = json_response(&resp)?;
-    set_last_modified_header(&mut response, cache.refreshed_at().await);
+    set_last_modified_header(&mut response, skeleton.refreshed_at);
     Ok(response)
 }
 

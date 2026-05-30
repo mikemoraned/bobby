@@ -10878,6 +10878,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shared",
+ "skeet-publish",
  "skeet-store",
  "tempfile",
  "test-support",
@@ -10918,6 +10919,21 @@ dependencies = [
  "text-detection",
  "tokio",
  "toml 0.8.23",
+ "tracing",
+]
+
+[[package]]
+name = "skeet-publish"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "proptest",
+ "shared",
+ "skeet-store",
+ "tempfile",
+ "test-support",
+ "tokio",
  "tracing",
 ]
 

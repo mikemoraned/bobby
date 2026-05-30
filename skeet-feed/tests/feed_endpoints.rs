@@ -12,10 +12,12 @@ use common::{
 use cot::test::Client;
 use shared::Appraiser;
 use skeet_feed::auth_config::OAuthConfig;
-use skeet_feed::feed_cache::FeedCache;
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
-use skeet_feed::{AppraiserLayer, FeedCacheLayer, OAuthConfigLayer, StartedAtLayer, StoreLayer};
+use skeet_feed::{
+    AppraiserLayer, FeedCacheLayer, FeedSourceLayer, OAuthConfigLayer, StartedAtLayer, StoreLayer,
+};
+use skeet_publish::{FeedCache, FeedSource, LiveFeedSource};
 use skeet_store::test_utils::{make_record, make_record_at, open_temp_store};
 use skeet_store::{DiscoveredAt, ModelVersion, Score, SkeetStore};
 use test_support::test_models;
@@ -39,8 +41,10 @@ async fn client_for(store: SkeetStore, params: FeedParams) -> Client {
         params.max_entries,
         params.max_age_hours,
     ));
+    let feed_source: Arc<dyn FeedSource> = Arc::new(LiveFeedSource::new(Arc::clone(&cache)));
     let project = FeedProject {
         cache_layer: FeedCacheLayer::new(cache),
+        feed_source_layer: FeedSourceLayer::new(feed_source),
         feed_config_layer: FeedConfigLayer::new(params),
         store_layer: StoreLayer::from_shared(store),
         appraiser_layer: AppraiserLayer::new(Some(Arc::new(Appraiser::LocalAdmin))),
@@ -727,6 +731,7 @@ async fn oauth_client(
         params.max_entries,
         params.max_age_hours,
     ));
+    let feed_source: Arc<dyn FeedSource> = Arc::new(LiveFeedSource::new(Arc::clone(&cache)));
     let oauth_config = OAuthConfig::with_urls(
         "test-client-id".to_string(),
         "test-client-secret".to_string(),
@@ -737,6 +742,7 @@ async fn oauth_client(
     );
     let project = FeedProject {
         cache_layer: FeedCacheLayer::new(cache),
+        feed_source_layer: FeedSourceLayer::new(feed_source),
         feed_config_layer: FeedConfigLayer::new(params),
         store_layer: StoreLayer::from_shared(store),
         appraiser_layer: AppraiserLayer::new(None),

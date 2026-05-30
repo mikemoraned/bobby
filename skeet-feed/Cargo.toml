@@ -17,6 +17,7 @@ reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 shared = { workspace = true }
+skeet-publish = { workspace = true }
 skeet-store = { path = "../skeet-store" }
 tokio = { workspace = true }
 tower = { workspace = true }

@@ -11,7 +11,7 @@ use std::sync::Arc;
 use shared::{Appraiser, Band, ImageId, ModelVersion};
 use skeet_store::{Appraisal, DiscoveredAt, Score, SkeetId, StoredImageSummary};
 use crate::Store;
-use crate::effective_band::image_effective_band;
+use skeet_publish::effective_band::image_effective_band;
 use tracing::{info, instrument};
 
 use crate::AppraiserExtractor;

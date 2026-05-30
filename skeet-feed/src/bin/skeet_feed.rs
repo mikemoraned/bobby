@@ -8,10 +8,12 @@ use clap::Parser;
 use cot::project::Bootstrapper;
 use shared::{Appraiser, RefineModels};
 use skeet_feed::auth_config::OAuthConfig;
-use skeet_feed::feed_cache::{FeedCache, FeedCacheLayer};
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
-use skeet_feed::{AppraiserLayer, OAuthConfigLayer, StartedAtLayer, StoreLayer};
+use skeet_feed::{
+    AppraiserLayer, FeedCacheLayer, FeedSourceLayer, OAuthConfigLayer, StartedAtLayer, StoreLayer,
+};
+use skeet_publish::{FeedCache, FeedSource, LiveFeedSource};
 use skeet_store::StoreArgs;
 use tracing::info;
 
@@ -125,6 +127,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
     cache.spawn_background_refresh();
 
+    let feed_source: Arc<dyn FeedSource> = Arc::new(LiveFeedSource::new(Arc::clone(&cache)));
+
     let appraiser = if args.local_admin {
         info!("local admin mode enabled");
         Some(Arc::new(Appraiser::LocalAdmin))
@@ -155,6 +159,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let project = FeedProject {
         cache_layer: FeedCacheLayer::new(cache),
+        feed_source_layer: FeedSourceLayer::new(feed_source),
         feed_config_layer: FeedConfigLayer::new(feed_params),
         store_layer: StoreLayer::from_shared(store),
         appraiser_layer: AppraiserLayer::new(appraiser),

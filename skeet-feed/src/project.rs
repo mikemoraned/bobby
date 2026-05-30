@@ -10,6 +10,7 @@ use tracing::info;
 
 use crate::AppraiserLayer;
 use crate::FeedCacheLayer;
+use crate::FeedSourceLayer;
 use crate::OAuthConfigLayer;
 use crate::StartedAtLayer;
 use crate::StoreLayer;
@@ -63,6 +64,7 @@ impl App for FeedApp {
 
 pub struct FeedProject {
     pub cache_layer: FeedCacheLayer,
+    pub feed_source_layer: FeedSourceLayer,
     pub feed_config_layer: FeedConfigLayer,
     pub store_layer: StoreLayer,
     pub appraiser_layer: AppraiserLayer,
@@ -108,6 +110,7 @@ impl Project for FeedProject {
             .middleware(StaticFilesMiddleware::from_context(context))
             .middleware(session_middleware)
             .middleware(self.cache_layer.clone())
+            .middleware(self.feed_source_layer.clone())
             .middleware(self.feed_config_layer.clone())
             .middleware(self.store_layer.clone())
             .middleware(self.appraiser_layer.clone())
