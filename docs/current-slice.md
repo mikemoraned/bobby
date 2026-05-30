@@ -97,8 +97,29 @@ We'll do this in phases, with a working system at each step
 
 This is not introducing a new service, but instead is factoring out the code already in `skeet-feed` which is to do with caching and generating a feed to instead live in a `skeet-publish` crate. This should live behind a trait which abstracts away as much detail as possible. The `skeet-feed` should depend only on this trait.
 
+The trait surface should be **narrow** — `skeet-feed`'s `getFeedSkeleton` only needs an ordered, unique, visibility-filtered list of skeet-ids plus a `refreshed_at` for the `last-modified` header (image-urls get added to the surface in Phase 3/5, not now). The richer `CachedFeed` (entries + scores + appraisal maps) also moves into `skeet-publish` because the appraise homepage will consume it in Phase 2 — but it is *not* part of the `skeet-feed`-facing trait.
+
+Transitional note: until Phase 2 moves `home`/`annotated_image` out, those handlers stay in `skeet-feed` and keep using the relocated `CachedFeed` directly. "`skeet-feed` depends only on the trait" is fully realised at the end of Phase 2; in Phase 1 it holds for the feed-generation path (`getFeedSkeleton`).
+
+This is a pure refactor: no new service, no infra, no behaviour change. The existing `feed_endpoints` / `feed_integration` tests are the safety net — `getFeedSkeleton` output, `last-modified`, and `cache-control: no-cache` handling must stay byte-identical.
+
 Tasks:
-...
+
+* [ ] **Create the `skeet-publish` crate** (lib only): add to workspace `members` and a `skeet-publish = { path = "skeet-publish" }` entry in `[workspace.dependencies]`; `[lints] workspace = true`. Deps: `skeet-store`, `shared`, `chrono`, `tokio`, `tracing` (add `image` only if a moved type needs it).
+* [ ] **Move feed-generation policy** out of `skeet-feed` into `skeet-publish`, with its unit tests:
+    * `effective_band.rs` (`image_effective_band`, `image_score_is_positive`) — this is the per-model visibility/scoring decision; per the rust rule, policy belongs in the crate that owns the decision (`skeet-publish`).
+    * `visible_skeet_ids` / `visible_entries` (currently in `handlers.rs:26-68`).
+* [ ] **Move the cache** `feed_cache.rs` (`FeedCache`, `CachedFeed`, `spawn_background_refresh`) into `skeet-publish`, with its tests. Keep the cot middleware `FeedCacheLayer`/`FeedCacheExtractor` in the web crate(s) for now — they wrap the relocated `FeedCache`; only the cache type + refresh logic move.
+* [ ] **Define the trait + live impl** in `skeet-publish`:
+    * `trait FeedSource` (async) → returns ordered, unique, visibility-filtered `Vec<SkeetId>` + `refreshed_at: Option<DateTime<Utc>>`, with a force-refresh path (to back `cache-control: no-cache`).
+    * `LiveFeedSource` implementing it over `FeedCache` + `visible_entries`.
+* [ ] **Rewire `skeet-feed`**:
+    * `get_feed_skeleton` depends only on `Arc<dyn FeedSource>` (injected via a layer/extractor) instead of `FeedCacheExtractor`; apply `take(limit)` + last-modified exactly as today.
+    * `did_document` / `describe_feed_generator` are unchanged (use `FeedConfig`).
+    * `home` / `annotated_image` stay (transitional) using the relocated `CachedFeed`.
+    * Add `skeet-publish` to `skeet-feed/Cargo.toml`; delete the now-moved local modules.
+* [ ] **Wire the bin** `skeet_feed.rs`: construct `FeedCache` → wrap in `LiveFeedSource` → inject as `Arc<dyn FeedSource>`; keep `spawn_background_refresh`.
+* [ ] **Verify**: `just clippy`; `just test-no-docker` (the existing feed tests must pass unchanged); confirm both `lib.rs` files stay < 300 lines.
 
 #### Phase 2: Split out `skeet-appraise` as a standalone website
 
@@ -106,8 +127,43 @@ Even though we want to ultimately make this run within the hetzner cluster and b
 
 This can effectively copy/clone setup we already have for `bobby-staging.houseofmoran.io` as we are largely splitting out existing code.
 
+After Phase 1 the shared feed/cache code lives in `skeet-publish`, so both web crates depend on it cleanly (no `skeet-appraise` → `skeet-feed` dependency). `skeet-appraise` consumes the richer `CachedFeed`; `skeet-feed` keeps only the narrow `FeedSource` trait.
+
+Route split:
+* **stays in `skeet-feed`** (the Bluesky feed): `/.well-known/did.json`, `app.bsky.feed.describeFeedGenerator`, `app.bsky.feed.getFeedSkeleton`.
+* **moves to `skeet-appraise`** (the appraisal UI): `/` (rich home), `/skeet/{image_id}/annotated.png`, `/admin`, `/admin/appraise/{skeet,image}`, `/auth/{login,callback,logout}`.
+
 Tasks:
-...
+
+* [ ] **Create the `skeet-appraise` crate** with bin `skeet-appraise` at `src/bin/skeet_appraise.rs`; add to workspace `members`. Mirror `skeet-feed/Cargo.toml` deps and add `skeet-publish`. It uses Redis sessions, so it **must declare `deadpool-redis` directly** (the cot + deadpool-redis TLS-to-Upstash feature-unification HACK — see `.claude/rules/docker.md` and root `Cargo.toml`).
+* [ ] **Move the appraisal/admin/auth code** out of `skeet-feed` into `skeet-appraise`, with templates and tests:
+    * `home` handler + `home.html` + `HomeEntry`, and `band_options`/`BandOption` (only the appraise UI needs them now).
+    * `admin.rs` + `admin.html` / `admin_page.html` / `admin_row.html` + `appraise_skeet` / `appraise_image`.
+    * `auth.rs` + `auth_config.rs` (`OAuthConfig` + layer/extractor).
+    * `annotated_image` handler.
+    * `appraiser_config.rs` (`AppraiserLayer`/`Extractor`), `started_at.rs`, `store_middleware.rs` (cot `Store` extractor), `static_assets.rs` (htmx) — none are needed by the feed endpoints once `home`/`annotated_image` leave.
+    * `effective_band` is already in `skeet-publish` from Phase 1; `skeet-appraise` depends on it there.
+* [ ] **Build the `AppraiseProject` + router** (`/`, `/skeet/{image_id}/annotated.png`, `/admin`, `/admin/appraise/{skeet,image}`, `/auth/{login,callback,logout}`). Middleware: StaticFiles, Session (redis/in-memory as today), `FeedCacheLayer`, `Store`, `Appraiser`, `OAuthConfig`, `StartedAt`. No `FeedConfig` (home doesn't use it).
+* [ ] **Write the bin** `skeet_appraise.rs` by cloning `skeet_feed.rs` minus the bsky-identity args (`--hostname`, `--publisher-did`, `--feed-name`): keep `--store-path`, `--model-path`, `--max-entries`, `--max-age-hours`, `--bind`, `--local-admin`, and the OAuth/session/redis args. Construct `FeedCache` + `spawn_background_refresh`, inject via `FeedCacheLayer`.
+* [ ] **Trim `skeet-feed`**:
+    * Router keeps only the three feed endpoints; give `/` a minimal placeholder (small static page or redirect) so root isn't a 404 until Phase 5 replaces it with the image grid.
+    * Drop now-unused deps (`oauth2`, `tower-sessions`, `deadpool-redis` + its TLS HACK, `image`, `urlencoding`) — let clippy/compiler confirm.
+    * Simplify the `skeet-feed` bin Args (drop github/session/redis/admin/local-admin) and `fly.staging.toml` process args accordingly; drop the OAuth/session/redis secrets from `bobby-staging`.
+* [ ] **Re-home the integration tests** following the code (tests exercise the public HTTP interface per the rust rules):
+    * stays in `skeet-feed`: `did.json`, `describeFeedGenerator`, `getFeedSkeleton` coverage (`feed_integration.rs`, the feed half of `feed_endpoints.rs`).
+    * moves to `skeet-appraise`: home/admin/appraise/auth + `redis_session.rs` + `common/mod.rs` session helpers. The cross-cutting "appraise-then-feed-visibility" cases in `feed_endpoints.rs` now span two services — seed appraisals via the store in setup and assert against `skeet-feed`'s `getFeedSkeleton`.
+* [ ] **Build/deploy plumbing** (clone `skeet-feed`'s, per `.claude/rules/docker.md` "Adding a new service"):
+    * `Dockerfile.skeet-appraise`: copy `Dockerfile.skeet-feed`, scope `-p skeet-appraise --bin skeet-appraise`, platform `linux/amd64`, copy `config/refine.toml`.
+    * `just/container.just`: add `build-skeet-appraise` / `push-skeet-appraise`.
+    * `fly.appraise-staging.toml`: clone `fly.staging.toml` → app `bobby-appraisals-staging`, skeet-appraise process args, `OTEL_SERVICE_NAME=skeet-appraise`, `RUST_LOG=skeet_appraise=info,skeet_store=info`, health check on `/`.
+    * `just/appraise.just` (or extend `feed.just`): local run, `deploy_appraise_secrets` / `deploy_appraise_app`, `end_to_end_test_appraise`.
+* [ ] **Secrets / OAuth / DNS / fly app**:
+    * New (or updated) GitHub OAuth app with callback `https://bobby-appraisals-staging.houseofmoran.io/auth/callback`; store client id/secret in 1Password; create `bobby-appraisals-staging.env` (S3, SSE-C, OTEL, github oauth, session secret, admin users, redis url).
+    * `fly apps create bobby-appraisals-staging`; add DNS + cert for the hostname; `fly secrets import`; deploy.
+* [ ] **Verify**:
+    * `skeet-appraise`: home renders, OAuth login works, admin paging + set/clear band works, `annotated.png` served.
+    * `skeet-feed` unchanged: redeploy trimmed `bobby-staging`; `just end_to_end_test_staging` still green.
+    * `just clippy`, `just test-no-docker`, `lib.rs` files < 300 lines.
 
 #### Phase 3: Turn `skeet-publish` into a service
 
@@ -129,7 +185,7 @@ This is where we introduce a new redis `feed` storage to act as the publishing d
 - **Logs and metric pushes can drop** across the suspend boundary. Don't alert on metric absence.
 - **Keep health checks shallow**, or have them go through the same retry path as real requests.
 
-Tasks:
+##### Tasks
 ...
 
 #### Phase 4: Expose `skeet-appraise` as a service inside hetzner via tailscale
