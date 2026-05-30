@@ -56,16 +56,24 @@ architecture-beta
 
 #### Scope each Dockerfile to its crate with `-p`
 
-* [ ] audit each Dockerfile and map it to the single crate it ships, then scope both the chef cook and the final build to that crate:
-    1. `Dockerfile.skeet-feed` → `-p skeet-feed`
-    2. `Dockerfile.pruner` → `-p skeet-prune`
-    3. `Dockerfile.live-refine` → `-p skeet-refine`
-    4. `Dockerfile.compact`, `Dockerfile.bench-firehose` → confirm target crate(s) and scope the same way
-* [ ] in the builder stage, replace the workspace-wide cook with a scoped cook so only the crate's dependency subtree compiles:
+##### Core, ahead of other work
+
+* [x] audit each Dockerfile and map it to the single crate it ships, then scope both the chef cook and the final build to that crate:
+    1. `Dockerfile.skeet-feed` → `-p skeet-feed` (bin `skeet-feed`)
+    2. `Dockerfile.pruner` → `-p skeet-prune` (bin `pruner`)
+    3. `Dockerfile.live-refine` → `-p skeet-refine` (bin `live-refine`)
+    4. (no `Dockerfile.compact`/`Dockerfile.bench-firehose` exist; the other Dockerfiles are:)
+        - `Dockerfile.optimise` → `-p skeet-store` (bin `optimise`)
+        - `Dockerfile.cloudflare-exporter` → `-p cloudflare-exporter` (bins `sync_operations`, `sync_storage`)
+        - `Dockerfile.openai-exporter` → `-p openai-exporter` (bin `sync_costs`)
+* [x] in the builder stage, replace the workspace-wide cook with a scoped cook so only the crate's dependency subtree compiles:
     * `cargo chef cook --release -p <crate> --recipe-path recipe.json`
     * leave `cargo chef prepare` running over the whole workspace — the recipe is deps-only and can stay shared
-* [ ] replace the final `cargo build` with `cargo build --release -p <crate>` so each image stops compiling sibling binaries (e.g. `skeet-feed` no longer drags in `skeet-refine`'s `cot` / redis / web / oauth stack)
-* [ ] **`live-refine` / `skeet-refine` only:** keep the explicit `deadpool-redis` dep in the build graph so the scoped cook still compiles it with `tokio-rustls-comp` — the TLS feature-unification HACK in the root `Cargo.toml` relies on `cot` + `deadpool-redis` resolving together. Verify TLS to Upstash still works in the built image.
+* [x] replace the final `cargo build` with `cargo build --release -p <crate> --bin <bin>` so each image stops compiling sibling binaries. Kept `--bin` because several crates have many binaries (`skeet-prune` has 6, `skeet-refine` has 5); a bare `-p <crate>` would compile all of them.
+* [x] **TLS / `deadpool-redis`:** the note originally said "`live-refine` / `skeet-refine`", but `skeet-refine` has no redis/`cot` dependency at all. The crate that uses `cot` + `deadpool-redis` + TLS-to-Upstash is **`skeet-feed`**, and it declares both directly, so the scoped `-p skeet-feed` cook keeps them in the same dependency subtree and the feature-unification HACK still applies. No `Cargo.toml` change was needed. *(Still needs Docker-build verification that TLS to Upstash works in the built `skeet-feed` image.)*
+
+##### Discover / improve as we do this slice
+
 * [ ] verify caching actually improves: with deps unchanged, touch only `<crate>/src/main.rs`, rebuild, and confirm the cook/deps layer is reused (no dependency recompile). This is the direct test of whether `-p` + chef fixes the "recompiles everything" symptom for source-only changes.
 * [ ] (optional) now that each image cooks its own copy of the shared deps (`tokio`, `reqwest`, `image`, tracing/otel, `shared`), decide whether to dedup across images: BuildKit cache mounts on `target/` + the cargo registry, or `--cache-from` the previous git-hash-tagged image (ties into Q2 above on git-hash layer caching)
 * [ ] apply this same `-p` pattern when adding the `skeet-appraise` and `skeet-publish` Dockerfiles (Phases 1 and 3) rather than cloning a workspace-wide build

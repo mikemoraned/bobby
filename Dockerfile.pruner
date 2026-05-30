@@ -11,12 +11,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compil
 COPY --from=planner /build/recipe.json recipe.json
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
-    cargo chef cook --release --recipe-path recipe.json
+    cargo chef cook --release -p skeet-prune --recipe-path recipe.json
 COPY . .
 COPY models/ models/
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
-    cargo build --release --bin pruner
+    cargo build --release -p skeet-prune --bin pruner
 
 # build.rs scripts bake absolute paths to model files into the binary.
 # Copy them to stable paths so we can place them predictably in the runtime image.

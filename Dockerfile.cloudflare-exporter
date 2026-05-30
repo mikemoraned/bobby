@@ -9,11 +9,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compil
 COPY --from=planner /build/recipe.json recipe.json
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
-    cargo chef cook --release --recipe-path recipe.json
+    cargo chef cook --release -p cloudflare-exporter --recipe-path recipe.json
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
-    cargo build --release --bin sync_operations --bin sync_storage
+    cargo build --release -p cloudflare-exporter --bin sync_operations --bin sync_storage
 
 FROM debian:bookworm-slim AS runner
 LABEL org.opencontainers.image.source=https://github.com/mikemoraned/bobby
