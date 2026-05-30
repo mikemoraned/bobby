@@ -23,10 +23,11 @@ I want to get to the following different division of responsibilities:
         * watching for changes in what skeets / images have been found and scored by a model as well as what has been appraised
         * determining what needs to be published as the feed; this is the canonical single place we decide this
         * this is where we apply the "ordered by recency and filtered by band >= MedHigh" from above i.e. the `skeet-feed` just blindly accepts the ordering specified by the publisher
+        * publishing one redis list per **(order, limit)** choice, named `{order}-{limit}` — so the Bluesky feed is `recency-48h` and the public list (Phase 5) is `recency-7d`. `Order` is an enum (only `Recency` today = by skeet publish time; `Quality` = by score/band, later); `Limit` is a `NewType(Duration)` rendered `48h`/`7d`/`365d`. The publisher is configured with a *set* of these specs and computes/writes each generically; a reader just reads the named list it wants. Lists are named by ordering+window, deliberately **not** by visual use (no `grid`/`feed`).
         * resolving the public image URL for each published image — this is the **Bluesky CDN** URL (`https://cdn.bsky.app/img/feed_thumbnail/plain/{did}/{cid}@jpeg`), *not* our own annotated-image endpoint. The redis Feed stores `image-url:skeet-id` pairs, but whether the URL is read whole from the store, templated from a persisted blob `cid`, or derived some other way is hidden behind a trait — readers never know (see Phase 3 group A).
 * `skeet-refine` stays as-is; `skeet-prune` needs one small addition — it builds the CDN URL today (`firehose.rs`) but **drops the `cid` at the classify stage**. Rather than add a store field, we carry the `cid` inside the image id itself via a new `ImageId::V3(BlueskyCid)` variant — no store-schema change, and existing code keeps treating `ImageId` opaquely. This is a prerequisite for Phase 5 rendering real images (see Phase 3 group A0).
 
-The parts are related as follows by introducing a new redis table in upstash that sits between publisher and feed. The publisher writes `image-url:skeet-id` pairs to this table (it resolves the image URL behind a trait). The Bluesky feed reads the pairs and extracts a unique, ordered list of skeet-ids; the image URLs (Bluesky CDN, so images are served by Bluesky and never by us — which helps `skeet-feed` suspend) are used from Phase 5 onwards to render the public image grid:
+The parts are related as follows by introducing a new redis table in upstash that sits between publisher and feed. The publisher writes `image-url:skeet-id` pairs into one named list per (order, limit) spec (resolving the image URL behind a trait). The Bluesky feed reads `recency-48h` and extracts a unique, ordered list of skeet-ids; the image URLs (Bluesky CDN, so images are served by Bluesky and never by us — which helps `skeet-feed` suspend) are used from Phase 5 onwards to render the public image list (`recency-7d`):
 
 ```mermaid
 architecture-beta
@@ -168,7 +169,7 @@ Tasks:
 #### Phase 3: Turn `skeet-publish` into a service
 
 This is where we introduce a new redis `feed` storage to act as the publishing destination which links `skeet-feed` and `skeet-publish`. we can do this in steps:
-1. Create a new redis list in upstash called `feeds` which will contain a list of `image-url:skeet-id` pairs (the publisher derives the image URL), which represent the images which have been allowed through. `skeet-feed` reads these pairs and extracts a unique, ordered list of skeet-ids for the Bluesky feed
+1. Create a new redis list in upstash — named by the `{order}-{limit}` scheme, so the Bluesky feed list is `recency-48h` (see group A) — containing `image-url:skeet-id` pairs (the publisher resolves the image URL), which represent the images which have been allowed through. `skeet-feed` reads these pairs and extracts a unique, ordered list of skeet-ids for the Bluesky feed
 2. Create a new service which works like `live-refine` except it monitors and periodically recalculates the pairs (based on same logic as was in `skeet-feed` but has now been moved to this library), and then publishes this to the redis list. Deploy this to hetzner and leave running for an afternoon (verify manually that redis list makes sense).
 3. Update `skeet-feed` to be configurable (via config flag) to either continue using the library implementation or reading from redis (using different implementations of same trait). Deploy this to staging with it told to use the redis input. Deploy and leave running for an afternoon and manually verify it makes sense.
 4. If all good, remove implementation of trait that does live calculation and instead rely only on redis implementation.
@@ -199,28 +200,29 @@ This is a self-contained, backward/forward-compatible migration that can be done
 * [ ] **Flip `skeet-prune` to emit V3**: thread the `cid` from `extract_skeet_candidate` (it already has it — currently only embedded in the `image_urls` strings, `firehose.rs:108`) through `SkeetCandidate` → `SkeetImage` → `classify.rs`, and build `ImageId::V3(cid)` instead of `from_image`. From here, new images are V3; old V1/V2 rows are untouched.
 * [ ] **Accept the limitation**: `skeet-publish` can only resolve a CDN URL for `ImageId::V3` ids (it needs the cid). V1/V2 images have no recoverable cid, so they can't be published *with an image URL* — but the feed is recency-filtered (~48h / past week), so V1/V2 age out of the window shortly after this lands. Until then the resolver returns `None`/placeholder for them.
 
-###### A. Define the `feeds` redis schema (shared, in `skeet-publish`) — step 1
+###### A. Define the published-list redis schema (`{order}-{limit}`, shared in `skeet-publish`) — step 1
 
 * [ ] **The image URL is the Bluesky CDN URL, resolved behind a trait.** Target shape: `https://cdn.bsky.app/img/feed_thumbnail/plain/{did}/{cid}@jpeg` — `did` from the skeet-id, `cid` from the `ImageId::V3` (see A0). Introduce an `ImageUrlResolver` trait (in `skeet-publish`) mapping a published image → `Option<ImageUrl>`, hiding whether the value came from a V3 cid, a stored url, or elsewhere; it returns `None` for non-V3 ids. The publisher resolves at publish time so `skeet-feed` stays dumb. (Thumbnail vs fullsize template is a Phase 5 choice.)
-* [ ] **Decide the redis encoding before writing any redis code.** A skeet-id is an AT-URI (`at://did:plc:…/app.bsky.feed.post/rkey`) and the image-url is `https://…`, so a bare `image-url:skeet-id` string is ambiguous (both halves contain `:`). Encode each list element as a JSON object `{ "image_url": …, "skeet_id": … }` via a typed `PublishedPair` struct (serde) — not a delimiter-split string. The `image_url` stored here is the already-resolved CDN URL.
-* [ ] **Own the schema in one place** in `skeet-publish`, consumed by both the publisher (write) and `skeet-feed` (read): the key name (`feeds`), the `PublishedPair` type, its serialization, and the read/write helpers. Add a serialization round-trip unit test.
-* [ ] **Make replacement atomic.** The publisher recomputes the whole ordered list each cycle; readers must never see a half-written list. Build into a temp key and `RENAME` over `feeds` (RENAME is atomic).
+* [ ] **Name lists by `{order}-{limit}`, with typed components.** Add an `Order` enum (`Recency` only today → by skeet publish time; designed to grow a `Quality` variant later) with `Display`/`FromStr` (`recency`), and a `Limit(Duration)` NewType (FromStr/`new` + `Display` for `48h`/`7d`/`365d` — prefer a duration-parsing dep over hand-rolling). The redis list name is `format!("{order}-{limit}")`, so the Bluesky feed list is `recency-48h`. Don't name by visual purpose (no `feed`/`grid`).
+* [ ] **Decide the redis encoding before writing any redis code.** A skeet-id is an AT-URI (`at://did:plc:…/app.bsky.feed.post/rkey`) and the image-url is `https://…`, so a bare `image-url:skeet-id` string is ambiguous (both halves contain `:`). Encode each list element as a JSON object `{ "image_url": …, "skeet_id": … }` via a typed `PublishedPair` struct (serde) — not a delimiter-split string. The `image_url` stored here is the already-resolved CDN URL. Lists are always **per-image** pairs; deduplication (e.g. to unique skeet-ids for `getFeedSkeleton`) is a *read-side* concern, not part of a list's identity.
+* [ ] **Own the schema in one place** in `skeet-publish`, consumed by both the publisher (write) and `skeet-feed` (read): the `Order`/`Limit` types + `{order}-{limit}` naming, the `PublishedPair` type, its serialization, and the read/write helpers. Add serialization + list-name round-trip unit tests.
+* [ ] **Make replacement atomic.** The publisher recomputes each list every cycle; readers must never see a half-written list. Build into a temp key and `RENAME` over the target list (e.g. `recency-48h`) — RENAME is atomic.
 * [ ] **The image-url half isn't consumed until Phase 5** — `getFeedSkeleton` only reads the skeet-id half. So get the *skeet-id* half exactly right now; the resolved `image_url` just needs to be present and plausibly correct.
 
 ###### B. Build the publisher (library + service) — step 2
 
-* [ ] **Publisher logic in `skeet-publish`**: a `FeedPublisher` that computes the ordered, visibility-filtered feed via the existing Phase-1 generation logic (`LiveFeedSource` / `visible_entries`), maps each entry to a `PublishedPair` (resolving the image URL via the `ImageUrlResolver` trait from group A), and writes the atomic replacement to `feeds`.
-* [ ] **Add the `RedisFeedSource`** in `skeet-publish` implementing the Phase-1 `FeedSource` trait by reading + decoding the `feeds` list (ordered, unique skeet-ids + a `refreshed_at`). This is the read side `skeet-feed` will use in group C.
+* [ ] **Publisher logic in `skeet-publish`**: a `FeedPublisher` configured with a *set* of `(Order, Limit)` specs. For each spec it computes the ordered, visibility-filtered, windowed pairs via the existing Phase-1 generation logic (`LiveFeedSource` / `visible_entries`), resolves each image URL via the `ImageUrlResolver` (group A), and writes the atomic replacement to the `{order}-{limit}` list. In Phase 3 the set is just `{ recency-48h }`; Phase 5 adds `recency-7d` with no new publisher code.
+* [ ] **Add a generic redis reader** in `skeet-publish` — `RedisPublishedList::new(order, limit)` → `Vec<PublishedPair>` + `refreshed_at`. Then `RedisFeedSource` (the Phase-1 `FeedSource` impl `skeet-feed` uses in group C) wraps the `recency-48h` reader and dedups to a unique, ordered list of skeet-ids.
 * [ ] **Redis client / TLS**: the worker isn't a cot app, so use `deadpool-redis` (or `redis`) with rustls directly against the `rediss://` Upstash URL — independent of the cot session-store TLS HACK. `skeet-publish` declares the redis dep directly.
-* [ ] **Service bin** `skeet-publish` (add `[[bin]]` to the crate): a `live-refine`-style tick loop — `tokio::time::interval`, gated on table-version changes using the same `RELEVANT_TABLES` watch as `FeedCache` (scores + skeet/image appraisals) to skip recompute when nothing moved. Args mirror `live-refine` (`--store-path`, `--model-path`, `--interval-secs`) plus `--redis-url` (env `BOBBY_REDIS_URL`) and the feed-shape params (`--max-entries`, `--max-age-hours`). No image-host flag — the CDN template (`cdn.bsky.app`) is fixed and the resolver reads the `cid` from the `ImageId::V3` (A0) plus the `did` from the skeet-id.
+* [ ] **Service bin** `skeet-publish` (add `[[bin]]` to the crate): a `live-refine`-style tick loop — `tokio::time::interval`, gated on table-version changes using the same `RELEVANT_TABLES` watch as `FeedCache` (scores + skeet/image appraisals) to skip recompute when nothing moved. Args mirror `live-refine` (`--store-path`, `--model-path`, `--interval-secs`) plus `--redis-url` (env `BOBBY_REDIS_URL`) and the set of lists to publish — a repeated `--publish <order>-<limit>` (e.g. `--publish recency-48h`), parsed into `(Order, Limit)`, defaulting to `recency-48h`. No `--max-entries` (that's `skeet-feed`'s serving cap, applied on read by `getFeedSkeleton`, not a publish concern); `Limit` carries the time window. No image-host flag — the CDN template (`cdn.bsky.app`) is fixed and the resolver reads the `cid` from the `ImageId::V3` (A0) plus the `did` from the skeet-id.
 * [ ] **Equivalence test** (testcontainers redis, `_docker`): publisher writes → `RedisFeedSource` reads → assert the ordered skeet-ids match what `LiveFeedSource` produces from the same store. This is the core correctness guarantee that the redis path ≡ the library path.
 * [ ] **Build/deploy plumbing** (clone `live-refine`'s): `Dockerfile.skeet-publish` (`-p skeet-publish --bin skeet-publish`, platform `linux/arm64`, copy `config/refine.toml`); `build-skeet-publish`/`push-skeet-publish` in `just/container.just`; `infra/k8s/skeet-publish-deployment.yaml` (clone `live-refine-deployment.yaml`, add the redis-url env from a new `OnePasswordItem` → `bobby-upstash-redis-tcp-url`, `OTEL_SERVICE_NAME=skeet-publish`); `cluster-deploy-skeet-publish` / logs / enable / disable / rollback in `just/cluster.just`, and add it to `cluster-deploy-all` / `-restart-all` / `-enable-all` / `-disable-all`.
-* [ ] **Deploy to hetzner and leave running for an afternoon**; manually inspect the `feeds` list and confirm it makes sense (right skeet-ids, right order, atomic — never empty/partial).
+* [ ] **Deploy to hetzner and leave running for an afternoon**; manually inspect the `recency-48h` list and confirm it makes sense (right skeet-ids, right order, atomic — never empty/partial).
 
 ###### C. Make `skeet-feed`'s feed source configurable — step 3
 
 * [ ] **Add a feed-source selector flag** to `skeet-feed`, keeping enablement separate from config (rust rule): e.g. `--feed-source library|redis` (or `--use-redis-feed` + `--redis-url`). It picks `LiveFeedSource` vs `RedisFeedSource` — both already implement `FeedSource`, so only the bin wiring changes; the handlers are untouched.
-* [ ] **Re-add a redis client to `skeet-feed`** for the read path (it was dropped in Phase 2 with the cot sessions): `RedisFeedSource` over rustls TLS to Upstash.
+* [ ] **Re-add a redis client to `skeet-feed`** for the read path (it was dropped in Phase 2 with the cot sessions): `RedisFeedSource` (wrapping the `recency-48h` reader) over rustls TLS to Upstash.
 * [ ] **Deploy to `bobby-staging` told to use the redis source**, leave running for an afternoon, manually verify `getFeedSkeleton` (and the live Bluesky feed) still makes sense vs the library path.
 
 ###### D. Remove the live-calc source from `skeet-feed` — step 4
@@ -327,5 +329,33 @@ What I am envisaging here is a pinterest-style layout using css-grid. This shoul
 
 This should be as server-rendered as possible, with associated cache headers on images and similar to maximise cache-ability.
 
-Tasks:
-...
+This reuses the Phase 3 machinery wholesale — `PublishedPair`, the atomic-replace redis schema, the `ImageUrlResolver`, the publisher tick loop. After Phase 3 `skeet-feed` is **storeless and suspendable** and images are served by the **Bluesky CDN** (`image_url` in each pair), so `skeet-feed` never serves image bytes and the page is cheap to render and cache.
+
+Decisions baked in (flagged where a real choice exists):
+* **A second list under the same `(order, limit)` scheme.** The Bluesky feed is `recency-48h`; the public list is a wider `recency-7d` — same mechanism, just a longer window, so it's a config entry in the publisher's spec set, not bespoke code. Published lists are always **per-image** `PublishedPair`s; `getFeedSkeleton` dedups to unique skeet-ids on read, while the public page renders every image. So per-image-vs-per-skeet is a *read-side* choice, not part of list identity.
+* **Still filtered by `band >= MedHigh`** — the public page applies the same visibility policy as the feed (Target), just over a week. *(Publisher policy decision: confirm we don't want Low/MedLow shown publicly.)*
+* **Thumbnails, click-through to the skeet.** Cards use the `feed_thumbnail` CDN URL already in the pair; clicking goes to `https://bsky.app/profile/{did}/post/{rkey}` (derived from the skeet-id), not a fullsize image.
+
+###### A. Publisher: publish the `recency-7d` list
+
+* [ ] **Add `recency-7d` to the publisher's spec set** — `Order::Recency` + `Limit(7d)`. This is a config entry, not new code: the generic `(Order, Limit)` loop from Phase 3 B already computes, windows, and atomically writes each list. Pass it via the existing `--publish recency-48h --publish recency-7d`.
+* [ ] **Reuse the schema + resolver** — `PublishedPair`, the naming, and `ImageUrlResolver` are unchanged; only the `Limit` window differs.
+* [ ] **Confirm a wider window is covered by the round-trip test** (the Phase 3 test is already generic over `(Order, Limit)`): publisher writes `recency-7d` → reader decodes → expected images present in recency order.
+
+###### B. `skeet-feed`: read + server-render the list at `/`
+
+* [ ] **Read `recency-7d`** via the generic `RedisPublishedList::new(Order::Recency, Limit(7d))` reader from Phase 3 B (no new reader type) → `Vec<PublishedPair>` + `refreshed_at`, reusing the same resilient TLS redis pool. Keep the cold-start path lazy (read on first request) so suspend/resume stays fast.
+* [ ] **Replace `/`'s placeholder** (the Phase-2 stub) with the page handler: server-render a JS-free css-grid of `<a href="{bsky_url}"><img src="{cdn_thumb}" loading="lazy" …></a>` cards in list order. Inline the `<style>` (single request, nothing to cache-bust). `did.json` / `describeFeedGenerator` / `getFeedSkeleton` are untouched.
+* [ ] **Layout**: start with **uniform aspect-ratio tiles** (`aspect-ratio` + `object-fit: cover`) — zero layout shift, no image dimensions needed, true css-grid per the brief. *(If we later want real variable-height masonry, that needs either CSS `column-count` or carrying width/height in `PublishedPair` — defer unless wanted.)*
+
+###### C. Caching + polish
+
+* [ ] **HTML caching**: set `Last-Modified` from the grid's `refreshed_at` and honour `If-Modified-Since` → `304` (same pattern as `getFeedSkeleton`), plus a short `Cache-Control: public, max-age=…`. Low-traffic + suspendable, so a small max-age + revalidation is the right trade.
+* [ ] **Images need no work from us** — they're `cdn.bsky.app` URLs with Bluesky's own long-lived caching; `loading="lazy"` + explicit tile sizing (via `aspect-ratio`) avoids layout shift. Our caching responsibility is just the HTML (and the inlined CSS rides with it).
+* [ ] **Empty / cold states**: render a tidy empty grid when the `recency-7d` list is missing/empty (e.g. right after a deploy before the publisher's first write), not an error.
+
+###### D. Verify
+
+* [ ] **Integration test** (testcontainers redis, `_docker`): seed a `recency-7d` list, `GET /`, assert cards render in order with the right CDN `src` and `bsky.app` hrefs; `Last-Modified` present; `If-Modified-Since` returns `304`.
+* [ ] **Manual**: deploy publisher + `skeet-feed`, confirm the public grid shows a week of `band >= MedHigh` images, clicks land on the right skeets, and the page still serves correctly through a suspend/resume cycle.
+* [ ] `just clippy`, `just test-no-docker`, `just end_to_end_test_staging`.
