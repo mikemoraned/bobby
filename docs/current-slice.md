@@ -54,11 +54,25 @@ architecture-beta
 
 ### Bugs / Refactors
 
-#### Docker / chef broken?
+#### Scope each Dockerfile to its crate with `-p`
 
-* [ ] it seems that docker rust chef based caching is no-longer working i.e. even if library dependencies haven't changed, it still recompiles everything
-    1. what's up?
-    2. now that docker images are built and named based on git-hash, can we exploit that for a more exact caching of layers?
+* [ ] audit each Dockerfile and map it to the single crate it ships, then scope both the chef cook and the final build to that crate:
+    1. `Dockerfile.skeet-feed` → `-p skeet-feed`
+    2. `Dockerfile.pruner` → `-p skeet-prune`
+    3. `Dockerfile.live-refine` → `-p skeet-refine`
+    4. `Dockerfile.compact`, `Dockerfile.bench-firehose` → confirm target crate(s) and scope the same way
+* [ ] in the builder stage, replace the workspace-wide cook with a scoped cook so only the crate's dependency subtree compiles:
+    * `cargo chef cook --release -p <crate> --recipe-path recipe.json`
+    * leave `cargo chef prepare` running over the whole workspace — the recipe is deps-only and can stay shared
+* [ ] replace the final `cargo build` with `cargo build --release -p <crate>` so each image stops compiling sibling binaries (e.g. `skeet-feed` no longer drags in `skeet-refine`'s `cot` / redis / web / oauth stack)
+* [ ] **`live-refine` / `skeet-refine` only:** keep the explicit `deadpool-redis` dep in the build graph so the scoped cook still compiles it with `tokio-rustls-comp` — the TLS feature-unification HACK in the root `Cargo.toml` relies on `cot` + `deadpool-redis` resolving together. Verify TLS to Upstash still works in the built image.
+* [ ] verify caching actually improves: with deps unchanged, touch only `<crate>/src/main.rs`, rebuild, and confirm the cook/deps layer is reused (no dependency recompile). This is the direct test of whether `-p` + chef fixes the "recompiles everything" symptom for source-only changes.
+* [ ] (optional) now that each image cooks its own copy of the shared deps (`tokio`, `reqwest`, `image`, tracing/otel, `shared`), decide whether to dedup across images: BuildKit cache mounts on `target/` + the cargo registry, or `--cache-from` the previous git-hash-tagged image (ties into Q2 above on git-hash layer caching)
+* [ ] apply this same `-p` pattern when adding the `skeet-appraise` and `skeet-publish` Dockerfiles (Phases 1 and 3) rather than cloning a workspace-wide build
+
+#### Make use of git-hash?
+
+* [ ] now that docker images are built and named based on git-hash, can we exploit that for a more exact caching of layers?
 
 #### Deny `expect()` as well
 
