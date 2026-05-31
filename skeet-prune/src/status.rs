@@ -77,8 +77,9 @@ impl Status {
         for &cat in &categories_seen {
             *self.category_counts.entry(cat).or_default() += 1;
         }
-        if categories_seen.len() == 1 {
-            let sole = categories_seen.into_iter().next().expect("just checked len == 1");
+        if categories_seen.len() == 1
+            && let Some(sole) = categories_seen.into_iter().next()
+        {
             *self.sole_category_counts.entry(sole).or_default() += 1;
         }
     }
@@ -97,6 +98,8 @@ impl Status {
         }
     }
 
+    // Every `expect` below is a `write!` into a `String`, which is infallible.
+    #[allow(clippy::expect_used)]
     fn log_summary(&mut self) {
         let hit_rate = if self.image_count > 0 {
             (self.saved_count as f64 / self.image_count as f64) * 100.0
