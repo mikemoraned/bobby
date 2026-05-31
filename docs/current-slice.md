@@ -237,7 +237,7 @@ Tasks:
     * `just/container.just`: `build-skeet-appraise` / `push-skeet-appraise`.
     * `fly.appraise-staging.toml` (app `bobby-appraisals-staging`, `OTEL_SERVICE_NAME=skeet-appraise`, `RUST_LOG=skeet_appraise=info,skeet_store=info`, health check on `/`).
     * `just/appraise.just` (imported in `justfile`): local run, `deploy_appraise_secrets` / `deploy_appraise_app`, `end_to_end_test_appraise` (runs `appraise_integration` against `bobby-appraisals-staging.fly.dev`).
-* [ ] **Secrets / OAuth / DNS / fly app** *(external — needs credentials/consoles, cannot be done from the repo)*:
+* [x] **Secrets / OAuth / DNS / fly app** *(external — needs credentials/consoles, cannot be done from the repo)*:
     * [x] create `bobby-appraisals-staging.env` (S3, SSE-C, OTEL, github oauth, session secret, admin users, redis url).
         * some names of secrets not yet created
     * [x] build with `Dockerfile.skeet-appraise` for first time via `just push-skeet-appraise`
@@ -260,15 +260,23 @@ Tasks:
             * [x] `op://Dev/bobby-github-oauth-appraisals-staging-client-id/password`
             * [x] `op://Dev/bobby-github-oauth-appraisals-staging-client-secret/password`
         * [x] try login by going to `https://bobby-appraisals-staging.houseofmoran.io/admin`
-    * [x] confirm appraise is working by running `end_to_end_test_appraise`
-    * [ ] fresh minimal deploy of https://bobby-staging.houseofmoran.io/ with confirmed removed functionality:
-        * [ ] remove the OAuth/session/redis secrets from `bobby-staging`
-        * [ ] do a deploy of `just deploy_staging`
-* [ ] **Verify**:
+    * [x] confirm appraise is working by running `just end_to_end_test_appraise`
+    * [x] fresh minimal deploy of https://bobby-staging.houseofmoran.io/ with confirmed removed functionality:
+        * [x] define the known-needed secrets in a new per-service `bobby-feed-staging.env` (store creds + OTEL only — no github/session/redis/admin, and OPENAI dropped too since the feed never used it); point `deploy_staging_secrets` at it. `fly secrets import` only adds/updates, so the now-unneeded secrets are removed from the app *after* the deploy (below).
+        * [x] do a deploy of `just deploy_staging`
+        * [x] remove the now-unneeded secrets from the app (those on the app but absent from `bobby-feed-staging.env`):
+        ```
+        fly secrets unset --config fly.staging.toml \
+          BOBBY_GITHUB_CLIENT_ID BOBBY_GITHUB_CLIENT_SECRET \
+          BOBBY_SESSION_SECRET BOBBY_ADMIN_USERS BOBBY_REDIS_URL \
+          BOBBY_OPENAI_API_KEY
+        ```
+* [x] **Verify**:
     * [x] `just clippy`, `just test-no-docker` (448 passed, 5 skipped), `lib.rs` files < 300 lines (`skeet-feed` 8, `skeet-appraise` 19).
-    * [ ] *(needs deploy)* `skeet-appraise`: home renders, OAuth login works, admin paging + set/clear band works, `annotated.png` served.
-    * [ ] *(needs deploy)* `skeet-feed` unchanged: redeploy trimmed `bobby-staging`; `just end_to_end_test_staging` still green.
+    * [x] *(needs deploy)* `skeet-appraise`: home renders, OAuth login works, admin paging + set/clear band works, `annotated.png` served; `just end_to_end_test_appraise` still green
+    * [x] *(needs deploy)* `skeet-feed` unchanged: redeploy trimmed `bobby-staging`; `just end_to_end_test_staging` still green.
 * [ ] delete `bobby-staging` Github App as should no longer be needed
+* [ ] rename rules like `deploy_staging` to `deploy_feed_staging` (and similar just rules)
 
 #### Phase 3: Turn `skeet-publish` into a service
 
