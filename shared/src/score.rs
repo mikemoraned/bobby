@@ -13,12 +13,18 @@ pub struct Score(f32);
 pub struct InvalidScore(f32);
 
 impl Score {
+    /// Validating constructor for untrusted input.
     pub fn new(value: f32) -> Result<Self, InvalidScore> {
         if (0.0..=1.0).contains(&value) {
             Ok(Self(value))
         } else {
             Err(InvalidScore(value))
         }
+    }
+
+    /// The lowest score, 0.0 — infallible since the constant is in range.
+    pub const fn zero() -> Self {
+        Self(0.0)
     }
 }
 

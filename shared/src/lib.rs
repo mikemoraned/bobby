@@ -40,13 +40,35 @@ pub struct Percentage(f32);
 #[error("percentage must be between 0.0 and 100.0, got {0}")]
 pub struct InvalidPercentage(f32);
 
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("count {count} exceeds total {total}")]
+pub struct CountExceedsTotal {
+    pub count: u32,
+    pub total: u32,
+}
+
 impl Percentage {
+    /// Validating constructor for untrusted input.
     pub fn new(value: f32) -> Result<Self, InvalidPercentage> {
         if (0.0..=100.0).contains(&value) {
             Ok(Self(value))
         } else {
             Err(InvalidPercentage(value))
         }
+    }
+
+    /// `count` out of `total` as a percentage (`count / total * 100`), or 0% when
+    /// `total == 0`. Errors if `count > total`, which would put the result above
+    /// 100% and break the [0, 100] invariant.
+    pub fn from_counts(count: u32, total: u32) -> Result<Self, CountExceedsTotal> {
+        if count > total {
+            return Err(CountExceedsTotal { count, total });
+        }
+        Ok(if total == 0 {
+            Self(0.0)
+        } else {
+            Self((count as f32 / total as f32) * 100.0)
+        })
     }
 
     pub const fn value(self) -> f32 {

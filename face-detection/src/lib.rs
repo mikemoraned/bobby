@@ -81,7 +81,10 @@ impl Face {
     ///
     /// The face bounding box is clipped to the image boundaries so that
     /// regions extending outside the image are not counted.
-    #[allow(clippy::expect_used)] // clipped ratio is provably in [0, 100]
+    // `intersection` returns a rect contained in `image_rect`, so its area is <=
+    // `image_area` and the ratio is provably in [0, 100]. That bound comes from euclid's
+    // geometry rather than integer counts, so it can't ride on `Percentage::from_counts`.
+    #[allow(clippy::expect_used)]
     pub fn area_pct(&self, image_width: u32, image_height: u32) -> Percentage {
         let image_area = image_width as f32 * image_height as f32;
         let face_rect = Rect::new(

@@ -186,9 +186,7 @@ impl<'a> TrainingInputs<'a> {
             .precision()
             .ok_or(TrainError::NoPositivePredictions)?;
         let test_recall = test_matrix.recall().ok_or(TrainError::NoPositives)?;
-        // precision and recall were just confirmed defined above, so f1 is too.
-        #[allow(clippy::expect_used)]
-        let test_f1 = test_matrix.f1().expect("precision and recall both defined");
+        let test_f1 = F1::harmonic(test_precision, test_recall);
         let test_roc_auc = roc_auc_score(&test_labelled);
 
         let test_cost = self.prices.cost_for(&self.model, test_in, test_out)?;

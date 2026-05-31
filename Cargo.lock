@@ -11041,6 +11041,7 @@ name = "skin-detection"
 version = "0.1.0"
 dependencies = [
  "image",
+ "shared",
 ]
 
 [[package]]

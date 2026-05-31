@@ -166,7 +166,7 @@ than asserted unreachable.
 ###### Tasks
 
 * [x] Apply this advice to the mentioned code
-* [ ] Also check out for other instances where this pattern could apply (based on where we are currently having to apply `#[allow(clippy::expect_used)]`)
+* [x] Also check out for other instances where this pattern could apply (based on where we are currently having to apply `#[allow(clippy::expect_used)]`)
 
 ### Phases
 

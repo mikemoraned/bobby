@@ -171,10 +171,9 @@ where
         .await
 }
 
-#[allow(clippy::expect_used)] // 0.0 is within [0.0, 1.0]
 fn fallback_score(duration: Duration) -> ResilientScore {
     ResilientScore {
-        score: Score::new(0.0).expect("0.0 is within [0.0, 1.0]"),
+        score: Score::zero(),
         usage: Usage::new(),
         duration,
         outcome: ScoringOutcome::FallbackAfterRetries,
