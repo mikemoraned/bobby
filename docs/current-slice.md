@@ -241,9 +241,11 @@ Tasks:
         * some names of secrets not yet created
     * [x] build with `Dockerfile.skeet-appraise` for first time via `just push-skeet-appraise`
     * [x] `fly apps create bobby-appraisals-staging`
-    * [ ] secrets import and deploy
-        * [ ] `just deploy_appraise_app`
-        * [ ] `just deploy_appraise_secrets`
+    * [x] deploy
+        * [x] `just deploy_appraise_app`
+            * need to go to https://github.com/users/mikemoraned/packages/container/bobby%2Fskeet-appraise/settings and make this package public for this to start
+            * this will get to starting the system but will probably fail as no secrets yet deployed
+        * [x] `just deploy_appraise_secrets`
         * this will create https://bobby-appraisals-staging.fly.dev
     * [x] create DNS in Route53 which maps `bobby-appraisals-staging.houseofmoran.io` to `bobby-appraisals-staging.fly.dev`
     * [ ] add cert for the hostname
@@ -260,6 +262,7 @@ Tasks:
     * [x] `just clippy`, `just test-no-docker` (445 passed, 5 skipped), `lib.rs` files < 300 lines (`skeet-feed` 8, `skeet-appraise` 19).
     * [ ] *(needs deploy)* `skeet-appraise`: home renders, OAuth login works, admin paging + set/clear band works, `annotated.png` served.
     * [ ] *(needs deploy)* `skeet-feed` unchanged: redeploy trimmed `bobby-staging`; `just end_to_end_test_staging` still green.
+* [ ] delete `bobby-staging` Github App as should no longer be needed
 
 #### Phase 3: Turn `skeet-publish` into a service
 
