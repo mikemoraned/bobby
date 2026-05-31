@@ -4,8 +4,6 @@ COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm AS builder
-ARG BUILD_GIT_HASH=unknown
-ENV BUILD_GIT_HASH=${BUILD_GIT_HASH}
 WORKDIR /build
 RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev && rm -rf /var/lib/apt/lists/*
 COPY --from=planner /build/recipe.json recipe.json
@@ -14,6 +12,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo chef cook --release -p skeet-prune --recipe-path recipe.json
 COPY . .
 COPY models/ models/
+ARG BUILD_GIT_HASH=unknown
+ENV BUILD_GIT_HASH=${BUILD_GIT_HASH}
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     cargo build --release -p skeet-prune --bin pruner
