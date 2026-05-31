@@ -7,6 +7,7 @@ use image::DynamicImage;
 pub mod appraiser;
 pub mod band;
 mod blocklist;
+mod bluesky_cid;
 mod image_id;
 pub mod labels;
 pub mod model_version;
@@ -20,6 +21,7 @@ mod zone;
 pub use appraiser::{Appraiser, ParseAppraiserError};
 pub use band::{Band, ParseBandError};
 pub use blocklist::{BlockedEntry, BlocklistConfig};
+pub use bluesky_cid::{BlueskyCid, InvalidBlueskyCid};
 pub use image_id::{ImageId, InvalidImageId};
 pub use model_version::{HashScheme, ModelVersion};
 pub use refine_model::{

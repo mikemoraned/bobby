@@ -5,12 +5,16 @@ use image::DynamicImage;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
+use crate::bluesky_cid::BlueskyCid;
+
 const V2_PREFIX: &str = "v2:";
+const V3_PREFIX: &str = "v3:";
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ImageId {
     V1(Uuid),
     V2(md5::Digest),
+    V3(BlueskyCid),
 }
 
 impl ImageId {
@@ -24,6 +28,7 @@ impl fmt::Display for ImageId {
         match self {
             Self::V1(uuid) => write!(f, "{uuid}"),
             Self::V2(digest) => write!(f, "{V2_PREFIX}{digest:x}"),
+            Self::V3(cid) => write!(f, "{V3_PREFIX}{cid}"),
         }
     }
 }
@@ -42,6 +47,10 @@ impl FromStr for ImageId {
                 .and_then(|b| b.try_into().ok())
                 .ok_or_else(|| InvalidImageId(s.to_string()))?;
             Ok(Self::V2(md5::Digest(bytes)))
+        } else if let Some(cid_str) = s.strip_prefix(V3_PREFIX) {
+            BlueskyCid::new(cid_str)
+                .map(Self::V3)
+                .map_err(|_| InvalidImageId(s.to_string()))
         } else {
             let uuid = Uuid::parse_str(s).map_err(|_| InvalidImageId(s.to_string()))?;
             Ok(Self::V1(uuid))
@@ -103,5 +112,44 @@ mod tests {
             let parsed: W = toml::from_str(&s).expect("deserialize");
             prop_assert_eq!(parsed.id, original.id);
         }
+    }
+
+    /// A real Bluesky blob CID (CIDv1, base32, sha2-256).
+    const SAMPLE_CID: &str = "bafkreibme22gw2h7y2h7tg2fhqotaqjucnbc24deqo72b6mkl2egezxhvy";
+
+    #[test]
+    fn image_id_v3_roundtrip() {
+        let id = ImageId::V3(BlueskyCid::new(SAMPLE_CID).expect("valid cid"));
+        let s = id.to_string();
+        assert_eq!(s, format!("v3:{SAMPLE_CID}"));
+        let parsed: ImageId = s.parse().expect("V3 roundtrip");
+        assert_eq!(id, parsed);
+    }
+
+    #[test]
+    fn image_id_v3_serde_roundtrip_via_toml() {
+        #[derive(Serialize, Deserialize)]
+        struct W {
+            id: ImageId,
+        }
+        let original = W {
+            id: ImageId::V3(BlueskyCid::new(SAMPLE_CID).expect("valid cid")),
+        };
+        let s = toml::to_string(&original).expect("serialize");
+        let parsed: W = toml::from_str(&s).expect("deserialize");
+        assert_eq!(parsed.id, original.id);
+    }
+
+    #[test]
+    fn image_id_v3_rejects_invalid_cid() {
+        assert!("v3:not-a-cid".parse::<ImageId>().is_err());
+    }
+
+    /// A bare value with no recognised prefix that also isn't a UUID is rejected,
+    /// rather than being silently misclassified as a V1/V2/V3 id.
+    #[test]
+    fn image_id_rejects_unknown_prefix() {
+        assert!("v9:whatever".parse::<ImageId>().is_err());
+        assert!("not-an-id".parse::<ImageId>().is_err());
     }
 }
