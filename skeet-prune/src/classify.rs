@@ -35,14 +35,14 @@ pub fn classify(
     }
 
     // Skin detection checks
-    let face_skin = skin_detection::skin_pct_in_rect(
+    let face_skin_pct = skin_detection::skin_pct_in_rect(
         skin_mask,
         face.x as u32,
         face.y as u32,
         face.width as u32,
         face.height as u32,
     );
-    let outside_skin = skin_detection::skin_pct_outside_rect(
+    let outside_skin_pct = skin_detection::skin_pct_outside_rect(
         skin_mask,
         face.x as u32,
         face.y as u32,
@@ -50,10 +50,6 @@ pub fn classify(
         face.height as u32,
     );
 
-    let face_skin_pct = Percentage::new(face_skin)
-        .expect("skin_pct_in_rect returns pixel ratios, always in [0, 100]");
-    let outside_skin_pct = Percentage::new(outside_skin)
-        .expect("skin_pct_outside_rect returns pixel ratios, always in [0, 100]");
     if face_skin_pct < config.min_face_skin_pct {
         reasons.push(Rejection::TooLittleFaceSkin);
     }
@@ -92,6 +88,16 @@ const fn is_accepted_zone(zone: Zone) -> bool {
     )
 }
 
+// `classify` only returns `Accepted` when a frontal face was found, so this is upheld
+// whenever it's called on an accepted classification's faces.
+#[allow(clippy::expect_used)]
+fn frontal_face(faces: &[Face]) -> &Face {
+    faces
+        .iter()
+        .find(|f| f.is_frontal())
+        .expect("classify accepted, so a frontal face exists")
+}
+
 pub fn classify_image(
     skeet_image: SkeetImage,
     detector: &FaceDetector,
@@ -123,10 +129,7 @@ pub fn classify_image(
         Classification::Rejected(reasons) => return Err(reasons),
     };
 
-    let face = faces
-        .iter()
-        .find(|f| f.is_frontal())
-        .expect("classify accepted, so a frontal face exists");
+    let face = frontal_face(&faces);
 
     let text_regions: Vec<TextRegion> = text_result
         .as_ref()
