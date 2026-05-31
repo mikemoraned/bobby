@@ -79,6 +79,72 @@ architecture-beta
 * [ ] (optional) now that each image cooks its own copy of the shared deps (`tokio`, `reqwest`, `image`, tracing/otel, `shared`), decide whether to dedup across images: BuildKit cache mounts on `target/` + the cargo registry, or `--cache-from` the previous git-hash-tagged image (ties into Q2 above on git-hash layer caching)
 * [ ] apply this same `-p` pattern when adding the `skeet-appraise` and `skeet-publish` Dockerfiles (Phases 1 and 3) rather than cloning a workspace-wide build
 
+##### Fix cook setup
+
+###### Observations
+
+Captured a full `cluster-deploy-all` run (`time BUILDKIT_PROGRESS=plain`) to see whether
+chef caching actually helps. It doesn't — chef is currently providing **negative** value:
+
+* **Total wall-clock was 2h13m** for the 5 arm64 images. Per image (cook = `cargo chef cook`,
+  build = final `cargo build`):
+
+  | image | cook | build |
+  |---|---|---|
+  | pruner | 998s | 1242s |
+  | live-refine | 908s | 1245s |
+  | optimise | 969s | 1025s |
+  | cloudflare-exporter | 67s | 307s |
+  | openai-exporter | 70s | 291s |
+
+* **Every dependency is compiled twice.** For pruner the cook compiles **805 crates** and the
+  build then recompiles **the same 805 crates from scratch** (e.g. `rustls-platform-verifier`,
+  `tokio`, `serde` appear compiling in *both* steps). The cook step is pure waste, and the cache
+  it produces is never reused — so chef gives no benefit even across runs (a cached cook layer is
+  followed by a build that recompiles everything anyway).
+
+* **Root cause: a RUSTFLAGS mismatch between cook and build.** In each Dockerfile the cook runs
+  *before* `.cargo/config.toml` is present — only `recipe.json` is copied at that point; `COPY . .`
+  brings `.cargo/config.toml` in *after* the cook. So:
+  * cook compiles deps with **default rustflags** (no `.cargo/config.toml`);
+  * build compiles deps with `[target.aarch64-unknown-linux-gnu] rustflags = ["--cfg",
+    "tokio_unstable", "-C", "target-cpu=neoverse-n1"]`.
+  * Different rustflags → different fingerprints → cargo discards the cooked artifacts and
+    recompiles the whole dependency tree.
+  * (`.cargo` is *not* in `.dockerignore`, so it is available to copy earlier.) This bug is in
+    **all** the Dockerfiles, not just pruner.
+
+* This also explains why the earlier `ENV BUILD_GIT_HASH` reorder didn't visibly help yet: even
+  once the cook *layer* caches, the build recompiles every dep regardless. The earlier `-p`
+  scoping was still worthwhile (it stops sibling *workspace* crates compiling) but its win is
+  masked by this.
+
+* **Second-order waste (separate from the bug):** the three heavy images each compile the shared
+  third-party tree (`tokio`, `aws-sdk-s3`, `lancedb`, `image`, …) independently — ~16 min of dep
+  compile × 3 — because each is a separate `buildx` build with its own `target/` and nothing is
+  shared across images. This is the existing "dedup across images" item under "Discover / improve".
+
+###### Tasks
+
+* [ ] **Fix the flags mismatch (the primary fix).** Copy `.cargo/` in *before* the cook so cook and
+  build share one fingerprint, e.g. between the `recipe.json` copy and the cook step:
+  ```dockerfile
+  COPY --from=planner /build/recipe.json recipe.json
+  COPY .cargo/ .cargo/
+  RUN ... cargo chef cook ...
+  ```
+  Apply to **all** Dockerfiles (`pruner`, `live-refine`, `optimise`, `cloudflare-exporter`,
+  `openai-exporter`, `skeet-feed`, `skeet-appraise`). Expectation: cook compiles the deps once,
+  build reuses them and only recompiles first-party crates (~30–60s).
+* [ ] **Re-run the experiment to confirm.** A second consecutive `cluster-deploy-all` with deps
+  unchanged should show every `cargo chef cook` as `CACHED` and only the short first-party `build`
+  running — that's the proof the "verify caching actually improves" item is after. Re-capture with
+  `time BUILDKIT_PROGRESS=plain ... | tee` and compare total wall-clock against the 2h13m baseline.
+* [ ] **(Then decide) cross-image dedup.** Ties into the existing "dedup across images" /
+  "Make use of git-hash?" items: BuildKit cache mount on `target/` shared across builds, or a
+  shared deps base image all five `FROM`. Cheap fix above first, re-measure, then decide if this is
+  worth it.
+
 #### Make use of git-hash?
 
 * [ ] now that docker images are built and named based on git-hash, can we exploit that for a more exact caching of layers?
