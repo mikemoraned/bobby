@@ -231,22 +231,22 @@ Tasks:
 * [x] **Re-home the integration tests** (public HTTP interface):
     * stays in `skeet-feed`: `did.json`, `describeFeedGenerator`, `getFeedSkeleton` (`feed_integration.rs`, feed half of `feed_endpoints.rs`).
     * moved to `skeet-appraise`: home/admin/appraise/auth (`appraise_endpoints.rs`) + `redis_session.rs` + `common/mod.rs`. The cross-cutting "appraise-then-feed-visibility" cases stay in `skeet-feed`'s `feed_endpoints.rs` but now seed appraisals via the store and assert against `getFeedSkeleton`.
-    * new live-server coverage for the moved endpoints: `skeet-appraise/tests/appraise_integration.rs` mirrors `feed_integration.rs` (spawns the bin locally, or hits `TEST_BASE_URL`) and asserts the unauthenticated surface that holds in both modes — `/` renders, `/static/htmx.min.js` served, `/admin` redirects to login. This is what `end_to_end_test_appraise` runs against staging (the feed-endpoint `feed_integration.rs` was already feed-only, so nothing was removed from it).
+    * new live-server coverage for the moved endpoints: `skeet-appraise/tests/appraise_integration.rs` mirrors `feed_integration.rs` (spawns the bin locally, or hits `TEST_BASE_URL`) and asserts the unauthenticated surface that holds in both modes — `/` renders, `/static/htmx.min.js` served, `/admin` redirects to login. This is what `end_to_end_test_appraise_staging` runs against staging (the feed-endpoint `feed_integration.rs` was already feed-only, so nothing was removed from it).
 * [x] **Build/deploy plumbing**:
     * `Dockerfile.skeet-appraise` (scoped `-p skeet-appraise --bin skeet-appraise`, `linux/amd64`, copies `config/refine.toml`).
     * `just/container.just`: `build-skeet-appraise` / `push-skeet-appraise`.
     * `fly.appraise-staging.toml` (app `bobby-appraisals-staging`, `OTEL_SERVICE_NAME=skeet-appraise`, `RUST_LOG=skeet_appraise=info,skeet_store=info`, health check on `/`).
-    * `just/appraise.just` (imported in `justfile`): local run, `deploy_appraise_secrets` / `deploy_appraise_app`, `end_to_end_test_appraise` (runs `appraise_integration` against `bobby-appraisals-staging.fly.dev`).
+    * `just/appraise.just` (imported in `justfile`): local run, `deploy_appraise_staging_secrets` / `deploy_appraise_staging_app`, `end_to_end_test_appraise_staging` (runs `appraise_integration` against `bobby-appraisals-staging.fly.dev`).
 * [x] **Secrets / OAuth / DNS / fly app** *(external — needs credentials/consoles, cannot be done from the repo)*:
     * [x] create `bobby-appraisals-staging.env` (S3, SSE-C, OTEL, github oauth, session secret, admin users, redis url).
         * some names of secrets not yet created
     * [x] build with `Dockerfile.skeet-appraise` for first time via `just push-skeet-appraise`
     * [x] `fly apps create bobby-appraisals-staging`
     * [x] deploy
-        * [x] `just deploy_appraise_app`
+        * [x] `just deploy_appraise_staging_app`
             * need to go to https://github.com/users/mikemoraned/packages/container/bobby%2Fskeet-appraise/settings and make this package public for this to start
             * this will get to starting the system but will probably fail as no secrets yet deployed
-        * [x] `just deploy_appraise_secrets`
+        * [x] `just deploy_appraise_staging_secrets`
         * this will create https://bobby-appraisals-staging.fly.dev
     * [x] create DNS in Route53 which maps `bobby-appraisals-staging.houseofmoran.io` to `bobby-appraisals-staging.fly.dev`
     * [x] add cert for the hostname
@@ -260,7 +260,7 @@ Tasks:
             * [x] `op://Dev/bobby-github-oauth-appraisals-staging-client-id/password`
             * [x] `op://Dev/bobby-github-oauth-appraisals-staging-client-secret/password`
         * [x] try login by going to `https://bobby-appraisals-staging.houseofmoran.io/admin`
-    * [x] confirm appraise is working by running `just end_to_end_test_appraise`
+    * [x] confirm appraise is working by running `just end_to_end_test_appraise_staging`
     * [x] fresh minimal deploy of https://bobby-staging.houseofmoran.io/ with confirmed removed functionality:
         * [x] define the known-needed secrets in a new per-service `bobby-feed-staging.env` (store creds + OTEL only — no github/session/redis/admin, and OPENAI dropped too since the feed never used it); point `deploy_staging_secrets` at it. `fly secrets import` only adds/updates, so the now-unneeded secrets are removed from the app *after* the deploy (below).
         * [x] do a deploy of `just deploy_staging`
@@ -273,10 +273,14 @@ Tasks:
         ```
 * [x] **Verify**:
     * [x] `just clippy`, `just test-no-docker` (448 passed, 5 skipped), `lib.rs` files < 300 lines (`skeet-feed` 8, `skeet-appraise` 19).
-    * [x] *(needs deploy)* `skeet-appraise`: home renders, OAuth login works, admin paging + set/clear band works, `annotated.png` served; `just end_to_end_test_appraise` still green
+    * [x] *(needs deploy)* `skeet-appraise`: home renders, OAuth login works, admin paging + set/clear band works, `annotated.png` served; `just end_to_end_test_appraise_staging` still green
     * [x] *(needs deploy)* `skeet-feed` unchanged: redeploy trimmed `bobby-staging`; `just end_to_end_test_staging` still green.
-* [ ] delete `bobby-staging` Github App as should no longer be needed
-* [ ] rename rules like `deploy_staging` to `deploy_feed_staging` (and similar just rules)
+* [x] delete `bobby-staging` Github App as should no longer be needed
+* [x] also archive the associated unneeded 1Password secrets (repo-wide grep confirms these two have no remaining references outside this checklist):
+    * `bobby-github-oauth-staging-client-id`
+    * `bobby-github-oauth-staging-client-secret`
+    * NB: `bobby-session-secret`, `bobby-upstash-redis-tcp-url` and `hom-bobby-openai-key` are **still in use** (appraise sessions/redis, local dev, refiner/cluster) — do **not** delete them.
+* [x] rename rules like `deploy_staging` to `deploy_feed_staging` (and similar just rules)
 
 #### Phase 3: Turn `skeet-publish` into a service
 
@@ -348,7 +352,7 @@ This is a self-contained, backward/forward-compatible migration that can be done
 * [ ] **Fast cold start**: lazy-load from redis on first request, preload nothing; every deploy invalidates the snapshot so the first post-deploy request is a real cold start.
 * [ ] **`fly.staging.toml`**: `auto_stop_machines` is already `"suspend"`; tune `soft_limit` on the http service down for low-traffic staging, and route health checks through the same retry path (or keep them shallow) so a suspended-then-resumed machine doesn't fail its check.
 * [ ] **Time + telemetry across the boundary**: use wall-clock for anything time-sensitive (timers pause, clock lags on resume); don't alert on metric/log absence across suspend.
-* [ ] **Verify**: confirm the machine actually suspends and resumes correctly serving `getFeedSkeleton` after an idle period; `just end_to_end_test_staging` green; `just clippy` / `just test-no-docker`.
+* [ ] **Verify**: confirm the machine actually suspends and resumes correctly serving `getFeedSkeleton` after an idle period; `just end_to_end_test_feed_staging` green; `just clippy` / `just test-no-docker`.
 
 #### Phase 4: Expose `skeet-appraise` as a service inside hetzner via tailscale
 
@@ -434,7 +438,7 @@ The operator, OAuth client, and MagicDNS/HTTPS are already stood up and proven b
 
 ###### E. Cut over + cleanup
 
-* [ ] **Decommission the fly site**: `fly apps destroy bobby-appraisals-staging`; remove `fly.appraise-staging.toml`, the `deploy_appraise_*` fly recipes, and the GitHub-OAuth / session / redis secrets for that app.
+* [ ] **Decommission the fly site**: `fly apps destroy bobby-appraisals-staging`; remove `fly.appraise-staging.toml`, the `deploy_appraise_staging_*` fly recipes, and the GitHub-OAuth / session / redis secrets for that app.
 * [ ] **Rip out the now-dead auth stack** from `skeet-appraise` (the cleanup the phase intro calls for): delete `auth.rs`, `auth_config.rs` (`OAuthConfig`), the `/auth/{login,callback,logout}` routes, the cot session middleware + `deadpool-redis` dep, and the `BOBBY_GITHUB_*` / `BOBBY_SESSION_SECRET` / sessions-redis config + 1Password items. Drop the `github` arm of `--auth-mode` (leaving `tailscale` + `local-admin`). Remove the GitHub OAuth app.
 * [ ] **Verify post-cleanup**: `just clippy`, `just test-no-docker`; `skeet-appraise` still builds without the oauth/session deps; the relocated integration tests (now tailscale-header based) pass; drop the amd64 image build.
 * [ ] Update docs (`docs/architecture.md`, any auth notes) to reflect tailscale identity replacing GitHub OAuth.
@@ -474,4 +478,4 @@ Decisions baked in (flagged where a real choice exists):
 
 * [ ] **Integration test** (testcontainers redis, `_docker`): seed a `recency-7d` list, `GET /`, assert cards render in order with the right CDN `src` and `bsky.app` hrefs; `Last-Modified` present; `If-Modified-Since` returns `304`.
 * [ ] **Manual**: deploy publisher + `skeet-feed`, confirm the public grid shows a week of `band >= MedHigh` images, clicks land on the right skeets, and the page still serves correctly through a suspend/resume cycle.
-* [ ] `just clippy`, `just test-no-docker`, `just end_to_end_test_staging`.
+* [ ] `just clippy`, `just test-no-docker`, `just end_to_end_test_feed_staging`.
