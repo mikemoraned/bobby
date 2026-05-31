@@ -83,6 +83,8 @@ architecture-beta
 
 ###### Observations
 
+####### based on /tmp/cluster-deploy-20260531-195315.log
+
 Captured a full `cluster-deploy-all` run (`time BUILDKIT_PROGRESS=plain`) to see whether
 chef caching actually helps. It doesn't — chef is currently providing **negative** value:
 
@@ -124,7 +126,59 @@ chef caching actually helps. It doesn't — chef is currently providing **negati
   compile × 3 — because each is a separate `buildx` build with its own `target/` and nothing is
   shared across images. This is the existing "dedup across images" item under "Discover / improve".
 
+####### based on /tmp/cluster-deploy-20260531-222822.log
+
+Re-ran after applying the `COPY .cargo/ .cargo/`-before-cook fix to **all 7** Dockerfiles. The
+fix was **necessary but insufficient** — deps are *still* compiled twice, so the rustflags
+mismatch was not the (only) cause. (Note: this log only captured pruner — 1 of 5 — the run was
+cut short, but pruner alone is conclusive.)
+
+* **No improvement.** Pruner cook still compiles **805 crates** and the build still recompiles
+  **the same 805**. The build step got *slower* (1731s vs 1242s) and cook slower too (1266s vs
+  998s) — consistent with both now compiling under the `target-cpu=neoverse-n1` flags (slower
+  codegen) but still not sharing artifacts.
+
+* **The real root cause: a rustc *toolchain* mismatch between cook and build.** The repo has a
+  `rust-toolchain.toml` pinning `channel = "1.94"`. Same `COPY . .` ordering trap as the rustflags:
+  * cook runs *before* `COPY . .`, so `rust-toolchain.toml` is absent → it uses the base image's
+    default toolchain (no rustup sync in its log);
+  * build runs *after* `COPY . .`, so the pin is present → rustup downloads & switches to
+    **1.94.1** (visible at the top of the build step: `info: syncing channel updates for
+    1.94-aarch64-unknown-linux-gnu` … `downloading 3 components`, ~243s before the first
+    `Compiling`);
+  * different rustc version → every fingerprint changes → all 805 deps recompile.
+
+* So there are **two** config files that must be present at cook time for cook≡build:
+  `.cargo/config.toml` (rustflags — already fixed) **and** `rust-toolchain.toml` (toolchain — still
+  missing). Both arrive via `COPY . .` after the cook today; both must be copied before it.
+
+* Neither is in `.dockerignore`, so both can be copied early.
+
 ###### Tasks
+
+* [x] **Fix the flags mismatch.** Copy `.cargo/` in *before* the cook so cook and build share the
+  same rustflags. Applied to all 7 Dockerfiles. *(Necessary but not sufficient on its own — see the
+  toolchain task below.)*
+* [ ] **Fix the toolchain mismatch (the remaining blocker).** Also copy `rust-toolchain.toml` before
+  the cook so cook installs & uses the pinned `1.94` toolchain too, e.g.:
+  ```dockerfile
+  COPY --from=planner /build/recipe.json recipe.json
+  COPY .cargo/ .cargo/
+  COPY rust-toolchain.toml rust-toolchain.toml
+  RUN ... cargo chef cook ...
+  ```
+  Apply to all 7 Dockerfiles. Expectation: cook compiles the deps once under 1.94 + the real
+  rustflags, build reuses them and only recompiles first-party crates (~30–60s).
+* [ ] **Re-run the experiment to confirm.** A second consecutive `cluster-deploy-all` with deps
+  unchanged should show every `cargo chef cook` as `CACHED` and only the short first-party `build`
+  running — that's the proof the "verify caching actually improves" item is after. Re-capture with
+  `time BUILDKIT_PROGRESS=plain ... | tee` and compare total wall-clock against the 2h13m baseline.
+  Confirm the build step no longer prints `syncing channel updates for 1.94` (it would mean the
+  toolchain is still arriving late).
+* [ ] **(Then decide) cross-image dedup.** Ties into the existing "dedup across images" /
+  "Make use of git-hash?" items: BuildKit cache mount on `target/` shared across builds, or a
+  shared deps base image all five `FROM`. Cheap fix above first, re-measure, then decide if this is
+  worth it.
 
 * [ ] **Fix the flags mismatch (the primary fix).** Copy `.cargo/` in *before* the cook so cook and
   build share one fingerprint, e.g. between the `recipe.json` copy and the cook step:
