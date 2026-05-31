@@ -161,8 +161,8 @@ Tasks:
 * [ ] **Secrets / OAuth / DNS / fly app** *(external — needs credentials/consoles, cannot be done from the repo)*:
     * [x] create `bobby-appraisals-staging.env` (S3, SSE-C, OTEL, github oauth, session secret, admin users, redis url).
         * some names of secrets not yet created
+    * [ ] build with `Dockerfile.skeet-appraise` for first time via `just build-skeet-appraise`
     * [ ] `fly apps create bobby-appraisals-staging`; this will create https://bobby-appraisals-staging.fly.dev
-    * [ ] build with `Dockerfile.skeet-appraise` for first time
     * [ ] secrets import and deploy
     * [ ] create add DNS in Route53 which maps `bobby-appraisals-staging.houseofmoran.io` to `bobby-appraisals-staging.fly.dev`
     * [ ] add cert for the hostname
@@ -276,7 +276,7 @@ The proxy strips incoming versions of these headers before forwarding, so they c
 
 ##### Prerequisite
 
-OAuth client created in the Tailscale admin console for the operator — see the operator [setup section](https://tailscale.com/kb/1236/kubernetes-operator#setup).
+OAuth client created in the Tailscale admin console for the operator — see the operator [setup section](https://tailscale.com/kb/1236/kubernetes-operator#setup). Needs **`Devices Core` + `Auth Keys` + `Services`** write scopes and the `tag:k8s-operator` tag (which must already exist in the tailnet policy file). MagicDNS + HTTPS must be enabled on the tailnet for `Ingress` mode to provision certs.
 
 ##### Tasks
 
@@ -286,14 +286,18 @@ Spike first, then groups A–E. As in Phase 3, run the new (hetzner + tailscale)
 
 This is the first time using Tailscale this way, so isolate the Tailscale dependency *before* touching `skeet-appraise`. Stand up the whole operator → `Ingress` → identity-header path with a throwaway workload and nothing of ours on the line. The operator and tailnet config that this sets up are **kept** and reused by group C; only the dummy workload is torn down.
 
-* [ ] **Install the operator + enable the tailnet features** (the riskiest, least-familiar bits): create the operator OAuth client in the Tailscale admin console (see Phase 4 Prerequisite), store it in 1Password, and `helm install` the operator into the cluster (add a `cluster-install-tailscale-operator` recipe alongside the other addon installers in `just/cluster.just`). Enable MagicDNS + HTTPS on the tailnet.
-* [ ] **Deploy a trivial header-echo service** — no code/build of ours: a stock multi-arch image like `traefik/whoami` (it echoes request headers, which is exactly what we need to *see* the injected identity). Give it a `Deployment` + `Service` and a tailscale-`ingressClassName` `Ingress` named e.g. `bobby-ts-spike`.
+* [ ] **Install the operator + enable the tailnet features** (the riskiest, least-familiar bits). Order matters — do these in sequence:
+    1. **Add the operator tags to the tailnet policy file** *before* creating the OAuth client (the client must be tagged with one): `"tagOwners": { "tag:k8s-operator": [], "tag:k8s": ["tag:k8s-operator"] }`.
+    2. **Create the operator OAuth client** in the admin console (see Phase 4 Prerequisite) with **`Devices Core` + `Auth Keys` + `Services`** write scopes (the `Services` scope is newer and now required), tagged `tag:k8s-operator`; store id/secret in 1Password.
+    3. **Enable MagicDNS + HTTPS** on the tailnet.
+    4. **`helm install` the operator** (add a `cluster-install-tailscale-operator` recipe alongside the other addon installers in `just/cluster.just`, feeding `oauth.clientId`/`oauth.clientSecret` via inline `op read` like `cluster-ghcr-secret-install` does).
+* [ ] **Deploy a trivial header-echo service** — no code/build of ours: a stock multi-arch image like `traefik/whoami` (it echoes request headers, which is exactly what we need to *see* the injected identity). Give it a `Deployment` + `Service` and a tailscale-`ingressClassName` `Ingress` named e.g. `bobby-ts-spike`. Use the current Ingress shape — `spec.ingressClassName: tailscale` + `spec.defaultBackend.service` + `spec.tls.hosts` (only the **first label** of the host is used → `<label>.<tailnet>.ts.net`), *not* `rules`/`host`. **Do not set `tailscale.com/funnel: "true"`** — Funnel makes the service public *and* drops the identity headers this whole phase depends on; we want tailnet-only Serve traffic.
 * [ ] **Verify the unknowns, in order:**
     * the `Ingress` provisions a Let's Encrypt cert and the service appears at `bobby-ts-spike.<tailnet>.ts.net` (first hit may be slow while the cert provisions);
     * it's reachable from **phone and laptop** over the tailnet (and *not* publicly);
     * the echo shows `Tailscale-User-Login` / `-Name` / `-Profile-Pic` populated with your identity — this is the make-or-break proof for group A;
     * a request that *sends its own* `Tailscale-User-Login` still comes back with the proxy's value (inbound copies are stripped), confirming the header can be trusted behind the ingress.
-* [ ] **(optional) Prove the `NetworkPolicy`**: restrict the dummy `Service` to the proxy pod and confirm a direct in-cluster curl is blocked while the ingress path still works — this de-risks the anti-spoofing control before group C relies on it.
+* [ ] **Prove the `NetworkPolicy`** (run it once here — group C depends on it, and NetworkPolicy enforcement is worth confirming on this hetzner-k3s cluster): restrict the dummy `Service` to the proxy pod and confirm a direct in-cluster curl is blocked while the ingress path still works — this de-risks the anti-spoofing control before group C relies on it.
 * [ ] **Tear down the dummy workload** (Deployment/Service/Ingress); keep the operator, OAuth client, and MagicDNS/HTTPS settings.
 
 ###### A. Tailscale-based appraiser identity
