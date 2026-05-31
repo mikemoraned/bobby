@@ -5,19 +5,17 @@ use std::path::Path;
 use face_detection::FaceDetector;
 use shared::{Classification, PruneConfig};
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("git_hash={}", env!("BUILD_GIT_HASH"));
 
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let examples_dir = root.join("examples");
 
-    let config = PruneConfig::from_file(&root.join("config/prune.toml"), None)
-        .expect("load prune.toml");
+    let config = PruneConfig::from_file(&root.join("config/prune.toml"), None)?;
 
     let detector = FaceDetector::from_bundled_weights();
 
-    let mut entries: Vec<_> = std::fs::read_dir(&examples_dir)
-        .expect("read examples dir")
+    let mut entries: Vec<_> = std::fs::read_dir(&examples_dir)?
         .filter_map(|e| e.ok())
         .filter(|e| {
             e.path()
@@ -29,6 +27,8 @@ fn main() {
 
     for entry in &entries {
         let path = entry.path();
+        // `read_dir` entries always have a final component, so `file_name` is always `Some`.
+        #[allow(clippy::expect_used)]
         let filename = path.file_name().expect("filename").to_string_lossy();
 
         let img = image::open(&path).unwrap_or_else(|e| panic!("failed to load {filename}: {e}"));
@@ -66,7 +66,7 @@ fn main() {
             );
 
             println!(
-                "  face {i}: score={:.3}, frontal={frontal}, area={pct}, bbox=({:.0}, {:.0}, {:.0}x{:.0}), face_skin={face_skin:.1}%, outside_skin={outside_skin:.1}%",
+                "  face {i}: score={:.3}, frontal={frontal}, area={pct}, bbox=({:.0}, {:.0}, {:.0}x{:.0}), face_skin={face_skin}, outside_skin={outside_skin}",
                 face.score, face.x, face.y, face.width, face.height
             );
         }
@@ -84,4 +84,5 @@ fn main() {
         }
         println!();
     }
+    Ok(())
 }
