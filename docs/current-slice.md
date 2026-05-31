@@ -231,11 +231,12 @@ Tasks:
 * [x] **Re-home the integration tests** (public HTTP interface):
     * stays in `skeet-feed`: `did.json`, `describeFeedGenerator`, `getFeedSkeleton` (`feed_integration.rs`, feed half of `feed_endpoints.rs`).
     * moved to `skeet-appraise`: home/admin/appraise/auth (`appraise_endpoints.rs`) + `redis_session.rs` + `common/mod.rs`. The cross-cutting "appraise-then-feed-visibility" cases stay in `skeet-feed`'s `feed_endpoints.rs` but now seed appraisals via the store and assert against `getFeedSkeleton`.
+    * new live-server coverage for the moved endpoints: `skeet-appraise/tests/appraise_integration.rs` mirrors `feed_integration.rs` (spawns the bin locally, or hits `TEST_BASE_URL`) and asserts the unauthenticated surface that holds in both modes — `/` renders, `/static/htmx.min.js` served, `/admin` redirects to login. This is what `end_to_end_test_appraise` runs against staging (the feed-endpoint `feed_integration.rs` was already feed-only, so nothing was removed from it).
 * [x] **Build/deploy plumbing**:
     * `Dockerfile.skeet-appraise` (scoped `-p skeet-appraise --bin skeet-appraise`, `linux/amd64`, copies `config/refine.toml`).
     * `just/container.just`: `build-skeet-appraise` / `push-skeet-appraise`.
     * `fly.appraise-staging.toml` (app `bobby-appraisals-staging`, `OTEL_SERVICE_NAME=skeet-appraise`, `RUST_LOG=skeet_appraise=info,skeet_store=info`, health check on `/`).
-    * `just/appraise.just` (imported in `justfile`): local run, `deploy_appraise_secrets` / `deploy_appraise_app`, `end_to_end_test_appraise`.
+    * `just/appraise.just` (imported in `justfile`): local run, `deploy_appraise_secrets` / `deploy_appraise_app`, `end_to_end_test_appraise` (runs `appraise_integration` against `bobby-appraisals-staging.fly.dev`).
 * [ ] **Secrets / OAuth / DNS / fly app** *(external — needs credentials/consoles, cannot be done from the repo)*:
     * [x] create `bobby-appraisals-staging.env` (S3, SSE-C, OTEL, github oauth, session secret, admin users, redis url).
         * some names of secrets not yet created
@@ -251,17 +252,20 @@ Tasks:
     * [x] add cert for the hostname
         * `fly certs add bobby-appraisals-staging.houseofmoran.io --app bobby-appraisals-staging`
         * `fly certs check bobby-appraisals-staging.houseofmoran.io --app bobby-appraisals-staging` to check status
-    * [ ] New GitHub `bobby-appraisals-staging` OAuth app:
+    * [x] New GitHub `bobby-appraisals-staging` OAuth app:
         * application name: `bobby-appraisals-staging`
         * homepage url: `https://bobby-appraisals-staging.houseofmoran.io/`
         * authorization callback url: `https://bobby-appraisals-staging.houseofmoran.io/auth/callback`
         * [x] store client id/secret in 1Password:
             * [x] `op://Dev/bobby-github-oauth-appraisals-staging-client-id/password`
             * [x] `op://Dev/bobby-github-oauth-appraisals-staging-client-secret/password`
-        * [ ] try login
-    * [ ] then remove the OAuth/session/redis secrets from `bobby-staging`.
+        * [x] try login by going to `https://bobby-appraisals-staging.houseofmoran.io/admin`
+    * [x] confirm appraise is working by running `end_to_end_test_appraise`
+    * [ ] fresh minimal deploy of https://bobby-staging.houseofmoran.io/ with confirmed removed functionality:
+        * [ ] remove the OAuth/session/redis secrets from `bobby-staging`
+        * [ ] do a deploy of `just deploy_staging`
 * [ ] **Verify**:
-    * [x] `just clippy`, `just test-no-docker` (445 passed, 5 skipped), `lib.rs` files < 300 lines (`skeet-feed` 8, `skeet-appraise` 19).
+    * [x] `just clippy`, `just test-no-docker` (448 passed, 5 skipped), `lib.rs` files < 300 lines (`skeet-feed` 8, `skeet-appraise` 19).
     * [ ] *(needs deploy)* `skeet-appraise`: home renders, OAuth login works, admin paging + set/clear band works, `annotated.png` served.
     * [ ] *(needs deploy)* `skeet-feed` unchanged: redeploy trimmed `bobby-staging`; `just end_to_end_test_staging` still green.
 * [ ] delete `bobby-staging` Github App as should no longer be needed
