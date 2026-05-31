@@ -22,31 +22,17 @@ impl ConfusionMatrix {
 
     /// `None` when no positive predictions were made (precision is undefined).
     pub fn precision(&self) -> Option<Precision> {
-        let denom = self.true_pos + self.false_pos;
-        if denom == 0 {
-            return None;
-        }
-        let value = self.true_pos as f64 / denom as f64;
-        Some(Precision::new(value).expect("precision in [0, 1] by construction"))
+        Precision::from_counts(self.true_pos, self.false_pos)
     }
 
     /// `None` when no actual positives exist (recall is undefined).
     pub fn recall(&self) -> Option<Recall> {
-        let denom = self.true_pos + self.false_neg;
-        if denom == 0 {
-            return None;
-        }
-        let value = self.true_pos as f64 / denom as f64;
-        Some(Recall::new(value).expect("recall in [0, 1] by construction"))
+        Recall::from_counts(self.true_pos, self.false_neg)
     }
 
     /// `None` when either precision or recall is undefined.
     pub fn f1(&self) -> Option<F1> {
-        let p: f64 = self.precision()?.into();
-        let r: f64 = self.recall()?.into();
-        let denom = p + r;
-        let value = if denom == 0.0 { 0.0 } else { 2.0 * p * r / denom };
-        Some(F1::new(value).expect("f1 in [0, 1] by construction"))
+        Some(F1::harmonic(self.precision()?, self.recall()?))
     }
 
     pub const fn total(&self) -> u64 {

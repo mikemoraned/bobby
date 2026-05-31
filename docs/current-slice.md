@@ -87,8 +87,86 @@ architecture-beta
 
 `expect()` is probably as bad an idea in main code as `unwrap()` so deny that as well, and instead prefer explicit Result+Err, unless in tests.
 
-* [ ] similar to `unwrap_used = "deny"` and `allow-unwrap-in-tests = true` do the same for expect, and fix all related issues
-* [ ] add a note about this to @rust.md like we do for `unwrap`
+* [x] similar to `unwrap_used = "deny"` and `allow-unwrap-in-tests = true` do the same for expect, and fix all related issues
+    * [x] for places where we are removing possibly useful expect messages about *why* something failed, replace these instead with usage of an explicit error enum using `thiserror` (see `rust.md` for advice + see other examples of usage inside codebase)
+* [x] add a note about this to @rust.md like we do for `unwrap`
+
+#### Prefer infallible construction over `expect` for proven invariants
+ 
+When a value is **provably in range by construction**, don't route it through a
+validating constructor and `expect` the success. Give the newtype an infallible
+constructor that *owns the computation*, so the invariant lives next to the type
+and there is no panic path to suppress.
+
+##### Before
+ 
+`ConfusionMatrix` computes the ratio, then validates a value it already knows is valid:
+ 
+```rust
+pub fn precision(&self) -> Option<Precision> {
+    let denom = self.true_pos + self.false_pos;
+    if denom == 0 { return None; }
+    let value = self.true_pos as f64 / denom as f64;
+    // requires #[allow(clippy::expect_used)] + a justifying comment
+    Some(Precision::new(value).expect("precision in [0, 1] by construction"))
+}
+```
+ 
+##### After
+ 
+Move the computation into the type. `Precision::new` stays as the fallible
+*validating* constructor for untrusted input; `from_counts` is infallible because
+`tp <= tp + fp` (preserved by the monotone `u64 as f64` cast):
+ 
+```rust
+impl Precision {
+    /// precision = tp / (tp + fp); `None` iff tp + fp == 0.
+    /// Always in [0, 1]: tp <= tp + fp, preserved by the f64 cast.
+    pub fn from_counts(true_pos: u64, false_pos: u64) -> Option<Self> {
+        let denom = true_pos + false_pos;
+        (denom != 0).then(|| Self(true_pos as f64 / denom as f64))
+    }
+}
+ 
+// caller becomes a one-line delegation:
+pub fn precision(&self) -> Option<Precision> {
+    Precision::from_counts(self.true_pos, self.false_pos)
+}
+```
+ 
+For `f1`, take already-validated inputs so their `[0, 1]`-ness is guaranteed by
+their *types*, leaving only one small real lemma (harmonic mean of two `[0, 1]`
+values stays in `[0, 1]`):
+ 
+```rust
+impl F1 {
+    pub fn harmonic(p: Precision, r: Recall) -> Self {
+        let (p, r) = (f64::from(p), f64::from(r));
+        let denom = p + r;
+        Self(if denom == 0.0 { 0.0 } else { 2.0 * p * r / denom })
+    }
+}
+ 
+// f1(): Some(F1::harmonic(self.precision()?, self.recall()?))
+```
+ 
+No `expect`, no `#[allow(clippy::expect_used)]` — the panic path is gone rather
+than asserted unreachable.
+ 
+##### The pattern
+ 
+- Keep the **validating** constructor (`new` → `Result`/`Option`) for untrusted input.
+- Add an **infallible** constructor that owns the computation guaranteeing the invariant
+  (`from_counts`, `harmonic`, ...).
+- Accept already-validated newtypes as inputs so the type system carries the invariant
+  forward, shrinking what's left to prove.
+- Result: invalid states are unconstructable at the call site, so there's no panic to
+  `allow` away.
+
+###### Tasks
+
+* [x] Apply this advice to the mentioned code
+* [ ] Also check out for other instances where this pattern could apply (based on where we are currently having to apply `#[allow(clippy::expect_used)]`)
 
 ### Phases
 
