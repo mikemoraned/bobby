@@ -248,7 +248,9 @@ Tasks:
         * [x] `just deploy_appraise_secrets`
         * this will create https://bobby-appraisals-staging.fly.dev
     * [x] create DNS in Route53 which maps `bobby-appraisals-staging.houseofmoran.io` to `bobby-appraisals-staging.fly.dev`
-    * [ ] add cert for the hostname
+    * [x] add cert for the hostname
+        * `fly certs add bobby-appraisals-staging.houseofmoran.io --app bobby-appraisals-staging`
+        * `fly certs check bobby-appraisals-staging.houseofmoran.io --app bobby-appraisals-staging` to check status
     * [ ] New GitHub `bobby-appraisals-staging` OAuth app:
         * application name: `bobby-appraisals-staging`
         * homepage url: `https://bobby-appraisals-staging.houseofmoran.io/`
