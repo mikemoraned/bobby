@@ -159,8 +159,15 @@ Tasks:
     * `fly.appraise-staging.toml` (app `bobby-appraisals-staging`, `OTEL_SERVICE_NAME=skeet-appraise`, `RUST_LOG=skeet_appraise=info,skeet_store=info`, health check on `/`).
     * `just/appraise.just` (imported in `justfile`): local run, `deploy_appraise_secrets` / `deploy_appraise_app`, `end_to_end_test_appraise`.
 * [ ] **Secrets / OAuth / DNS / fly app** *(external — needs credentials/consoles, cannot be done from the repo)*:
-    * `fly apps create bobby-appraisals-staging`; add DNS + cert for the hostname; `fly secrets import`; deploy. Then remove the OAuth/session/redis secrets from `bobby-staging`.
-    * New (or updated) GitHub OAuth app with callback `https://bobby-appraisals-staging.houseofmoran.io/auth/callback`; store client id/secret in 1Password; create `bobby-appraisals-staging.env` (S3, SSE-C, OTEL, github oauth, session secret, admin users, redis url).
+    * [x] create `bobby-appraisals-staging.env` (S3, SSE-C, OTEL, github oauth, session secret, admin users, redis url).
+        * some names of secrets not yet created
+    * [ ] `fly apps create bobby-appraisals-staging`; this will create https://bobby-appraisals-staging.fly.dev
+    * [ ] build with `Dockerfile.skeet-appraise` for first time
+    * [ ] secrets import and deploy
+    * [ ] create add DNS in Route53 which maps `bobby-appraisals-staging.houseofmoran.io` to `bobby-appraisals-staging.fly.dev`
+    * [ ] add cert for the hostname
+    * [ ] New (or updated) GitHub OAuth app with callback `https://bobby-appraisals-staging.houseofmoran.io/auth/callback`; store client id/secret in 1Password; try login
+    * [ ] then remove the OAuth/session/redis secrets from `bobby-staging`.
 * [ ] **Verify**:
     * [x] `just clippy`, `just test-no-docker` (445 passed, 5 skipped), `lib.rs` files < 300 lines (`skeet-feed` 8, `skeet-appraise` 19).
     * [ ] *(needs deploy)* `skeet-appraise`: home renders, OAuth login works, admin paging + set/clear band works, `annotated.png` served.
