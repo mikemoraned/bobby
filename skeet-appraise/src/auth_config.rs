@@ -51,6 +51,9 @@ impl OAuthConfig {
         }
     }
 
+    // The auth/token URLs come from fixed configuration; a malformed value is a startup
+    // configuration error surfaced when the OAuth client is first built.
+    #[allow(clippy::expect_used)]
     pub fn build_client(&self, redirect_url: &str) -> BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet> {
         BasicClient::new(ClientId::new(self.client_id.clone()))
             .set_client_secret(ClientSecret::new(self.client_secret.clone()))

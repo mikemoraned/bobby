@@ -177,6 +177,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let matrix = confusion_at(&labelled, decision_threshold);
     let precision = matrix.precision().ok_or(EvalRunError::NoPositivePredictions)?;
     let recall = matrix.recall().ok_or(EvalRunError::NoPositives)?;
+    // precision and recall were just confirmed defined above, so f1 is too.
+    #[allow(clippy::expect_used)]
     let f1 = matrix.f1().expect("precision and recall both defined");
     let roc_auc = roc_auc_score(&labelled);
     let pinned_precision = pin_at_precision(&labelled, precision);

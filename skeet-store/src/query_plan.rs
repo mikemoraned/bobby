@@ -31,6 +31,7 @@ pub struct QueryPlan {
 // Matches one `key=value` field, where `value` is either `[bracketed]`
 // (allowing internal commas, as in `projection=[a, b]`) or anything up to the
 // next `, ` separator.
+#[allow(clippy::expect_used)] // compile-time-constant regex literal
 static FIELD_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(\w+)=(\[[^\]]*\]|[^,]*)").expect("static regex"));
 

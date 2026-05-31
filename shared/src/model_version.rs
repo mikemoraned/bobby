@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fmt::Write as _;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -63,8 +62,7 @@ impl ModelVersion {
         }
         let raw = hasher.finish();
 
-        let mut digits = String::with_capacity(8);
-        write!(digits, "{raw:016x}").expect("write to String");
+        let mut digits = format!("{raw:016x}");
         digits.truncate(8);
         Self::new(scheme, digits)
     }

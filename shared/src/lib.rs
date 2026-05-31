@@ -1,6 +1,5 @@
 #![warn(clippy::all, clippy::nursery)]
 
-use std::fmt::Write as _;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use chrono::{DateTime, Utc};
@@ -133,8 +132,7 @@ impl PruneConfig {
 
         let hash = hasher.finish();
 
-        let mut version = String::with_capacity(8);
-        write!(version, "{hash:016x}").expect("write to String");
+        let mut version = format!("{hash:016x}");
         version.truncate(8);
         ModelVersion::new(HashScheme::V1, version)
     }

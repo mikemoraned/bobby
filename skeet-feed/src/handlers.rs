@@ -1,4 +1,5 @@
 use cot::html::Html;
+use cot::http::HeaderValue;
 use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::UrlQuery;
 use cot::response::Response;
@@ -34,7 +35,7 @@ fn json_response(body: &impl Serialize) -> cot::Result<Response> {
     let mut response = Response::new(Body::fixed(json));
     response
         .headers_mut()
-        .insert("content-type", "application/json".parse().expect("valid header"));
+        .insert("content-type", HeaderValue::from_static("application/json"));
     Ok(response)
 }
 
@@ -129,7 +130,7 @@ pub async fn get_feed_skeleton(
         *response.status_mut() = StatusCode::BAD_REQUEST;
         response
             .headers_mut()
-            .insert("content-type", "application/json".parse().expect("valid header"));
+            .insert("content-type", HeaderValue::from_static("application/json"));
         return Ok(response);
     }
 

@@ -72,6 +72,10 @@ impl Project for AppraiseProject {
         apps.register_with_views(AppraiseApp, "");
     }
 
+    // The redis session store is built once at startup from fixed configuration; a
+    // connection-URL failure is an unrecoverable startup error, and cot's `middlewares`
+    // signature can't return a `Result`.
+    #[allow(clippy::expect_used)]
     fn middlewares(&self, handler: RootHandlerBuilder, context: &MiddlewareContext) -> RootHandler {
         let session_middleware = if self.use_redis
             && let Some(url) = self.redis_url.as_ref()

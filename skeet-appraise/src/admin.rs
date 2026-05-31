@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use cot::html::Html;
+use cot::http::HeaderValue;
 use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::UrlQuery;
 use cot::response::{IntoResponse, Redirect, Response};
@@ -87,7 +88,8 @@ pub async fn admin(
         .cursor
         .as_deref()
         .and_then(|c| c.parse::<i64>().ok())
-        .map(|us| DiscoveredAt::new(chrono::DateTime::from_timestamp_micros(us).expect("valid timestamp")));
+        .and_then(chrono::DateTime::from_timestamp_micros)
+        .map(DiscoveredAt::new);
 
     let (summaries, next_cursor) = store
         .list_summaries_page(before, PAGE_SIZE)
@@ -385,6 +387,6 @@ async fn render_updated_row(
     let mut response = Response::new(Body::fixed(html));
     response
         .headers_mut()
-        .insert("content-type", "text/html".parse().expect("valid header"));
+        .insert("content-type", HeaderValue::from_static("text/html"));
     Ok(response)
 }

@@ -42,6 +42,7 @@ fn encode_image_base64(image: &DynamicImage) -> Result<String, RefineError> {
     Ok(BASE64.encode(buf.into_inner()))
 }
 
+#[allow(clippy::expect_used)] // the content vec is a non-empty literal
 fn build_image_message(image: &DynamicImage) -> Result<Message, RefineError> {
     let b64 = encode_image_base64(image)?;
     Ok(Message::User {
@@ -170,6 +171,7 @@ where
         .await
 }
 
+#[allow(clippy::expect_used)] // 0.0 is within [0.0, 1.0]
 fn fallback_score(duration: Duration) -> ResilientScore {
     ResilientScore {
         score: Score::new(0.0).expect("0.0 is within [0.0, 1.0]"),
@@ -248,6 +250,9 @@ pub fn build_agent(
     builder.build()
 }
 
+// `CompletionsClient::new` only fails if the API key can't form a valid auth header —
+// a startup configuration error, surfaced immediately when the binary builds its client.
+#[allow(clippy::expect_used)]
 pub fn create_client(api_key: &str) -> openai::client::CompletionsClient {
     openai::client::CompletionsClient::new(api_key)
         .expect("failed to create OpenAI client")

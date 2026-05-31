@@ -49,6 +49,9 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Installs the process-global default exactly once at startup, so it cannot already
+    // be set; the `expect` keeps that failure reason explicit.
+    #[allow(clippy::expect_used)]
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("install rustls crypto provider");
@@ -59,12 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         shared::tracing::init_with_file("skeet_feed=info,shared=info,skeet_store=info", "feed.log");
     info!(git_hash = env!("BUILD_GIT_HASH"), "skeet-feed starting");
 
-    let store = Arc::new(
-        args.store
-            .open_store("feed")
-            .await
-            .expect("failed to open store at startup"),
-    );
+    let store = Arc::new(args.store.open_store("feed").await?);
 
     let models = Arc::new(
         RefineModels::load(&args.model_path)

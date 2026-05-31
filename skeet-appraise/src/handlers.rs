@@ -2,6 +2,7 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 use cot::html::Html;
+use cot::http::HeaderValue;
 use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::Path;
 use cot::response::Response;
@@ -164,13 +165,16 @@ pub async fn annotated_image(
         .write_to(&mut buf, image::ImageFormat::Png)
         .map_err(|e| cot::Error::internal(format!("failed to encode image: {e}")))?;
 
+    let last_modified_value: HeaderValue = last_modified
+        .parse()
+        .map_err(|e| cot::Error::internal(format!("invalid last-modified header: {e}")))?;
     let mut response = Response::new(Body::fixed(buf.into_inner()));
     response
         .headers_mut()
-        .insert("content-type", "image/png".parse().expect("valid header"));
+        .insert("content-type", HeaderValue::from_static("image/png"));
     response
         .headers_mut()
-        .insert("last-modified", last_modified.parse().expect("valid header"));
+        .insert("last-modified", last_modified_value);
     Ok(response)
 }
 

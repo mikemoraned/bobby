@@ -99,8 +99,9 @@ impl std::fmt::Display for Threshold {
 
 impl From<Score> for Threshold {
     fn from(s: Score) -> Self {
-        // Score is validated to [0.0, 1.0], so Threshold::new is infallible here.
-        Self::new(f64::from(s)).expect("Score is in [0.0, 1.0]")
+        // Score is validated to [0.0, 1.0], the same range Threshold accepts, so this
+        // direct construction upholds Threshold's invariant without a fallible parse.
+        Self(f64::from(s))
     }
 }
 

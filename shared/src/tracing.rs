@@ -9,6 +9,9 @@ use tracing_subscriber::filter::Targets;
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::*;
 
+// `default_filter` is a compile-time constant supplied by each binary; a parse
+// failure is a programming error in our own directive, caught immediately at startup.
+#[allow(clippy::expect_used)]
 fn targets_filter(default_filter: &str) -> Targets {
     std::env::var("RUST_LOG")
         .ok()
@@ -103,6 +106,9 @@ where
 /// Initialize a stderr tracing subscriber with `RUST_LOG` env support.
 ///
 /// Falls back to `default_filter` if `RUST_LOG` is not set (e.g. `"info"`).
+// `default_filter` is a compile-time constant supplied by each binary; a parse
+// failure is a programming error in our own directive, caught immediately at startup.
+#[allow(clippy::expect_used)]
 pub fn init(default_filter: &str) {
     tracing_subscriber::fmt()
         .with_env_filter(

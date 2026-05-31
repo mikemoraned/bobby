@@ -1,3 +1,7 @@
+// Build script: panicking with a descriptive message is the idiomatic failure mode, and
+// `expect` keeps the precise reason (which env var / which directory) that a bare `?` on
+// `VarError`/`io::Error` would drop.
+#[allow(clippy::expect_used)]
 fn main() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     let models_dir = std::path::Path::new(&manifest_dir)

@@ -82,9 +82,7 @@ async fn sync(args: &Args) -> Result<u64, Box<dyn std::error::Error>> {
 
     // Floor to start of current hour so a run at 00:05 stamps 00:00,
     // staying within Mimir's past-grace-period regardless of cron jitter.
-    let start_of_hour = Utc::now()
-        .duration_trunc(chrono::Duration::hours(1))
-        .expect("duration_trunc with hours(1) is infallible");
+    let start_of_hour = Utc::now().duration_trunc(chrono::Duration::hours(1))?;
     let timestamp_ms = start_of_hour.timestamp_millis();
 
     prom::push(&client, &args.prom_endpoint, &args.prom_auth, &entries, timestamp_ms).await?;
