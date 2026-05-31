@@ -1,16 +1,16 @@
-app = "bobby-staging"
+app = "bobby-appraisals-staging"
 
 [build]
-image = "ghcr.io/mikemoraned/bobby/skeet-feed:latest"
+image = "ghcr.io/mikemoraned/bobby/skeet-appraise:latest"
 primary_region = "lhr"
 
 [processes]
-app = "skeet-feed --store-path s3://hom-bobby/encrypted-store --hostname bobby-staging.houseofmoran.io --publisher-did did:plc:cjvdzmk4iapi5p5orrasehxp --bind 0.0.0.0:8080 --model-path /etc/bobby/refine.toml"
+app = "skeet-appraise --store-path s3://hom-bobby/encrypted-store --bind 0.0.0.0:8080 --use-redis --model-path /etc/bobby/refine.toml"
 
 [env]
-RUST_LOG = "skeet_feed=info,skeet_store=info"
+RUST_LOG = "skeet_appraise=info,skeet_store=info"
 OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf"
-OTEL_SERVICE_NAME = "skeet-feed"
+OTEL_SERVICE_NAME = "skeet-appraise"
 
 [http_service]
 processes = ["app"]
@@ -25,7 +25,7 @@ grace_period = "10s"
 interval = "30s"
 method = "GET"
 timeout = "5s"
-path = "/.well-known/did.json"
+path = "/"
 
 [[vm]]
 size = "shared-cpu-1x"

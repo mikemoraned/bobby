@@ -10861,7 +10861,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b2aa850e253778c88a04c3d7323b043aeda9d3e30d5971937c1855769763678e"
 
 [[package]]
-name = "skeet-feed"
+name = "skeet-appraise"
 version = "0.1.0"
 dependencies = [
  "build-support",
@@ -10890,6 +10890,28 @@ dependencies = [
  "tracing",
  "urlencoding",
  "wiremock",
+]
+
+[[package]]
+name = "skeet-feed"
+version = "0.1.0"
+dependencies = [
+ "build-support",
+ "chrono",
+ "clap",
+ "cot",
+ "reqwest 0.13.2",
+ "rustls 0.23.37",
+ "serde",
+ "serde_json",
+ "shared",
+ "skeet-publish",
+ "skeet-store",
+ "tempfile",
+ "test-support",
+ "tokio",
+ "tower",
+ "tracing",
 ]
 
 [[package]]

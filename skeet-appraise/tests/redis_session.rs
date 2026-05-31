@@ -1,8 +1,8 @@
 //! Integration tests that exercise the Redis session store path end-to-end.
 //!
-//! A testcontainers Redis is started, a full `FeedProject` is wired to use it
-//! with OAuth authentication, and the login flow is exercised so that sessions
-//! are actually created/loaded in Redis.
+//! A testcontainers Redis is started, a full `AppraiseProject` is wired to use
+//! it with OAuth authentication, and the login flow is exercised so that
+//! sessions are actually created/loaded in Redis.
 //!
 //! Requires Docker. Gated behind `integ` (which implies `test`).
 
@@ -16,13 +16,12 @@ use chrono::Utc;
 use common::{extract_query_param, extract_session_cookie, get_with_cookie, mount_github_mocks};
 use cot::test::Client;
 use rcgen::{CertificateParams, KeyPair};
-use skeet_feed::auth_config::OAuthConfig;
-use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
-use skeet_feed::project::FeedProject;
-use skeet_feed::{
-    AppraiserLayer, FeedCacheLayer, FeedSourceLayer, OAuthConfigLayer, StartedAtLayer, StoreLayer,
+use skeet_appraise::auth_config::OAuthConfig;
+use skeet_appraise::project::AppraiseProject;
+use skeet_appraise::{
+    AppraiserLayer, FeedCacheLayer, OAuthConfigLayer, StartedAtLayer, StoreLayer,
 };
-use skeet_publish::{FeedCache, FeedSource, LiveFeedSource};
+use skeet_publish::FeedCache;
 use skeet_store::test_utils::{make_record, open_temp_store};
 use skeet_store::{ModelVersion, Score, SkeetStore};
 use test_support::test_models;
@@ -32,30 +31,20 @@ use testcontainers::{ContainerAsync, CopyTargetOptions, GenericImage, ImageExt};
 use wiremock::MockServer;
 
 const REDIS_TLS_PORT: u16 = 6380;
-
-fn test_params() -> FeedParams {
-    FeedParams {
-        hostname: "test.example.com".to_string(),
-        publisher_did: "did:web:test.example.com".to_string(),
-        feed_name: "bobby-dev".to_string(),
-        max_entries: 10,
-        max_age_hours: 48,
-    }
-}
+const MAX_ENTRIES: usize = 10;
+const MAX_AGE_HOURS: u64 = 48;
 
 async fn oauth_client_with_redis(
     mock_server: &MockServer,
     redis_url: &str,
     store: Arc<SkeetStore>,
 ) -> Client {
-    let params = test_params();
     let cache = Arc::new(FeedCache::new(
         Arc::clone(&store),
         test_models(),
-        params.max_entries,
-        params.max_age_hours,
+        MAX_ENTRIES,
+        MAX_AGE_HOURS,
     ));
-    let feed_source: Arc<dyn FeedSource> = Arc::new(LiveFeedSource::new(Arc::clone(&cache)));
     let oauth_config = OAuthConfig::with_urls(
         "test-client-id".to_string(),
         "test-client-secret".to_string(),
@@ -64,10 +53,8 @@ async fn oauth_client_with_redis(
         format!("{}/token", mock_server.uri()),
         mock_server.uri().to_string(),
     );
-    let project = FeedProject {
+    let project = AppraiseProject {
         cache_layer: FeedCacheLayer::new(cache),
-        feed_source_layer: FeedSourceLayer::new(feed_source),
-        feed_config_layer: FeedConfigLayer::new(params),
         store_layer: StoreLayer::from_shared(store),
         appraiser_layer: AppraiserLayer::new(None),
         oauth_config_layer: OAuthConfigLayer::new(Some(Arc::new(oauth_config))),

@@ -57,7 +57,6 @@ async fn spawn_server() -> TestServer {
             &hostname,
             "--publisher-did",
             &publisher_did,
-            "--local-admin",
             "--model-path",
             model_path,
         ])

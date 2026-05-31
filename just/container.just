@@ -30,6 +30,12 @@ build-skeet-feed:
 push-skeet-feed:
     docker buildx build --platform linux/amd64 {{ BUILD_HASH_ARG }} -f Dockerfile.skeet-feed -t {{ GHCR_REPO }}/skeet-feed:latest -t {{ GHCR_REPO }}/skeet-feed:{{ GIT_HASH }} --push .
 
+build-skeet-appraise:
+    docker buildx build --platform linux/amd64 {{ BUILD_HASH_ARG }} -f Dockerfile.skeet-appraise -t {{ GHCR_REPO }}/skeet-appraise:latest .
+
+push-skeet-appraise:
+    docker buildx build --platform linux/amd64 {{ BUILD_HASH_ARG }} -f Dockerfile.skeet-appraise -t {{ GHCR_REPO }}/skeet-appraise:latest -t {{ GHCR_REPO }}/skeet-appraise:{{ GIT_HASH }} --push .
+
 build-cloudflare-exporter:
     docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.cloudflare-exporter -t {{ GHCR_REPO }}/cloudflare-exporter:latest .
 
