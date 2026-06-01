@@ -9,6 +9,7 @@ pub mod order;
 pub mod published_list;
 pub mod published_pair;
 pub mod publisher;
+pub mod redis_client;
 pub mod source;
 pub mod visibility;
 
@@ -20,5 +21,6 @@ pub use order::{InvalidOrder, Order};
 pub use published_list::{PublishedList, PublishedListError};
 pub use published_pair::PublishedPair;
 pub use publisher::{FeedPublisher, PublishError, WindowedFeed, pairs_for_spec};
-pub use source::{FeedSkeleton, FeedSource, LiveFeedSource};
+pub use redis_client::connect;
+pub use source::{FeedSkeleton, FeedSource, FeedSourceError, LiveFeedSource, RedisFeedSource};
 pub use visibility::{FeedData, visible_entries};

@@ -4,6 +4,7 @@ R2_STORE := "s3://hom-bobby/encrypted-store"
 import 'just/store.just'
 import 'just/feed.just'
 import 'just/appraise.just'
+import 'just/publish.just'
 import 'just/container.just'
 import 'just/cluster.just'
 import 'just/cloudflare.just'

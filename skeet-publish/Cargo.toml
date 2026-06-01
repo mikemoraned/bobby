@@ -9,8 +9,10 @@ workspace = true
 [dependencies]
 async-trait = { workspace = true }
 chrono = { workspace = true }
+clap = { workspace = true }
 deadpool-redis = { workspace = true }
 regex = { workspace = true }
+rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 shared = { workspace = true }
@@ -19,6 +21,10 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
+
+[[bin]]
+name = "skeet-publish"
+path = "src/bin/skeet_publish.rs"
 
 [dev-dependencies]
 proptest = { workspace = true }

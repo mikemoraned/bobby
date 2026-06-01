@@ -168,7 +168,7 @@ impl FeedPublisher {
         for (order, limit) in &self.specs {
             let pairs = pairs_for_spec(&feed, *order, *limit, self.resolver.as_ref(), now);
             PublishedList::new(*order, *limit)
-                .replace(conn, &pairs)
+                .replace(conn, &pairs, now)
                 .await?;
         }
         Ok(())

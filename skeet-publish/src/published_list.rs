@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use deadpool_redis::redis;
 
 use crate::limit::Limit;
@@ -39,17 +40,26 @@ impl PublishedList {
         format!("{}-{}:building", self.order, self.limit)
     }
 
-    /// Atomically replace the list with `pairs`, preserving order.
+    /// The companion key holding when the list was last published (RFC 3339).
+    fn refreshed_at_key(&self) -> String {
+        format!("{}-{}:refreshed-at", self.order, self.limit)
+    }
+
+    /// Atomically replace the list with `pairs` (preserving order) and record
+    /// `refreshed_at` as the publish time.
     ///
     /// The new list is built in a scratch key and `RENAME`d over the target —
     /// `RENAME` is atomic, so a concurrent reader sees either the entire old
     /// list or the entire new one, never a partial write. An empty `pairs`
     /// deletes the list (an empty list and an absent key are indistinguishable
-    /// to a reader).
+    /// to a reader). The `refreshed-at` companion key is written last, so a
+    /// reader that races the swap sees an unchanged-or-older timestamp, never a
+    /// newer one paired with an old list.
     pub async fn replace<C>(
         &self,
         conn: &mut C,
         pairs: &[PublishedPair],
+        refreshed_at: DateTime<Utc>,
     ) -> Result<(), PublishedListError>
     where
         C: redis::aio::ConnectionLike + Send,
@@ -62,24 +72,48 @@ impl PublishedList {
 
         if pairs.is_empty() {
             redis::cmd("DEL").arg(&name).exec_async(conn).await?;
-            return Ok(());
+        } else {
+            let encoded = pairs
+                .iter()
+                .map(serde_json::to_string)
+                .collect::<Result<Vec<_>, _>>()?;
+            redis::cmd("RPUSH")
+                .arg(&building)
+                .arg(&encoded)
+                .exec_async(conn)
+                .await?;
+            redis::cmd("RENAME")
+                .arg(&building)
+                .arg(&name)
+                .exec_async(conn)
+                .await?;
         }
 
-        let encoded = pairs
-            .iter()
-            .map(serde_json::to_string)
-            .collect::<Result<Vec<_>, _>>()?;
-        redis::cmd("RPUSH")
-            .arg(&building)
-            .arg(&encoded)
-            .exec_async(conn)
-            .await?;
-        redis::cmd("RENAME")
-            .arg(&building)
-            .arg(&name)
+        redis::cmd("SET")
+            .arg(self.refreshed_at_key())
+            .arg(refreshed_at.to_rfc3339())
             .exec_async(conn)
             .await?;
         Ok(())
+    }
+
+    /// When the list was last published, if it has been.
+    pub async fn refreshed_at<C>(
+        &self,
+        conn: &mut C,
+    ) -> Result<Option<DateTime<Utc>>, PublishedListError>
+    where
+        C: redis::aio::ConnectionLike + Send,
+    {
+        let raw: Option<String> = redis::cmd("GET")
+            .arg(self.refreshed_at_key())
+            .query_async(conn)
+            .await?;
+        Ok(raw.and_then(|s| {
+            DateTime::parse_from_rfc3339(&s)
+                .ok()
+                .map(|dt| dt.with_timezone(&Utc))
+        }))
     }
 
     /// Read the full list in stored order.

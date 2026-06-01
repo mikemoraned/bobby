@@ -9,6 +9,7 @@
 
 use std::time::Duration;
 
+use chrono::Utc;
 use deadpool_redis::redis::{self, AsyncCommands};
 use skeet_publish::{ImageUrl, Limit, Order, PublishedList, PublishedPair};
 use skeet_store::SkeetId;
@@ -72,7 +73,7 @@ async fn write_then_read_roundtrips_in_order_docker() {
     let list = PublishedList::new(Order::Recency, Limit::hours(48));
 
     let pairs = vec![pair("rk1", "cidone"), pair("rk2", "cidtwo"), pair("rk3", "cidthree")];
-    list.replace(&mut conn, &pairs).await.expect("replace");
+    list.replace(&mut conn, &pairs, Utc::now()).await.expect("replace");
 
     let read = list.read(&mut conn).await.expect("read");
     assert_eq!(read, pairs, "read back the same pairs in the same order");
@@ -88,11 +89,11 @@ async fn replace_swaps_atomically_leaving_no_remnants_docker() {
     let list = PublishedList::new(Order::Recency, Limit::hours(48));
 
     let first = vec![pair("rk1", "cidone"), pair("rk2", "cidtwo")];
-    list.replace(&mut conn, &first).await.expect("first replace");
+    list.replace(&mut conn, &first, Utc::now()).await.expect("first replace");
 
     // A shorter second list must fully overwrite the first — no stale tail.
     let second = vec![pair("rk9", "cidnine")];
-    list.replace(&mut conn, &second).await.expect("second replace");
+    list.replace(&mut conn, &second, Utc::now()).await.expect("second replace");
 
     let read = list.read(&mut conn).await.expect("read");
     assert_eq!(read, second);
@@ -107,10 +108,10 @@ async fn empty_replace_clears_the_list_docker() {
     let (_container, mut conn) = start_redis().await;
     let list = PublishedList::new(Order::Recency, Limit::days(7));
 
-    list.replace(&mut conn, &[pair("rk1", "cidone")])
+    list.replace(&mut conn, &[pair("rk1", "cidone")], Utc::now())
         .await
         .expect("seed");
-    list.replace(&mut conn, &[]).await.expect("clear");
+    list.replace(&mut conn, &[], Utc::now()).await.expect("clear");
 
     let read = list.read(&mut conn).await.expect("read");
     assert!(read.is_empty());
@@ -126,9 +127,30 @@ async fn distinct_names_do_not_collide_docker() {
 
     let short_pairs = vec![pair("rk1", "cidone")];
     let long_pairs = vec![pair("rk2", "cidtwo"), pair("rk3", "cidthree")];
-    short.replace(&mut conn, &short_pairs).await.expect("short");
-    long.replace(&mut conn, &long_pairs).await.expect("long");
+    short.replace(&mut conn, &short_pairs, Utc::now()).await.expect("short");
+    long.replace(&mut conn, &long_pairs, Utc::now()).await.expect("long");
 
     assert_eq!(short.read(&mut conn).await.expect("read short"), short_pairs);
     assert_eq!(long.read(&mut conn).await.expect("read long"), long_pairs);
+}
+
+#[tokio::test]
+async fn refreshed_at_is_recorded_on_replace_docker() {
+    let (_container, mut conn) = start_redis().await;
+    let list = PublishedList::new(Order::Recency, Limit::hours(48));
+
+    // Absent before the first publish.
+    assert!(list.refreshed_at(&mut conn).await.expect("read ts").is_none());
+
+    let when = Utc::now();
+    list.replace(&mut conn, &[pair("rk1", "cidone")], when)
+        .await
+        .expect("replace");
+
+    let got = list
+        .refreshed_at(&mut conn)
+        .await
+        .expect("read ts")
+        .expect("timestamp present");
+    assert_eq!(got.timestamp(), when.timestamp());
 }
