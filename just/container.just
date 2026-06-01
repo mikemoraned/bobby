@@ -18,6 +18,12 @@ build-live-refine:
 push-live-refine:
     docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.live-refine -t {{ GHCR_REPO }}/live-refine:latest -t {{ GHCR_REPO }}/live-refine:{{ GIT_HASH }} --push .
 
+build-skeet-publish:
+    docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.skeet-publish -t {{ GHCR_REPO }}/skeet-publish:latest .
+
+push-skeet-publish:
+    docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.skeet-publish -t {{ GHCR_REPO }}/skeet-publish:latest -t {{ GHCR_REPO }}/skeet-publish:{{ GIT_HASH }} --push .
+
 build-optimise:
     docker buildx build --platform linux/arm64 {{ BUILD_HASH_ARG }} -f Dockerfile.optimise -t {{ GHCR_REPO }}/optimise:latest .
 
