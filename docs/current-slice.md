@@ -75,7 +75,7 @@ architecture-beta
 
 ##### Discover / improve as we do this slice
 
-* [ ] verify caching actually improves: with deps unchanged, touch only `<crate>/src/main.rs`, rebuild, and confirm the cook/deps layer is reused (no dependency recompile). This is the direct test of whether `-p` + chef fixes the "recompiles everything" symptom for source-only changes.
+* [x] verify caching actually improves: with deps unchanged, touch only `<crate>/src/main.rs`, rebuild, and confirm the cook/deps layer is reused (no dependency recompile). This is the direct test of whether `-p` + chef fixes the "recompiles everything" symptom for source-only changes. *(Confirmed — see `/tmp/cluster-deploy-20260601-110748.log`: a no-deps-change re-run came back fully cached, **37.99s** total, 0 `Compiling` lines, 71 `CACHED` layers.)*
 * [ ] (optional) now that each image cooks its own copy of the shared deps (`tokio`, `reqwest`, `image`, tracing/otel, `shared`), decide whether to dedup across images: BuildKit cache mounts on `target/` + the cargo registry, or `--cache-from` the previous git-hash-tagged image (ties into Q2 above on git-hash layer caching)
 * [ ] apply this same `-p` pattern when adding the `skeet-appraise` and `skeet-publish` Dockerfiles (Phases 1 and 3) rather than cloning a workspace-wide build
 
@@ -154,12 +154,63 @@ cut short, but pruner alone is conclusive.)
 
 * Neither is in `.dockerignore`, so both can be copied early.
 
+####### based on /tmp/cluster-deploy-20260601-002150.log
+
+Re-ran after applying **both** `COPY .cargo/ .cargo/` *and* `COPY rust-toolchain.toml
+rust-toolchain.toml` before the cook in all 7 Dockerfiles. **The fix works** — the
+double-compilation is gone.
+
+* **Toolchain sync moved into cook.** `info: syncing channel updates for
+  1.94-aarch64-unknown-linux-gnu` now fires at the *start of every cook* step (immediately after each
+  `cargo chef cook` RUN). The build steps no longer print it — the pinned 1.94 toolchain is installed
+  once, during cook, so cook and build now share one rustc.
+
+* **Builds compile only first-party crates.** Cook owns the full dep tree; build reuses it:
+
+  | image | cook (deps) | build | build compiles |
+  |---|---|---|---|
+  | pruner | 1201.8s, 805 deps | **45.9s** | 8 first-party crates |
+  | live-refine | 1017.2s | **26.7s** | 5 |
+  | optimise | 996.9s | **19.0s** | 3 |
+  | cloudflare-exporter | 287.3s | **5.3s** | 3 |
+  | openai-exporter | 276.7s | **3.9s** | 3 |
+
+  Pruner's build dropped from **805 deps recompiled (1731s in the prior run)** to **8 crates / 45.9s**.
+
+* **Total wall-clock: 1:09:42** vs the **2h13m baseline** — roughly halved, exactly the redundant
+  second full dep compile per image that we eliminated.
+
+* **Caveat — this was still a cold run.** ~63 of the 70 min is cook; deps + toolchain changed since
+  the prior run so nothing was `CACHED`. The *next* consecutive `cluster-deploy-all` with unchanged
+  deps should show every `cargo chef cook` as `CACHED`, collapsing the run to just the ~100s of
+  first-party builds. That cached case is what proves the "verify caching actually improves" item —
+  measured next (`110748` below).
+
+* **Cross-image dedup still open.** Each of the 5 images cooks the shared dep tree independently
+  (805 / … per image) because each is a separate `buildx` build with its own `target/`. Cutting the
+  cold-cook case needs a `target/` cache mount shared across builds or a shared deps base image —
+  the existing "dedup across images" item, to decide on next.
+
+####### based on /tmp/cluster-deploy-20260601-110748.log
+
+The cached-run proof. Re-ran `cluster-deploy-all` with **nothing changed** since `002150` (and after
+an OrbStack restart, to check the BuildKit cache survived it). It did.
+
+* **Fully cached, 37.99s total** (vs 1:09:42 cold, vs the 2h13m original baseline).
+* **0** `Compiling` lines and **0** `1.94` channel syncs anywhere in the log.
+* **71** `CACHED` layers — every `cargo chef cook` *and* every first-party `cargo build` reused, across
+  all 5 images.
+* The OrbStack restart did **not** invalidate the BuildKit layer cache or the registry/git
+  `--mount=type=cache` mounts.
+* So with deps unchanged the whole build phase is a no-op; the ~38s is just buildx resolving cache +
+  push/deploy plumbing. This proves the "verify caching actually improves" item end-to-end.
+
 ###### Tasks
 
 * [x] **Fix the flags mismatch.** Copy `.cargo/` in *before* the cook so cook and build share the
   same rustflags. Applied to all 7 Dockerfiles. *(Necessary but not sufficient on its own — see the
   toolchain task below.)*
-* [ ] **Fix the toolchain mismatch (the remaining blocker).** Also copy `rust-toolchain.toml` before
+* [x] **Fix the toolchain mismatch (the remaining blocker).** Also copy `rust-toolchain.toml` before
   the cook so cook installs & uses the pinned `1.94` toolchain too, e.g.:
   ```dockerfile
   COPY --from=planner /build/recipe.json recipe.json
@@ -169,12 +220,17 @@ cut short, but pruner alone is conclusive.)
   ```
   Apply to all 7 Dockerfiles. Expectation: cook compiles the deps once under 1.94 + the real
   rustflags, build reuses them and only recompiles first-party crates (~30–60s).
-* [ ] **Re-run the experiment to confirm.** A second consecutive `cluster-deploy-all` with deps
+* [x] **Re-run the experiment to confirm.** A second consecutive `cluster-deploy-all` with deps
   unchanged should show every `cargo chef cook` as `CACHED` and only the short first-party `build`
   running — that's the proof the "verify caching actually improves" item is after. Re-capture with
   `time BUILDKIT_PROGRESS=plain ... | tee` and compare total wall-clock against the 2h13m baseline.
   Confirm the build step no longer prints `syncing channel updates for 1.94` (it would mean the
-  toolchain is still arriving late).
+  toolchain is still arriving late). *(Confirmed — `/tmp/cluster-deploy-20260601-002150.log`: the
+  `1.94` channel sync now fires at the **start of each cook** step, not the build. Each build now
+  compiles only the first-party crates — pruner 8 crates / 45.9s vs 805 deps before; refine 26.7s,
+  optimise 19.0s, cloudflare 5.3s, openai 3.9s. Total wall-clock **1:09:42** vs the 2h13m baseline.
+  Caching across consecutive builds with unchanged deps not yet re-measured — this run still did
+  full cooks because deps/toolchain changed since the prior run.)*
 * [ ] **(Then decide) cross-image dedup.** Ties into the existing "dedup across images" /
   "Make use of git-hash?" items: BuildKit cache mount on `target/` shared across builds, or a
   shared deps base image all five `FROM`. Cheap fix above first, re-measure, then decide if this is
