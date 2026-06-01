@@ -8,6 +8,7 @@ pub mod limit;
 pub mod order;
 pub mod published_list;
 pub mod published_pair;
+pub mod publisher;
 pub mod source;
 pub mod visibility;
 
@@ -18,5 +19,6 @@ pub use limit::{InvalidLimit, Limit};
 pub use order::{InvalidOrder, Order};
 pub use published_list::{PublishedList, PublishedListError};
 pub use published_pair::PublishedPair;
+pub use publisher::{FeedPublisher, PublishError, WindowedFeed, pairs_for_spec};
 pub use source::{FeedSkeleton, FeedSource, LiveFeedSource};
-pub use visibility::visible_entries;
+pub use visibility::{FeedData, visible_entries};

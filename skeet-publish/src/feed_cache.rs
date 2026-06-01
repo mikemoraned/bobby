@@ -3,11 +3,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use shared::{ImageId, RefineModels};
+use shared::{Band, ImageId, RefineModels};
 use skeet_store::{
-    Appraisal, IMAGE_APPRAISAL_TABLE_NAME, SCORE_TABLE_NAME, SKEET_APPRAISAL_TABLE_NAME, Score,
-    SkeetId, SkeetStore, StoredImageSummary, Version,
+    Appraisal, IMAGE_APPRAISAL_TABLE_NAME, ModelVersion, SCORE_TABLE_NAME,
+    SKEET_APPRAISAL_TABLE_NAME, Score, SkeetId, SkeetStore, StoredImageSummary, Version,
 };
+
+use crate::visibility::FeedData;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
@@ -29,10 +31,28 @@ const BACKGROUND_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 /// model registry used to interpret each score's `model_version`.
 #[derive(Clone)]
 pub struct CachedFeed {
-    pub entries: Vec<(StoredImageSummary, Score, skeet_store::ModelVersion)>,
+    pub entries: Vec<(StoredImageSummary, Score, ModelVersion)>,
     pub skeet_appraisals: HashMap<SkeetId, Appraisal>,
     pub image_appraisals: HashMap<ImageId, Appraisal>,
     pub models: Arc<RefineModels>,
+}
+
+impl FeedData for CachedFeed {
+    fn entries(&self) -> &[(StoredImageSummary, Score, ModelVersion)] {
+        &self.entries
+    }
+
+    fn image_band(&self, image_id: &ImageId) -> Option<Band> {
+        self.image_appraisals.get(image_id).map(|a| a.band)
+    }
+
+    fn skeet_band(&self, skeet_id: &SkeetId) -> Option<Band> {
+        self.skeet_appraisals.get(skeet_id).map(|a| a.band)
+    }
+
+    fn models(&self) -> &RefineModels {
+        self.models.as_ref()
+    }
 }
 
 struct CacheEntry {

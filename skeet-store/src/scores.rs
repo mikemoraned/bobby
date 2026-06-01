@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use arrow_array::{Float32Array, RecordBatch, RecordBatchIterator, StringArray};
@@ -163,6 +163,67 @@ impl SkeetStore {
         }
 
         self.fetch_summaries_for_scores(&top_scores).await
+    }
+
+    /// All scored summaries whose skeet was published (`original_at`) at or after
+    /// `cutoff`, **uncapped** and in no particular order (the caller orders).
+    ///
+    /// Unlike [`Self::list_scored_summaries_by_score`] there is no top-N-by-score
+    /// truncation: every scored image in the recency window is returned, so a
+    /// recent low-score image is never dropped. Windowing is on publish time
+    /// (`original_at`), not discovery time.
+    #[instrument(skip(self))]
+    pub async fn list_scored_summaries_published_since(
+        &self,
+        cutoff: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<(StoredImageSummary, Score, ModelVersion)>, StoreError> {
+        let windowed_ids = self.find_image_ids_published_since(cutoff).await?;
+        if windowed_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let all_scores = self.cached_scores().await?;
+        let scored: Vec<(Score, ModelVersion, ImageId)> = windowed_ids
+            .iter()
+            .filter_map(|id| {
+                all_scores
+                    .get(id)
+                    .map(|(score, mv)| (*score, mv.clone(), id.clone()))
+            })
+            .collect();
+        if scored.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        self.fetch_summaries_for_scores(&scored).await
+    }
+
+    /// Image ids whose `original_at` (publish time) is at or after `cutoff`.
+    #[instrument(skip(self))]
+    async fn find_image_ids_published_since(
+        &self,
+        cutoff: chrono::DateTime<chrono::Utc>,
+    ) -> Result<HashSet<ImageId>, StoreError> {
+        let cutoff_us = cutoff.timestamp_micros();
+        let filter = format!(
+            "original_at >= arrow_cast({cutoff_us}, 'Timestamp(Microsecond, Some(\"UTC\"))')"
+        );
+        let query = self
+            .images_table
+            .query()
+            .select(lancedb::query::Select::columns(&["image_id"]))
+            .only_if(filter);
+        let batches = execute_query(&query, "find_image_ids_published_since").await?;
+        let mut ids = HashSet::new();
+        for batch in &batches {
+            let image_ids = typed_column::<StringArray>(batch, "image_id")?;
+            for i in 0..batch.num_rows() {
+                let image_id: ImageId = image_ids.value(i).parse()?;
+                ids.insert(image_id);
+            }
+        }
+        info!(windowed_image_ids = ids.len(), "filtered images by publish time");
+        Ok(ids)
     }
 
     #[instrument(skip(self))]

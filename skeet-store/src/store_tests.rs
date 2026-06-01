@@ -923,6 +923,75 @@ async fn list_scored_summaries_filters_by_max_age() {
     assert_eq!(scored_all.len(), 2);
 }
 
+fn scored_record(suffix: &str, color: (u8, u8, u8), original_at: OriginalAt) -> ImageRecord {
+    let img = test_image_with_color(color.0, color.1, color.2);
+    ImageRecord {
+        image_id: ImageId::from_image(&img),
+        skeet_id: format!("at://did:plc:abc/app.bsky.feed.post/{suffix}")
+            .parse()
+            .expect("valid AT URI"),
+        image: img,
+        discovered_at: DiscoveredAt::now(),
+        original_at,
+        zone: Zone::TopRight,
+        annotated_image: test_image(),
+        config_version: ModelVersion::from("test"),
+        detected_text: String::new(),
+    }
+}
+
+#[tokio::test]
+async fn list_scored_summaries_published_since_windows_by_original_at_and_requires_a_score() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+    let mv = test_model_version();
+    let now = Utc::now();
+
+    // Published 72h ago, scored.
+    let old = scored_record(
+        "pub_old",
+        (10, 0, 0),
+        OriginalAt::new(now - chrono::Duration::hours(72)),
+    );
+    store.add(&old).await.unwrap();
+    store
+        .upsert_score(&old.image_id, &Score::new(0.9).expect("valid"), &mv)
+        .await
+        .unwrap();
+
+    // Published now, scored — note a *lower* score than the old one, to prove
+    // there is no top-by-score truncation hiding it.
+    let recent = scored_record("pub_recent", (0, 10, 0), OriginalAt::new(now));
+    store.add(&recent).await.unwrap();
+    store
+        .upsert_score(&recent.image_id, &Score::new(0.1).expect("valid"), &mv)
+        .await
+        .unwrap();
+
+    // Published now but unscored — must never appear.
+    let unscored = scored_record("pub_unscored", (0, 0, 10), OriginalAt::new(now));
+    store.add(&unscored).await.unwrap();
+
+    // 24h window: only the recent scored image.
+    let windowed = store
+        .list_scored_summaries_published_since(now - chrono::Duration::hours(24))
+        .await
+        .unwrap();
+    assert_eq!(windowed.len(), 1);
+    assert_eq!(windowed[0].0.image_id, recent.image_id);
+
+    // 100h window: both scored images, but not the unscored one.
+    let wider = store
+        .list_scored_summaries_published_since(now - chrono::Duration::hours(100))
+        .await
+        .unwrap();
+    let ids: std::collections::HashSet<_> = wider.iter().map(|(s, _, _)| s.image_id.clone()).collect();
+    assert_eq!(wider.len(), 2);
+    assert!(ids.contains(&old.image_id));
+    assert!(ids.contains(&recent.image_id));
+    assert!(!ids.contains(&unscored.image_id));
+}
+
 #[tokio::test]
 async fn optimise_succeeds_on_empty_store() {
     let dir = tempfile::tempdir().unwrap();
