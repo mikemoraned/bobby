@@ -236,7 +236,7 @@ an OrbStack restart, to check the BuildKit cache survived it). It did.
   shared deps base image all five `FROM`. Cheap fix above first, re-measure, then decide if this is
   worth it.
 
-* [ ] **Fix the flags mismatch (the primary fix).** Copy `.cargo/` in *before* the cook so cook and
+* [x] **Fix the flags mismatch (the primary fix).** Copy `.cargo/` in *before* the cook so cook and
   build share one fingerprint, e.g. between the `recipe.json` copy and the cook step:
   ```dockerfile
   COPY --from=planner /build/recipe.json recipe.json
@@ -246,14 +246,10 @@ an OrbStack restart, to check the BuildKit cache survived it). It did.
   Apply to **all** Dockerfiles (`pruner`, `live-refine`, `optimise`, `cloudflare-exporter`,
   `openai-exporter`, `skeet-feed`, `skeet-appraise`). Expectation: cook compiles the deps once,
   build reuses them and only recompiles first-party crates (~30–60s).
-* [ ] **Re-run the experiment to confirm.** A second consecutive `cluster-deploy-all` with deps
+* [x] **Re-run the experiment to confirm.** A second consecutive `cluster-deploy-all` with deps
   unchanged should show every `cargo chef cook` as `CACHED` and only the short first-party `build`
   running — that's the proof the "verify caching actually improves" item is after. Re-capture with
   `time BUILDKIT_PROGRESS=plain ... | tee` and compare total wall-clock against the 2h13m baseline.
-* [ ] **(Then decide) cross-image dedup.** Ties into the existing "dedup across images" /
-  "Make use of git-hash?" items: BuildKit cache mount on `target/` shared across builds, or a
-  shared deps base image all five `FROM`. Cheap fix above first, re-measure, then decide if this is
-  worth it.
 
 #### Make use of git-hash?
 
