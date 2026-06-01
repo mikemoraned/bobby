@@ -9,14 +9,22 @@ workspace = true
 [dependencies]
 async-trait = { workspace = true }
 chrono = { workspace = true }
+deadpool-redis = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 shared = { workspace = true }
 skeet-store = { path = "../skeet-store" }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
 skeet-store = { path = "../skeet-store", features = ["test-helpers"] }
 test-support = { workspace = true }
 tempfile = { workspace = true }
+testcontainers = { workspace = true }
+testcontainers-modules = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
