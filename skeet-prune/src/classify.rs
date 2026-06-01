@@ -152,7 +152,7 @@ pub fn classify_image(
         .unwrap_or_default();
 
     Ok(ImageRecord {
-        image_id: ImageId::from_image(&skeet_image.image),
+        image_id: ImageId::V3(skeet_image.cid),
         skeet_id: skeet_image.skeet_id,
         image: skeet_image.image,
         discovered_at: DiscoveredAt::now(),

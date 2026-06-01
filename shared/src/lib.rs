@@ -173,6 +173,7 @@ pub struct SkeetImage {
     pub skeet_id: SkeetId,
     pub original_at: DateTime<Utc>,
     pub image: DynamicImage,
+    pub cid: BlueskyCid,
 }
 
 #[cfg(test)]

@@ -13,8 +13,8 @@ use jetstream_oxide::{
     events::{JetstreamEvent, commit::CommitEvent},
     exports::Nsid,
 };
-use shared::SkeetImage;
 use shared::skeet_id::SkeetId;
+use shared::{BlueskyCid, SkeetImage};
 use std::time::Duration;
 use tracing::{info, warn};
 
@@ -68,11 +68,17 @@ pub async fn connect() -> Result<JetstreamReceiver, Box<dyn std::error::Error>> 
     .into())
 }
 
+/// One image of a post: its blob CID and the CDN URL to fetch it from.
+pub struct ImageCandidate {
+    pub cid: BlueskyCid,
+    pub url: String,
+}
+
 /// A post that has images but hasn't been downloaded yet.
 pub struct SkeetCandidate {
     pub skeet_id: SkeetId,
     pub original_at: DateTime<Utc>,
-    pub image_urls: Vec<String>,
+    pub images: Vec<ImageCandidate>,
 }
 
 /// If this event is a post creation with images, extract the candidate info
@@ -99,27 +105,31 @@ pub fn extract_skeet_candidate(event: &JetstreamEvent) -> Option<SkeetCandidate>
     let skeet_id = SkeetId::for_post(did, &commit.info.rkey);
     let original_at = parse_created_at(&post.data.created_at);
 
-    let mut image_urls = Vec::new();
-    for image_ref in &image_refs {
-        let Some(cid) = blob_cid(&image_ref.data.image) else {
-            warn!("skipping image with unrecognized blob ref format");
-            continue;
-        };
-        image_urls.push(format!(
-            "https://cdn.bsky.app/img/feed_thumbnail/plain/{}/{}@jpeg",
-            did, cid
-        ));
-    }
+    let images: Vec<ImageCandidate> = image_refs
+        .iter()
+        .filter_map(|image_ref| image_candidate(did, &image_ref.data.image))
+        .collect();
 
-    if image_urls.is_empty() {
+    if images.is_empty() {
         return None;
     }
 
     Some(SkeetCandidate {
         skeet_id,
         original_at,
-        image_urls,
+        images,
     })
+}
+
+/// Build the CDN URL + carry the blob CID for one image, or `None` if the blob
+/// ref doesn't yield a parseable CID.
+fn image_candidate(did: &str, blob_ref: &BlobRef) -> Option<ImageCandidate> {
+    let Some(cid) = blob_cid(blob_ref) else {
+        warn!("skipping image with unrecognized blob ref or CID");
+        return None;
+    };
+    let url = format!("https://cdn.bsky.app/img/feed_thumbnail/plain/{did}/{cid}@jpeg");
+    Some(ImageCandidate { cid, url })
 }
 
 /// Download the images for a candidate, returning a `SkeetImage` for each
@@ -130,12 +140,15 @@ pub async fn download_candidate_images(
 ) -> Vec<SkeetImage> {
     let mut set = tokio::task::JoinSet::new();
 
-    for url in &candidate.image_urls {
+    for image in &candidate.images {
         let http = http.clone();
-        let url = url.clone();
+        let url = image.url.clone();
+        let cid = image.cid.clone();
         let skeet_id = candidate.skeet_id.clone();
         let original_at = candidate.original_at;
-        set.spawn(async move { download_single_image(&http, &url, skeet_id, original_at).await });
+        set.spawn(
+            async move { download_single_image(&http, &url, cid, skeet_id, original_at).await },
+        );
     }
 
     let mut results = Vec::new();
@@ -148,6 +161,7 @@ pub async fn download_candidate_images(
 async fn download_single_image(
     http: &reqwest::Client,
     url: &str,
+    cid: BlueskyCid,
     skeet_id: SkeetId,
     original_at: chrono::DateTime<chrono::Utc>,
 ) -> Option<SkeetImage> {
@@ -174,6 +188,7 @@ async fn download_single_image(
             skeet_id,
             original_at,
             image: img,
+            cid,
         }),
         Err(e) => {
             warn!(error = %e, "failed to decode downloaded image");
@@ -212,11 +227,12 @@ fn extract_images(embed: &Option<Union<RecordEmbedRefs>>) -> Vec<&Image> {
     }
 }
 
-fn blob_cid(blob_ref: &BlobRef) -> Option<String> {
-    match blob_ref {
-        BlobRef::Typed(TypedBlobRef::Blob(blob)) => Some(blob.r#ref.0.to_string()),
-        BlobRef::Untyped(untyped) => Some(untyped.cid.clone()),
-    }
+fn blob_cid(blob_ref: &BlobRef) -> Option<BlueskyCid> {
+    let cid_str = match blob_ref {
+        BlobRef::Typed(TypedBlobRef::Blob(blob)) => blob.r#ref.0.to_string(),
+        BlobRef::Untyped(untyped) => untyped.cid.clone(),
+    };
+    BlueskyCid::new(cid_str).ok()
 }
 
 fn parse_created_at(dt: &atrium_api::types::string::Datetime) -> DateTime<Utc> {

@@ -38,7 +38,7 @@ pub async fn run(
 ) {
     while let Some(candidate) = rx.recv().await {
         counters.meta.fetch_add(1, Ordering::Relaxed);
-        let image_count = candidate.image_urls.len() as u64;
+        let image_count = candidate.images.len() as u64;
 
         let (result, passed) =
             match crate::metadata::fetch_post_thread(&http, &candidate.skeet_id).await {
