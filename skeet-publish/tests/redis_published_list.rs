@@ -7,12 +7,15 @@
 //! Requires Docker; the `_docker`-suffixed names are filtered out by the
 //! `no-docker` nextest profile (`just test-no-docker`).
 
+use std::time::Duration;
+
 use deadpool_redis::redis::{self, AsyncCommands};
 use skeet_publish::{ImageUrl, Limit, Order, PublishedList, PublishedPair};
 use skeet_store::SkeetId;
 use testcontainers::ContainerAsync;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::redis::{REDIS_PORT, Redis};
+use tokio::time::{Instant, sleep};
 
 async fn start_redis() -> (ContainerAsync<Redis>, redis::aio::MultiplexedConnection) {
     let container = Redis::default().start().await.expect("start redis container");
@@ -21,13 +24,34 @@ async fn start_redis() -> (ContainerAsync<Redis>, redis::aio::MultiplexedConnect
         .get_host_port_ipv4(REDIS_PORT)
         .await
         .expect("get mapped port");
-    let client =
-        redis::Client::open(format!("redis://{host}:{port}")).expect("open redis client");
-    let conn = client
-        .get_multiplexed_async_connection()
-        .await
-        .expect("connect to redis");
+    let conn = connect_with_retry(&format!("redis://{host}:{port}")).await;
     (container, conn)
+}
+
+/// Connect to redis, retrying until it answers a `PING`.
+///
+/// `Redis::default()` only blocks `start()` until the "Ready to accept
+/// connections" log line, but Docker's host port-forward proxy can briefly
+/// still refuse connections after that (especially on macOS), so a single
+/// connect attempt is racy. Retry until a real round-trip succeeds.
+async fn connect_with_retry(url: &str) -> redis::aio::MultiplexedConnection {
+    let client = redis::Client::open(url).expect("open redis client");
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        if let Ok(mut conn) = client.get_multiplexed_async_connection().await
+            && redis::cmd("PING")
+                .query_async::<String>(&mut conn)
+                .await
+                .is_ok()
+        {
+            return conn;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "redis did not accept connections within 30s"
+        );
+        sleep(Duration::from_millis(100)).await;
+    }
 }
 
 fn pair(rkey: &str, cid: &str) -> PublishedPair {
