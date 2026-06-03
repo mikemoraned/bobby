@@ -77,7 +77,7 @@ architecture-beta
 
 * [x] verify caching actually improves: with deps unchanged, touch only `<crate>/src/main.rs`, rebuild, and confirm the cook/deps layer is reused (no dependency recompile). This is the direct test of whether `-p` + chef fixes the "recompiles everything" symptom for source-only changes. *(Confirmed — see `/tmp/cluster-deploy-20260601-110748.log`: a no-deps-change re-run came back fully cached, **37.99s** total, 0 `Compiling` lines, 71 `CACHED` layers.)*
 * [ ] (optional) now that each image cooks its own copy of the shared deps (`tokio`, `reqwest`, `image`, tracing/otel, `shared`), decide whether to dedup across images: BuildKit cache mounts on `target/` + the cargo registry, or `--cache-from` the previous git-hash-tagged image (ties into Q2 above on git-hash layer caching)
-* [ ] apply this same `-p` pattern when adding the `skeet-appraise` and `skeet-publish` Dockerfiles (Phases 1 and 3) rather than cloning a workspace-wide build
+* [x] apply this same `-p` pattern when adding the `skeet-appraise` and `skeet-publish` Dockerfiles (Phases 1 and 3) rather than cloning a workspace-wide build
 
 ##### Fix cook setup
 
@@ -532,7 +532,7 @@ Both servers + 1Password items already exist. The old `BOBBY_REDIS_URL` / `bobby
 * [x] **Add a feed-source selector flag** to `skeet-feed`, keeping enablement separate from config (rust rule): e.g. `--feed-source library|redis` (or `--use-redis-feed` + `--redis-publish-url`, env `BOBBY_REDIS_PUBLISH_URL`). It picks `LiveFeedSource` vs `RedisFeedSource` — both already implement `FeedSource`, so only the bin wiring changes; the handlers are untouched. *(Done — `skeet_feed.rs`: a `--feed-source library|redis` `ValueEnum` (default `library`, no behaviour change) + `--redis-publish-url` (env `BOBBY_REDIS_PUBLISH_URL`). Store/models/`FeedCache`/background-refresh are now built **only** in the library branch; redis just constructs `RedisFeedSource`. Handlers untouched. `--store-path` is still required by clap (unused in redis mode; group D removes it).)*
 * [x] **Re-add a redis client to `skeet-feed`** for the read path (it was dropped in Phase 2 with the cot sessions): `RedisFeedSource` (wrapping the `recency-48h` reader) over rustls TLS to the **publish** Upstash server (`BOBBY_REDIS_PUBLISH_URL`) — the same server `skeet-publish` writes to. *(Done — reuses `skeet-publish`'s `RedisFeedSource` (`Order::Recency`, `Limit::hours(48)`); no new dep on `skeet-feed` — the redis TLS comes via `skeet-publish`'s `deadpool-redis` feature, and the bin already installs the rustls ring provider. Local check: `just feed-redis`. Staging wired for redis: `fly.staging.toml` adds `--feed-source redis`, `bobby-feed-staging.env` adds `BOBBY_REDIS_PUBLISH_URL`.)*
 * [ ] **Deploy to `bobby-staging` told to use the redis source**, leave running for an afternoon, manually verify `getFeedSkeleton` (and the live Bluesky feed) still makes sense vs the library path.
-
+a
 ###### D. Remove the live-calc source from `skeet-feed` — step 4
 
 * [ ] Once redis is confirmed, drop the `library` option from `skeet-feed` so it constructs only `RedisFeedSource`; remove the now-dead flag branch. **Keep `LiveFeedSource` in `skeet-publish`** — it's still used by the publisher (group B) and by `skeet-appraise`'s homepage. "Remove the live-calc implementation" means remove it as a *`skeet-feed` option*, not delete the code.
