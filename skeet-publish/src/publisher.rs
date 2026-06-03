@@ -1,18 +1,20 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use deadpool_redis::redis;
 use shared::{ImageId, RefineModels};
 use skeet_store::{
-    Appraisal, ModelVersion, Score, SkeetId, SkeetStore, StoreError, StoredImageSummary,
+    Appraisal, ModelVersion, Score, SkeetId, SkeetStore, StoreError, StoredImageSummary, Version,
 };
+use tokio::sync::RwLock;
 
 use crate::image_url_resolver::ImageUrlResolver;
 use crate::limit::Limit;
 use crate::order::Order;
 use crate::published_list::{PublishedList, PublishedListError};
 use crate::published_pair::PublishedPair;
+use crate::table_watch::relevant;
 use crate::visibility::{FeedData, visible_entries};
 
 /// The publisher's own snapshot of scored skeets in a recency window, plus the
@@ -97,6 +99,15 @@ pub enum PublishError {
     List(#[from] PublishedListError),
 }
 
+/// Whether a `publish_if_changed` cycle did work.
+#[derive(Debug)]
+pub enum PublishOutcome {
+    /// No relevant table version moved since the last publish — nothing written.
+    Unchanged,
+    /// The lists were recomputed and republished
+    Published(Vec<(Order, Limit)>),
+}
+
 /// Publishes one redis list per `(Order, Limit)` spec from the live store.
 ///
 /// On each cycle it queries the scored skeets published within the widest spec
@@ -107,6 +118,8 @@ pub struct FeedPublisher {
     models: Arc<RefineModels>,
     resolver: Arc<dyn ImageUrlResolver>,
     specs: Vec<(Order, Limit)>,
+    /// The store version snapshot at the last publish, for change-gating.
+    last_snapshot: RwLock<Option<HashSet<Version>>>,
 }
 
 impl FeedPublisher {
@@ -121,6 +134,7 @@ impl FeedPublisher {
             models,
             resolver,
             specs,
+            last_snapshot: RwLock::new(None),
         }
     }
 
@@ -172,6 +186,33 @@ impl FeedPublisher {
                 .await?;
         }
         Ok(())
+    }
+
+    /// Publish only if a relevant table version (scores or appraisals) has moved
+    /// since the last publish — so an idle worker skips the full store fetch and
+    /// redis writes when nothing the feed depends on has changed.
+    pub async fn publish_if_changed<C>(
+        &self,
+        conn: &mut C,
+        now: DateTime<Utc>,
+    ) -> Result<PublishOutcome, PublishError>
+    where
+        C: redis::aio::ConnectionLike + Send,
+    {
+        let snapshot = self.store.version_snapshot().await?;
+        let changed = {
+            let guard = self.last_snapshot.read().await;
+            guard
+                .as_ref()
+                .is_none_or(|prev| relevant(prev) != relevant(&snapshot))
+        };
+        if !changed {
+            return Ok(PublishOutcome::Unchanged);
+        }
+
+        self.publish(conn, now).await?;
+        *self.last_snapshot.write().await = Some(snapshot);
+        Ok(PublishOutcome::Published(self.specs.clone()))
     }
 }
 

@@ -7,7 +7,10 @@ use std::time::Duration;
 use chrono::Utc;
 use clap::Parser;
 use shared::RefineModels;
-use skeet_publish::{CdnImageUrlResolver, FeedPublisher, Limit, Order, PublishedList, connect};
+use skeet_publish::{
+    CdnImageUrlResolver, FeedPublisher, Limit, Order, PublishMetrics, PublishOutcome,
+    PublishedList, connect,
+};
 use skeet_store::StoreArgs;
 use tracing::{info, warn};
 
@@ -82,36 +85,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(CdnImageUrlResolver),
         specs.clone(),
     );
+    let metrics = PublishMetrics::new(&opentelemetry::global::meter("skeet_publish"));
 
+    // `--once` runs a single cycle (and on a fresh publisher the gate always
+    // fires, so it publishes); the loop gates on table-version changes so an
+    // idle worker does no store/redis work.
     if args.once {
-        publish_cycle(&publisher, &specs, &args.redis_publish_url).await?;
+        publish(&publisher, &args.redis_publish_url, &metrics).await?;
         return Ok(());
     }
 
     let mut interval = tokio::time::interval(Duration::from_secs(args.interval_secs));
     loop {
         interval.tick().await;
-        if let Err(e) = publish_cycle(&publisher, &specs, &args.redis_publish_url).await {
+        if let Err(e) = publish(&publisher, &args.redis_publish_url, &metrics).await {
+            metrics.record_failed();
             warn!(error = %e, "publish cycle failed");
         }
     }
 }
 
-/// Publish every spec once, then read each list back and log a summary so a
-/// local run shows what landed in redis. Connects fresh so a long-running loop
-/// never reuses a connection Upstash dropped while idle.
-async fn publish_cycle(
+/// One gated publish cycle: connect fresh (so a long-running loop never reuses a
+/// connection Upstash dropped while idle), publish only if something moved, and
+/// log/record what landed (the specs come from the publisher via the outcome).
+async fn publish(
     publisher: &FeedPublisher,
-    specs: &[(Order, Limit)],
     redis_url: &str,
+    metrics: &PublishMetrics,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut conn = connect(redis_url).await?;
-    publisher.publish(&mut conn, Utc::now()).await?;
+    match publisher.publish_if_changed(&mut conn, Utc::now()).await? {
+        PublishOutcome::Unchanged => {
+            metrics.record_unchanged();
+            info!("no relevant table change — skipped publish");
+        }
+        PublishOutcome::Published(specs) => {
+            metrics.record_published();
+            log_published_lists(&specs, &mut conn, metrics).await?;
+        }
+    }
+    Ok(())
+}
 
+/// Read each list back, log a summary, and record its size — so a local run
+/// shows what landed in redis and the worker exports list sizes.
+async fn log_published_lists(
+    specs: &[(Order, Limit)],
+    conn: &mut deadpool_redis::redis::aio::MultiplexedConnection,
+    metrics: &PublishMetrics,
+) -> Result<(), Box<dyn std::error::Error>> {
     for (order, limit) in specs {
         let list = PublishedList::new(*order, *limit);
-        let pairs = list.read(&mut conn).await?;
-        let refreshed_at = list.refreshed_at(&mut conn).await?;
+        let pairs = list.read(conn).await?;
+        let refreshed_at = list.refreshed_at(conn).await?;
+        metrics.record_list_size(&list.name(), pairs.len() as u64);
         info!(list = %list.name(), count = pairs.len(), ?refreshed_at, "published list");
         for pair in pairs.iter().take(3) {
             info!(list = %list.name(), skeet_id = %pair.skeet_id, image_url = %pair.image_url, "  sample pair");

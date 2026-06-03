@@ -10953,6 +10953,7 @@ dependencies = [
  "chrono",
  "clap",
  "deadpool-redis",
+ "opentelemetry",
  "proptest",
  "regex",
  "rustls 0.23.37",

@@ -5,24 +5,13 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use shared::{Band, ImageId, RefineModels};
 use skeet_store::{
-    Appraisal, IMAGE_APPRAISAL_TABLE_NAME, ModelVersion, SCORE_TABLE_NAME,
-    SKEET_APPRAISAL_TABLE_NAME, Score, SkeetId, SkeetStore, StoredImageSummary, Version,
+    Appraisal, ModelVersion, Score, SkeetId, SkeetStore, StoredImageSummary, Version,
 };
 
+use crate::table_watch::relevant;
 use crate::visibility::FeedData;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
-
-/// Tables whose version changes should trigger a cache refresh.
-///
-/// The cached feed depends on scored images and manual appraisals; new images
-/// or skeets only become visible once they are scored, so the images and
-/// skeets tables are deliberately excluded.
-const RELEVANT_TABLES: &[&str] = &[
-    SCORE_TABLE_NAME,
-    SKEET_APPRAISAL_TABLE_NAME,
-    IMAGE_APPRAISAL_TABLE_NAME,
-];
 
 /// How often the background worker checks for version changes.
 const BACKGROUND_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
@@ -201,13 +190,6 @@ impl FeedCache {
             }
         });
     }
-}
-
-fn relevant(snapshot: &HashSet<Version>) -> HashSet<&Version> {
-    snapshot
-        .iter()
-        .filter(|v| RELEVANT_TABLES.iter().any(|t| *t == v.name))
-        .collect()
 }
 
 #[cfg(test)]
