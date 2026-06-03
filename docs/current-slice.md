@@ -75,9 +75,9 @@ architecture-beta
 
 ##### Discover / improve as we do this slice
 
-* [x] verify caching actually improves: with deps unchanged, touch only `<crate>/src/main.rs`, rebuild, and confirm the cook/deps layer is reused (no dependency recompile). This is the direct test of whether `-p` + chef fixes the "recompiles everything" symptom for source-only changes. *(Confirmed — see `/tmp/cluster-deploy-20260601-110748.log`: a no-deps-change re-run came back fully cached, **37.99s** total, 0 `Compiling` lines, 71 `CACHED` layers.)*
-* [ ] (optional) now that each image cooks its own copy of the shared deps (`tokio`, `reqwest`, `image`, tracing/otel, `shared`), decide whether to dedup across images: BuildKit cache mounts on `target/` + the cargo registry, or `--cache-from` the previous git-hash-tagged image (ties into Q2 above on git-hash layer caching)
+* [x] verify caching actually improves: with deps unchanged, touch only `<crate>/src/main.rs`, rebuild, and confirm the cook/deps layer is reused (no dependency recompile). This is the direct test of whether `-p` + chef fixes the "recompiles everything" symptom for source-only changes. *(Confirmed — see `/tmp/cluster-deploy-20260601-110748.log`: a no-deps-change re-run came back fully cached, **37.99s** total, 0 `Compiling` lines, 71 `CACHED` layers.)*\
 * [x] apply this same `-p` pattern when adding the `skeet-appraise` and `skeet-publish` Dockerfiles (Phases 1 and 3) rather than cloning a workspace-wide build
+* Cross-image dedup + git-hash layer caching folded into "Fix cook setup → Tasks" below (see the deps-base-image task) — git-hash layer caching researched and rejected there.
 
 ##### Fix cook setup
 
@@ -231,10 +231,36 @@ an OrbStack restart, to check the BuildKit cache survived it). It did.
   optimise 19.0s, cloudflare 5.3s, openai 3.9s. Total wall-clock **1:09:42** vs the 2h13m baseline.
   Caching across consecutive builds with unchanged deps not yet re-measured — this run still did
   full cooks because deps/toolchain changed since the prior run.)*
-* [ ] **(Then decide) cross-image dedup.** Ties into the existing "dedup across images" /
-  "Make use of git-hash?" items: BuildKit cache mount on `target/` shared across builds, or a
-  shared deps base image all five `FROM`. Cheap fix above first, re-measure, then decide if this is
-  worth it.
+* [ ] **Cross-image dep dedup via a shared deps base image (Option B).** Same-machine
+  *repeat* builds are already a no-op (37.99s, log 110748); the remaining cost is the cold
+  case where each of the 5 images cooks the shared dep tree into its own `target/` (~63 min).
+  Cook the deps **once** into a pushed base image; services `FROM` it and only build first-party.
+    * [ ] `just` `deps-hash`: md5 of `Cargo.lock` + all `Cargo.toml` + `rust-toolchain.toml`
+      + `.cargo/config.toml` (sorted file list, deterministic). Coarse/fine only affects
+      cache-hit rate — cargo's fingerprinting keeps the binary correct either way.
+    * [ ] `Dockerfile.deps`: planner + whole-workspace cook (no `-p`), protoc install,
+      `COPY .cargo/` + `rust-toolchain.toml` before the cook, registry/git cache mounts.
+    * [ ] `build-deps`/`push-deps` in `container.just`: multi-arch
+      `--platform linux/arm64,linux/amd64 -t bobby-deps:<DEPS_HASH> --push` (manifest list —
+      `target/` is arch-specific and we ship both arches).
+    * [ ] Rewrite the 8 service Dockerfiles: global `ARG DEPS_HASH` → `FROM bobby-deps:${DEPS_HASH}`,
+      drop their planner+cook stages, keep `COPY . .` / `COPY models/` / `BUILD_GIT_HASH` /
+      the scoped `cargo build -p <crate> --bin <bin>` / runner.
+    * [ ] `cluster-deploy-all`: build+push the base first, **skipped when the
+      `bobby-deps:<hash>` tag already exists** (`docker manifest inspect`); pass
+      `--build-arg DEPS_HASH=$(deps-hash)` to every service build.
+    * [ ] Update `.claude/rules/docker.md` (drop "no shared base images"; document the base). *(Done ahead of implementation.)*
+    * [ ] Re-measure cold (deps-changed) and warm (deps-unchanged) `cluster-deploy-all` vs the
+      1:09:42 / 37.99s baselines.
+
+* [~] **Exploit git-hash for layer caching — won't do.** BuildKit keys layers on content
+  (recipe.json hash for the cook layer), not image tags; `BUILD_GIT_HASH` only busts the
+  final build layer by design. No extra caching available beyond `:latest` as a cache-from
+  ref. Superseded by the deps-base item above.
+
+* [ ] **(deferred) Registry cache export** — `--cache-to type=registry,mode=max` + `--cache-from`
+  for cross-machine/CI reuse, if builds ever move off this one warm OrbStack. Complementary to
+  the base image (cache mounts are builder-local); not needed while building locally.
 
 * [x] **Fix the flags mismatch (the primary fix).** Copy `.cargo/` in *before* the cook so cook and
   build share one fingerprint, e.g. between the `recipe.json` copy and the cook step:
@@ -250,10 +276,6 @@ an OrbStack restart, to check the BuildKit cache survived it). It did.
   unchanged should show every `cargo chef cook` as `CACHED` and only the short first-party `build`
   running — that's the proof the "verify caching actually improves" item is after. Re-capture with
   `time BUILDKIT_PROGRESS=plain ... | tee` and compare total wall-clock against the 2h13m baseline.
-
-#### Make use of git-hash?
-
-* [ ] now that docker images are built and named based on git-hash, can we exploit that for a more exact caching of layers?
 
 #### Deny `expect()` as well
 

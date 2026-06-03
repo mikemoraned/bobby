@@ -6,15 +6,17 @@ paths:
 
 # Docker Rules
 
-## Self-contained Dockerfiles
+## Shared deps base image
 
-Each service has its own self-contained Dockerfile with inline cargo-chef stages (planner/builder/runner). No shared base images.
+Dependencies are cooked **once** into a pushed multi-arch base image (`bobby-deps:<DEPS_HASH>`) that every service Dockerfile `FROM`s. This dedups the shared dep compile across all services.
 
-- Base image: `lukemathwalker/cargo-chef:latest-rust-1-bookworm` (planner + builder)
-- Runtime: `debian:bookworm-slim` + ca-certificates
-- Architecture-specific RUSTFLAGS are in `.cargo/config.toml`, not Dockerfiles
-- All `cargo chef cook` and `cargo build` steps use `--mount=type=cache` for registry/git
-- `.dockerignore` excludes `target/`, `store/`, `logs/`, and other large dirs
+- `Dockerfile.deps`: planner + whole-workspace `cargo chef cook` (no `-p` — the base is a superset of all crates' deps), built `--platform linux/arm64,linux/amd64` (target/ is arch-specific) and pushed as `bobby-deps:<DEPS_HASH>`.
+- `DEPS_HASH` = md5 of `Cargo.lock` + all `Cargo.toml` + `rust-toolchain.toml` + `.cargo/config.toml`. A stale hash never breaks correctness (cargo re-fingerprints and recompiles the delta in the service build) — it only costs a cache miss.
+- `.cargo/config.toml` + `rust-toolchain.toml` are copied before the cook so the base's fingerprints match the service build's; both files are in DEPS_HASH for the same reason. Architecture-specific RUSTFLAGS live in `.cargo/config.toml`, not Dockerfiles.
+- Service Dockerfiles: global `ARG DEPS_HASH` → `FROM bobby-deps:${DEPS_HASH}`, then `COPY . .`, `BUILD_GIT_HASH`, and the **scoped** `cargo build -p <crate> --bin <bin>` (the `-p`/`--bin` scoping rule still applies to the build; only the cook is shared).
+- All `cargo chef cook` and `cargo build` steps use `--mount=type=cache` for the cargo registry/git dirs.
+- Runtime: `debian:bookworm-slim` + ca-certificates.
+- `.dockerignore` excludes `target/`, `store/`, `logs/`, and other large dirs.
 
 ## Scope each image to its crate
 
@@ -32,4 +34,4 @@ Each Dockerfile ships exactly one crate. Scope both the cook and the build so an
 
 ## Adding a new service
 
-Copy an existing Dockerfile (e.g. `Dockerfile.live-refine`), set `-p <crate>` on the cook and `-p <crate> --bin <bin>` on the build (see "Scope each image to its crate"), and add `build-<name>`/`push-<name>` targets to `just/container.just`.
+Copy an existing service Dockerfile (e.g. `Dockerfile.live-refine`, which already `FROM`s the deps base) and set `-p <crate> --bin <bin>` on the build (see "Scope each image to its crate"). Add `build-<name>`/`push-<name>` targets to `just/container.just`. If the new crate pulls in deps not already in the base, the next build with a changed `Cargo.toml`/`Cargo.lock` bumps `DEPS_HASH` and rebuilds the base automatically.
