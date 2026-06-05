@@ -274,9 +274,15 @@ an OrbStack restart, to check the BuildKit cache survived it). It did.
   final build layer by design. No extra caching available beyond `:latest` as a cache-from
   ref. Superseded by the shared `target/` cache mount item above.
 
-* [ ] **(deferred) Registry cache export** — `--cache-to type=registry,mode=max` + `--cache-from`
-  for cross-machine/CI reuse, if builds ever move off this one warm OrbStack. Complementary to
-  the local `target/` cache mount (both are builder-local); not needed while building locally.
+* [~] **Registry cache export — won't do for now.** `--cache-to type=registry,mode=max` +
+  `--cache-from` would let a *different* builder (CI, a fresh machine) pull BuildKit's layer
+  cache and skip the cold compile. Decided not worth it while builds stay on this one persistent
+  warm OrbStack — the local layer cache + `target/` mount already survive across builds (38s
+  warm), so cold is rarely paid. It also can't give cross-machine *incremental* compiles (the
+  compiled `target/` is a cache mount, which registry cache export doesn't carry — only image
+  layers). Revisit only if image builds move to CI/multiple machines. (Bonus if we ever do: it
+  wouldn't hit the deps-base GHCR push wall — `target/` being a mount means the exported cache
+  layers are just source + the small `/build/out/` binaries.)
 
 * [x] **Fix the flags mismatch (the primary fix).** Copy `.cargo/` in *before* the cook so cook and
   build share one fingerprint, e.g. between the `recipe.json` copy and the cook step:
