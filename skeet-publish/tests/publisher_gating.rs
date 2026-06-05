@@ -10,7 +10,10 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use common::{CIDS, redis_url, scored_record, seed, v3, wait_ready};
-use skeet_publish::{CdnImageUrlResolver, FeedPublisher, Limit, Order, PublishOutcome, connect};
+use deadpool_redis::redis;
+use skeet_publish::{
+    CdnImageUrlResolver, FeedPublisher, Limit, Order, PublishOutcome, PublishedList, connect,
+};
 use skeet_store::test_utils::open_temp_store;
 use skeet_store::{ModelVersion, Score};
 use testcontainers::runners::AsyncRunner;
@@ -78,4 +81,64 @@ async fn skips_publish_when_no_relevant_change_docker() {
             .expect("third cycle"),
         PublishOutcome::Published(_)
     ));
+}
+
+#[tokio::test]
+async fn republishes_when_the_list_was_deleted_docker() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = Arc::new(open_temp_store(&dir).await);
+    seed(&store).await;
+    let models = test_support::test_models();
+    let spec = (Order::Recency, Limit::hours(48));
+    let list = PublishedList::new(spec.0, spec.1);
+
+    let container = Redis::default().start().await.expect("start redis");
+    let url = redis_url(&container).await;
+    wait_ready(&url).await;
+
+    let publisher = FeedPublisher::new(
+        Arc::clone(&store),
+        models,
+        Arc::new(CdnImageUrlResolver),
+        vec![spec],
+    );
+    let mut conn = connect(&url).await.expect("connect");
+
+    // First publish creates a non-empty list; the next cycle skips (nothing moved).
+    assert!(matches!(
+        publisher
+            .publish_if_changed(&mut conn, Utc::now())
+            .await
+            .expect("first cycle"),
+        PublishOutcome::Published(_)
+    ));
+    assert!(!list.read(&mut conn).await.expect("read").is_empty());
+    assert!(matches!(
+        publisher
+            .publish_if_changed(&mut conn, Utc::now())
+            .await
+            .expect("second cycle"),
+        PublishOutcome::Unchanged
+    ));
+
+    // The list vanishes out-of-band (eviction / flush / manual delete).
+    redis::cmd("DEL")
+        .arg(list.name())
+        .exec_async(&mut conn)
+        .await
+        .expect("delete list");
+    assert!(list.read(&mut conn).await.expect("read").is_empty());
+
+    // Even with no store change, the next cycle republishes to restore it.
+    assert!(matches!(
+        publisher
+            .publish_if_changed(&mut conn, Utc::now())
+            .await
+            .expect("third cycle"),
+        PublishOutcome::Published(_)
+    ));
+    assert!(
+        !list.read(&mut conn).await.expect("read").is_empty(),
+        "the deleted list should be restored"
+    );
 }

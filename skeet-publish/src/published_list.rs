@@ -134,6 +134,20 @@ impl PublishedList {
             .map(|s| serde_json::from_str(s).map_err(PublishedListError::from))
             .collect()
     }
+
+    /// Whether the list key currently exists in redis. Note an empty list has no
+    /// key (`replace` deletes it), so this is `false` both when the list was
+    /// never published and when its content is genuinely empty.
+    pub async fn exists<C>(&self, conn: &mut C) -> Result<bool, PublishedListError>
+    where
+        C: redis::aio::ConnectionLike + Send,
+    {
+        let present: bool = redis::cmd("EXISTS")
+            .arg(self.name())
+            .query_async(conn)
+            .await?;
+        Ok(present)
+    }
 }
 
 #[cfg(test)]

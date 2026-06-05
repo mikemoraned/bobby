@@ -12,8 +12,8 @@ use tokio::sync::RwLock;
 use crate::image_url_resolver::ImageUrlResolver;
 use crate::limit::Limit;
 use crate::order::Order;
-use crate::published_list::{PublishedList, PublishedListError};
 use crate::published::Published;
+use crate::published_list::{PublishedList, PublishedListError};
 use crate::table_watch::relevant;
 use crate::visibility::{FeedData, visible_entries};
 
@@ -188,9 +188,11 @@ impl FeedPublisher {
         Ok(())
     }
 
-    /// Publish only if a relevant table version (scores or appraisals) has moved
-    /// since the last publish — so an idle worker skips the full store fetch and
-    /// redis writes when nothing the feed depends on has changed.
+    /// Publish if a relevant table version (scores or appraisals) has moved since
+    /// the last publish, **or** if any target list is missing from redis — so an
+    /// idle worker skips the full store fetch and redis writes when nothing has
+    /// changed, yet still restores a list that was evicted/flushed/deleted
+    /// out-of-band.
     pub async fn publish_if_changed<C>(
         &self,
         conn: &mut C,
@@ -200,19 +202,32 @@ impl FeedPublisher {
         C: redis::aio::ConnectionLike + Send,
     {
         let snapshot = self.store.version_snapshot().await?;
-        let changed = {
+        let store_changed = {
             let guard = self.last_snapshot.read().await;
             guard
                 .as_ref()
                 .is_none_or(|prev| relevant(prev) != relevant(&snapshot))
         };
-        if !changed {
+        if !store_changed && self.all_lists_present(conn).await? {
             return Ok(PublishOutcome::Unchanged);
         }
 
         self.publish(conn, now).await?;
         *self.last_snapshot.write().await = Some(snapshot);
         Ok(PublishOutcome::Published(self.specs.clone()))
+    }
+
+    /// Whether every configured list currently exists in redis.
+    async fn all_lists_present<C>(&self, conn: &mut C) -> Result<bool, PublishedListError>
+    where
+        C: redis::aio::ConnectionLike + Send,
+    {
+        for (order, limit) in &self.specs {
+            if !PublishedList::new(*order, *limit).exists(conn).await? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 }
 
