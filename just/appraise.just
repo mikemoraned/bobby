@@ -1,6 +1,3 @@
-appraise:
-    RUST_BACKTRACE=1 cargo run --release --bin skeet-appraise -- --store-path {{ STORE }} --local-admin
-
 appraise-r2:
     RUST_BACKTRACE=1 OTEL_SERVICE_NAME=skeet-appraise {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file bobby-local.env -- cargo run --release --bin skeet-appraise -- --store-path {{ R2_STORE }} --local-admin
 

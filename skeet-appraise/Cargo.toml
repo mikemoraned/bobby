@@ -19,6 +19,7 @@ serde_json = { workspace = true }
 shared = { workspace = true }
 skeet-publish = { workspace = true }
 skeet-store = { path = "../skeet-store" }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tower = { workspace = true }
 tower-sessions = { workspace = true }

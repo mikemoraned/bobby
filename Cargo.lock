@@ -10885,6 +10885,7 @@ dependencies = [
  "test-support",
  "testcontainers",
  "testcontainers-modules",
+ "thiserror 2.0.18",
  "tokio",
  "tower",
  "tower-sessions 0.14.0",

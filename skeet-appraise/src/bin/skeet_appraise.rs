@@ -1,18 +1,17 @@
 #![warn(clippy::all, clippy::nursery)]
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use chrono::Utc;
 use clap::Parser;
 use cot::project::Bootstrapper;
-use shared::{Appraiser, RefineModels};
+use shared::Appraiser;
 use skeet_appraise::auth_config::OAuthConfig;
 use skeet_appraise::project::AppraiseProject;
 use skeet_appraise::{
-    AppraiserLayer, FeedCacheLayer, OAuthConfigLayer, StartedAtLayer, StoreLayer,
+    AppraiserLayer, OAuthConfigLayer, PublishedFeedLayer, StartedAtLayer, StoreLayer,
 };
-use skeet_publish::FeedCache;
+use skeet_publish::{Limit, Order, RedisFeedSource};
 use skeet_store::StoreArgs;
 use tracing::info;
 
@@ -25,17 +24,10 @@ struct Args {
     #[arg(long, default_value = "127.0.0.1:8080")]
     bind: String,
 
-    /// Maximum number of entries to show on the home page
-    #[arg(long, default_value_t = 10)]
-    max_entries: usize,
-
-    /// Maximum age in hours for entries to be included
-    #[arg(long, default_value_t = 48)]
-    max_age_hours: u64,
-
-    /// Path to the refine model registry (refine.toml)
-    #[arg(long, default_value = "config/refine.toml")]
-    model_path: PathBuf,
+    /// Redis URL for the publish server (env: BOBBY_REDIS_PUBLISH_URL) — the
+    /// home page's source of truth for what's in the feed.
+    #[arg(long, env = "BOBBY_REDIS_PUBLISH_URL")]
+    redis_publish_url: String,
 
     /// Enable local admin mode (uses Appraiser::LocalAdmin for appraisals)
     #[arg(long, default_value_t = false)]
@@ -68,8 +60,8 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Installs the process-global default exactly once at startup, so it cannot already
-    // be set; the `expect` keeps that failure reason explicit.
+    // The admin-session and publish redis urls are `rediss://`, so TLS runs
+    // through rustls — install the process-global crypto provider once at startup.
     #[allow(clippy::expect_used)]
     rustls::crypto::ring::default_provider()
         .install_default()
@@ -78,28 +70,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let _guard = shared::tracing::init_with_file(
-        "skeet_appraise=info,shared=info,skeet_store=info",
+        "skeet_appraise=info,skeet_publish=info,shared=info,skeet_store=info",
         "appraise.log",
     );
     info!(git_hash = env!("BUILD_GIT_HASH"), "skeet-appraise starting");
 
     let store = Arc::new(args.store.open_store("appraise").await?);
 
-    let models = Arc::new(
-        RefineModels::load(&args.model_path)
-            .unwrap_or_else(|e| panic!("failed to load {}: {e}", args.model_path.display())),
-    );
-    info!(path = %args.model_path.display(), "loaded refine models");
-
     info!(bind = %args.bind, "starting skeet-appraise server");
 
-    let cache = Arc::new(FeedCache::new(
-        Arc::clone(&store),
-        Arc::clone(&models),
-        args.max_entries,
-        args.max_age_hours,
+    // The home page mirrors the Bluesky feed: the published `recency-48h` list.
+    let feed = Arc::new(RedisFeedSource::new(
+        args.redis_publish_url,
+        Order::Recency,
+        Limit::hours(48),
     ));
-    cache.spawn_background_refresh();
 
     let appraiser = if args.local_admin {
         info!("local admin mode enabled");
@@ -130,7 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let project = AppraiseProject {
-        cache_layer: FeedCacheLayer::new(cache),
+        published_feed_layer: PublishedFeedLayer::new(feed),
         store_layer: StoreLayer::from_shared(store),
         appraiser_layer: AppraiserLayer::new(appraiser),
         oauth_config_layer: OAuthConfigLayer::new(oauth_config),

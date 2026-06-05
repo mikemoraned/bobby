@@ -19,31 +19,31 @@ use rcgen::{CertificateParams, KeyPair};
 use skeet_appraise::auth_config::OAuthConfig;
 use skeet_appraise::project::AppraiseProject;
 use skeet_appraise::{
-    AppraiserLayer, FeedCacheLayer, OAuthConfigLayer, StartedAtLayer, StoreLayer,
+    AppraiserLayer, OAuthConfigLayer, PublishedFeedLayer, StartedAtLayer, StoreLayer,
 };
-use skeet_publish::FeedCache;
+use skeet_publish::{Limit, Order, RedisFeedSource};
 use skeet_store::test_utils::{make_record, open_temp_store};
 use skeet_store::{ModelVersion, Score, SkeetStore};
-use test_support::test_models;
 use testcontainers::core::{IntoContainerPort, WaitFor};
 use testcontainers::runners::AsyncRunner;
 use testcontainers::{ContainerAsync, CopyTargetOptions, GenericImage, ImageExt};
 use wiremock::MockServer;
 
 const REDIS_TLS_PORT: u16 = 6380;
-const MAX_ENTRIES: usize = 10;
-const MAX_AGE_HOURS: u64 = 48;
+
+/// The login-flow tests never hit the home page, so the published-feed reader is
+/// pointed at an unreachable url.
+const DUMMY_PUBLISH_URL: &str = "redis://127.0.0.1:1";
 
 async fn oauth_client_with_redis(
     mock_server: &MockServer,
     redis_url: &str,
     store: Arc<SkeetStore>,
 ) -> Client {
-    let cache = Arc::new(FeedCache::new(
-        Arc::clone(&store),
-        test_models(),
-        MAX_ENTRIES,
-        MAX_AGE_HOURS,
+    let feed = Arc::new(RedisFeedSource::new(
+        DUMMY_PUBLISH_URL,
+        Order::Recency,
+        Limit::hours(48),
     ));
     let oauth_config = OAuthConfig::with_urls(
         "test-client-id".to_string(),
@@ -54,7 +54,7 @@ async fn oauth_client_with_redis(
         mock_server.uri().to_string(),
     );
     let project = AppraiseProject {
-        cache_layer: FeedCacheLayer::new(cache),
+        published_feed_layer: PublishedFeedLayer::new(feed),
         store_layer: StoreLayer::from_shared(store),
         appraiser_layer: AppraiserLayer::new(None),
         oauth_config_layer: OAuthConfigLayer::new(Some(Arc::new(oauth_config))),

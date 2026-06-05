@@ -9,8 +9,8 @@ use cot::{App, AppBuilder, Project};
 use tracing::info;
 
 use crate::AppraiserLayer;
-use crate::FeedCacheLayer;
 use crate::OAuthConfigLayer;
+use crate::PublishedFeedLayer;
 use crate::StartedAtLayer;
 use crate::StoreLayer;
 use crate::admin::{admin, appraise_image, appraise_skeet};
@@ -48,7 +48,7 @@ impl App for AppraiseApp {
 }
 
 pub struct AppraiseProject {
-    pub cache_layer: FeedCacheLayer,
+    pub published_feed_layer: PublishedFeedLayer,
     pub store_layer: StoreLayer,
     pub appraiser_layer: AppraiserLayer,
     pub oauth_config_layer: OAuthConfigLayer,
@@ -96,7 +96,7 @@ impl Project for AppraiseProject {
         handler
             .middleware(StaticFilesMiddleware::from_context(context))
             .middleware(session_middleware)
-            .middleware(self.cache_layer.clone())
+            .middleware(self.published_feed_layer.clone())
             .middleware(self.store_layer.clone())
             .middleware(self.appraiser_layer.clone())
             .middleware(self.oauth_config_layer.clone())

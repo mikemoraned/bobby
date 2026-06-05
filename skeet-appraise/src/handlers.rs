@@ -1,5 +1,4 @@
 use std::io::Cursor;
-use std::sync::Arc;
 
 use cot::html::Html;
 use cot::http::HeaderValue;
@@ -8,35 +7,12 @@ use cot::request::extractors::Path;
 use cot::response::Response;
 use cot::{Body, StatusCode, Template};
 use shared::{Band, ImageId};
-use skeet_publish::effective_band::image_effective_band;
-use skeet_publish::{CachedFeed, FeedCache, visible_entries};
 use tracing::{info, instrument, warn};
 
 use crate::AppraiserExtractor;
-use crate::FeedCacheExtractor;
+use crate::PublishedFeedExtractor;
 use crate::Store;
-
-fn wants_no_cache(head: &RequestHead) -> bool {
-    head.headers
-        .get("cache-control")
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|v| v.contains("no-cache"))
-}
-
-async fn get_feed(cache: &Arc<FeedCache>, head: &RequestHead) -> cot::Result<CachedFeed> {
-    if wants_no_cache(head) {
-        info!("cache-control: no-cache — forcing refresh");
-        cache
-            .refresh()
-            .await
-            .map_err(|e| cot::Error::internal(format!("failed to refresh cache: {e}")))
-    } else {
-        cache
-            .get()
-            .await
-            .map_err(|e| cot::Error::internal(format!("failed to read store: {e}")))
-    }
-}
+use crate::feed_snapshot::FeedSnapshot;
 
 pub struct HomeEntry {
     pub image_id: String,
@@ -84,42 +60,51 @@ struct HomeTemplate {
 
 #[instrument(skip_all)]
 pub async fn home(
-    head: RequestHead,
     AppraiserExtractor(appraiser): AppraiserExtractor,
-    FeedCacheExtractor(cache): FeedCacheExtractor,
+    PublishedFeedExtractor(feed): PublishedFeedExtractor,
+    Store(store): Store,
 ) -> cot::Result<Html> {
     info!("serving home");
 
     let is_admin = appraiser.is_some();
-    let feed = get_feed(&cache, &head).await?;
 
-    let entries: Vec<HomeEntry> = visible_entries(&feed)
+    let snapshot = FeedSnapshot::load(&feed, &store)
+        .await
+        .map_err(|e| cot::Error::internal(format!("failed to load feed snapshot: {e}")))?;
+
+    let entries: Vec<HomeEntry> = snapshot
+        .items
         .into_iter()
-        .filter_map(|(summary, score, _model_version)| {
-            if summary.skeet_id.collection() != "app.bsky.feed.post" {
-                return None;
-            }
-            let did = summary.skeet_id.did();
-            let rkey = summary.skeet_id.rkey();
-            let manual_image = feed.image_appraisals.get(&summary.image_id).map(|a| a.band);
-            let manual_skeet = feed.skeet_appraisals.get(&summary.skeet_id).map(|a| a.band);
-            let band = image_effective_band(score, manual_image);
-            let image_id = summary.image_id.to_string();
-            Some(HomeEntry {
-                skeet_id_encoded: urlencoding::encode(&summary.skeet_id.to_string()).into_owned(),
+        .map(|item| {
+            let did = item.skeet_id.did();
+            let rkey = item.skeet_id.rkey();
+            let image_id = item.image_id.to_string();
+            HomeEntry {
+                skeet_id_encoded: urlencoding::encode(&item.skeet_id.to_string()).into_owned(),
                 image_id_encoded: urlencoding::encode(&image_id).into_owned(),
                 image_id,
-                score: format!("{score}"),
-                band: band.to_string(),
-                manual_skeet_band: manual_skeet.map(|b| b.to_string()).unwrap_or_default(),
-                manual_image_band: manual_image.map(|b| b.to_string()).unwrap_or_default(),
+                score: format!("{}", item.score),
+                band: item.effective_band.to_string(),
+                manual_skeet_band: item
+                    .manual_skeet_band
+                    .map(|b| b.to_string())
+                    .unwrap_or_default(),
+                manual_image_band: item
+                    .manual_image_band
+                    .map(|b| b.to_string())
+                    .unwrap_or_default(),
                 web_url: format!("https://bsky.app/profile/{did}/post/{rkey}"),
-            })
+            }
         })
         .collect();
 
     info!(count = entries.len(), is_admin, "serving home entries");
-    let rendered = HomeTemplate { entries, is_admin, band_options: band_options() }.render()?;
+    let rendered = HomeTemplate {
+        entries,
+        is_admin,
+        band_options: band_options(),
+    }
+    .render()?;
     Ok(Html::new(rendered))
 }
 
@@ -135,7 +120,10 @@ pub async fn annotated_image(
     let last_modified = started_at.http_date();
 
     // Conditional GET: if the client already has a copy from this server boot, return 304.
-    if let Some(ims) = head.headers.get("if-modified-since").and_then(|v| v.to_str().ok())
+    if let Some(ims) = head
+        .headers
+        .get("if-modified-since")
+        .and_then(|v| v.to_str().ok())
         && ims == last_modified
     {
         let mut response = Response::new(Body::empty());
@@ -206,32 +194,5 @@ mod tests {
         for w in bands.windows(2) {
             assert!(w[0] > w[1]);
         }
-    }
-
-    #[test]
-    fn wants_no_cache_true_when_header_present() {
-        let req = cot::http::Request::builder()
-            .header("cache-control", "no-cache")
-            .body(())
-            .expect("build");
-        let (head, _) = req.into_parts();
-        assert!(wants_no_cache(&head));
-    }
-
-    #[test]
-    fn wants_no_cache_false_when_header_absent() {
-        let req = cot::http::Request::builder().body(()).expect("build");
-        let (head, _) = req.into_parts();
-        assert!(!wants_no_cache(&head));
-    }
-
-    #[test]
-    fn wants_no_cache_false_for_other_directives() {
-        let req = cot::http::Request::builder()
-            .header("cache-control", "max-age=60")
-            .body(())
-            .expect("build");
-        let (head, _) = req.into_parts();
-        assert!(!wants_no_cache(&head));
     }
 }

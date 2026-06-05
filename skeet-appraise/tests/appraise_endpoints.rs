@@ -9,32 +9,40 @@ use common::{
     extract_query_param, extract_session_cookie, get_with_cookie, get_with_cookie_and_headers,
     mount_github_mocks,
 };
+use std::time::Duration;
+
 use cot::test::Client;
-use shared::Appraiser;
+use deadpool_redis::redis::aio::MultiplexedConnection;
+use shared::{Appraiser, BlueskyCid, ImageId};
 use skeet_appraise::auth_config::OAuthConfig;
 use skeet_appraise::project::AppraiseProject;
 use skeet_appraise::{
-    AppraiserLayer, FeedCacheLayer, OAuthConfigLayer, StartedAtLayer, StoreLayer,
+    AppraiserLayer, OAuthConfigLayer, PublishedFeedLayer, StartedAtLayer, StoreLayer,
 };
-use skeet_publish::FeedCache;
-use skeet_store::test_utils::{make_record, make_record_at, open_temp_store};
-use skeet_store::{DiscoveredAt, ModelVersion, Score, SkeetStore};
-use test_support::test_models;
+use skeet_publish::{ImageUrl, Limit, Order, Published, PublishedList, RedisFeedSource, connect};
+use skeet_store::test_utils::{make_record, make_record_at, open_temp_store, test_image};
+use skeet_store::{DiscoveredAt, ImageRecord, ModelVersion, OriginalAt, Score, SkeetId, SkeetStore, Zone};
+use testcontainers::runners::AsyncRunner;
+use testcontainers_modules::redis::{REDIS_PORT, Redis};
+use tokio::time::sleep;
 use wiremock::MockServer;
 
-const MAX_ENTRIES: usize = 10;
-const MAX_AGE_HOURS: u64 = 48;
+/// An unreachable url for the published-feed reader. The home page is the only
+/// handler that reads it, so the other tests never connect.
+const DUMMY_REDIS_URL: &str = "redis://127.0.0.1:1";
 
 async fn client_for(store: SkeetStore) -> Client {
-    let store = Arc::new(store);
-    let cache = Arc::new(FeedCache::new(
-        Arc::clone(&store),
-        test_models(),
-        MAX_ENTRIES,
-        MAX_AGE_HOURS,
+    client_for_with_feed(Arc::new(store), DUMMY_REDIS_URL).await
+}
+
+async fn client_for_with_feed(store: Arc<SkeetStore>, redis_url: &str) -> Client {
+    let feed = Arc::new(RedisFeedSource::new(
+        redis_url,
+        Order::Recency,
+        Limit::hours(48),
     ));
     let project = AppraiseProject {
-        cache_layer: FeedCacheLayer::new(cache),
+        published_feed_layer: PublishedFeedLayer::new(feed),
         store_layer: StoreLayer::from_shared(store),
         appraiser_layer: AppraiserLayer::new(Some(Arc::new(Appraiser::LocalAdmin))),
         oauth_config_layer: OAuthConfigLayer::new(None),
@@ -159,20 +167,83 @@ async fn annotated_image_conditional_get_returns_304() {
 
 // ─── Home page ─────────────────────────────────────────────────
 
+/// A real Bluesky blob CID, for the V3 image id the home test joins on.
+const HOME_CID: &str = "bafkreibme22gw2h7y2h7tg2fhqotaqjucnbc24deqo72b6mkl2egezxhvy";
+
+async fn connect_ready(url: &str) -> MultiplexedConnection {
+    for _ in 0..100 {
+        if let Ok(conn) = connect(url).await {
+            return conn;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+    panic!("redis container not reachable at {url} within 10s");
+}
+
+/// The home page renders exactly the published list joined to live store detail:
+/// publish one item whose `image_id` matches a scored store image, then assert
+/// the page shows it (Bluesky link + the joined-in score).
 #[tokio::test]
-async fn home_page_shows_scored_entries() {
+async fn home_page_shows_published_entries_docker() {
     let dir = tempfile::tempdir().expect("create temp dir");
-    let store = open_temp_store(&dir).await;
-    seed_scored(&store, "home1", 10, 0.85).await;
+    let store = Arc::new(open_temp_store(&dir).await);
 
-    let mut client = client_for(store).await;
+    // A V3 scored image in the store.
+    let image_id = ImageId::V3(BlueskyCid::new(HOME_CID).expect("valid cid"));
+    let skeet_id: SkeetId = "at://did:plc:abc/app.bsky.feed.post/home1"
+        .parse()
+        .expect("valid skeet id");
+    let record = ImageRecord {
+        image_id: image_id.clone(),
+        skeet_id: skeet_id.clone(),
+        image: test_image(),
+        discovered_at: DiscoveredAt::now(),
+        original_at: OriginalAt::new(Utc::now()),
+        zone: Zone::TopRight,
+        annotated_image: test_image(),
+        config_version: ModelVersion::from("test"),
+        detected_text: String::new(),
+    };
+    store.add(&record).await.expect("add record");
+    store
+        .upsert_score(
+            &image_id,
+            &Score::new(0.85).expect("valid score"),
+            &ModelVersion::from("test"),
+        )
+        .await
+        .expect("upsert score");
 
+    // Publish a matching item to a testcontainers redis.
+    let container = Redis::default().start().await.expect("start redis");
+    let host = container.get_host().await.expect("redis host");
+    let port = container
+        .get_host_port_ipv4(REDIS_PORT)
+        .await
+        .expect("redis port");
+    let redis_url = format!("redis://{host}:{port}");
+    let mut conn = connect_ready(&redis_url).await;
+    let published = Published {
+        image_url: ImageUrl::new(format!(
+            "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc/{HOME_CID}@jpeg"
+        ))
+        .expect("valid url"),
+        image_id,
+        skeet_id,
+    };
+    PublishedList::new(Order::Recency, Limit::hours(48))
+        .replace(&mut conn, &[published], Utc::now())
+        .await
+        .expect("publish");
+
+    let mut client = client_for_with_feed(Arc::clone(&store), &redis_url).await;
     let (status, body) = get_body(&mut client, "/").await;
     assert_eq!(status, 200);
     assert!(
-        body.contains("bsky.app"),
-        "home page should contain Bluesky links"
+        body.contains("bsky.app/profile/did:plc:abc/post/home1"),
+        "home should link the published skeet"
     );
+    assert!(body.contains("0.85"), "home should show the joined-in score");
 }
 
 // ─── Admin view tests ───────────────────────────────────────────
@@ -424,13 +495,11 @@ async fn oauth_client(
     allowed_users: Vec<&str>,
     dir: &tempfile::TempDir,
 ) -> Client {
-    let store = open_temp_store(dir).await;
-    let store = Arc::new(store);
-    let cache = Arc::new(FeedCache::new(
-        Arc::clone(&store),
-        test_models(),
-        MAX_ENTRIES,
-        MAX_AGE_HOURS,
+    let store = Arc::new(open_temp_store(dir).await);
+    let feed = Arc::new(RedisFeedSource::new(
+        DUMMY_REDIS_URL,
+        Order::Recency,
+        Limit::hours(48),
     ));
     let oauth_config = OAuthConfig::with_urls(
         "test-client-id".to_string(),
@@ -441,7 +510,7 @@ async fn oauth_client(
         mock_server.uri().to_string(),
     );
     let project = AppraiseProject {
-        cache_layer: FeedCacheLayer::new(cache),
+        published_feed_layer: PublishedFeedLayer::new(feed),
         store_layer: StoreLayer::from_shared(store),
         appraiser_layer: AppraiserLayer::new(None),
         oauth_config_layer: OAuthConfigLayer::new(Some(Arc::new(oauth_config))),
