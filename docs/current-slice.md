@@ -231,32 +231,37 @@ an OrbStack restart, to check the BuildKit cache survived it). It did.
   optimise 19.0s, cloudflare 5.3s, openai 3.9s. Total wall-clock **1:09:42** vs the 2h13m baseline.
   Caching across consecutive builds with unchanged deps not yet re-measured — this run still did
   full cooks because deps/toolchain changed since the prior run.)*
-* [ ] **Cross-image dep dedup via a shared `target/` cache mount.** Same-machine
+* [ ] **Cross-image dep dedup via a shared builder stage + `--target`.** Same-machine
   *repeat* builds are already a no-op (37.99s, log 110748); the remaining cost is the cold
-  case where each of the 5 images cooks the shared dep tree into its own `target/` (~63 min).
-  **Done differently than first planned.** Option B (a pushed multi-arch deps base image,
-  `FROM bobby-deps:<hash>`) was fully implemented and *rejected* in testing: a cooked release
-  `target/` for the whole workspace × 2 arches is tens of GB, and the GHCR push was
-  pathological — the cold push ran `pushing layers 37547.5s` (10.4h) then failed, the warm
-  push hit repeated `502 Bad Gateway` (logs `cluster-deploy-deps-base-cold/warm`). The push
-  cost dwarfed the re-cook it was meant to save. Pivoted to the slice's stated alternative —
-  a shared `target/` cache mount — which dedups the cold cook with **no image to push at all**.
-  (Also surfaced: the amd64 cook is QEMU-emulated on Apple Silicon, ~72 min vs ~19 min native
-  arm64 — so multi-arch anything is expensive here regardless.)
-    * [x] Each service build is a single `cargo build --release -p <crate> --bin <bin>` (no
-      chef — a shared `target/` mount makes chef's separate-deps-layer redundant) with three
-      cache mounts: cargo registry, cargo git, and an **arch-scoped** `target/`
-      (`id=bobby-target-${TARGETARCH}`, `sharing=locked`). First build cooks the dep tree into
-      the mount; every later service build reuses it and compiles only first-party crates.
-    * [x] Artifacts live in the ephemeral mount, so the binary (and pruner's `.bpk`/`.rten`
-      baked from `target/`) is copied out to `/build/out/` inside the RUN, then `COPY --from`
-      in the runner stage. `Dockerfile.deps` deleted; `container.just`/`cluster.just`/
-      `feed.just`/`appraise.just` reverted to no base-image plumbing.
-    * [x] Update `.claude/rules/docker.md` (document the `target/` cache mount; record why the
-      pushed base was rejected).
-    * [ ] Re-measure cold (cache pruned) and warm `cluster-deploy-all` vs the 1:09:42 / 37.99s
-      baselines — expectation: cold cooks the dep tree once (first image), later images only
-      build first-party; warm stays a ~38s no-op.
+  case where each image cooks the shared dep tree into its own `target/` (~63 min).
+  **Done differently than first planned — two approaches tried and rejected before landing
+  on this one:**
+    1. *Pushed multi-arch deps base image* (Option B, `FROM bobby-deps:<hash>`): built fine but
+       unpushable — a cooked release `target/` for the whole workspace × 2 arches is tens of GB;
+       the cold push ran `pushing layers 37547.5s` (10.4h) then failed, the warm push hit repeated
+       `502 Bad Gateway` (logs `cluster-deploy-deps-base-cold/warm`). The push dwarfed the re-cook.
+    2. *Per-service Dockerfiles sharing one `target/` cache mount*: warm stayed a no-op but cold
+       was **no better than baseline** (~69 min, log `cluster-deploy-cachemount-cold`) — `cargo
+       build -p X` resolves a different feature set per crate, so shared deps were rebuilt as
+       feature-variants in every image (refine recompiled 274 deps, publish 155, …).
+
+  Landed: **one builder stage per platform** (`Dockerfile.cluster` arm64, `Dockerfile.fly`
+  amd64) that compiles every shipped binary in a single `cargo build` (one feature resolution →
+  deps once), with thin `runner-<name>` stages selected via `--target`. BuildKit reuses the one
+  cached builder across all `--target` builds, so the heavy compile happens once. (Also surfaced:
+  the amd64 cook is QEMU-emulated on Apple Silicon, ~72 min vs ~19 min native arm64.)
+    * [x] `Dockerfile.cluster` / `Dockerfile.fly`: shared `builder` (registry+git+arch-scoped
+      `target/` mounts; one multi-`-p`/`--bin` build; binaries + pruner's `.bpk`/`.rten` copied
+      out to `/build/out/`; `BUILD_GIT_HASH` set for all — fixes the web/refine/etc. images that
+      previously baked `unknown`) + `runner-base` + one `runner-<name>` per service.
+    * [x] `container.just`: every `build-*`/`push-*` points at `-f Dockerfile.<cluster|fly>
+      --target runner-<name>`. The 8 per-service Dockerfiles deleted. `cluster.just`/`feed.just`/
+      `appraise.just` carry no base-image/deps plumbing.
+    * [x] Update `.claude/rules/docker.md` (document the shared builder + `--target`; record why
+      the pushed base and the per-service cache mount were both rejected).
+    * [ ] Re-measure cold and warm `cluster-deploy-all` vs the 1:09:42 / 37.99s baselines —
+      expectation: cold compiles the dep tree once in the first `--target` build, the other five
+      reuse the cached builder; warm stays a ~38s no-op.
 
 * [~] **Exploit git-hash for layer caching — won't do.** BuildKit keys layers on content
   (recipe.json hash for the cook layer), not image tags; `BUILD_GIT_HASH` only busts the

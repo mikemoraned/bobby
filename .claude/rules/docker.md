@@ -6,57 +6,59 @@ paths:
 
 # Docker Rules
 
-## Shared target/ cache mount
+## Shared builder + `--target`
 
-The shared dependency tree is compiled **once per arch** into a builder-local
-`target/` cache mount that every service build reuses — no separate base image to
-push. (A pushed multi-arch deps base was tried and rejected: a cooked release
-`target/` for the whole workspace × 2 arches is tens of GB and could not be pushed
-to GHCR reliably — the push dwarfed the re-cook it was meant to save.)
+There are two Dockerfiles, one per platform: **`Dockerfile.cluster`** (arm64,
+Hetzner) and **`Dockerfile.fly`** (amd64, fly.io). Each has a **single `builder`
+stage** that compiles *every* shipped binary for that platform in one
+`cargo build`, then one thin `runner-<name>` stage per service that copies out only
+its own binary. A given service image is produced with
+`docker buildx build -f Dockerfile.<cluster|fly> --target runner-<name>`.
 
-- Each service build is a single `cargo build --release -p <crate> --bin <bin>`
-  with three cache mounts: the cargo registry, the cargo git dir, and `target/`.
-- The `target/` mount is **arch-scoped** — `id=bobby-target-arm64` or
-  `-amd64`, `sharing=locked`. This is required: `target/release/` artifacts are
-  arch-specific but live at the same paths, so an arm64 and an amd64 build sharing
-  one mount would link incompatible objects, and concurrent cargo on one target dir
-  corrupts it. The id is **hardcoded to match the Dockerfile's pinned platform** (see
-  "Platform targets" + the `--platform` in `just/container.just`) rather than derived
-  from `${TARGETARCH}` — correct by construction, no reliance on build-arg expansion
-  inside a mount id. The registry/git mounts are *not* arch-scoped (crate sources are
-  arch-independent, so the download cache is shared across arches).
-- Build artifacts live in the **ephemeral** mount, so they are not in the committed
-  layer. Copy what the runner needs out to `/build/out/` **inside the same RUN**
-  (the binary; for pruner also the `.bpk`/`.rten` model files baked from `target/`),
-  then `COPY --from=builder /build/out/...` in the runner stage. `/build/out/` (not
-  `/build/<crate>`) avoids colliding with a crate's source dir.
-- First build on a cold builder compiles the full dep tree into the mount; every
-  later service build reuses it and compiles only its own first-party crates. A
-  pruned mount just re-cooks on the next build — never a correctness issue.
-- No `cargo chef` — with a shared `target/` mount, chef's separate-deps-layer trick
-  adds nothing. `.cargo/config.toml` (rustflags) and `rust-toolchain.toml` (pinned
-  toolchain) arrive via `COPY . .` before the single build, so there is no
-  cook-vs-build fingerprint mismatch to manage.
-- Runtime: `debian:bookworm-slim` + ca-certificates.
-- `.dockerignore` excludes `target/`, `store/`, `logs/`, and other large dirs.
+One builder, not per-service Dockerfiles, so the dep tree compiles once per platform:
+BuildKit reuses the cached `builder` across `--target` invocations.
 
-## Scope each image to its crate
+### Builder stage
 
-Each Dockerfile ships exactly one crate. Scope the build so an image doesn't
-compile sibling crates:
+- One `cargo build --release` listing every shipped crate/bin for the platform:
+  `-p <crate> --bin <bin>` repeated (e.g. `cloudflare-exporter` ships two bins, so
+  `--bin sync_operations --bin sync_storage`). Keep `--bin` — a bare `-p` builds
+  every bin in the crate (`skeet-prune` has 6, `skeet-refine` has 5).
+- Three cache mounts: cargo registry, cargo git, and an **arch-scoped** `target/`
+  (`id=bobby-target-arm64` / `-amd64`, `sharing=locked`). The `target/` mount keeps
+  cargo incremental: a source-only edit re-runs the builder RUN (BuildKit invalidates
+  it because `COPY . .` changed), but cargo reuses every dep from the mount and
+  recompiles only the changed first-party crate(s). The id is hardcoded to the
+  Dockerfile's platform — arm64 and amd64 artifacts share `target/release/` paths and
+  must never share one mount.
+- Build artifacts live in the ephemeral mount, so copy what the runners need out to
+  `/build/out/` **inside the RUN** (every binary; for the cluster builder also the
+  `.bpk`/`.rten` files baked from `target/` for pruner). `dash` (the default RUN
+  shell) has no brace expansion — use space-separated `cp` args.
+- `ARG BUILD_GIT_HASH` + `ENV BUILD_GIT_HASH` before the build. It applies to every
+  crate in the build (most call `emit_git_hash` in build.rs); the build-arg is passed
+  by every `container.just` recipe. Changing commit re-runs the builder and
+  recompiles only the leaf bins that bake the hash — deps stay cached.
+- `.cargo/config.toml` (rustflags) and `rust-toolchain.toml` (pinned toolchain)
+  arrive via `COPY . .` before the single build; no `cargo chef`.
 
-- Scope to the crate *and* name the shipped binary: `cargo build --release -p <crate> --bin <bin>`. Keep `--bin` even with `-p`, because a bare `-p <crate>` compiles every binary in the crate (e.g. `skeet-prune` has 6, `skeet-refine` has 5) — only the shipped bin(s) should build. Multiple bins from the same crate: repeat `--bin a --bin b`.
-- TLS-to-Upstash relies on a `cot` + `deadpool-redis` feature-unification HACK (see root `Cargo.toml`). It survives scoping only because the crate that needs it (`skeet-feed`) declares both deps directly, keeping them in the same scoped subtree. If a new crate needs TLS redis, it must declare `deadpool-redis` directly too.
+### Runner stages
+
+- `runner-base` (`debian:bookworm-slim` + ca-certificates) once; each
+  `runner-<name>` is `FROM runner-base` and just `COPY --from=builder /build/out/<bin>`
+  plus any config/`CMD`. These thin stages are the pushed images.
+- TLS-to-Upstash relies on a `cot` + `deadpool-redis` feature-unification HACK (see
+  root `Cargo.toml`); it holds because `skeet-feed` declares both deps directly.
 
 ## Platform targets
 
-- **pruner, live-refine, skeet-publish, optimise, cloudflare-exporter, openai-exporter**: `linux/arm64` (Hetzner ARM cluster)
-- **skeet-feed, skeet-appraise**: `linux/amd64` (fly.io shared tier; built emulated on Apple Silicon, ~4× slower than native arm64)
+- **`Dockerfile.cluster`** (`linux/arm64`, Hetzner): pruner, live-refine, skeet-publish, optimise, cloudflare-exporter, openai-exporter.
+- **`Dockerfile.fly`** (`linux/amd64`, fly.io shared tier; built emulated on Apple Silicon, ~4× slower than native arm64): skeet-feed, skeet-appraise.
 
 ## Adding a new service
 
-Copy an existing service Dockerfile (e.g. `Dockerfile.live-refine`) and set
-`-p <crate> --bin <bin>` on the build (see "Scope each image to its crate"). Keep
-the three cache mounts and the `/build/out/` copy-out, and set the `target/` mount
-`id=bobby-target-<arch>` to match the `--platform` you give it in `just/container.just`.
-Add `build-<name>`/`push-<name>` targets to `just/container.just`.
+Add a `-p <crate> --bin <bin>` to the relevant builder's `cargo build`, a `cp` of its
+binary into `/build/out/`, and a `runner-<name>` stage that copies it out. Add
+`build-<name>`/`push-<name>` recipes to `just/container.just` pointing at
+`-f Dockerfile.<cluster|fly> --target runner-<name>`. A new crate needing TLS redis
+must declare `deadpool-redis` directly (see the HACK above).
