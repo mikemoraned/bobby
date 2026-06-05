@@ -231,7 +231,7 @@ an OrbStack restart, to check the BuildKit cache survived it). It did.
   optimise 19.0s, cloudflare 5.3s, openai 3.9s. Total wall-clock **1:09:42** vs the 2h13m baseline.
   Caching across consecutive builds with unchanged deps not yet re-measured — this run still did
   full cooks because deps/toolchain changed since the prior run.)*
-* [ ] **Cross-image dep dedup via a shared builder stage + `--target`.** Same-machine
+* [x] **Cross-image dep dedup via a shared builder stage + `--target`.** Same-machine
   *repeat* builds are already a no-op (37.99s, log 110748); the remaining cost is the cold
   case where each image cooks the shared dep tree into its own `target/` (~63 min).
   **Done differently than first planned — two approaches tried and rejected before landing
@@ -259,9 +259,15 @@ an OrbStack restart, to check the BuildKit cache survived it). It did.
       `appraise.just` carry no base-image/deps plumbing.
     * [x] Update `.claude/rules/docker.md` (document the shared builder + `--target`; record why
       the pushed base and the per-service cache mount were both rejected).
-    * [ ] Re-measure cold and warm `cluster-deploy-all` vs the 1:09:42 / 37.99s baselines —
-      expectation: cold compiles the dep tree once in the first `--target` build, the other five
-      reuse the cached builder; warm stays a ~38s no-op.
+    * [x] Re-measure cold and warm `cluster-deploy-all` vs the 1:09:42 / 37.99s baselines —
+      confirmed. True cold (`docker buildx prune -af`, logs `cluster-deploy-cachemount-cold3`/
+      `warm3`): the first `--target` build (push-pruner) compiled the **whole tree once** —
+      `#13 DONE 1640.7s` (~27 min), 836 crates incl. all first-party and cold crate
+      re-downloads — and the other five all showed `#12`/`#13 CACHED` (0 compiles). Warm:
+      `0 Compiling`, every `#12 CACHED`. So deps compile once instead of per-image; even with
+      pruned download caches the single builder compile is well under half the 1:09:42 baseline,
+      and the other five images cost ~nothing. (Earlier partial-cold run `cold2` showed the same
+      structure with a warm mount: 125 crates, `#12 DONE 927.1s`.)
 
 * [~] **Exploit git-hash for layer caching — won't do.** BuildKit keys layers on content
   (recipe.json hash for the cook layer), not image tags; `BUILD_GIT_HASH` only busts the
