@@ -579,13 +579,19 @@ Both servers + 1Password items already exist. The old `BOBBY_REDIS_URL` / `bobby
 
 ###### D. Remove the live-calc source from `skeet-feed` and `skeet-appraise` — step 4
 
-* [ ] Once redis is confirmed, drop the `library` option from `skeet-feed` so it constructs only `RedisFeedSource`; remove the now-dead flag branch. **Keep `LiveFeedSource` in `skeet-publish`** — it's still used by the publisher (group B) and by `skeet-appraise`'s homepage. "Remove the live-calc implementation" means remove it as a *`skeet-feed` option*, not delete the code.
-* [ ] **`skeet-feed` no longer needs the store at all**: `getFeedSkeleton` reads redis, `did.json`/`describeFeedGenerator` use `FeedConfig` only. Drop `SkeetStore`/R2/SSE-C/model deps and args from the bin, the background cache refresh, and the corresponding `fly.staging.toml` args + secrets. This shrinking of the cold-start path is the prerequisite for group E.
-* [ ] update `skeet-appraise` to be able to use `RedisFeedSource` as it's source of truth for what's in the feed (this means what we see on appraise home page matches what is in the feed exactly):
-  * [ ] in `skeet-publish` extend what we save in redis to include the image ids of each item
-  * [ ] in `handlers.rs` in `home` inside `skeet-appriase`, `visible_entries` should be replaced with something which calls `RedisFeedSource` to get the `PublishedPairs`; probably requires a refactor of `skeleton` to extract the bit which gets the pairs.
-* [ ] at this point we should be able to delete `LiveFeedSource` as nothing should be using it all
-* [ ] there also is an opportunity for some refactoring here: `live_refine`, `skeet_publish` and `skeet_appraise` all use a lazy-load mechanism for different tables. This could possibly be extracted to a deduped area or crate.
+**Decisions (resolved on review):** split into two chunks — **D1** shrinks `skeet-feed` (small, unblocks group E), **D2** does the appraise migration + cleanup. Correction to the original note: `LiveFeedSource` is **not** used by the publisher or appraise (both call `visible_entries` directly) — its only users are `skeet-feed`'s library branch + the `feed_endpoints` / `publisher_equivalence` tests. So `visible_entries` stays (publisher needs it) but `LiveFeedSource` is genuinely deletable in D2.
+
+**D1 — `skeet-feed` → redis-only + storeless:**
+
+* [ ] Drop the `library` option from `skeet-feed` so it constructs only `RedisFeedSource`; remove the `--feed-source` flag + the dead branch.
+* [ ] **`skeet-feed` no longer needs the store at all**: `getFeedSkeleton` reads redis, `did.json`/`describeFeedGenerator` use `FeedConfig` only. Drop `StoreArgs`/`--model-path`/`SkeetStore`/`FeedCache`/background-refresh from the bin (+ unused deps), and the corresponding `fly.staging.toml` args + R2/SSE-C secrets (`bobby-feed-staging.env`). This shrinking of the cold-start path is the prerequisite for group E. *(Leaves `LiveFeedSource` in `skeet-publish` until D2; `feed_endpoints.rs` may keep using it as a fixture for now.)*
+
+**D2 — appraise reads the published list + cleanup:**
+
+* [ ] **`PublishedPair` gains `image_id`** (in `skeet-publish`) so appraise can join published items to live store detail. (The cid is already in `image_url`, but an explicit field is cleaner; update the schema's serde tests.)
+* [ ] **Appraise home = published list (set+order) ⋈ targeted store detail.** In `skeet-appraise/handlers.rs::home`, replace `visible_entries(&CachedFeed)` with: read the `recency-48h` `PublishedPair`s via `RedisFeedSource` (refactor `skeleton` to extract a reusable "get pairs" method), then fetch score + skeet/image appraisals for **exactly those `image_id`s** from the store (a targeted lookup, **not** `FeedCache`'s capped bulk fetch — a published item outside the cap would render blank). Appraise then needs `BOBBY_REDIS_PUBLISH_URL` (read-only) in addition to its admin redis.
+* [ ] **Delete `LiveFeedSource`** (no users once D1 lands) **and the `publisher_equivalence` test** (its comparison target, the library path, is gone). Rework `skeet-feed/tests/feed_endpoints.rs` to use a test-double `FeedSource` (or `RedisFeedSource`) instead of `LiveFeedSource`. Keep `visible_entries`.
+* [ ] **Extract the shared table-version lazy-load.** `live_refine`, `skeet_publish`, and `skeet_appraise` each lazy-load tables gated on version changes; pull the common mechanism (cf. `table_watch` + the snapshot-compare in `FeedCache`/`FeedPublisher`) into a shared module/crate.
 
 ###### E. Make `skeet-feed` suspendable — step 5
 
