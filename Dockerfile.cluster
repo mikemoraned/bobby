@@ -2,7 +2,7 @@
 # every shipped crate so the dep tree is built once; each runner-* target copies out
 # only its own binary. Build a given service with `--target runner-<name>` (see
 # just/container.just). See .claude/rules/docker.md "Shared builder + --target".
-FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm AS builder
+FROM rust:1.94-bookworm AS builder
 WORKDIR /build
 RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev && rm -rf /var/lib/apt/lists/*
 COPY . .
