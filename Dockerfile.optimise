@@ -1,15 +1,20 @@
-ARG DEPS_HASH
-FROM ghcr.io/mikemoraned/bobby/bobby-deps:${DEPS_HASH} AS builder
+FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm AS builder
 WORKDIR /build
+RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev && rm -rf /var/lib/apt/lists/*
 COPY . .
+# Shared arch-scoped target/ cache mount; binary copied out of the mount to
+# /build/out/. See .claude/rules/docker.md "Shared target/ cache mount".
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
-    cargo build --release -p skeet-store --bin optimise
+    --mount=type=cache,target=/build/target,id=bobby-target-arm64,sharing=locked \
+    cargo build --release -p skeet-store --bin optimise && \
+    mkdir -p /build/out && \
+    cp target/release/optimise /build/out/optimise
 
 FROM debian:bookworm-slim AS runner
 LABEL org.opencontainers.image.source=https://github.com/mikemoraned/bobby
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /build/target/release/optimise /usr/local/bin/optimise
+COPY --from=builder /build/out/optimise /usr/local/bin/optimise
 
 CMD ["optimise"]

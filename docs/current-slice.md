@@ -77,7 +77,7 @@ architecture-beta
 
 * [x] verify caching actually improves: with deps unchanged, touch only `<crate>/src/main.rs`, rebuild, and confirm the cook/deps layer is reused (no dependency recompile). This is the direct test of whether `-p` + chef fixes the "recompiles everything" symptom for source-only changes. *(Confirmed — see `/tmp/cluster-deploy-20260601-110748.log`: a no-deps-change re-run came back fully cached, **37.99s** total, 0 `Compiling` lines, 71 `CACHED` layers.)*\
 * [x] apply this same `-p` pattern when adding the `skeet-appraise` and `skeet-publish` Dockerfiles (Phases 1 and 3) rather than cloning a workspace-wide build
-* Cross-image dedup + git-hash layer caching folded into "Fix cook setup → Tasks" below (see the deps-base-image task) — git-hash layer caching researched and rejected there.
+* Cross-image dedup + git-hash layer caching folded into "Fix cook setup → Tasks" below (see the shared `target/` cache mount task) — git-hash layer caching researched and rejected there.
 
 ##### Fix cook setup
 
@@ -231,36 +231,41 @@ an OrbStack restart, to check the BuildKit cache survived it). It did.
   optimise 19.0s, cloudflare 5.3s, openai 3.9s. Total wall-clock **1:09:42** vs the 2h13m baseline.
   Caching across consecutive builds with unchanged deps not yet re-measured — this run still did
   full cooks because deps/toolchain changed since the prior run.)*
-* [ ] **Cross-image dep dedup via a shared deps base image (Option B).** Same-machine
+* [ ] **Cross-image dep dedup via a shared `target/` cache mount.** Same-machine
   *repeat* builds are already a no-op (37.99s, log 110748); the remaining cost is the cold
   case where each of the 5 images cooks the shared dep tree into its own `target/` (~63 min).
-  Cook the deps **once** into a pushed base image; services `FROM` it and only build first-party.
-    * [ ] `just` `deps-hash`: md5 of `Cargo.lock` + all `Cargo.toml` + `rust-toolchain.toml`
-      + `.cargo/config.toml` (sorted file list, deterministic). Coarse/fine only affects
-      cache-hit rate — cargo's fingerprinting keeps the binary correct either way.
-    * [ ] `Dockerfile.deps`: planner + whole-workspace cook (no `-p`), protoc install,
-      `COPY .cargo/` + `rust-toolchain.toml` before the cook, registry/git cache mounts.
-    * [ ] `build-deps`/`push-deps` in `container.just`: multi-arch
-      `--platform linux/arm64,linux/amd64 -t bobby-deps:<DEPS_HASH> --push` (manifest list —
-      `target/` is arch-specific and we ship both arches).
-    * [ ] Rewrite the 8 service Dockerfiles: global `ARG DEPS_HASH` → `FROM bobby-deps:${DEPS_HASH}`,
-      drop their planner+cook stages, keep `COPY . .` / `COPY models/` / `BUILD_GIT_HASH` /
-      the scoped `cargo build -p <crate> --bin <bin>` / runner.
-    * [ ] `cluster-deploy-all`: build+push the base first, **skipped when the
-      `bobby-deps:<hash>` tag already exists** (`docker manifest inspect`); pass
-      `--build-arg DEPS_HASH=$(deps-hash)` to every service build.
-    * [ ] Update `.claude/rules/docker.md` (drop "no shared base images"; document the base). *(Done ahead of implementation.)*
-    * [ ] Re-measure cold (deps-changed) and warm (deps-unchanged) `cluster-deploy-all` vs the
-      1:09:42 / 37.99s baselines.
+  **Done differently than first planned.** Option B (a pushed multi-arch deps base image,
+  `FROM bobby-deps:<hash>`) was fully implemented and *rejected* in testing: a cooked release
+  `target/` for the whole workspace × 2 arches is tens of GB, and the GHCR push was
+  pathological — the cold push ran `pushing layers 37547.5s` (10.4h) then failed, the warm
+  push hit repeated `502 Bad Gateway` (logs `cluster-deploy-deps-base-cold/warm`). The push
+  cost dwarfed the re-cook it was meant to save. Pivoted to the slice's stated alternative —
+  a shared `target/` cache mount — which dedups the cold cook with **no image to push at all**.
+  (Also surfaced: the amd64 cook is QEMU-emulated on Apple Silicon, ~72 min vs ~19 min native
+  arm64 — so multi-arch anything is expensive here regardless.)
+    * [x] Each service build is a single `cargo build --release -p <crate> --bin <bin>` (no
+      chef — a shared `target/` mount makes chef's separate-deps-layer redundant) with three
+      cache mounts: cargo registry, cargo git, and an **arch-scoped** `target/`
+      (`id=bobby-target-${TARGETARCH}`, `sharing=locked`). First build cooks the dep tree into
+      the mount; every later service build reuses it and compiles only first-party crates.
+    * [x] Artifacts live in the ephemeral mount, so the binary (and pruner's `.bpk`/`.rten`
+      baked from `target/`) is copied out to `/build/out/` inside the RUN, then `COPY --from`
+      in the runner stage. `Dockerfile.deps` deleted; `container.just`/`cluster.just`/
+      `feed.just`/`appraise.just` reverted to no base-image plumbing.
+    * [x] Update `.claude/rules/docker.md` (document the `target/` cache mount; record why the
+      pushed base was rejected).
+    * [ ] Re-measure cold (cache pruned) and warm `cluster-deploy-all` vs the 1:09:42 / 37.99s
+      baselines — expectation: cold cooks the dep tree once (first image), later images only
+      build first-party; warm stays a ~38s no-op.
 
 * [~] **Exploit git-hash for layer caching — won't do.** BuildKit keys layers on content
   (recipe.json hash for the cook layer), not image tags; `BUILD_GIT_HASH` only busts the
   final build layer by design. No extra caching available beyond `:latest` as a cache-from
-  ref. Superseded by the deps-base item above.
+  ref. Superseded by the shared `target/` cache mount item above.
 
 * [ ] **(deferred) Registry cache export** — `--cache-to type=registry,mode=max` + `--cache-from`
   for cross-machine/CI reuse, if builds ever move off this one warm OrbStack. Complementary to
-  the base image (cache mounts are builder-local); not needed while building locally.
+  the local `target/` cache mount (both are builder-local); not needed while building locally.
 
 * [x] **Fix the flags mismatch (the primary fix).** Copy `.cargo/` in *before* the cook so cook and
   build share one fingerprint, e.g. between the `recipe.json` copy and the cook step:
