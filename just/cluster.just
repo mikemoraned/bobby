@@ -111,7 +111,7 @@ cluster-deploy-openai-cost-exporter:
 cluster-logs-openai-cost-exporter:
     kubectl logs -l app=openai-cost-exporter --tail=100 -f | lnav
 
-cluster-deploy-all: push-pruner push-live-refine push-skeet-publish push-optimise push-cloudflare-exporter push-openai-exporter cluster-deploy-pruner cluster-deploy-live-refine cluster-deploy-skeet-publish cluster-deploy-optimise cluster-deploy-cloudflare-operations-exporter cluster-deploy-cloudflare-storage-exporter cluster-deploy-openai-cost-exporter
+cluster-deploy-all: push-deps-if-needed push-pruner push-live-refine push-skeet-publish push-optimise push-cloudflare-exporter push-openai-exporter cluster-deploy-pruner cluster-deploy-live-refine cluster-deploy-skeet-publish cluster-deploy-optimise cluster-deploy-cloudflare-operations-exporter cluster-deploy-cloudflare-storage-exporter cluster-deploy-openai-cost-exporter
 
 cluster-restart-all: cluster-restart-pruner cluster-restart-live-refine cluster-restart-skeet-publish
 

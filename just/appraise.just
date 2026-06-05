@@ -9,7 +9,7 @@ deploy_appraise_staging: deploy_appraise_staging_secrets deploy_appraise_staging
 deploy_appraise_staging_secrets:
     op inject -i bobby-appraisals-staging.env | grep "^BOBBY_\|^OTEL_" | fly secrets import --config fly.appraise-staging.toml
 
-deploy_appraise_staging_app: push-skeet-appraise
+deploy_appraise_staging_app: push-deps-if-needed push-skeet-appraise
     fly deploy --config fly.appraise-staging.toml --image {{ GHCR_REPO }}/skeet-appraise:{{ GIT_HASH }} --env "OTEL_RESOURCE_ATTRIBUTES=deployment.environment=fly,service.version={{ GIT_HASH }}"
 
 end_to_end_test_appraise_staging:

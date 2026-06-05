@@ -17,7 +17,7 @@ deploy_feed_staging: deploy_feed_staging_secrets deploy_feed_staging_app end_to_
 deploy_feed_staging_secrets:
     op inject -i bobby-feed-staging.env | grep "^BOBBY_\|^OTEL_" | fly secrets import --config fly.staging.toml
 
-deploy_feed_staging_app: push-skeet-feed
+deploy_feed_staging_app: push-deps-if-needed push-skeet-feed
     fly deploy --config fly.staging.toml --image {{ GHCR_REPO }}/skeet-feed:{{ GIT_HASH }} --env "OTEL_RESOURCE_ATTRIBUTES=deployment.environment=fly,service.version={{ GIT_HASH }}"
 
 end_to_end_test_feed_staging:
