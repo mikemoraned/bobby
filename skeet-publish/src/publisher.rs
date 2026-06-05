@@ -13,7 +13,7 @@ use crate::image_url_resolver::ImageUrlResolver;
 use crate::limit::Limit;
 use crate::order::Order;
 use crate::published_list::{PublishedList, PublishedListError};
-use crate::published_pair::PublishedPair;
+use crate::published::Published;
 use crate::table_watch::relevant;
 use crate::visibility::{FeedData, visible_entries};
 
@@ -56,13 +56,13 @@ impl FeedData for WindowedFeed {
 /// `now` and sort newest-first by `original_at`. Each surviving entry's
 /// representative image is resolved to a CDN url; entries whose image can't be
 /// resolved (non-`V3` ids) are dropped.
-pub fn pairs_for_spec<F: FeedData>(
+pub fn published_for_spec<F: FeedData>(
     feed: &F,
     order: Order,
     limit: Limit,
     resolver: &dyn ImageUrlResolver,
     now: DateTime<Utc>,
-) -> Vec<PublishedPair> {
+) -> Vec<Published> {
     let cutoff_us = (now - limit.window()).timestamp_micros();
 
     let mut windowed: Vec<(StoredImageSummary, Score, ModelVersion)> = visible_entries(feed)
@@ -83,8 +83,9 @@ pub fn pairs_for_spec<F: FeedData>(
         .filter_map(|(summary, _, _)| {
             resolver
                 .resolve(&summary.skeet_id, &summary.image_id)
-                .map(|image_url| PublishedPair {
+                .map(|image_url| Published {
                     image_url,
+                    image_id: summary.image_id,
                     skeet_id: summary.skeet_id,
                 })
         })
@@ -180,7 +181,7 @@ impl FeedPublisher {
     {
         let feed = self.fetch(now).await?;
         for (order, limit) in &self.specs {
-            let pairs = pairs_for_spec(&feed, *order, *limit, self.resolver.as_ref(), now);
+            let pairs = published_for_spec(&feed, *order, *limit, self.resolver.as_ref(), now);
             PublishedList::new(*order, *limit)
                 .replace(conn, &pairs, now)
                 .await?;
@@ -263,7 +264,7 @@ mod tests {
         }
     }
 
-    fn skeet_rkeys(pairs: &[PublishedPair]) -> Vec<String> {
+    fn skeet_rkeys(pairs: &[Published]) -> Vec<String> {
         pairs
             .iter()
             .map(|p| p.skeet_id.rkey().as_str().to_string())
@@ -278,7 +279,7 @@ mod tests {
             entry("newest", now - chrono::Duration::hours(1), 0.6),
             entry("middle", now - chrono::Duration::hours(5), 0.7),
         ]);
-        let pairs = pairs_for_spec(
+        let pairs = published_for_spec(
             &feed,
             Order::Recency,
             Limit::hours(48),
@@ -296,7 +297,7 @@ mod tests {
             entry("inside", now - chrono::Duration::hours(10), 0.9),
             entry("outside", now - chrono::Duration::hours(60), 0.9),
         ]);
-        let pairs = pairs_for_spec(
+        let pairs = published_for_spec(
             &feed,
             Order::Recency,
             Limit::hours(48),
@@ -314,7 +315,7 @@ mod tests {
             entry("visible", now - chrono::Duration::hours(1), 0.9),
             entry("hidden", now - chrono::Duration::hours(1), 0.1),
         ]);
-        let pairs = pairs_for_spec(
+        let pairs = published_for_spec(
             &feed,
             Order::Recency,
             Limit::hours(48),
@@ -336,7 +337,7 @@ mod tests {
             entry("ok", now - chrono::Duration::hours(1), 0.9),
             bad,
         ]);
-        let pairs = pairs_for_spec(
+        let pairs = published_for_spec(
             &feed,
             Order::Recency,
             Limit::hours(48),
@@ -359,7 +360,7 @@ mod tests {
                 appraiser: Appraiser::LocalAdmin,
             },
         );
-        let pairs = pairs_for_spec(
+        let pairs = published_for_spec(
             &feed,
             Order::Recency,
             Limit::hours(48),

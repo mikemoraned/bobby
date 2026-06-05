@@ -70,7 +70,7 @@ impl FeedSource for LiveFeedSource {
 
 /// `FeedSource` backed by a published redis list on the publish server.
 ///
-/// Reads the per-image `PublishedPair`s and dedups to a unique,
+/// Reads the per-image `Published`s and dedups to a unique,
 /// order-preserving list of skeet-ids — `getFeedSkeleton`'s view. The list
 /// already reflects the publisher's policy (visibility, recency order, window),
 /// so `force_refresh` is a no-op: there is nothing local to recompute.

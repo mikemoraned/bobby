@@ -11,7 +11,8 @@ use std::time::Duration;
 
 use chrono::Utc;
 use deadpool_redis::redis::{self, AsyncCommands};
-use skeet_publish::{ImageUrl, Limit, Order, PublishedList, PublishedPair};
+use shared::{BlueskyCid, ImageId};
+use skeet_publish::{ImageUrl, Limit, Order, Published, PublishedList};
 use skeet_store::SkeetId;
 use testcontainers::ContainerAsync;
 use testcontainers::runners::AsyncRunner;
@@ -55,12 +56,20 @@ async fn connect_with_retry(url: &str) -> redis::aio::MultiplexedConnection {
     }
 }
 
-fn pair(rkey: &str, cid: &str) -> PublishedPair {
-    PublishedPair {
+// Distinct, valid CIDv1 strings — content is irrelevant; we only need distinct,
+// parseable `V3` image ids.
+const CID_1: &str = "bafkreiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const CID_2: &str = "bafkreiabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const CID_3: &str = "bafkreiacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const CID_4: &str = "bafkreiadaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+fn pair(rkey: &str, cid: &str) -> Published {
+    Published {
         image_url: ImageUrl::new(format!(
             "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc/{cid}@jpeg"
         ))
         .expect("valid url"),
+        image_id: ImageId::V3(BlueskyCid::new(cid).expect("valid cid")),
         skeet_id: format!("at://did:plc:abc/app.bsky.feed.post/{rkey}")
             .parse::<SkeetId>()
             .expect("valid skeet id"),
@@ -72,14 +81,14 @@ async fn write_then_read_roundtrips_in_order_docker() {
     let (_container, mut conn) = start_redis().await;
     let list = PublishedList::new(Order::Recency, Limit::hours(48));
 
-    let pairs = vec![pair("rk1", "cidone"), pair("rk2", "cidtwo"), pair("rk3", "cidthree")];
+    let pairs = vec![pair("rk1", CID_1), pair("rk2", CID_2), pair("rk3", CID_3)];
     list.replace(&mut conn, &pairs, Utc::now()).await.expect("replace");
 
     let read = list.read(&mut conn).await.expect("read");
     assert_eq!(read, pairs, "read back the same pairs in the same order");
 
     // It really lives under the {order}-{limit} key.
-    let exists: bool = conn.exists("recency-48h").await.expect("exists");
+    let exists: bool = conn.exists("v2-recency-48h").await.expect("exists");
     assert!(exists);
 }
 
@@ -88,18 +97,18 @@ async fn replace_swaps_atomically_leaving_no_remnants_docker() {
     let (_container, mut conn) = start_redis().await;
     let list = PublishedList::new(Order::Recency, Limit::hours(48));
 
-    let first = vec![pair("rk1", "cidone"), pair("rk2", "cidtwo")];
+    let first = vec![pair("rk1", CID_1), pair("rk2", CID_2)];
     list.replace(&mut conn, &first, Utc::now()).await.expect("first replace");
 
     // A shorter second list must fully overwrite the first — no stale tail.
-    let second = vec![pair("rk9", "cidnine")];
+    let second = vec![pair("rk9", CID_4)];
     list.replace(&mut conn, &second, Utc::now()).await.expect("second replace");
 
     let read = list.read(&mut conn).await.expect("read");
     assert_eq!(read, second);
 
     // The scratch key used during the swap is gone.
-    let leftover: bool = conn.exists("recency-48h:building").await.expect("exists");
+    let leftover: bool = conn.exists("v2-recency-48h:building").await.expect("exists");
     assert!(!leftover, "scratch key should not survive a replace");
 }
 
@@ -108,14 +117,14 @@ async fn empty_replace_clears_the_list_docker() {
     let (_container, mut conn) = start_redis().await;
     let list = PublishedList::new(Order::Recency, Limit::days(7));
 
-    list.replace(&mut conn, &[pair("rk1", "cidone")], Utc::now())
+    list.replace(&mut conn, &[pair("rk1", CID_1)], Utc::now())
         .await
         .expect("seed");
     list.replace(&mut conn, &[], Utc::now()).await.expect("clear");
 
     let read = list.read(&mut conn).await.expect("read");
     assert!(read.is_empty());
-    let exists: bool = conn.exists("recency-7d").await.expect("exists");
+    let exists: bool = conn.exists("v2-recency-7d").await.expect("exists");
     assert!(!exists, "an empty list leaves no key");
 }
 
@@ -125,8 +134,8 @@ async fn distinct_names_do_not_collide_docker() {
     let short = PublishedList::new(Order::Recency, Limit::hours(48));
     let long = PublishedList::new(Order::Recency, Limit::days(7));
 
-    let short_pairs = vec![pair("rk1", "cidone")];
-    let long_pairs = vec![pair("rk2", "cidtwo"), pair("rk3", "cidthree")];
+    let short_pairs = vec![pair("rk1", CID_1)];
+    let long_pairs = vec![pair("rk2", CID_2), pair("rk3", CID_3)];
     short.replace(&mut conn, &short_pairs, Utc::now()).await.expect("short");
     long.replace(&mut conn, &long_pairs, Utc::now()).await.expect("long");
 
@@ -143,7 +152,7 @@ async fn refreshed_at_is_recorded_on_replace_docker() {
     assert!(list.refreshed_at(&mut conn).await.expect("read ts").is_none());
 
     let when = Utc::now();
-    list.replace(&mut conn, &[pair("rk1", "cidone")], when)
+    list.replace(&mut conn, &[pair("rk1", CID_1)], when)
         .await
         .expect("replace");
 

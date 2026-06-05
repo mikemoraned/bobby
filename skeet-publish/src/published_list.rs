@@ -3,7 +3,7 @@ use deadpool_redis::redis;
 
 use crate::limit::Limit;
 use crate::order::Order;
-use crate::published_pair::PublishedPair;
+use crate::published::{Published, SCHEMA_VERSION};
 
 /// A published redis list, identified by its `{order}-{limit}` name (e.g.
 /// `recency-48h`), with the read/write helpers both the publisher and
@@ -29,20 +29,23 @@ impl PublishedList {
         Self { order, limit }
     }
 
-    /// The redis key for this list: `{order}-{limit}`, e.g. `recency-48h`.
+    /// The redis key for this list: `{version}-{order}-{limit}`, e.g.
+    /// `v2-recency-48h`. The schema version prefixes the name so an
+    /// incompatible `Published` change doesn't collide with an old reader/writer
+    /// (see [`SCHEMA_VERSION`]).
     pub fn name(&self) -> String {
-        format!("{}-{}", self.order, self.limit)
+        format!("{SCHEMA_VERSION}-{}-{}", self.order, self.limit)
     }
 
     /// The scratch key the next list is built in before being swapped into
     /// place. Never read by consumers.
     fn building_key(&self) -> String {
-        format!("{}-{}:building", self.order, self.limit)
+        format!("{}:building", self.name())
     }
 
     /// The companion key holding when the list was last published (RFC 3339).
     fn refreshed_at_key(&self) -> String {
-        format!("{}-{}:refreshed-at", self.order, self.limit)
+        format!("{}:refreshed-at", self.name())
     }
 
     /// Atomically replace the list with `pairs` (preserving order) and record
@@ -58,7 +61,7 @@ impl PublishedList {
     pub async fn replace<C>(
         &self,
         conn: &mut C,
-        pairs: &[PublishedPair],
+        pairs: &[Published],
         refreshed_at: DateTime<Utc>,
     ) -> Result<(), PublishedListError>
     where
@@ -117,7 +120,7 @@ impl PublishedList {
     }
 
     /// Read the full list in stored order.
-    pub async fn read<C>(&self, conn: &mut C) -> Result<Vec<PublishedPair>, PublishedListError>
+    pub async fn read<C>(&self, conn: &mut C) -> Result<Vec<Published>, PublishedListError>
     where
         C: redis::aio::ConnectionLike + Send,
     {
@@ -138,16 +141,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn name_is_order_dash_limit() {
+    fn name_is_version_order_limit() {
         let list = PublishedList::new(Order::Recency, Limit::hours(48));
-        assert_eq!(list.name(), "recency-48h");
+        assert_eq!(list.name(), "v2-recency-48h");
     }
 
     #[test]
     fn name_components_parse_back() {
         let order: Order = "recency".parse().expect("order");
         let limit: Limit = "48h".parse().expect("limit");
-        assert_eq!(PublishedList::new(order, limit).name(), "recency-48h");
+        assert_eq!(PublishedList::new(order, limit).name(), "v2-recency-48h");
     }
 
     #[test]
