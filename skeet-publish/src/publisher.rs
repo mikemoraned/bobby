@@ -17,12 +17,11 @@ use crate::published::Published;
 use crate::table_watch::relevant;
 use crate::visibility::{FeedData, visible_entries};
 
-/// The publisher's own snapshot of scored skeets in a recency window, plus the
+/// The publisher's snapshot of scored skeets in a recency window, plus the
 /// manual appraisals and models the visibility policy needs.
 ///
-/// Structurally like `CachedFeed`, but assembled from an uncapped, recency-windowed
-/// store query rather than `FeedCache`'s top-by-score fetch. It implements
-/// [`FeedData`] so the shared visibility policy runs over it unchanged.
+/// Assembled from an uncapped, recency-windowed store query, and implements
+/// [`FeedData`] so the shared visibility policy runs over it.
 pub struct WindowedFeed {
     pub entries: Vec<(StoredImageSummary, Score, ModelVersion)>,
     pub skeet_appraisals: HashMap<SkeetId, Appraisal>,

@@ -1,7 +1,6 @@
 #![warn(clippy::all, clippy::nursery)]
 
 pub mod effective_band;
-pub mod feed_cache;
 pub mod image_url;
 pub mod image_url_resolver;
 pub mod limit;
@@ -15,7 +14,6 @@ pub mod source;
 pub mod table_watch;
 pub mod visibility;
 
-pub use feed_cache::{CachedFeed, FeedCache, RefreshOutcome};
 pub use image_url::{ImageUrl, InvalidImageUrl};
 pub use image_url_resolver::{CdnImageUrlResolver, ImageUrlResolver};
 pub use limit::{InvalidLimit, Limit};

@@ -8,9 +8,8 @@ use crate::effective_band::image_score_is_positive;
 /// The data the feed-visibility policy reads: the scored entries plus the manual
 /// band overrides and model registry needed to interpret each score.
 ///
-/// Implemented by `CachedFeed` (the library/serving path) and by the publisher's
-/// own windowed-query data, so the policy is decoupled from where the data comes
-/// from and from `FeedCache`.
+/// Implemented by the publisher's windowed-query data, so the policy is decoupled
+/// from where the data comes from.
 pub trait FeedData {
     fn entries(&self) -> &[(StoredImageSummary, Score, ModelVersion)];
     /// Manual band override for an image, if one has been set.
