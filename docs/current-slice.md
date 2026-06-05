@@ -554,11 +554,16 @@ Both servers + 1Password items already exist. The old `BOBBY_REDIS_URL` / `bobby
 * [x] **Add a feed-source selector flag** to `skeet-feed`, keeping enablement separate from config (rust rule): e.g. `--feed-source library|redis` (or `--use-redis-feed` + `--redis-publish-url`, env `BOBBY_REDIS_PUBLISH_URL`). It picks `LiveFeedSource` vs `RedisFeedSource` — both already implement `FeedSource`, so only the bin wiring changes; the handlers are untouched. *(Done — `skeet_feed.rs`: a `--feed-source library|redis` `ValueEnum` (default `library`, no behaviour change) + `--redis-publish-url` (env `BOBBY_REDIS_PUBLISH_URL`). Store/models/`FeedCache`/background-refresh are now built **only** in the library branch; redis just constructs `RedisFeedSource`. Handlers untouched. `--store-path` is still required by clap (unused in redis mode; group D removes it).)*
 * [x] **Re-add a redis client to `skeet-feed`** for the read path (it was dropped in Phase 2 with the cot sessions): `RedisFeedSource` (wrapping the `recency-48h` reader) over rustls TLS to the **publish** Upstash server (`BOBBY_REDIS_PUBLISH_URL`) — the same server `skeet-publish` writes to. *(Done — reuses `skeet-publish`'s `RedisFeedSource` (`Order::Recency`, `Limit::hours(48)`); no new dep on `skeet-feed` — the redis TLS comes via `skeet-publish`'s `deadpool-redis` feature, and the bin already installs the rustls ring provider. Local check: `just feed-redis`. Staging wired for redis: `fly.staging.toml` adds `--feed-source redis`, `bobby-feed-staging.env` adds `BOBBY_REDIS_PUBLISH_URL`.)*
 * [ ] **Deploy to `bobby-staging` told to use the redis source**, leave running for an afternoon, manually verify `getFeedSkeleton` (and the live Bluesky feed) still makes sense vs the library path.
-a
-###### D. Remove the live-calc source from `skeet-feed` — step 4
+
+###### D. Remove the live-calc source from `skeet-feed` and `skeet-appraise` — step 4
 
 * [ ] Once redis is confirmed, drop the `library` option from `skeet-feed` so it constructs only `RedisFeedSource`; remove the now-dead flag branch. **Keep `LiveFeedSource` in `skeet-publish`** — it's still used by the publisher (group B) and by `skeet-appraise`'s homepage. "Remove the live-calc implementation" means remove it as a *`skeet-feed` option*, not delete the code.
 * [ ] **`skeet-feed` no longer needs the store at all**: `getFeedSkeleton` reads redis, `did.json`/`describeFeedGenerator` use `FeedConfig` only. Drop `SkeetStore`/R2/SSE-C/model deps and args from the bin, the background cache refresh, and the corresponding `fly.staging.toml` args + secrets. This shrinking of the cold-start path is the prerequisite for group E.
+* [ ] update `skeet-appraise` to be able to use `RedisFeedSource` as it's source of truth for what's in the feed (this means what we see on appraise home page matches what is in the feed exactly):
+  * [ ] in `skeet-publish` extend what we save in redis to include the image ids of each item
+  * [ ] in `handlers.rs` in `home` inside `skeet-appriase`, `visible_entries` should be replaced with something which calls `RedisFeedSource` to get the `PublishedPairs`; probably requires a refactor of `skeleton` to extract the bit which gets the pairs.
+* [ ] at this point we should be able to delete `LiveFeedSource` as nothing should be using it all
+* [ ] there also is an opportunity for some refactoring here: `live_refine`, `skeet_publish` and `skeet_appraise` all use a lazy-load mechanism for different tables. This could possibly be extracted to a deduped area or crate.
 
 ###### E. Make `skeet-feed` suspendable — step 5
 
