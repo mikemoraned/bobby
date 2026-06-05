@@ -23,8 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 
 FROM runner-base AS runner-skeet-feed
 COPY --from=builder /build/out/skeet-feed /usr/local/bin/skeet-feed
-COPY config/refine.toml /etc/bobby/refine.toml
-CMD ["skeet-feed", "--model-path", "/etc/bobby/refine.toml"]
+CMD ["skeet-feed"]
 
 FROM runner-base AS runner-skeet-appraise
 COPY --from=builder /build/out/skeet-appraise /usr/local/bin/skeet-appraise

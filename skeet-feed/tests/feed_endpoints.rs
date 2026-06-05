@@ -13,23 +13,30 @@ use skeet_store::test_utils::{make_record, make_record_at, open_temp_store};
 use skeet_store::{DiscoveredAt, ModelVersion, Score, SkeetId, SkeetStore};
 use test_support::test_models;
 
+/// Default cache window for the library-path fixture (`max_age_hours` is a
+/// `FeedCache` concern, not part of the feed's serving config).
+const DEFAULT_MAX_AGE_HOURS: u64 = 48;
+
 fn test_params() -> FeedParams {
     FeedParams {
         hostname: "test.example.com".to_string(),
         publisher_did: "did:web:test.example.com".to_string(),
         feed_name: "bobby-dev".to_string(),
         max_entries: 10,
-        max_age_hours: 48,
     }
 }
 
 async fn client_for(store: SkeetStore, params: FeedParams) -> Client {
+    client_for_with_age(store, params, DEFAULT_MAX_AGE_HOURS).await
+}
+
+async fn client_for_with_age(store: SkeetStore, params: FeedParams, max_age_hours: u64) -> Client {
     let store = Arc::new(store);
     let cache = Arc::new(FeedCache::new(
         Arc::clone(&store),
         test_models(),
         params.max_entries,
-        params.max_age_hours,
+        max_age_hours,
     ));
     let feed_source: Arc<dyn FeedSource> = Arc::new(LiveFeedSource::new(Arc::clone(&cache)));
     let project = FeedProject {
@@ -192,7 +199,7 @@ async fn prefers_recent_posts_over_old_high_scores() {
 
     let mut params = test_params();
     params.max_entries = 2;
-    params.max_age_hours = 24;
+    let max_age_hours = 24;
 
     // Create 3 old posts (outside max_age_hours) with very high scores
     let three_days_ago = Utc::now() - chrono::Duration::hours(72);
@@ -222,7 +229,7 @@ async fn prefers_recent_posts_over_old_high_scores() {
         .expect("upsert score");
 
     let feed_uri = params.feed_uri();
-    let mut client = client_for(store, params).await;
+    let mut client = client_for_with_age(store, params, max_age_hours).await;
 
     let posts = feed_posts(&mut client, &feed_uri).await;
     assert_eq!(

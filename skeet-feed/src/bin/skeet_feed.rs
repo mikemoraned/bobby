@@ -1,32 +1,17 @@
 #![warn(clippy::all, clippy::nursery)]
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::Parser;
 use cot::project::Bootstrapper;
-use shared::RefineModels;
+use skeet_feed::FeedSourceLayer;
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
-use skeet_feed::FeedSourceLayer;
-use skeet_publish::{FeedCache, FeedSource, Limit, LiveFeedSource, Order, RedisFeedSource};
-use skeet_store::StoreArgs;
+use skeet_publish::{FeedSource, Limit, Order, RedisFeedSource};
 use tracing::info;
-
-/// Where `getFeedSkeleton` reads the feed from.
-#[derive(Clone, Copy, clap::ValueEnum)]
-enum FeedSourceKind {
-    /// Compute the feed live from the store via `FeedCache`.
-    Library,
-    /// Read the published `recency-48h` list from the redis publish server.
-    Redis,
-}
 
 #[derive(Parser)]
 struct Args {
-    #[command(flatten)]
-    store: StoreArgs,
-
     /// Hostname for the feed generator (used in DID and service endpoint)
     #[arg(long)]
     hostname: String,
@@ -47,28 +32,15 @@ struct Args {
     #[arg(long, default_value_t = 10)]
     max_entries: usize,
 
-    /// Maximum age in hours for posts to be included
-    #[arg(long, default_value_t = 48)]
-    max_age_hours: u64,
-
-    /// Path to the refine model registry (refine.toml)
-    #[arg(long, default_value = "config/refine.toml")]
-    model_path: PathBuf,
-
-    /// Which feed source to serve `getFeedSkeleton` from
-    #[arg(long, value_enum, default_value = "library")]
-    feed_source: FeedSourceKind,
-
-    /// Redis URL for the publish server (env: BOBBY_REDIS_PUBLISH_URL).
-    /// Required with `--feed-source redis`.
+    /// Redis URL for the publish server (env: BOBBY_REDIS_PUBLISH_URL)
     #[arg(long, env = "BOBBY_REDIS_PUBLISH_URL")]
-    redis_publish_url: Option<String>,
+    redis_publish_url: String,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Installs the process-global default exactly once at startup, so it cannot already
-    // be set; the `expect` keeps that failure reason explicit.
+    // The Upstash publish url is `rediss://`, so TLS runs through rustls — install
+    // the process-global crypto provider once before any connection is made.
     #[allow(clippy::expect_used)]
     rustls::crypto::ring::default_provider()
         .install_default()
@@ -76,8 +48,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
 
-    let _guard =
-        shared::tracing::init_with_file("skeet_feed=info,shared=info,skeet_store=info", "feed.log");
+    let _guard = shared::tracing::init_with_file(
+        "skeet_feed=info,skeet_publish=info,shared=info",
+        "feed.log",
+    );
     info!(git_hash = env!("BUILD_GIT_HASH"), "skeet-feed starting");
 
     let feed_params = FeedParams {
@@ -85,43 +59,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         publisher_did: args.publisher_did,
         feed_name: args.feed_name,
         max_entries: args.max_entries,
-        max_age_hours: args.max_age_hours,
     };
 
     info!(
         bind = %args.bind,
         hostname = %args.hostname,
         feed_uri = %feed_params.feed_uri(),
-        "starting skeet-feed server"
+        "starting skeet-feed server (feed from the redis publish server)"
     );
 
-    let feed_source: Arc<dyn FeedSource> = match args.feed_source {
-        FeedSourceKind::Library => {
-            let store = Arc::new(args.store.open_store("feed").await?);
-            let models = Arc::new(
-                RefineModels::load(&args.model_path)
-                    .unwrap_or_else(|e| panic!("failed to load {}: {e}", args.model_path.display())),
-            );
-            info!(path = %args.model_path.display(), "loaded refine models");
-            let cache = Arc::new(FeedCache::new(
-                store,
-                models,
-                feed_params.max_entries,
-                feed_params.max_age_hours,
-            ));
-            cache.spawn_background_refresh();
-            info!("serving feed from the live store (library)");
-            Arc::new(LiveFeedSource::new(cache))
-        }
-        FeedSourceKind::Redis => {
-            let url = args.redis_publish_url.ok_or(
-                "--redis-publish-url (env BOBBY_REDIS_PUBLISH_URL) is required with --feed-source redis",
-            )?;
-            info!("serving feed from the redis publish server");
-            // The Bluesky feed is the `recency-48h` list written by skeet-publish.
-            Arc::new(RedisFeedSource::new(url, Order::Recency, Limit::hours(48)))
-        }
-    };
+    // The Bluesky feed is the `recency-48h` list written by skeet-publish.
+    let feed_source: Arc<dyn FeedSource> = Arc::new(RedisFeedSource::new(
+        args.redis_publish_url,
+        Order::Recency,
+        Limit::hours(48),
+    ));
 
     let project = FeedProject {
         feed_source_layer: FeedSourceLayer::new(feed_source),

@@ -10910,6 +10910,8 @@ dependencies = [
  "skeet-store",
  "tempfile",
  "test-support",
+ "testcontainers",
+ "testcontainers-modules",
  "tokio",
  "tower",
  "tracing",
