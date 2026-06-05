@@ -10898,6 +10898,7 @@ dependencies = [
 name = "skeet-feed"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "build-support",
  "chrono",
  "clap",
@@ -10909,8 +10910,6 @@ dependencies = [
  "shared",
  "skeet-publish",
  "skeet-store",
- "tempfile",
- "test-support",
  "testcontainers",
  "testcontainers-modules",
  "tokio",

@@ -165,10 +165,8 @@ pub async fn get_feed_skeleton(
     Ok(response)
 }
 
-/// Minimal placeholder home page.
-///
-/// Phase 5 replaces this with the public image grid; until then the feed
-/// service's root just needs to be a valid page rather than a 404.
+/// Minimal placeholder home page, so the feed service's root is a valid page
+/// rather than a 404.
 #[instrument(skip_all)]
 pub async fn home() -> cot::Result<Html> {
     Ok(Html::new(

@@ -5,15 +5,24 @@
 
 mod common;
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use chrono::Utc;
-use common::{redis_url, scored_record, seed, v3, wait_ready};
+use common::{CIDS, redis_url, scored_record, seed, v3, wait_ready};
 use skeet_publish::{CdnImageUrlResolver, FeedPublisher, Limit, Order, PublishOutcome, connect};
 use skeet_store::test_utils::open_temp_store;
 use skeet_store::{ModelVersion, Score};
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::redis::Redis;
+
+/// Validates the shared `CIDS` fixtures parse to distinct `V3` ids, without
+/// Docker (so a bad fixture fails fast in `just test-no-docker`).
+#[test]
+fn hardcoded_cids_are_valid_and_distinct() {
+    let ids: HashSet<String> = (0..CIDS.len()).map(|i| v3(i).to_string()).collect();
+    assert_eq!(ids.len(), CIDS.len(), "cids must parse and be distinct");
+}
 
 #[tokio::test]
 async fn skips_publish_when_no_relevant_change_docker() {

@@ -25,5 +25,5 @@ pub use published_list::{PublishedList, PublishedListError};
 pub use published::Published;
 pub use publisher::{FeedPublisher, PublishError, PublishOutcome, WindowedFeed, published_for_spec};
 pub use redis_client::connect;
-pub use source::{FeedSkeleton, FeedSource, FeedSourceError, LiveFeedSource, RedisFeedSource};
+pub use source::{FeedSkeleton, FeedSource, FeedSourceError, RedisFeedSource};
 pub use visibility::{FeedData, visible_entries};

@@ -24,9 +24,8 @@ tracing = { workspace = true }
 build-support = { workspace = true }
 
 [dev-dependencies]
-skeet-store = { path = "../skeet-store", features = ["test-helpers"] }
-test-support = { workspace = true }
-tempfile = { workspace = true }
+async-trait = { workspace = true }
+skeet-store = { path = "../skeet-store" }
 testcontainers = { workspace = true }
 testcontainers-modules = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
