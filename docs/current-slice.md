@@ -612,8 +612,40 @@ Note that, if we sorted by score alone, we may not get the same result, as some 
 
 We should still publish all `recency` variants to redis, so we can choose between them in later slices.
 
+**Decisions (resolved on review):**
+* **The Bluesky feed (`skeet-feed` `getFeedSkeleton`) becomes `quality-48h`** — that's what "make quality the default sort order" means. `recency-48h` keeps being published for later slices; the feed just stops reading it.
+* **`skeet-appraise`'s home mirrors the feed** — it switches to `quality-48h` too, so the admin home shows the same order operators see live.
+* **The sort band is override-aware (min-rule), matching the visibility policy.** Each entry's sort band = `min(manual skeet band, manual image band else score-derived band)`. Within a band, entries sort by model `Score`, highest first. This is why band-then-score ≠ score-alone: a manual override moves an item's *band* but not its *score*.
+* **Fix the two-boundaries bug first (group 0).** Today visibility uses the model's trained `decision_threshold` (`image_score_is_positive`) while the score→band derivation uses `Band::from_score`'s fixed `0.5` MedLow/MedHigh cut. For a model with `decision_threshold ≠ 0.5` (e.g. `0.6` in `config/refine.toml`) these disagree — an item can show a `MedHigh` badge yet be hidden, and the new quality sort would inherit the inconsistency. The trained threshold is authoritative (it's the learned operating point — `skeet-refine` training/`refine_eval`), so the **band bends to the threshold**, not the reverse. Unify everything (visibility, quality sort, *and* the appraise display badges) on one **model-aware** effective band before adding the new order. **Scope: Tier 1 + Tier 2** — this re-threads `RefineModels` back into `skeet-appraise` (partly reversing D2's model-less appraise).
+* **No `Published`/schema change** → `SCHEMA_VERSION` stays `v2`; `quality-48h` is just a new list name (`v2-quality-48h`), no collision with `v2-recency-48h`.
+
 Tasks:
-...
+
+###### 0. Unify the feed boundary on a model-aware band (do first — fixes a latent bug)
+
+* [ ] **Add a model-aware `score_band`** (`skeet-publish/effective_band.rs`): `score_band(score: Score, threshold: Threshold) -> Band` whose MedLow→MedHigh boundary *is* the threshold, so `score_band(s, t) >= MedHigh` ⟺ `s >= t` (i.e. ⟺ `RefineModel::is_positive`). Split each half proportionally so it reduces exactly to `Band::from_score`'s `0.25/0.5/0.75` at `t = 0.5`: `Low [0, t/2)`, `MedLow [t/2, t)`, `MedHigh [t, t+(1-t)/2)`, `High [t+(1-t)/2, 1]`. Property-test: monotone in score; `>= MedHigh ⟺ s >= t`; equals `Band::from_score` when `t = 0.5`.
+* [ ] **Make `image_effective_band` model-aware**: change it to resolve the score→band via the producing model — `image_effective_band(score, model_version, models, manual_image_band) -> Band` (manual override still wins; otherwise `score_band(score, model.decision_threshold)`). Unknown `model_version` → treat as not-positive (the behaviour `image_score_is_positive` had: log + cap below MedHigh), so visibility is unchanged for stale models.
+* [ ] **Collapse the two boundaries into one in visibility** (`visibility.rs`): rewrite `visible_skeet_ids` to compute each image's model-aware `image_effective_band`, then per skeet use the extracted `skeet_effective_band` (below) and `is_visible_in_feed()`. **Delete `image_score_is_positive`** — visibility now reads the band, not a parallel positivity check. (`RefineModel::is_positive` stays; it's the authoritative definition that `score_band` is built on and is still used by training/eval.) The set of visible skeets must not change for the `t = 0.5` models — assert via the existing visibility tests.
+* [ ] **Extract `skeet_effective_band`** from `skeet_visible_in_feed` (`effective_band.rs`): `skeet_effective_band(manual_skeet_band: Option<Band>, image_effective_bands: &[Band]) -> Option<Band>` is the `min` it already computes; rewrite `skeet_visible_in_feed` as `skeet_effective_band(...).is_some_and(|b| b.is_visible_in_feed())` so visibility and the quality sort can never drift apart.
+* [ ] **Tier 2 — re-thread `RefineModels` into `skeet-appraise`** so its display badges use the same model-aware band as the feed: re-add `--model-path` + load `RefineModels` in `skeet_appraise.rs`, inject it (project/middleware) to `admin.rs` + `feed_snapshot.rs`, and replace their `Band::from_score(score)` / old `image_effective_band(score, manual)` calls with the model-aware form (both already have the row's `model_version` — `admin` via `scored`'s `mv`, `feed_snapshot` via the `(score, model_version)` it currently drops). Restore the appraise deploy plumbing D2 removed: `--model-path`/`refine.toml` in `Dockerfile.fly`, `fly.appraise-staging.toml`, `bobby-appraisals-staging.env`/`bobby-local.env`, and `just appraise`.
+* [ ] **Delete `Band::from_score`** (+ its property test) once the above leaves it unused — per the dead-code rule, and so no second, fixed-`0.5` boundary survives in any policy path. (If a caller outside the policy paths still needs it, that caller is suspect — route it through `score_band` instead.)
+
+###### A. Add the `Quality` order + sort (`skeet-publish`)
+
+* [ ] **Add `Order::Quality`** to `order.rs`: `Display`/`FromStr` for `"quality"`; extend the roundtrip/reject tests to cover it. Update the doc comment (drop the "only `Recency` exists today" framing).
+* [ ] **Implement the `Order::Quality` arm** in `published_for_spec` (`publisher.rs`): after the window+visibility filter (entries are already one-image-per-skeet), compute each entry's sort band via the group-0 path — `skeet_effective_band(feed.skeet_band(&skeet_id), &[image_effective_band(score, model_version, feed.models(), feed.image_band(&image_id))])` — then sort by `(band, score)` *descending* — band first (`HighQuality` before `MediumHigh`, via `Band`'s existing `Ord`), then `Score` (its `Ord` is `total_cmp`) highest-first within a band. Window/visibility/URL-resolution are unchanged — only the comparator differs from `Recency`.
+* [ ] **Unit tests for quality ordering** (mirror the recency tests in `publisher.rs`): (a) High-band entry sorts above a MedHigh-band entry even when its score is lower; (b) within one band, higher score first; (c) a manual band override reorders relative to score-alone — directly exercises the spec's note; (d) with a `decision_threshold = 0.6` model, a `0.55` score bands as MedLow (below the feed) — guards the group-0 fix.
+
+###### B. Publish both orders; point readers at `quality-48h`
+
+* [ ] **Publisher writes both lists**: add `--publish quality-48h` alongside `--publish recency-48h` in `infra/k8s/skeet-publish-deployment.yaml` and `just publish-r2`. No publisher code change — the generic `(Order, Limit)` loop already writes each spec.
+* [ ] **`skeet-feed` reads `quality-48h`**: change `RedisFeedSource::new(..., Order::Recency, Limit::hours(48))` → `Order::Quality` in `skeet_feed.rs` and fix the `recency-48h` comment. `getFeedSkeleton` still dedups to unique skeet-ids on read; only the backing list's order changes.
+* [ ] **`skeet-appraise` home reads `quality-48h`**: same one-line `Order::Recency` → `Order::Quality` change (+ comment) in `skeet_appraise.rs`.
+
+###### C. Verify + deploy
+
+* [ ] **Tests**: `just clippy`; `just test-no-docker`. Extend the publisher round-trip / equivalence `_docker` test so a `quality-48h` list round-trips (publisher writes → `RedisFeedSource` reads → quality order preserved). Run `just test` (Docker) before deploying.
+* [ ] **Deploy + manual check** (publisher first, so `quality-48h` exists before the readers switch): redeploy `skeet-publish`, then `skeet-feed` + `skeet-appraise`. Confirm the live Bluesky feed and appraise home show High-then-MedHigh-by-score ordering, and that `recency-48h` is still being written. `just end_to_end_test_feed_staging`.
 
 #### Phase 5: turn `skeet-feed` homepage into a simple-but-nice list of images
 
