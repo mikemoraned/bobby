@@ -16,12 +16,16 @@ pub const RELEVANT_TABLES: &[&str] = &[
 ];
 
 /// The relevant subset of a version snapshot — the table versions a feed
-/// recompute actually depends on. Two snapshots with equal relevant subsets
-/// mean nothing the feed cares about has moved.
-pub fn relevant(snapshot: &HashSet<Version>) -> HashSet<&Version> {
+/// recompute actually depends on.
+///
+/// Two snapshots with equal relevant subsets mean nothing the feed cares about
+/// has moved, so the result doubles as a version key to gate against (e.g. in a
+/// [`skeet_store::VersionedCache`]).
+pub fn relevant(snapshot: &HashSet<Version>) -> HashSet<Version> {
     snapshot
         .iter()
         .filter(|v| RELEVANT_TABLES.contains(&v.name.as_str()))
+        .cloned()
         .collect()
 }
 

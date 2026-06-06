@@ -6,6 +6,7 @@ use deadpool_redis::redis;
 use shared::{ImageId, RefineModels};
 use skeet_store::{
     Appraisal, ModelVersion, Score, SkeetId, SkeetStore, StoreError, StoredImageSummary, Version,
+    VersionedCache,
 };
 use tokio::sync::RwLock;
 
@@ -118,8 +119,8 @@ pub struct FeedPublisher {
     models: Arc<RefineModels>,
     resolver: Arc<dyn ImageUrlResolver>,
     specs: Vec<(Order, Limit)>,
-    /// The store version snapshot at the last publish, for change-gating.
-    last_snapshot: RwLock<Option<HashSet<Version>>>,
+    /// Gates republishing on the relevant table versions at the last publish.
+    last_relevant: RwLock<VersionedCache<HashSet<Version>, ()>>,
 }
 
 impl FeedPublisher {
@@ -134,7 +135,7 @@ impl FeedPublisher {
             models,
             resolver,
             specs,
-            last_snapshot: RwLock::new(None),
+            last_relevant: RwLock::new(VersionedCache::new()),
         }
     }
 
@@ -202,18 +203,14 @@ impl FeedPublisher {
         C: redis::aio::ConnectionLike + Send,
     {
         let snapshot = self.store.version_snapshot().await?;
-        let store_changed = {
-            let guard = self.last_snapshot.read().await;
-            guard
-                .as_ref()
-                .is_none_or(|prev| relevant(prev) != relevant(&snapshot))
-        };
-        if !store_changed && self.all_lists_present(conn).await? {
+        let key = relevant(&snapshot);
+        let store_unchanged = self.last_relevant.read().await.is_cached_current(&key);
+        if store_unchanged && self.all_lists_present(conn).await? {
             return Ok(PublishOutcome::Unchanged);
         }
 
         self.publish(conn, now).await?;
-        *self.last_snapshot.write().await = Some(snapshot);
+        self.last_relevant.write().await.cache(key, ());
         Ok(PublishOutcome::Published(self.specs.clone()))
     }
 

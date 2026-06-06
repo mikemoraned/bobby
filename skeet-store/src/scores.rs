@@ -12,10 +12,9 @@ use crate::schema::images_score_v2_schema;
 use crate::stored::batches_to_summaries;
 use crate::{ModelVersion, Score, SkeetStore, StoreError, StoredImageSummary};
 
-pub struct ScoresCache {
-    pub version: u64,
-    pub scores: HashMap<ImageId, (Score, ModelVersion)>,
-}
+/// The full scores table, keyed by image id — the value cached by
+/// `cached_scores`, gated on the scores table version.
+pub type ScoresMap = HashMap<ImageId, (Score, ModelVersion)>;
 
 impl SkeetStore {
     const MAX_SCORED_SUMMARIES: usize = 100;
@@ -281,18 +280,18 @@ impl SkeetStore {
     }
 
     #[instrument(skip(self))]
-    async fn cached_scores(&self) -> Result<HashMap<ImageId, (Score, ModelVersion)>, StoreError> {
+    async fn cached_scores(&self) -> Result<ScoresMap, StoreError> {
         let current_version = self.scores_table.version().await?;
 
-        // Fast path: check if cache is still valid
+        // Fast path: reuse the cache if it was built at this table version.
+        if let Some(scores) = self
+            .scores_cache
+            .read()
+            .await
+            .get_cached_if_current(&current_version)
         {
-            let cache = self.scores_cache.read().await;
-            if let Some(ref cached) = *cache
-                && cached.version == current_version
-            {
-                debug!(version = current_version, "scores cache hit");
-                return Ok(cached.scores.clone());
-            }
+            debug!(version = current_version, "scores cache hit");
+            return Ok(scores.clone());
         }
 
         // Slow path: full scan and cache update
@@ -326,12 +325,11 @@ impl SkeetStore {
             "scores cache refreshed"
         );
 
-        let result = scores.clone();
-        *self.scores_cache.write().await = Some(ScoresCache {
-            version: current_version,
-            scores,
-        });
-        Ok(result)
+        self.scores_cache
+            .write()
+            .await
+            .cache(current_version, scores.clone());
+        Ok(scores)
     }
 
     #[instrument(skip(self, top_scores))]
