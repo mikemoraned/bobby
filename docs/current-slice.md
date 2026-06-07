@@ -649,7 +649,7 @@ Tasks:
 ###### C. Verify + deploy
 
 * [x] **Tests**: `just clippy`; `just test-no-docker`. Extend the publisher round-trip / equivalence `_docker` test so a `quality-48h` list round-trips (publisher writes → `RedisFeedSource` reads → quality order preserved). Run `just test` (Docker) before deploying.
-* [ ] **Deploy + manual check** (publisher first, so `quality-48h` exists before the readers switch): redeploy `skeet-publish`, then `skeet-feed` + `skeet-appraise`. Confirm the live Bluesky feed and appraise home show High-then-MedHigh-by-score ordering, and that `recency-48h` is still being written. `just end_to_end_test_feed_staging`.
+* [x] **Deploy + manual check** (publisher first, so `quality-48h` exists before the readers switch): redeploy `skeet-publish`, then `skeet-feed` + `skeet-appraise`. Confirm the live Bluesky feed and appraise home show High-then-MedHigh-by-score ordering, and that `recency-48h` is still being written. `just end_to_end_test_feed_staging`.
 
 #### Phase 5: turn `skeet-feed` homepage into a simple-but-nice list of images
 
