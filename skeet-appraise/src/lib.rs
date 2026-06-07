@@ -4,6 +4,7 @@ pub mod admin;
 pub mod appraiser_config;
 pub mod auth;
 pub mod auth_config;
+pub mod available_feeds;
 pub mod feed_snapshot;
 pub mod handlers;
 mod models_middleware;

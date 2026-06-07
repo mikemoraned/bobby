@@ -11,6 +11,7 @@ pub mod published;
 pub mod publisher;
 pub mod redis_client;
 pub mod source;
+pub mod spec;
 pub mod table_watch;
 pub mod visibility;
 
@@ -23,6 +24,7 @@ pub use published_list::{PublishedList, PublishedListError};
 pub use published::PublishedImage;
 pub use publisher::{FeedPublisher, PublishError, PublishOutcome, WindowedFeed, published_for_spec};
 pub use redis_client::connect;
+pub use spec::{InvalidSpec, parse_spec};
 pub use source::{
     FeedSkeleton, FeedSource, FeedSourceError, PublishedImages, PublishedImagesSource,
     RedisFeedSource,

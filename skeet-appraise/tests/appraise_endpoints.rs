@@ -15,13 +15,12 @@ use cot::test::Client;
 use deadpool_redis::redis::aio::MultiplexedConnection;
 use shared::{Appraiser, BlueskyCid, ImageId};
 use skeet_appraise::auth_config::OAuthConfig;
+use skeet_appraise::available_feeds::AvailableFeeds;
 use skeet_appraise::project::AppraiseProject;
 use skeet_appraise::{
     AppraiserLayer, ModelsLayer, OAuthConfigLayer, PublishedFeedLayer, StartedAtLayer, StoreLayer,
 };
-use skeet_publish::{
-    ImageUrl, Limit, Order, PublishedImage, PublishedList, RedisFeedSource, connect,
-};
+use skeet_publish::{ImageUrl, Limit, Order, PublishedImage, PublishedList, connect};
 use test_support::test_models;
 use skeet_store::test_utils::{make_record, make_record_at, open_temp_store, test_image};
 use skeet_store::{DiscoveredAt, ImageRecord, ModelVersion, OriginalAt, Score, SkeetId, SkeetStore, Zone};
@@ -38,14 +37,25 @@ async fn client_for(store: SkeetStore) -> Client {
     client_for_with_feed(Arc::new(store), DUMMY_REDIS_URL).await
 }
 
+/// The three published lists the appraise home offers, all against `redis_url`
+/// (`quality-48h` is the default, matching deployment).
+fn test_feeds(redis_url: &str) -> Arc<AvailableFeeds> {
+    Arc::new(
+        AvailableFeeds::new(
+            redis_url,
+            vec![
+                (Order::Quality, Limit::hours(48)),
+                (Order::Quality, Limit::days(7)),
+                (Order::Recency, Limit::hours(48)),
+            ],
+        )
+        .expect("at least one feed"),
+    )
+}
+
 async fn client_for_with_feed(store: Arc<SkeetStore>, redis_url: &str) -> Client {
-    let feed = Arc::new(RedisFeedSource::new(
-        redis_url,
-        Order::Recency,
-        Limit::hours(48),
-    ));
     let project = AppraiseProject {
-        published_feed_layer: PublishedFeedLayer::new(feed),
+        published_feed_layer: PublishedFeedLayer::new(test_feeds(redis_url)),
         store_layer: StoreLayer::from_shared(store),
         models_layer: ModelsLayer::from_shared(test_models()),
         appraiser_layer: AppraiserLayer::new(Some(Arc::new(Appraiser::LocalAdmin))),
@@ -184,6 +194,49 @@ async fn connect_ready(url: &str) -> MultiplexedConnection {
     panic!("redis container not reachable at {url} within 10s");
 }
 
+/// Add and score a V3 store image for `cid`/`rkey`, returning a `PublishedImage`
+/// referencing it (its `image_id` matches the store record, so the home join
+/// finds the score).
+async fn seed_and_publishable(
+    store: &SkeetStore,
+    rkey: &str,
+    cid: &str,
+    score: f32,
+) -> PublishedImage {
+    let image_id = ImageId::V3(BlueskyCid::new(cid).expect("valid cid"));
+    let skeet_id: SkeetId = format!("at://did:plc:abc/app.bsky.feed.post/{rkey}")
+        .parse()
+        .expect("valid skeet id");
+    let record = ImageRecord {
+        image_id: image_id.clone(),
+        skeet_id: skeet_id.clone(),
+        image: test_image(),
+        discovered_at: DiscoveredAt::now(),
+        original_at: OriginalAt::new(Utc::now()),
+        zone: Zone::TopRight,
+        annotated_image: test_image(),
+        config_version: ModelVersion::from("test"),
+        detected_text: String::new(),
+    };
+    store.add(&record).await.expect("add record");
+    store
+        .upsert_score(
+            &image_id,
+            &Score::new(score).expect("valid score"),
+            &ModelVersion::from("test"),
+        )
+        .await
+        .expect("upsert score");
+    PublishedImage {
+        image_url: ImageUrl::new(format!(
+            "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc/{cid}@jpeg"
+        ))
+        .expect("valid url"),
+        image_id,
+        skeet_id,
+    }
+}
+
 /// The home page renders exactly the published list joined to live store detail:
 /// publish one item whose `image_id` matches a scored store image, then assert
 /// the page shows it (Bluesky link + the joined-in score).
@@ -235,7 +288,7 @@ async fn home_page_shows_published_entries_docker() {
         image_id,
         skeet_id,
     };
-    PublishedList::new(Order::Recency, Limit::hours(48))
+    PublishedList::new(Order::Quality, Limit::hours(48))
         .replace(&mut conn, &[published], Utc::now())
         .await
         .expect("publish");
@@ -248,6 +301,62 @@ async fn home_page_shows_published_entries_docker() {
         "home should link the published skeet"
     );
     assert!(body.contains("0.85"), "home should show the joined-in score");
+}
+
+/// The home page reads the published list named by `?feed=`, defaulting to
+/// `quality-48h`. Publish distinct items to `quality-48h` and `quality-7d` and
+/// assert each selection shows its own item, with the dropdown defaulting to
+/// `quality-48h`.
+#[tokio::test]
+async fn home_selects_feed_from_query_docker() {
+    const CID_48H: &str = "bafkreiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const CID_7D: &str = "bafkreiabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let store = Arc::new(open_temp_store(&dir).await);
+
+    let item_48h = seed_and_publishable(&store, "q48", CID_48H, 0.80).await;
+    let item_7d = seed_and_publishable(&store, "q7d", CID_7D, 0.80).await;
+
+    let container = Redis::default().start().await.expect("start redis");
+    let host = container.get_host().await.expect("redis host");
+    let port = container
+        .get_host_port_ipv4(REDIS_PORT)
+        .await
+        .expect("redis port");
+    let redis_url = format!("redis://{host}:{port}");
+    let mut conn = connect_ready(&redis_url).await;
+    PublishedList::new(Order::Quality, Limit::hours(48))
+        .replace(&mut conn, &[item_48h], Utc::now())
+        .await
+        .expect("publish 48h");
+    PublishedList::new(Order::Quality, Limit::days(7))
+        .replace(&mut conn, &[item_7d], Utc::now())
+        .await
+        .expect("publish 7d");
+
+    let mut client = client_for_with_feed(Arc::clone(&store), &redis_url).await;
+
+    // Default selection is quality-48h: shows its item, marks the dropdown
+    // default, and does not show the quality-7d item.
+    let (status, body) = get_body(&mut client, "/").await;
+    assert_eq!(status, 200);
+    assert!(body.contains("post/q48"), "default should show the quality-48h item");
+    assert!(!body.contains("post/q7d"), "default should not show the quality-7d item");
+    assert!(
+        body.contains(r#"value="quality-48h" selected"#),
+        "dropdown should default to quality-48h"
+    );
+
+    // Selecting quality-7d shows that list's item instead.
+    let (status, body) = get_body(&mut client, "/?feed=quality-7d").await;
+    assert_eq!(status, 200);
+    assert!(body.contains("post/q7d"), "?feed=quality-7d should show the 7d item");
+    assert!(!body.contains("post/q48"), "?feed=quality-7d should not show the 48h item");
+    assert!(
+        body.contains(r#"value="quality-7d" selected"#),
+        "dropdown should mark quality-7d selected"
+    );
 }
 
 /// A manual skeet band must cap the band shown on the home view: a `0.95` score
@@ -302,7 +411,7 @@ async fn home_effective_band_is_capped_by_manual_skeet_band_docker() {
         image_id,
         skeet_id: skeet_id.clone(),
     };
-    PublishedList::new(Order::Recency, Limit::hours(48))
+    PublishedList::new(Order::Quality, Limit::hours(48))
         .replace(&mut conn, &[published], Utc::now())
         .await
         .expect("publish");
@@ -632,11 +741,6 @@ async fn oauth_client(
     dir: &tempfile::TempDir,
 ) -> Client {
     let store = Arc::new(open_temp_store(dir).await);
-    let feed = Arc::new(RedisFeedSource::new(
-        DUMMY_REDIS_URL,
-        Order::Recency,
-        Limit::hours(48),
-    ));
     let oauth_config = OAuthConfig::with_urls(
         "test-client-id".to_string(),
         "test-client-secret".to_string(),
@@ -646,7 +750,7 @@ async fn oauth_client(
         mock_server.uri().to_string(),
     );
     let project = AppraiseProject {
-        published_feed_layer: PublishedFeedLayer::new(feed),
+        published_feed_layer: PublishedFeedLayer::new(test_feeds(DUMMY_REDIS_URL)),
         store_layer: StoreLayer::from_shared(store),
         models_layer: ModelsLayer::from_shared(test_models()),
         appraiser_layer: AppraiserLayer::new(None),

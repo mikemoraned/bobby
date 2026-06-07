@@ -15,6 +15,11 @@
                 padding: 0 1rem;
             }
             h1 { text-align: center; }
+            .feed-select {
+                text-align: center;
+                margin-bottom: 1.5rem;
+            }
+            .feed-select select { font-size: 0.95rem; padding: 0.2rem; }
             .empty { color: #666; text-align: center; margin-top: 2rem; }
             .grid {
                 display: grid;
@@ -83,6 +88,15 @@
     </head>
     <body>
         <h1>Bobby Feed</h1>
+        <form method="get" class="feed-select">
+            <label for="feed">Feed</label>
+            <select id="feed" name="feed" onchange="this.form.submit()">
+{% for feed in feeds %}
+                <option value="{{ feed.value }}"{% if feed.selected %} selected{% endif %}>{{ feed.value }}</option>
+{% endfor %}
+            </select>
+            <button type="submit">Show</button>
+        </form>
 {% if entries.is_empty() %}
         <p class="empty">No visible items in the feed right now.</p>
 {% else %}

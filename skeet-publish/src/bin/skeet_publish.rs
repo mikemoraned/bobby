@@ -9,7 +9,7 @@ use clap::Parser;
 use shared::RefineModels;
 use skeet_publish::{
     CdnImageUrlResolver, FeedPublisher, Limit, Order, PublishMetrics, PublishOutcome,
-    PublishedList, connect,
+    PublishedList, connect, parse_spec,
 };
 use skeet_store::StoreArgs;
 use tracing::{info, warn};
@@ -42,15 +42,6 @@ struct Args {
     /// Publish a single cycle and exit (for local verification)
     #[arg(long, default_value_t = false)]
     once: bool,
-}
-
-fn parse_spec(s: &str) -> Result<(Order, Limit), String> {
-    let (order, limit) = s
-        .split_once('-')
-        .ok_or_else(|| format!("expected <order>-<limit>, got {s:?}"))?;
-    let order: Order = order.parse().map_err(|e| format!("{e}"))?;
-    let limit: Limit = limit.parse().map_err(|e| format!("{e}"))?;
-    Ok((order, limit))
 }
 
 #[tokio::main]

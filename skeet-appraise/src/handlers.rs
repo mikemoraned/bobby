@@ -3,14 +3,16 @@ use std::io::Cursor;
 use cot::html::Html;
 use cot::http::HeaderValue;
 use cot::http::request::Parts as RequestHead;
-use cot::request::extractors::Path;
+use cot::request::extractors::{Path, UrlQuery};
 use cot::response::Response;
 use cot::{Body, StatusCode, Template};
+use serde::Deserialize;
 use shared::{Band, ImageId};
 use tracing::{info, instrument, warn};
 
 use crate::AppraiserExtractor;
 use crate::Store;
+use crate::available_feeds::FeedOption;
 use crate::feed_snapshot::FeedSnapshotSource;
 
 pub struct HomeEntry {
@@ -49,25 +51,33 @@ pub fn band_options() -> Vec<BandOption> {
         .collect()
 }
 
+#[derive(Deserialize)]
+pub struct HomeQuery {
+    feed: Option<String>,
+}
+
 #[derive(Template)]
 #[template(path = "home.html")]
 struct HomeTemplate {
     entries: Vec<HomeEntry>,
     is_admin: bool,
     band_options: Vec<BandOption>,
+    feeds: Vec<FeedOption>,
 }
 
 #[instrument(skip_all)]
 pub async fn home(
     AppraiserExtractor(appraiser): AppraiserExtractor,
     snapshot_source: FeedSnapshotSource,
+    UrlQuery(query): UrlQuery<HomeQuery>,
 ) -> cot::Result<Html> {
-    info!("serving home");
+    let spec = snapshot_source.resolve(query.feed.as_deref());
+    info!(order = %spec.0, limit = %spec.1, "serving home");
 
     let is_admin = appraiser.is_some();
 
     let snapshot = snapshot_source
-        .load()
+        .load(spec)
         .await
         .map_err(|e| cot::Error::internal(format!("failed to load feed snapshot: {e}")))?;
 
@@ -102,6 +112,7 @@ pub async fn home(
         entries,
         is_admin,
         band_options: band_options(),
+        feeds: snapshot_source.options(spec),
     }
     .render()?;
     Ok(Html::new(rendered))

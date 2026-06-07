@@ -1,21 +1,23 @@
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use skeet_publish::RedisFeedSource;
 use tower::{Layer, Service};
 
-/// Injects the published-feed reader (`Arc<RedisFeedSource>`) into request extensions.
+use crate::available_feeds::AvailableFeeds;
+
+/// Injects the configured published feeds (`Arc<AvailableFeeds>`) into request
+/// extensions.
 ///
-/// The home page renders exactly what the Bluesky feed publishes, joined to live
-/// store detail. Read it via [`crate::feed_snapshot::FeedSnapshotSource`].
+/// The home page renders whichever published list the viewer selects, joined to
+/// live store detail. Read it via [`crate::feed_snapshot::FeedSnapshotSource`].
 #[derive(Clone)]
 pub struct PublishedFeedLayer {
-    feed: Arc<RedisFeedSource>,
+    feeds: Arc<AvailableFeeds>,
 }
 
 impl PublishedFeedLayer {
-    pub const fn new(feed: Arc<RedisFeedSource>) -> Self {
-        Self { feed }
+    pub const fn new(feeds: Arc<AvailableFeeds>) -> Self {
+        Self { feeds }
     }
 }
 
@@ -25,7 +27,7 @@ impl<S> Layer<S> for PublishedFeedLayer {
     fn layer(&self, inner: S) -> Self::Service {
         PublishedFeedService {
             inner,
-            feed: self.feed.clone(),
+            feeds: self.feeds.clone(),
         }
     }
 }
@@ -33,7 +35,7 @@ impl<S> Layer<S> for PublishedFeedLayer {
 #[derive(Clone)]
 pub struct PublishedFeedService<S> {
     inner: S,
-    feed: Arc<RedisFeedSource>,
+    feeds: Arc<AvailableFeeds>,
 }
 
 impl<S, ReqBody> Service<cot::http::Request<ReqBody>> for PublishedFeedService<S>
@@ -49,7 +51,7 @@ where
     }
 
     fn call(&mut self, mut req: cot::http::Request<ReqBody>) -> Self::Future {
-        req.extensions_mut().insert(self.feed.clone());
+        req.extensions_mut().insert(self.feeds.clone());
         self.inner.call(req)
     }
 }

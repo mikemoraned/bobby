@@ -17,11 +17,12 @@ use common::{extract_query_param, extract_session_cookie, get_with_cookie, mount
 use cot::test::Client;
 use rcgen::{CertificateParams, KeyPair};
 use skeet_appraise::auth_config::OAuthConfig;
+use skeet_appraise::available_feeds::AvailableFeeds;
 use skeet_appraise::project::AppraiseProject;
 use skeet_appraise::{
     AppraiserLayer, ModelsLayer, OAuthConfigLayer, PublishedFeedLayer, StartedAtLayer, StoreLayer,
 };
-use skeet_publish::{Limit, Order, RedisFeedSource};
+use skeet_publish::{Limit, Order};
 use test_support::test_models;
 use skeet_store::test_utils::{make_record, open_temp_store};
 use skeet_store::{ModelVersion, Score, SkeetStore};
@@ -41,11 +42,6 @@ async fn oauth_client_with_redis(
     redis_url: &str,
     store: Arc<SkeetStore>,
 ) -> Client {
-    let feed = Arc::new(RedisFeedSource::new(
-        DUMMY_PUBLISH_URL,
-        Order::Recency,
-        Limit::hours(48),
-    ));
     let oauth_config = OAuthConfig::with_urls(
         "test-client-id".to_string(),
         "test-client-secret".to_string(),
@@ -55,7 +51,10 @@ async fn oauth_client_with_redis(
         mock_server.uri().to_string(),
     );
     let project = AppraiseProject {
-        published_feed_layer: PublishedFeedLayer::new(feed),
+        published_feed_layer: PublishedFeedLayer::new(Arc::new(
+            AvailableFeeds::new(DUMMY_PUBLISH_URL, vec![(Order::Quality, Limit::hours(48))])
+                .expect("one feed"),
+        )),
         store_layer: StoreLayer::from_shared(store),
         models_layer: ModelsLayer::from_shared(test_models()),
         appraiser_layer: AppraiserLayer::new(None),
