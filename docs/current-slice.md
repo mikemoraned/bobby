@@ -677,6 +677,16 @@ Decisions baked in (flagged where a real choice exists):
 * [x] **Read `quality-7d`** via the generic `RedisPublishedList::new(Order::quality, Limit(7d))` reader from Phase 3 B (no new reader type) → `Vec<PublishedPair>` + `refreshed_at`, reusing the same resilient TLS redis pool. Keep the cold-start path lazy (read on first request) so suspend/resume stays fast. *(Added a narrow `PublishedImagesSource` trait + `PublishedImages` in `skeet-publish` — separate from `FeedSource` since the page needs the full per-image list, not the deduped skeleton — impl'd on the existing `RedisFeedSource` via its `published()`. A second `RedisFeedSource(quality-7d)` instance is wired through a `PublishedImagesSourceLayer`. The published-pair type is `PublishedImage`.)*
 * [x] **Replace `/`'s placeholder** (the Phase-2 stub) with the page handler: server-render a JS-free css-grid of `<a href="{bsky_url}"><img src="{cdn_thumb}" loading="lazy" …></a>` cards in list order. Inline the `<style>` (single request, nothing to cache-bust). `did.json` / `describeFeedGenerator` / `getFeedSkeleton` are untouched. *(cot `Template`, `skeet-feed/templates/home.html`.)*
 * [x] **Layout**: start with **uniform aspect-ratio tiles** (`aspect-ratio` + `object-fit: cover`) — zero layout shift, no image dimensions needed, true css-grid per the brief. *(If we later want real variable-height masonry, that needs either CSS `column-count` or carrying width/height in `PublishedPair` — defer unless wanted.)*
+* [ ] we see some images are missing on the CDN, and when we click through to bluesky it shows "Post not Found" we should handle this by:
+  * [ ] extending publisher so that it does a live check against a couple of things:
+    * check the skeet still exist by checking against the bluesky API's to check if the the skeet has gone
+    * check the CDN URL is valid by doing a fetch of it (a HEAD request might be enough) to check if it still exists
+    * record these as new booleane attributes of a `PublishedImage`: `image_url_exists` and `skeet_id_exists`
+    * this will need to be published as a new `v3` of the lists as we have extended it in ways current clients won't understand
+  * [ ] do a deploy of publisher where it only now updates the `v3` versions of these lists
+  * [ ] update `FeedSource` for `RedisFeedSource` so that it reads `v3` lists and filters out anything where `image_url_exists` or `skeet_id_exists` are false
+  * [ ] update home of `skeet-feed` so that it also reads and filters out as similarly
+  * [ ] update `skeet-appraise` so that it still shows everything in feed (as it's images come from elsewhere) but annotated with a small indicator for each to show status of `image_url_exists` or `skeet_id_exists`
 
 ###### C. Caching + polish
 
