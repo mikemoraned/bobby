@@ -16,7 +16,7 @@ use crate::order::Order;
 use crate::published::Published;
 use crate::published_list::{PublishedList, PublishedListError};
 use crate::table_watch::relevant;
-use crate::visibility::{FeedData, visible_entries};
+use crate::visibility::FeedData;
 
 /// The publisher's snapshot of scored skeets in a recency window, plus the
 /// manual appraisals and models the visibility policy needs.
@@ -50,7 +50,7 @@ impl FeedData for WindowedFeed {
 
 /// Compute the published pairs for one `(order, limit)` spec from a feed.
 ///
-/// Reuses the visibility policy ([`visible_entries`]) to choose *which* skeets
+/// Reuses the visibility policy ([`FeedData::visible_entries`]) to choose *which* skeets
 /// are allowed, then applies the spec's ordering and window: for
 /// [`Order::Recency`], keep only entries published within `limit.window()` of
 /// `now` and sort newest-first by `original_at`. Each surviving entry's
@@ -65,7 +65,8 @@ pub fn published_for_spec<F: FeedData>(
 ) -> Vec<Published> {
     let cutoff_us = (now - limit.window()).timestamp_micros();
 
-    let mut windowed: Vec<(StoredImageSummary, Score, ModelVersion)> = visible_entries(feed)
+    let mut windowed: Vec<(StoredImageSummary, Score, ModelVersion)> = feed
+        .visible_entries()
         .into_iter()
         .filter(|(summary, _, _)| summary.original_at.timestamp_micros() >= cutoff_us)
         .collect();

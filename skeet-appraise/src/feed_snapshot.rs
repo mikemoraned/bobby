@@ -1,5 +1,8 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
+use cot::http::request::Parts as RequestHead;
+use cot::request::extractors::FromRequestHead;
 use shared::{Band, ImageId, RefineModels};
 use skeet_publish::RedisFeedSource;
 use skeet_publish::effective_band::image_effective_band;
@@ -26,27 +29,60 @@ pub struct FeedSnapshot {
     pub items: Vec<FeedItem>,
 }
 
-impl FeedSnapshot {
+/// Everything needed to build a [`FeedSnapshot`], gathered from request extensions.
+///
+/// Handlers depend on this one extractor instead of the feed/store/models trio, so
+/// adding a new input to snapshot loading happens here, not in every handler that
+/// renders one.
+pub struct FeedSnapshotSource {
+    feed: Arc<RedisFeedSource>,
+    store: Arc<SkeetStore>,
+    models: Arc<RefineModels>,
+}
+
+impl FromRequestHead for FeedSnapshotSource {
+    async fn from_request_head(head: &RequestHead) -> cot::Result<Self> {
+        let get = |missing: &'static str| move || cot::Error::internal(missing);
+        Ok(Self {
+            feed: head
+                .extensions
+                .get::<Arc<RedisFeedSource>>()
+                .cloned()
+                .ok_or_else(get("RedisFeedSource not found in request extensions"))?,
+            store: head
+                .extensions
+                .get::<Arc<SkeetStore>>()
+                .cloned()
+                .ok_or_else(get("SkeetStore not found in request extensions"))?,
+            models: head
+                .extensions
+                .get::<Arc<RefineModels>>()
+                .cloned()
+                .ok_or_else(get("RefineModels not found in request extensions"))?,
+        })
+    }
+}
+
+impl FeedSnapshotSource {
     /// Read the published list, then look up score + manual bands for **exactly**
     /// the published `image_id`s (a targeted lookup, not a capped bulk fetch) and
-    /// join them. Items with no current score are dropped.
-    pub async fn load(
-        feed: &RedisFeedSource,
-        store: &SkeetStore,
-        models: &RefineModels,
-    ) -> Result<Self, FeedSnapshotError> {
-        let (published, _refreshed_at) = feed.published().await?;
+    /// join them, resolving each item's model-aware effective band. Items with no
+    /// current score are dropped.
+    pub async fn load(&self) -> Result<FeedSnapshot, FeedSnapshotError> {
+        let (published, _refreshed_at) = self.feed.published().await?;
 
         let image_id_strs: Vec<String> = published.iter().map(|p| p.image_id.to_string()).collect();
         let id_refs: Vec<&str> = image_id_strs.iter().map(String::as_str).collect();
-        let scores = store.list_scores_for_ids(&id_refs).await?;
-        let image_bands: HashMap<ImageId, Band> = store
+        let scores = self.store.list_scores_for_ids(&id_refs).await?;
+        let image_bands: HashMap<ImageId, Band> = self
+            .store
             .list_all_image_appraisals()
             .await?
             .into_iter()
             .map(|(id, a)| (id, a.band))
             .collect();
-        let skeet_bands: HashMap<SkeetId, Band> = store
+        let skeet_bands: HashMap<SkeetId, Band> = self
+            .store
             .list_all_skeet_appraisals()
             .await?
             .into_iter()
@@ -60,7 +96,7 @@ impl FeedSnapshot {
                 let manual_image_band = image_bands.get(&item.image_id).copied();
                 let manual_skeet_band = skeet_bands.get(&item.skeet_id).copied();
                 let effective_band =
-                    image_effective_band(*score, model_version, models, manual_image_band);
+                    image_effective_band(*score, model_version, &self.models, manual_image_band);
                 Some(FeedItem {
                     skeet_id: item.skeet_id,
                     image_id: item.image_id,
@@ -72,6 +108,6 @@ impl FeedSnapshot {
             })
             .collect();
 
-        Ok(Self { items })
+        Ok(FeedSnapshot { items })
     }
 }

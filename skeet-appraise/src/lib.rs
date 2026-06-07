@@ -16,7 +16,7 @@ mod store_middleware;
 pub use appraiser_config::{AppraiserExtractor, AppraiserLayer};
 pub use auth_config::{OAuthConfigExtractor, OAuthConfigLayer};
 pub use models_middleware::{Models, ModelsLayer};
-pub use published_feed_middleware::{PublishedFeedExtractor, PublishedFeedLayer};
+pub use published_feed_middleware::PublishedFeedLayer;
 pub use started_at::{StartedAtExtractor, StartedAtLayer};
 pub use static_assets::web_static_files;
 pub use store_middleware::{Store, StoreLayer};

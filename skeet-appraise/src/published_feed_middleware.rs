@@ -1,26 +1,13 @@
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use cot::http::request::Parts as RequestHead;
-use cot::request::extractors::FromRequestHead;
 use skeet_publish::RedisFeedSource;
 use tower::{Layer, Service};
 
-/// Injects the published-feed reader so the home page renders exactly what the
-/// Bluesky feed publishes (the `recency-48h` list), joined to live store detail.
-#[derive(Clone)]
-pub struct PublishedFeedExtractor(pub Arc<RedisFeedSource>);
-
-impl FromRequestHead for PublishedFeedExtractor {
-    async fn from_request_head(head: &RequestHead) -> cot::Result<Self> {
-        head.extensions
-            .get::<Arc<RedisFeedSource>>()
-            .cloned()
-            .map(PublishedFeedExtractor)
-            .ok_or_else(|| cot::Error::internal("RedisFeedSource not found in request extensions"))
-    }
-}
-
+/// Injects the published-feed reader (`Arc<RedisFeedSource>`) into request extensions.
+///
+/// The home page renders exactly what the Bluesky feed publishes, joined to live
+/// store detail. Read it via [`crate::feed_snapshot::FeedSnapshotSource`].
 #[derive(Clone)]
 pub struct PublishedFeedLayer {
     feed: Arc<RedisFeedSource>,
