@@ -642,9 +642,9 @@ Tasks:
 
 ###### B. Publish both orders; point readers at `quality-48h`
 
-* [ ] **Publisher writes both lists**: add `--publish quality-48h` alongside `--publish recency-48h` in `infra/k8s/skeet-publish-deployment.yaml` and `just publish-r2`. No publisher code change — the generic `(Order, Limit)` loop already writes each spec.
-* [ ] **`skeet-feed` reads `quality-48h`**: change `RedisFeedSource::new(..., Order::Recency, Limit::hours(48))` → `Order::Quality` in `skeet_feed.rs` and fix the `recency-48h` comment. `getFeedSkeleton` still dedups to unique skeet-ids on read; only the backing list's order changes.
-* [ ] **`skeet-appraise` home reads `quality-48h`**: same one-line `Order::Recency` → `Order::Quality` change (+ comment) in `skeet_appraise.rs`.
+* [x] **Publisher writes both lists**: add `--publish quality-48h` alongside `--publish recency-48h` in `infra/k8s/skeet-publish-deployment.yaml` and `just publish-r2`. No publisher code change — the generic `(Order, Limit)` loop already writes each spec.
+* [x] **`skeet-feed` reads `quality-48h`**: change `RedisFeedSource::new(..., Order::Recency, Limit::hours(48))` → `Order::Quality` in `skeet_feed.rs` and fix the `recency-48h` comment. `getFeedSkeleton` still dedups to unique skeet-ids on read; only the backing list's order changes.
+* [x] **`skeet-appraise` home reads `quality-48h`**: same one-line `Order::Recency` → `Order::Quality` change (+ comment) in `skeet_appraise.rs`.
 
 ###### C. Verify + deploy
 

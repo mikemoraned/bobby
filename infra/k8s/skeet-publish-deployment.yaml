@@ -28,6 +28,8 @@ spec:
             - "s3://hom-bobby/encrypted-store"
             - "--publish"
             - "recency-48h"
+            - "--publish"
+            - "quality-48h"
           env:
             - name: BOBBY_S3_ENDPOINT
               valueFrom:

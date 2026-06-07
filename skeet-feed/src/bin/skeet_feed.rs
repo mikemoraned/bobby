@@ -68,10 +68,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "starting skeet-feed server (feed from the redis publish server)"
     );
 
-    // The Bluesky feed is the `recency-48h` list written by skeet-publish.
+    // The Bluesky feed is the `quality-48h` list written by skeet-publish.
     let feed_source: Arc<dyn FeedSource> = Arc::new(RedisFeedSource::new(
         args.redis_publish_url,
-        Order::Recency,
+        Order::Quality,
         Limit::hours(48),
     ));
 

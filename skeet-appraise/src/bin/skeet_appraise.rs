@@ -86,10 +86,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!(bind = %args.bind, "starting skeet-appraise server");
 
-    // The home page mirrors the Bluesky feed: the published `recency-48h` list.
+    // The home page mirrors the Bluesky feed: the published `quality-48h` list.
     let feed = Arc::new(RedisFeedSource::new(
         args.redis_publish_url,
-        Order::Recency,
+        Order::Quality,
         Limit::hours(48),
     ));
 
