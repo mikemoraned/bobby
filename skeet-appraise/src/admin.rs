@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use crate::Store;
 use shared::{Appraiser, Band, ImageId, ModelVersion, RefineModels};
-use skeet_publish::effective_band::image_effective_band;
+use skeet_publish::effective_band::{image_effective_band, skeet_effective_band};
 use skeet_store::{Appraisal, DiscoveredAt, Score, SkeetId, StoredImageSummary};
 use tracing::{info, instrument};
 
@@ -200,14 +200,19 @@ fn build_rows(
                 )
             };
 
-            let effective = match (scored, manual_appraisal) {
-                (Some((sc, mv)), manual) if view == "image" => {
-                    image_effective_band(*sc, mv, models, manual.map(|a| a.band)).to_string()
-                }
-                (_, Some(appr)) => appr.band.to_string(),
-                (Some((sc, mv)), None) => image_effective_band(*sc, mv, models, None).to_string(),
-                (None, None) => "—".to_string(),
+            // The effective band is view-independent: the row's image band (manual
+            // image override else score-derived) capped by the manual skeet band
+            // (`min`), matching what the feed/quality sort publishes.
+            let skeet_manual = skeet_appraisals.get(&s.skeet_id).map(|a| a.band);
+            let image_manual = image_appraisals.get(&s.image_id).map(|a| a.band);
+            let image_band = match scored {
+                Some((sc, mv)) => Some(image_effective_band(*sc, mv, models, image_manual)),
+                None => image_manual,
             };
+            let effective = image_band
+                .map_or(skeet_manual, |ib| skeet_effective_band(skeet_manual, &[ib]))
+                .map(|b| b.to_string())
+                .unwrap_or_else(|| "—".to_string());
 
             let row_id = s.image_id.to_string().replace(':', "-");
             let item_id_encoded = urlencoding::encode(&item_id).into_owned();

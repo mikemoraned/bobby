@@ -33,6 +33,20 @@ impl fmt::Display for ImageId {
     }
 }
 
+/// Ordered by canonical string form — a total order over all variants matching the
+/// wire/`Display` representation, independent of the inner crates' own orderings.
+impl Ord for ImageId {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.to_string().cmp(&other.to_string())
+    }
+}
+
+impl PartialOrd for ImageId {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("invalid image id: \"{0}\"")]
 pub struct InvalidImageId(String);
@@ -112,6 +126,28 @@ mod tests {
             let parsed: W = toml::from_str(&s).expect("deserialize");
             prop_assert_eq!(parsed.id, original.id);
         }
+
+        /// The `Ord` impl agrees with comparing the canonical string forms, across
+        /// every variant and between variants.
+        #[test]
+        fn ord_matches_string_order(a in any_image_id(), b in any_image_id()) {
+            prop_assert_eq!(a.cmp(&b), a.to_string().cmp(&b.to_string()));
+        }
+    }
+
+    /// Two real Bluesky blob CIDs, for V3 variety in `any_image_id`.
+    const SAMPLE_CIDS: &[&str] = &[
+        "bafkreibme22gw2h7y2h7tg2fhqotaqjucnbc24deqo72b6mkl2egezxhvy",
+        "bafkreibme22gw2h7y2h7tg2fhqotaqkucnbc24deqo72b6mkl2egezxhvy",
+    ];
+
+    fn any_image_id() -> impl Strategy<Value = ImageId> {
+        prop_oneof![
+            any::<u128>().prop_map(|v| ImageId::V1(Uuid::from_u128(v))),
+            any::<[u8; 16]>().prop_map(|b| ImageId::V2(md5::Digest(b))),
+            proptest::sample::select(SAMPLE_CIDS)
+                .prop_map(|c| ImageId::V3(BlueskyCid::new(c).expect("valid cid"))),
+        ]
     }
 
     /// A real Bluesky blob CID (CIDv1, base32, sha2-256).

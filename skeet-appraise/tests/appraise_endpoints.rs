@@ -248,6 +248,80 @@ async fn home_page_shows_published_entries_docker() {
     assert!(body.contains("0.85"), "home should show the joined-in score");
 }
 
+/// A manual skeet band must cap the band shown on the home view: a `0.95` score
+/// bands `HighQuality`, but a manual skeet band of `MediumHigh` should pull the
+/// displayed (feed-effective) band down to `MediumHigh` — the value the
+/// feed/quality sort publishes — not leave the image's higher band showing.
+#[tokio::test]
+async fn home_effective_band_is_capped_by_manual_skeet_band_docker() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let store = Arc::new(open_temp_store(&dir).await);
+
+    // A V3 image scored 0.95 (→ HighQuality under the t=0.5 test model).
+    let image_id = ImageId::V3(BlueskyCid::new(HOME_CID).expect("valid cid"));
+    let skeet_id: SkeetId = "at://did:plc:abc/app.bsky.feed.post/cap1"
+        .parse()
+        .expect("valid skeet id");
+    let record = ImageRecord {
+        image_id: image_id.clone(),
+        skeet_id: skeet_id.clone(),
+        image: test_image(),
+        discovered_at: DiscoveredAt::now(),
+        original_at: OriginalAt::new(Utc::now()),
+        zone: Zone::TopRight,
+        annotated_image: test_image(),
+        config_version: ModelVersion::from("test"),
+        detected_text: String::new(),
+    };
+    store.add(&record).await.expect("add record");
+    store
+        .upsert_score(
+            &image_id,
+            &Score::new(0.95).expect("valid score"),
+            &ModelVersion::from("test"),
+        )
+        .await
+        .expect("upsert score");
+
+    // Publish the matching item to a testcontainers redis.
+    let container = Redis::default().start().await.expect("start redis");
+    let host = container.get_host().await.expect("redis host");
+    let port = container
+        .get_host_port_ipv4(REDIS_PORT)
+        .await
+        .expect("redis port");
+    let redis_url = format!("redis://{host}:{port}");
+    let mut conn = connect_ready(&redis_url).await;
+    let published = Published {
+        image_url: ImageUrl::new(format!(
+            "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc/{HOME_CID}@jpeg"
+        ))
+        .expect("valid url"),
+        image_id,
+        skeet_id: skeet_id.clone(),
+    };
+    PublishedList::new(Order::Recency, Limit::hours(48))
+        .replace(&mut conn, &[published], Utc::now())
+        .await
+        .expect("publish");
+
+    let mut client = client_for_with_feed(Arc::clone(&store), &redis_url).await;
+
+    // Manually band the skeet MediumHigh via the public appraise endpoint.
+    appraise(&mut client, "skeet", &skeet_id.to_string(), "MediumHigh").await;
+
+    let (status, body) = get_body(&mut client, "/").await;
+    assert_eq!(status, 200);
+    assert!(
+        body.contains(r#"<span class="band MediumHigh">MediumHigh</span>"#),
+        "home should show the capped effective band MediumHigh"
+    );
+    assert!(
+        !body.contains(r#"<span class="band HighQuality">HighQuality</span>"#),
+        "home should not show the uncapped image band HighQuality"
+    );
+}
+
 // ─── Admin view tests ───────────────────────────────────────────
 
 /// Extract the item IDs from `<td class="id">...</td>` cells in the HTML.
@@ -437,6 +511,64 @@ async fn admin_image_view_with_manual_band_shows_effective_band() {
     assert!(
         row_has_manual_band(rows_html[0], "Low"),
         "image view should show manual band Low"
+    );
+}
+
+/// The effective-band cell is the last `band-tag` before the appraise buttons
+/// (columns run: auto, manual, effective, then the buttons).
+fn extract_effective_band(row_html: &str) -> Option<String> {
+    let buttons_pos = row_html.find("band-buttons")?;
+    let before = &row_html[..buttons_pos];
+    let tag = r#"<span class="band-tag "#;
+    let last = before.rfind(tag)?;
+    let after = &before[last + tag.len()..];
+    let end = after.find('"')?;
+    Some(after[..end].to_string())
+}
+
+/// In the image view, a manual *skeet* band must cap a higher image band: a `0.95`
+/// score bands `HighQuality`, but a manual skeet band of `MediumHigh` pulls the
+/// effective band down to `MediumHigh` — the feed-effective value.
+#[tokio::test]
+async fn admin_image_view_effective_band_capped_by_manual_skeet_band() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let store = open_temp_store(&dir).await;
+    let (skeet_id, _) = seed_scored(&store, "capimg", 10, 0.95).await;
+
+    let mut client = client_for(store).await;
+    appraise(&mut client, "skeet", &skeet_id, "MediumHigh").await;
+
+    let (status, body) = get_body(&mut client, "/admin?view=image").await;
+    assert_eq!(status, 200);
+    let rows_html: Vec<&str> = body.split("<tr id=").skip(1).collect();
+    assert_eq!(rows_html.len(), 1);
+    assert_eq!(
+        extract_effective_band(rows_html[0]).as_deref(),
+        Some("MediumHigh"),
+        "image-view effective band should be capped to MediumHigh by the manual skeet band"
+    );
+}
+
+/// In the skeet view, a higher manual skeet band must still be capped by a lower
+/// image band: a `0.6` score bands `MediumHigh`, so a manual skeet band of
+/// `HighQuality` cannot raise the effective band above `MediumHigh`.
+#[tokio::test]
+async fn admin_skeet_view_effective_band_capped_by_lower_image_band() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let store = open_temp_store(&dir).await;
+    let (skeet_id, _) = seed_scored(&store, "capskeet", 10, 0.6).await;
+
+    let mut client = client_for(store).await;
+    appraise(&mut client, "skeet", &skeet_id, "HighQuality").await;
+
+    let (status, body) = get_body(&mut client, "/admin?view=skeet").await;
+    assert_eq!(status, 200);
+    let rows_html: Vec<&str> = body.split("<tr id=").skip(1).collect();
+    assert_eq!(rows_html.len(), 1);
+    assert_eq!(
+        extract_effective_band(rows_html[0]).as_deref(),
+        Some("MediumHigh"),
+        "skeet-view effective band should be capped to MediumHigh by the lower image band"
     );
 }
 

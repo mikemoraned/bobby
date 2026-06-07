@@ -5,7 +5,7 @@ use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::FromRequestHead;
 use shared::{Band, ImageId, RefineModels};
 use skeet_publish::RedisFeedSource;
-use skeet_publish::effective_band::image_effective_band;
+use skeet_publish::effective_band::{image_effective_band, skeet_effective_band};
 use skeet_store::{Score, SkeetId, SkeetStore, StoreError};
 
 pub struct FeedItem {
@@ -95,8 +95,13 @@ impl FeedSnapshotSource {
                 let (score, model_version) = scores.get(&item.image_id)?;
                 let manual_image_band = image_bands.get(&item.image_id).copied();
                 let manual_skeet_band = skeet_bands.get(&item.skeet_id).copied();
-                let effective_band =
+                let image_band =
                     image_effective_band(*score, model_version, &self.models, manual_image_band);
+                // The feed-effective band caps the image's band with the manual skeet
+                // override (`min`), matching what the feed/quality sort publishes. The
+                // slice is non-empty, so `skeet_effective_band` is always `Some`.
+                let effective_band =
+                    skeet_effective_band(manual_skeet_band, &[image_band]).unwrap_or(image_band);
                 Some(FeedItem {
                     skeet_id: item.skeet_id,
                     image_id: item.image_id,

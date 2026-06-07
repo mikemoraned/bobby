@@ -6,8 +6,8 @@ use chrono::{DateTime, Utc};
 use deadpool_redis::redis;
 use shared::{Band, ImageId, NormalizedScore, RefineModels};
 use skeet_store::{
-    Appraisal, ModelVersion, Score, SkeetId, SkeetStore, StoreError, StoredImageSummary, Version,
-    VersionedCache,
+    Appraisal, ModelVersion, OriginalAt, Score, SkeetId, SkeetStore, StoreError,
+    StoredImageSummary, Version, VersionedCache,
 };
 use tokio::sync::RwLock;
 
@@ -51,13 +51,6 @@ impl FeedData for WindowedFeed {
 }
 
 /// Compute the published pairs for one `(order, limit)` spec from a feed.
-///
-/// Reuses the visibility policy ([`FeedData::visible_entries`]) to choose *which*
-/// skeets are allowed, then applies the spec's ordering within `limit.window()` of
-/// `now`: [`Order::Recency`] sorts newest-first by `original_at`; [`Order::Quality`]
-/// sorts by effective band then normalised score, best first (see [`QualityRank`]).
-/// Each surviving entry's representative image is resolved to a CDN url; entries
-/// whose image can't be resolved (non-`V3` ids) are dropped.
 pub fn published_for_spec<F: FeedData>(
     feed: &F,
     order: Order,
@@ -74,12 +67,7 @@ pub fn published_for_spec<F: FeedData>(
         .collect();
 
     match order {
-        Order::Recency => windowed.sort_by(|a, b| {
-            b.0.original_at
-                .timestamp_micros()
-                .cmp(&a.0.original_at.timestamp_micros())
-        }),
-        // Best first: higher band, then higher normalised score (see `QualityRank`).
+        Order::Recency => windowed.sort_by_key(recency_rank),
         Order::Quality => windowed.sort_by_key(|entry| quality_rank(feed, entry)),
     }
 
@@ -97,26 +85,24 @@ pub fn published_for_spec<F: FeedData>(
         .collect()
 }
 
-/// Best-first ordering key for [`Order::Quality`]: higher effective band wins, then
-/// higher normalised score.
-///
-/// `Ord` ranks the *best* entry as least, so a plain ascending `sort_by_key` puts
-/// the best first. `band`/`score` are `Option` only to stay total for an entry
-/// whose model has left the registry (no band/score → sorts last).
 #[derive(Debug, PartialEq, Eq)]
 struct QualityRank {
     band: Option<Band>,
     score: Option<NormalizedScore>,
+    image_id: ImageId,
+    skeet_id: SkeetId,
 }
 
 impl Ord for QualityRank {
     fn cmp(&self, other: &Self) -> Ordering {
-        // Compare other→self so a higher band — then a higher score — ranks as
-        // `Less` and therefore sorts first.
+        // Compare other→self on band then score so the higher one ranks as `Less` and
+        // sorts first; then image-id, skeet-id ascending make equal ranks deterministic.
         other
             .band
             .cmp(&self.band)
             .then_with(|| other.score.cmp(&self.score))
+            .then_with(|| self.image_id.cmp(&other.image_id))
+            .then_with(|| self.skeet_id.cmp(&other.skeet_id))
     }
 }
 
@@ -126,12 +112,31 @@ impl PartialOrd for QualityRank {
     }
 }
 
-/// The [`QualityRank`] for one entry.
-///
-/// The band is the entry's representative image's model-aware [`image_effective_band`]
-/// folded with the manual skeet override ([`skeet_effective_band`]); a manual override
-/// moves the band but never the score. The normalised-score tiebreak makes within-band
-/// order comparable across models with different thresholds.
+#[derive(Debug, PartialEq, Eq)]
+struct RecencyRank {
+    original_at: OriginalAt,
+    image_id: ImageId,
+    skeet_id: SkeetId,
+}
+
+impl Ord for RecencyRank {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Compare other→self on `original_at` so the newer one sorts first; then image-id,
+        // skeet-id ascending make equal-timestamp entries deterministic.
+        other
+            .original_at
+            .cmp(&self.original_at)
+            .then_with(|| self.image_id.cmp(&other.image_id))
+            .then_with(|| self.skeet_id.cmp(&other.skeet_id))
+    }
+}
+
+impl PartialOrd for RecencyRank {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 fn quality_rank<F: FeedData>(
     feed: &F,
     entry: &(StoredImageSummary, Score, ModelVersion),
@@ -146,6 +151,17 @@ fn quality_rank<F: FeedData>(
     QualityRank {
         band: skeet_effective_band(feed.skeet_band(&summary.skeet_id), &[image_band]),
         score: image_normalized_score(*score, model_version, feed.models()),
+        image_id: summary.image_id.clone(),
+        skeet_id: summary.skeet_id.clone(),
+    }
+}
+
+fn recency_rank(entry: &(StoredImageSummary, Score, ModelVersion)) -> RecencyRank {
+    let summary = &entry.0;
+    RecencyRank {
+        original_at: summary.original_at.clone(),
+        image_id: summary.image_id.clone(),
+        skeet_id: summary.skeet_id.clone(),
     }
 }
 
@@ -561,6 +577,103 @@ mod tests {
             models_with(&[("t06", 0.6)]),
         );
         assert_eq!(quality_rkeys(&feed, now), ["kept"]);
+    }
+
+    /// The appraise-website example. Two skeets that tie on the quality key — both
+    /// effective `MedHigh` at score 0.95 (A capped by its manual skeet band, B by a
+    /// manual image band). Their order must depend only on the data, not on the order
+    /// the store returned them: the tie-break (image-id then skeet-id) makes the
+    /// result identical under any input permutation.
+    #[test]
+    fn quality_appraise_example_orders_deterministically() {
+        let now = Utc::now();
+        // Distinct image ids so B's manual image override doesn't also hit A.
+        const CID_B: &str = "bafkreibme22gw2h7y2h7tg2fhqotaqkucnbc24deqo72b6mkl2egezxhvy";
+
+        let mut a = entry_m(now, "a", 0.95, "t05");
+        a.0.image_id = ImageId::V3(BlueskyCid::new(CID).expect("valid cid"));
+        let mut b = entry_m(now, "b", 0.95, "t05");
+        b.0.image_id = ImageId::V3(BlueskyCid::new(CID_B).expect("valid cid"));
+
+        let a_skeet = a.0.skeet_id.clone();
+        let b_skeet = b.0.skeet_id.clone();
+        let b_image = b.0.image_id.clone();
+
+        let setup = |entries: Vec<(StoredImageSummary, Score, ModelVersion)>| {
+            let mut feed = quality_feed(entries, models_with(&[("t05", 0.5)]));
+            for skeet in [a_skeet.clone(), b_skeet.clone()] {
+                feed.skeet_appraisals.insert(
+                    skeet,
+                    Appraisal {
+                        band: Band::MediumHigh,
+                        appraiser: Appraiser::LocalAdmin,
+                    },
+                );
+            }
+            feed.image_appraisals.insert(
+                b_image.clone(),
+                Appraisal {
+                    band: Band::MediumHigh,
+                    appraiser: Appraiser::LocalAdmin,
+                },
+            );
+            feed
+        };
+
+        let forward = quality_rkeys(&setup(vec![a.clone(), b.clone()]), now);
+        let reversed = quality_rkeys(&setup(vec![b, a]), now);
+        assert_eq!(
+            forward, reversed,
+            "quality order must not depend on input order"
+        );
+        // CID < CID_B, so the tie-break puts A first regardless of input order.
+        assert_eq!(forward, ["a", "b"]);
+    }
+
+    #[test]
+    fn quality_ties_are_deterministic_regardless_of_input_order() {
+        let now = Utc::now();
+        // Both High band, identical score → a pure tie broken only by id.
+        let forward = quality_feed(
+            vec![
+                entry_m(now, "aaa", 0.9, "t05"),
+                entry_m(now, "bbb", 0.9, "t05"),
+            ],
+            models_with(&[("t05", 0.5)]),
+        );
+        let reversed = quality_feed(
+            vec![
+                entry_m(now, "bbb", 0.9, "t05"),
+                entry_m(now, "aaa", 0.9, "t05"),
+            ],
+            models_with(&[("t05", 0.5)]),
+        );
+        assert_eq!(quality_rkeys(&forward, now), quality_rkeys(&reversed, now));
+        assert_eq!(quality_rkeys(&forward, now), ["aaa", "bbb"]);
+    }
+
+    #[test]
+    fn recency_ties_are_deterministic_regardless_of_input_order() {
+        let now = Utc::now();
+        let t = now - chrono::Duration::hours(1);
+        // Identical `original_at` → recency ties, broken only by id.
+        let recency = |entries| {
+            let feed = feed(entries);
+            skeet_rkeys(&published_for_spec(
+                &feed,
+                Order::Recency,
+                Limit::hours(48),
+                &CdnImageUrlResolver,
+                now,
+            ))
+        };
+        let forward = recency(vec![entry("aaa", t, 0.9), entry("bbb", t, 0.9)]);
+        let reversed = recency(vec![entry("bbb", t, 0.9), entry("aaa", t, 0.9)]);
+        assert_eq!(
+            forward, reversed,
+            "recency order must not depend on input order"
+        );
+        assert_eq!(forward, ["aaa", "bbb"]);
     }
 
     #[test]
