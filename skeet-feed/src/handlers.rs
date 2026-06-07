@@ -3,12 +3,12 @@ use cot::http::HeaderValue;
 use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::UrlQuery;
 use cot::response::Response;
-use cot::{Body, StatusCode};
+use cot::{Body, StatusCode, Template};
 use serde::{Deserialize, Serialize};
 use tracing::{info, instrument, warn};
 
-use crate::FeedSourceExtractor;
 use crate::feed_config::FeedConfig;
+use crate::{FeedSourceExtractor, PublishedImagesSourceExtractor};
 
 fn wants_no_cache(head: &RequestHead) -> bool {
     head.headers
@@ -165,14 +165,49 @@ pub async fn get_feed_skeleton(
     Ok(response)
 }
 
-/// Minimal placeholder home page, so the feed service's root is a valid page
-/// rather than a 404.
+/// One image card on the home page: the Bluesky post it links to and the CDN
+/// thumbnail it shows.
+struct GridCard {
+    bsky_url: String,
+    thumb_url: String,
+    alt: String,
+}
+
+#[derive(Template)]
+#[template(path = "home.html")]
+struct HomeTemplate {
+    cards: Vec<GridCard>,
+}
+
+/// Home page: a server-rendered grid of the published `quality-7d` images, each
+/// linking through to its Bluesky post. Images are served by the Bluesky CDN, so
+/// this page only renders HTML.
 #[instrument(skip_all)]
-pub async fn home() -> cot::Result<Html> {
-    Ok(Html::new(
-        "<!doctype html><html><head><title>bobby</title></head>\
-         <body><p>Selfies with landmarks, found by Bobby.</p></body></html>",
-    ))
+pub async fn home(
+    PublishedImagesSourceExtractor(source): PublishedImagesSourceExtractor,
+) -> cot::Result<Html> {
+    let published = source
+        .published_images()
+        .await
+        .map_err(|e| cot::Error::internal(format!("failed to read published images: {e}")))?;
+
+    let cards: Vec<GridCard> = published
+        .images
+        .into_iter()
+        .map(|item| {
+            let did = item.skeet_id.did();
+            let rkey = item.skeet_id.rkey();
+            GridCard {
+                bsky_url: format!("https://bsky.app/profile/{did}/post/{rkey}"),
+                thumb_url: item.image_url.to_string(),
+                alt: "Selfie with a landmark".to_string(),
+            }
+        })
+        .collect();
+
+    info!(count = cards.len(), "serving home grid");
+    let rendered = HomeTemplate { cards }.render()?;
+    Ok(Html::new(rendered))
 }
 
 #[cfg(test)]

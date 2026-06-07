@@ -20,8 +20,11 @@ pub use limit::{InvalidLimit, Limit};
 pub use metrics::PublishMetrics;
 pub use order::{InvalidOrder, Order};
 pub use published_list::{PublishedList, PublishedListError};
-pub use published::Published;
+pub use published::PublishedImage;
 pub use publisher::{FeedPublisher, PublishError, PublishOutcome, WindowedFeed, published_for_spec};
 pub use redis_client::connect;
-pub use source::{FeedSkeleton, FeedSource, FeedSourceError, RedisFeedSource};
+pub use source::{
+    FeedSkeleton, FeedSource, FeedSourceError, PublishedImages, PublishedImagesSource,
+    RedisFeedSource,
+};
 pub use visibility::FeedData;

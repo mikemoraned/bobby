@@ -4,10 +4,10 @@ use std::sync::Arc;
 
 use clap::Parser;
 use cot::project::Bootstrapper;
-use skeet_feed::FeedSourceLayer;
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
-use skeet_publish::{FeedSource, Limit, Order, RedisFeedSource};
+use skeet_feed::{FeedSourceLayer, PublishedImagesSourceLayer};
+use skeet_publish::{FeedSource, Limit, Order, PublishedImagesSource, RedisFeedSource};
 use tracing::info;
 
 #[derive(Parser)]
@@ -70,13 +70,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The Bluesky feed is the `quality-48h` list written by skeet-publish.
     let feed_source: Arc<dyn FeedSource> = Arc::new(RedisFeedSource::new(
-        args.redis_publish_url,
+        args.redis_publish_url.clone(),
         Order::Quality,
         Limit::hours(48),
     ));
 
+    // The public image page renders the wider `quality-7d` list.
+    let published_images_source: Arc<dyn PublishedImagesSource> = Arc::new(RedisFeedSource::new(
+        args.redis_publish_url,
+        Order::Quality,
+        Limit::days(7),
+    ));
+
     let project = FeedProject {
         feed_source_layer: FeedSourceLayer::new(feed_source),
+        published_images_source_layer: PublishedImagesSourceLayer::new(published_images_source),
         feed_config_layer: FeedConfigLayer::new(feed_params),
     };
     let bootstrapper = Bootstrapper::new(project)

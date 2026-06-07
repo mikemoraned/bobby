@@ -12,7 +12,7 @@ use std::time::Duration;
 use chrono::Utc;
 use deadpool_redis::redis::{self, AsyncCommands};
 use shared::{BlueskyCid, ImageId};
-use skeet_publish::{ImageUrl, Limit, Order, Published, PublishedList};
+use skeet_publish::{ImageUrl, Limit, Order, PublishedImage, PublishedList};
 use skeet_store::SkeetId;
 use testcontainers::ContainerAsync;
 use testcontainers::runners::AsyncRunner;
@@ -63,8 +63,8 @@ const CID_2: &str = "bafkreiabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 const CID_3: &str = "bafkreiacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const CID_4: &str = "bafkreiadaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-fn pair(rkey: &str, cid: &str) -> Published {
-    Published {
+fn pair(rkey: &str, cid: &str) -> PublishedImage {
+    PublishedImage {
         image_url: ImageUrl::new(format!(
             "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc/{cid}@jpeg"
         ))

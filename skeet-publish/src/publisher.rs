@@ -15,7 +15,7 @@ use crate::effective_band::{image_effective_band, image_normalized_score, skeet_
 use crate::image_url_resolver::ImageUrlResolver;
 use crate::limit::Limit;
 use crate::order::Order;
-use crate::published::Published;
+use crate::published::PublishedImage;
 use crate::published_list::{PublishedList, PublishedListError};
 use crate::table_watch::relevant;
 use crate::visibility::FeedData;
@@ -57,7 +57,7 @@ pub fn published_for_spec<F: FeedData>(
     limit: Limit,
     resolver: &dyn ImageUrlResolver,
     now: DateTime<Utc>,
-) -> Vec<Published> {
+) -> Vec<PublishedImage> {
     let cutoff_us = (now - limit.window()).timestamp_micros();
 
     let mut windowed: Vec<(StoredImageSummary, Score, ModelVersion)> = feed
@@ -76,7 +76,7 @@ pub fn published_for_spec<F: FeedData>(
         .filter_map(|(summary, _, _)| {
             resolver
                 .resolve(&summary.skeet_id, &summary.image_id)
-                .map(|image_url| Published {
+                .map(|image_url| PublishedImage {
                     image_url,
                     image_id: summary.image_id,
                     skeet_id: summary.skeet_id,
@@ -349,7 +349,7 @@ mod tests {
         }
     }
 
-    fn skeet_rkeys(pairs: &[Published]) -> Vec<String> {
+    fn skeet_rkeys(pairs: &[PublishedImage]) -> Vec<String> {
         pairs
             .iter()
             .map(|p| p.skeet_id.rkey().as_str().to_string())

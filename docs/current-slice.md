@@ -674,9 +674,9 @@ Decisions baked in (flagged where a real choice exists):
 
 ###### B. `skeet-feed`: read + server-render the list at `/`
 
-* [ ] **Read `quality-7d`** via the generic `RedisPublishedList::new(Order::quality, Limit(7d))` reader from Phase 3 B (no new reader type) → `Vec<PublishedPair>` + `refreshed_at`, reusing the same resilient TLS redis pool. Keep the cold-start path lazy (read on first request) so suspend/resume stays fast.
-* [ ] **Replace `/`'s placeholder** (the Phase-2 stub) with the page handler: server-render a JS-free css-grid of `<a href="{bsky_url}"><img src="{cdn_thumb}" loading="lazy" …></a>` cards in list order. Inline the `<style>` (single request, nothing to cache-bust). `did.json` / `describeFeedGenerator` / `getFeedSkeleton` are untouched.
-* [ ] **Layout**: start with **uniform aspect-ratio tiles** (`aspect-ratio` + `object-fit: cover`) — zero layout shift, no image dimensions needed, true css-grid per the brief. *(If we later want real variable-height masonry, that needs either CSS `column-count` or carrying width/height in `PublishedPair` — defer unless wanted.)*
+* [x] **Read `quality-7d`** via the generic `RedisPublishedList::new(Order::quality, Limit(7d))` reader from Phase 3 B (no new reader type) → `Vec<PublishedPair>` + `refreshed_at`, reusing the same resilient TLS redis pool. Keep the cold-start path lazy (read on first request) so suspend/resume stays fast. *(Added a narrow `PublishedImagesSource` trait + `PublishedImages` in `skeet-publish` — separate from `FeedSource` since the page needs the full per-image list, not the deduped skeleton — impl'd on the existing `RedisFeedSource` via its `published()`. A second `RedisFeedSource(quality-7d)` instance is wired through a `PublishedImagesSourceLayer`. The published-pair type is `PublishedImage`.)*
+* [x] **Replace `/`'s placeholder** (the Phase-2 stub) with the page handler: server-render a JS-free css-grid of `<a href="{bsky_url}"><img src="{cdn_thumb}" loading="lazy" …></a>` cards in list order. Inline the `<style>` (single request, nothing to cache-bust). `did.json` / `describeFeedGenerator` / `getFeedSkeleton` are untouched. *(cot `Template`, `skeet-feed/templates/home.html`.)*
+* [x] **Layout**: start with **uniform aspect-ratio tiles** (`aspect-ratio` + `object-fit: cover`) — zero layout shift, no image dimensions needed, true css-grid per the brief. *(If we later want real variable-height masonry, that needs either CSS `column-count` or carrying width/height in `PublishedPair` — defer unless wanted.)*
 
 ###### C. Caching + polish
 

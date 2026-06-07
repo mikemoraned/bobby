@@ -4,9 +4,9 @@ use skeet_store::SkeetId;
 
 use crate::image_url::ImageUrl;
 
-/// Version of the on-the-wire `Published` JSON, prefixed onto every redis list name.
+/// Version of the on-the-wire `PublishedImage` JSON, prefixed onto every redis list name.
 ///
-/// Bump it whenever `Published`'s serialization changes incompatibly, so a new
+/// Bump it whenever `PublishedImage`'s serialization changes incompatibly, so a new
 /// writer and an old (still-deployed) reader use different keys (`v2-recency-48h`)
 /// instead of one side failing to decode the other's format.
 ///
@@ -27,7 +27,7 @@ pub const SCHEMA_VERSION: &str = "v2";
 /// Lists are always per-image: deduplicating to unique skeet-ids (e.g. for
 /// `getFeedSkeleton`) is a read-side concern, not part of the stored schema.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Published {
+pub struct PublishedImage {
     pub image_url: ImageUrl,
     pub image_id: ImageId,
     pub skeet_id: SkeetId,
@@ -40,8 +40,8 @@ mod tests {
 
     const CID: &str = "bafkreibme22gw2h7y2h7tg2fhqotaqjucnbc24deqo72b6mkl2egezxhvy";
 
-    fn sample() -> Published {
-        Published {
+    fn sample() -> PublishedImage {
+        PublishedImage {
             image_url: ImageUrl::new(format!(
                 "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc/{CID}@jpeg"
             ))
@@ -68,7 +68,7 @@ mod tests {
     fn roundtrips_through_json() {
         let item = sample();
         let encoded = serde_json::to_string(&item).expect("serialize");
-        let decoded: Published = serde_json::from_str(&encoded).expect("deserialize");
+        let decoded: PublishedImage = serde_json::from_str(&encoded).expect("deserialize");
         assert_eq!(decoded, item);
     }
 }

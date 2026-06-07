@@ -9,7 +9,7 @@ use tracing::warn;
 
 use crate::limit::Limit;
 use crate::order::Order;
-use crate::published::Published;
+use crate::published::PublishedImage;
 use crate::published_list::{PublishedList, PublishedListError};
 use crate::redis_client::connect;
 
@@ -38,6 +38,23 @@ pub trait FeedSource: Send + Sync {
     async fn skeleton(&self, force_refresh: bool) -> Result<FeedSkeleton, FeedSourceError>;
 }
 
+/// The full per-image published list in published order (not deduped to
+/// skeet-ids, unlike [`FeedSkeleton`]) plus when it was last refreshed. Backs
+/// the public image page.
+pub struct PublishedImages {
+    pub images: Vec<PublishedImage>,
+    pub refreshed_at: Option<DateTime<Utc>>,
+}
+
+/// Source of the full published image list.
+///
+/// Kept separate from [`FeedSource`] because the public page renders every
+/// published image, not the skeet-id-deduped skeleton `getFeedSkeleton` returns.
+#[async_trait]
+pub trait PublishedImagesSource: Send + Sync {
+    async fn published_images(&self) -> Result<PublishedImages, FeedSourceError>;
+}
+
 /// A redis access right after a Fly suspend/resume can hit a transient
 /// connect/timeout/IO failure — DNS, the TLS handshake, or a socket Upstash
 /// closed while the machine was idle. Those are worth a quick retry; a
@@ -63,7 +80,7 @@ fn retry_policy() -> ExponentialBuilder {
 
 /// `FeedSource` backed by a published redis list on the publish server.
 ///
-/// Reads the per-image `Published`s and dedups to a unique, order-preserving
+/// Reads the per-image `PublishedImage`s and dedups to a unique, order-preserving
 /// list of skeet-ids — `getFeedSkeleton`'s view. The list already reflects the
 /// publisher's policy (visibility, recency order, window), so `force_refresh` is
 /// a no-op: there is nothing local to recompute.
@@ -86,7 +103,7 @@ impl RedisFeedSource {
 
     pub async fn published(
         &self,
-    ) -> Result<(Vec<Published>, Option<DateTime<Utc>>), FeedSourceError> {
+    ) -> Result<(Vec<PublishedImage>, Option<DateTime<Utc>>), FeedSourceError> {
         (|| async {
             let mut conn = connect(&self.url).await.map_err(PublishedListError::from)?;
             let published = self.list.read(&mut conn).await?;
@@ -120,6 +137,17 @@ impl FeedSource for RedisFeedSource {
 
         Ok(FeedSkeleton {
             skeet_ids,
+            refreshed_at,
+        })
+    }
+}
+
+#[async_trait]
+impl PublishedImagesSource for RedisFeedSource {
+    async fn published_images(&self) -> Result<PublishedImages, FeedSourceError> {
+        let (images, refreshed_at) = self.published().await?;
+        Ok(PublishedImages {
+            images,
             refreshed_at,
         })
     }

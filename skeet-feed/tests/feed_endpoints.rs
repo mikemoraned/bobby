@@ -13,10 +13,14 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use cot::test::Client;
-use skeet_feed::FeedSourceLayer;
+use shared::{BlueskyCid, ImageId};
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
-use skeet_publish::{FeedSkeleton, FeedSource, FeedSourceError};
+use skeet_feed::{FeedSourceLayer, PublishedImagesSourceLayer};
+use skeet_publish::{
+    FeedSkeleton, FeedSource, FeedSourceError, ImageUrl, PublishedImage, PublishedImages,
+    PublishedImagesSource,
+};
 use skeet_store::SkeetId;
 
 /// A `FeedSource` that returns a fixed skeleton — stands in for the redis-backed
@@ -36,6 +40,21 @@ impl FeedSource for StubFeedSource {
     }
 }
 
+/// A `PublishedImagesSource` returning a fixed set of images for the home page.
+struct StubPublishedImagesSource {
+    images: Vec<PublishedImage>,
+}
+
+#[async_trait]
+impl PublishedImagesSource for StubPublishedImagesSource {
+    async fn published_images(&self) -> Result<PublishedImages, FeedSourceError> {
+        Ok(PublishedImages {
+            images: self.images.clone(),
+            refreshed_at: None,
+        })
+    }
+}
+
 fn test_params() -> FeedParams {
     FeedParams {
         hostname: "test.example.com".to_string(),
@@ -51,13 +70,43 @@ fn skeet_id(rkey: &str) -> SkeetId {
         .expect("valid skeet id")
 }
 
-async fn client_for(params: FeedParams, source: StubFeedSource) -> Client {
-    let feed_source: Arc<dyn FeedSource> = Arc::new(source);
-    let project = FeedProject {
+fn project_for(
+    params: FeedParams,
+    feed_source: Arc<dyn FeedSource>,
+    images_source: Arc<dyn PublishedImagesSource>,
+) -> FeedProject {
+    FeedProject {
         feed_source_layer: FeedSourceLayer::new(feed_source),
+        published_images_source_layer: PublishedImagesSourceLayer::new(images_source),
         feed_config_layer: FeedConfigLayer::new(params),
-    };
+    }
+}
+
+async fn client_for(params: FeedParams, source: StubFeedSource) -> Client {
+    let empty_images = Arc::new(StubPublishedImagesSource { images: vec![] });
+    let project = project_for(params, Arc::new(source), empty_images);
     Client::new(project).await
+}
+
+async fn client_with_images(params: FeedParams, images: Vec<PublishedImage>) -> Client {
+    let empty_feed = Arc::new(StubFeedSource {
+        skeet_ids: vec![],
+        refreshed_at: None,
+    });
+    let images_source = Arc::new(StubPublishedImagesSource { images });
+    let project = project_for(params, empty_feed, images_source);
+    Client::new(project).await
+}
+
+fn published_image(rkey: &str, cid: &str) -> PublishedImage {
+    PublishedImage {
+        image_url: ImageUrl::new(format!(
+            "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc/{cid}@jpeg"
+        ))
+        .expect("valid url"),
+        image_id: ImageId::V3(BlueskyCid::new(cid).expect("valid cid")),
+        skeet_id: skeet_id(rkey),
+    }
 }
 
 async fn get_body(client: &mut Client, path: &str) -> (u16, String) {
@@ -183,6 +232,50 @@ async fn rejects_unknown_feed() {
     assert_eq!(status, 400);
     let json: serde_json::Value = serde_json::from_str(&body).expect("valid JSON");
     assert_eq!(json["error"], "UnknownFeed");
+}
+
+#[tokio::test]
+async fn home_renders_grid_of_cards_in_order() {
+    const CID_1: &str = "bafkreiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const CID_2: &str = "bafkreiabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    let images = vec![
+        published_image("first", CID_1),
+        published_image("second", CID_2),
+    ];
+    let mut client = client_with_images(test_params(), images).await;
+
+    let (status, body) = get_body(&mut client, "/").await;
+    assert_eq!(status, 200);
+
+    // Each card links to the skeet's Bluesky post and shows its CDN thumbnail.
+    assert!(
+        body.contains("https://bsky.app/profile/did:plc:abc/post/first"),
+        "card should link to the first skeet's bsky post"
+    );
+    assert!(
+        body.contains(&format!(
+            "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc/{CID_1}@jpeg"
+        )),
+        "card should show the first image's CDN thumbnail"
+    );
+
+    // Cards render in published order: "first" before "second".
+    let first_at = body.find("post/first").expect("first card present");
+    let second_at = body.find("post/second").expect("second card present");
+    assert!(first_at < second_at, "cards should be in published order");
+}
+
+#[tokio::test]
+async fn home_renders_empty_state_when_no_images() {
+    let mut client = client_with_images(test_params(), vec![]).await;
+
+    let (status, body) = get_body(&mut client, "/").await;
+    assert_eq!(status, 200);
+    assert!(
+        !body.contains("class=\"grid\""),
+        "no grid should render when there are no images"
+    );
 }
 
 #[tokio::test]

@@ -19,7 +19,9 @@ use skeet_appraise::project::AppraiseProject;
 use skeet_appraise::{
     AppraiserLayer, ModelsLayer, OAuthConfigLayer, PublishedFeedLayer, StartedAtLayer, StoreLayer,
 };
-use skeet_publish::{ImageUrl, Limit, Order, Published, PublishedList, RedisFeedSource, connect};
+use skeet_publish::{
+    ImageUrl, Limit, Order, PublishedImage, PublishedList, RedisFeedSource, connect,
+};
 use test_support::test_models;
 use skeet_store::test_utils::{make_record, make_record_at, open_temp_store, test_image};
 use skeet_store::{DiscoveredAt, ImageRecord, ModelVersion, OriginalAt, Score, SkeetId, SkeetStore, Zone};
@@ -225,7 +227,7 @@ async fn home_page_shows_published_entries_docker() {
         .expect("redis port");
     let redis_url = format!("redis://{host}:{port}");
     let mut conn = connect_ready(&redis_url).await;
-    let published = Published {
+    let published = PublishedImage {
         image_url: ImageUrl::new(format!(
             "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc/{HOME_CID}@jpeg"
         ))
@@ -292,7 +294,7 @@ async fn home_effective_band_is_capped_by_manual_skeet_band_docker() {
         .expect("redis port");
     let redis_url = format!("redis://{host}:{port}");
     let mut conn = connect_ready(&redis_url).await;
-    let published = Published {
+    let published = PublishedImage {
         image_url: ImageUrl::new(format!(
             "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc/{HOME_CID}@jpeg"
         ))

@@ -3,7 +3,7 @@ use deadpool_redis::redis;
 
 use crate::limit::Limit;
 use crate::order::Order;
-use crate::published::{Published, SCHEMA_VERSION};
+use crate::published::{PublishedImage, SCHEMA_VERSION};
 
 /// A published redis list, identified by its `{order}-{limit}` name (e.g.
 /// `recency-48h`), with the read/write helpers both the publisher and
@@ -31,7 +31,7 @@ impl PublishedList {
 
     /// The redis key for this list: `{version}-{order}-{limit}`, e.g.
     /// `v2-recency-48h`. The schema version prefixes the name so an
-    /// incompatible `Published` change doesn't collide with an old reader/writer
+    /// incompatible `PublishedImage` change doesn't collide with an old reader/writer
     /// (see [`SCHEMA_VERSION`]).
     pub fn name(&self) -> String {
         format!("{SCHEMA_VERSION}-{}-{}", self.order, self.limit)
@@ -61,7 +61,7 @@ impl PublishedList {
     pub async fn replace<C>(
         &self,
         conn: &mut C,
-        pairs: &[Published],
+        pairs: &[PublishedImage],
         refreshed_at: DateTime<Utc>,
     ) -> Result<(), PublishedListError>
     where
@@ -120,7 +120,7 @@ impl PublishedList {
     }
 
     /// Read the full list in stored order.
-    pub async fn read<C>(&self, conn: &mut C) -> Result<Vec<Published>, PublishedListError>
+    pub async fn read<C>(&self, conn: &mut C) -> Result<Vec<PublishedImage>, PublishedListError>
     where
         C: redis::aio::ConnectionLike + Send,
     {
