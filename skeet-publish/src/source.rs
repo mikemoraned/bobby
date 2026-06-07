@@ -1,8 +1,11 @@
 use std::collections::HashSet;
+use std::time::Duration;
 
 use async_trait::async_trait;
+use backon::{ExponentialBuilder, Retryable};
 use chrono::{DateTime, Utc};
 use skeet_store::{SkeetId, StoreError};
+use tracing::warn;
 
 use crate::limit::Limit;
 use crate::order::Order;
@@ -35,6 +38,29 @@ pub trait FeedSource: Send + Sync {
     async fn skeleton(&self, force_refresh: bool) -> Result<FeedSkeleton, FeedSourceError>;
 }
 
+/// A redis access right after a Fly suspend/resume can hit a transient
+/// connect/timeout/IO failure — DNS, the TLS handshake, or a socket Upstash
+/// closed while the machine was idle. Those are worth a quick retry; a
+/// malformed-JSON decode or any other logic error will only recur, so it isn't.
+fn is_transient(e: &FeedSourceError) -> bool {
+    match e {
+        FeedSourceError::Published(PublishedListError::Redis(e)) => {
+            e.is_connection_dropped()
+                || e.is_connection_refusal()
+                || e.is_timeout()
+                || e.is_io_error()
+        }
+        _ => false,
+    }
+}
+
+fn retry_policy() -> ExponentialBuilder {
+    ExponentialBuilder::default()
+        .with_min_delay(Duration::from_millis(200))
+        .with_factor(2.0)
+        .with_max_times(3)
+}
+
 /// `FeedSource` backed by a published redis list on the publish server.
 ///
 /// Reads the per-image `Published`s and dedups to a unique, order-preserving
@@ -43,7 +69,8 @@ pub trait FeedSource: Send + Sync {
 /// a no-op: there is nothing local to recompute.
 ///
 /// Connects fresh per call (see [`crate::redis_client::connect`]) rather than
-/// holding a pool.
+/// holding a pool, with a bounded retry on transient failures so the first read
+/// after a suspend/resume re-establishes the connection (see [`is_transient`]).
 pub struct RedisFeedSource {
     url: String,
     list: PublishedList,
@@ -60,10 +87,22 @@ impl RedisFeedSource {
     pub async fn published(
         &self,
     ) -> Result<(Vec<Published>, Option<DateTime<Utc>>), FeedSourceError> {
-        let mut conn = connect(&self.url).await.map_err(PublishedListError::from)?;
-        let published = self.list.read(&mut conn).await?;
-        let refreshed_at = self.list.refreshed_at(&mut conn).await?;
-        Ok((published, refreshed_at))
+        (|| async {
+            let mut conn = connect(&self.url).await.map_err(PublishedListError::from)?;
+            let published = self.list.read(&mut conn).await?;
+            let refreshed_at = self.list.refreshed_at(&mut conn).await?;
+            Ok((published, refreshed_at))
+        })
+        .retry(retry_policy())
+        .when(is_transient)
+        .notify(|e, dur| {
+            warn!(
+                error = %e,
+                retry_in_ms = dur.as_millis() as u64,
+                "transient redis failure reading published list; will retry",
+            );
+        })
+        .await
     }
 }
 
@@ -83,5 +122,36 @@ impl FeedSource for RedisFeedSource {
             skeet_ids,
             refreshed_at,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use deadpool_redis::redis::{ErrorKind, RedisError};
+
+    #[test]
+    fn io_redis_error_is_transient() {
+        let e = FeedSourceError::Published(PublishedListError::Redis(RedisError::from((
+            ErrorKind::Io,
+            "connection reset",
+        ))));
+        assert!(is_transient(&e));
+    }
+
+    #[test]
+    fn json_error_is_not_transient() {
+        let json_err = serde_json::from_str::<i32>("not a number").expect_err("should fail");
+        let e = FeedSourceError::Published(PublishedListError::Json(json_err));
+        assert!(!is_transient(&e));
+    }
+
+    #[test]
+    fn non_transient_redis_error_is_not_retried() {
+        let e = FeedSourceError::Published(PublishedListError::Redis(RedisError::from((
+            ErrorKind::UnexpectedReturnType,
+            "wrong type",
+        ))));
+        assert!(!is_transient(&e));
     }
 }

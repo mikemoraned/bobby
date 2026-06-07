@@ -10952,6 +10952,7 @@ name = "skeet-publish"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "backon",
  "chrono",
  "clap",
  "deadpool-redis",

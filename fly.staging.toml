@@ -20,6 +20,16 @@ auto_stop_machines = "suspend"
 auto_start_machines = true
 min_machines_running = 0
 
+# Low limits tuned for a low-traffic, suspendable feed: the proxy uses
+# soft_limit to decide a machine is busy enough to start another, so a high
+# default keeps this single machine "hot" and works against auto-suspend.
+# https://fly.io/docs/reference/configuration/#http_service-concurrency
+# https://fly.io/docs/launch/autostop-autostart/
+[http_service.concurrency]
+type = "requests"
+soft_limit = 5
+hard_limit = 25
+
 [[http_service.checks]]
 grace_period = "10s"
 interval = "30s"
