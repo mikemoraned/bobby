@@ -30,6 +30,8 @@ spec:
             - "recency-48h"
             - "--publish"
             - "quality-48h"
+            - "--publish"
+            - "quality-7d"
           env:
             - name: BOBBY_S3_ENDPOINT
               valueFrom:

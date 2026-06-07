@@ -668,9 +668,9 @@ Decisions baked in (flagged where a real choice exists):
 
 ###### A. Publisher: publish the `quality-7d` list
 
-* [ ] **Add `quality-7d` to the publisher's spec set** — `Order::quality` + `Limit(7d)`. This is a config entry, not new code: the generic `(Order, Limit)` loop from Phase 3 B already computes, windows, and atomically writes each list. Pass it via the existing `--publish quality-48h --publish quality-7d`.
-* [ ] **Reuse the schema + resolver** — `PublishedPair`, the naming, and `ImageUrlResolver` are unchanged; only the `Limit` window differs.
-* [ ] **Confirm a wider window is covered by the round-trip test** (the Phase 3 test is already generic over `(Order, Limit)`): publisher writes `quality-7d` → reader decodes → expected images present in quality order.
+* [x] **Add `quality-7d` to the publisher's spec set** — `Order::quality` + `Limit(7d)`. This is a config entry, not new code: the generic `(Order, Limit)` loop from Phase 3 B already computes, windows, and atomically writes each list. Pass it via the existing `--publish quality-48h --publish quality-7d`.
+* [x] **Reuse the schema + resolver** — `PublishedPair`, the naming, and `ImageUrlResolver` are unchanged; only the `Limit` window differs.
+* [x] **Confirm a wider window is covered by the round-trip test** (the Phase 3 test is already generic over `(Order, Limit)`): publisher writes `quality-7d` → reader decodes → expected images present in quality order.
 
 ###### B. `skeet-feed`: read + server-render the list at `/`
 

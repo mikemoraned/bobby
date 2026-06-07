@@ -24,13 +24,14 @@ use tokio::time::{Instant, sleep};
 
 // Distinct, valid CIDv1 (raw, sha2-256) strings — only distinct `V3` image ids
 // matter, so the CDN resolver succeeds for each.
-const CIDS: [&str; 3] = [
+const CIDS: [&str; 4] = [
     "bafkreiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "bafkreiabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "bafkreiacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bafkreiadaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 ];
 
-fn scored_record(rkey: &str, cid: &str) -> ImageRecord {
+fn scored_record_at(rkey: &str, cid: &str, original_at: OriginalAt) -> ImageRecord {
     ImageRecord {
         image_id: ImageId::V3(BlueskyCid::new(cid).expect("valid cid")),
         skeet_id: format!("at://did:plc:abc/app.bsky.feed.post/{rkey}")
@@ -38,12 +39,36 @@ fn scored_record(rkey: &str, cid: &str) -> ImageRecord {
             .expect("valid skeet id"),
         image: test_image(),
         discovered_at: DiscoveredAt::now(),
-        original_at: OriginalAt::new(Utc::now()),
+        original_at,
         zone: Zone::TopRight,
         annotated_image: test_image(),
         config_version: ModelVersion::from("test"),
         detected_text: String::new(),
     }
+}
+
+fn scored_record(rkey: &str, cid: &str) -> ImageRecord {
+    scored_record_at(rkey, cid, OriginalAt::new(Utc::now()))
+}
+
+/// Seed one scored image into `store` at the given age and raw score.
+async fn seed_scored(store: &SkeetStore, record: ImageRecord, score: f32) {
+    let mv = ModelVersion::from("test");
+    store.add(&record).await.expect("add record");
+    store
+        .upsert_score(&record.image_id, &Score::new(score).expect("valid score"), &mv)
+        .await
+        .expect("upsert score");
+}
+
+/// The rkeys a `RedisFeedSource` reads back, in list order.
+async fn rkeys(reader: &RedisFeedSource) -> Vec<String> {
+    let skeleton = reader.skeleton(false).await.expect("read skeleton");
+    skeleton
+        .skeet_ids
+        .iter()
+        .map(|s| s.rkey().as_str().to_string())
+        .collect()
 }
 
 /// Seed three visible skeets whose *insertion* order (a, b, c) deliberately
@@ -102,11 +127,43 @@ async fn quality_list_roundtrips_publisher_to_reader_docker() {
     // A reader on the same (order, limit) gets the skeets back in quality order:
     // High first (b_high), then MedHigh by score (a_med 0.60 before c_med 0.55).
     let reader = RedisFeedSource::new(url, Order::Quality, Limit::hours(48));
-    let skeleton = reader.skeleton(false).await.expect("read skeleton");
-    let rkeys: Vec<String> = skeleton
-        .skeet_ids
-        .iter()
-        .map(|s| s.rkey().as_str().to_string())
-        .collect();
-    assert_eq!(rkeys, ["b_high", "a_med", "c_med"]);
+    assert_eq!(rkeys(&reader).await, ["b_high", "a_med", "c_med"]);
+}
+
+/// The wider `quality-7d` window includes a High-band skeet published 4 days ago
+/// that the `quality-48h` window excludes — same publisher, two specs differing
+/// only in window. Order stays quality (band, then score) in both lists.
+#[tokio::test]
+async fn quality_7d_window_includes_older_skeets_excluded_from_48h_docker() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = Arc::new(open_temp_store(&dir).await);
+    seed_quality(&store).await; // b_high(now, 0.90), a_med(now, 0.60), c_med(now, 0.55)
+
+    // A High-band skeet published 4 days ago: inside 7d, outside 48h.
+    let four_days_ago = OriginalAt::new(Utc::now() - chrono::Duration::days(4));
+    seed_scored(&store, scored_record_at("d_old", CIDS[3], four_days_ago), 0.80).await;
+
+    let (_container, url) = start_redis().await;
+
+    // One publisher, both specs — the generic (order, limit) loop writes each list.
+    let publisher = FeedPublisher::new(
+        Arc::clone(&store),
+        test_support::test_models(),
+        Arc::new(CdnImageUrlResolver),
+        vec![
+            (Order::Quality, Limit::hours(48)),
+            (Order::Quality, Limit::days(7)),
+        ],
+    );
+    let mut conn = connect(&url).await.expect("connect");
+    publisher.publish(&mut conn, Utc::now()).await.expect("publish");
+
+    // 48h excludes the 4-day-old skeet.
+    let reader_48h = RedisFeedSource::new(url.clone(), Order::Quality, Limit::hours(48));
+    assert_eq!(rkeys(&reader_48h).await, ["b_high", "a_med", "c_med"]);
+
+    // 7d includes it, still in quality order: High by score (b_high 0.90, d_old
+    // 0.80), then MedHigh by score (a_med 0.60, c_med 0.55).
+    let reader_7d = RedisFeedSource::new(url, Order::Quality, Limit::days(7));
+    assert_eq!(rkeys(&reader_7d).await, ["b_high", "d_old", "a_med", "c_med"]);
 }
