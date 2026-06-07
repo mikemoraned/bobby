@@ -9,6 +9,7 @@ use cot::{App, AppBuilder, Project};
 use tracing::info;
 
 use crate::AppraiserLayer;
+use crate::ModelsLayer;
 use crate::OAuthConfigLayer;
 use crate::PublishedFeedLayer;
 use crate::StartedAtLayer;
@@ -50,6 +51,7 @@ impl App for AppraiseApp {
 pub struct AppraiseProject {
     pub published_feed_layer: PublishedFeedLayer,
     pub store_layer: StoreLayer,
+    pub models_layer: ModelsLayer,
     pub appraiser_layer: AppraiserLayer,
     pub oauth_config_layer: OAuthConfigLayer,
     pub started_at_layer: StartedAtLayer,
@@ -98,6 +100,7 @@ impl Project for AppraiseProject {
             .middleware(session_middleware)
             .middleware(self.published_feed_layer.clone())
             .middleware(self.store_layer.clone())
+            .middleware(self.models_layer.clone())
             .middleware(self.appraiser_layer.clone())
             .middleware(self.oauth_config_layer.clone())
             .middleware(self.started_at_layer.clone())

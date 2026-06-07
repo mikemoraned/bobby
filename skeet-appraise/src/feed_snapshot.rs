@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use shared::{Band, ImageId};
+use shared::{Band, ImageId, RefineModels};
 use skeet_publish::RedisFeedSource;
 use skeet_publish::effective_band::image_effective_band;
 use skeet_store::{Score, SkeetId, SkeetStore, StoreError};
@@ -33,6 +33,7 @@ impl FeedSnapshot {
     pub async fn load(
         feed: &RedisFeedSource,
         store: &SkeetStore,
+        models: &RefineModels,
     ) -> Result<Self, FeedSnapshotError> {
         let (published, _refreshed_at) = feed.published().await?;
 
@@ -55,10 +56,11 @@ impl FeedSnapshot {
         let items = published
             .into_iter()
             .filter_map(|item| {
-                let (score, _model_version) = scores.get(&item.image_id)?;
+                let (score, model_version) = scores.get(&item.image_id)?;
                 let manual_image_band = image_bands.get(&item.image_id).copied();
                 let manual_skeet_band = skeet_bands.get(&item.skeet_id).copied();
-                let effective_band = image_effective_band(*score, manual_image_band);
+                let effective_band =
+                    image_effective_band(*score, model_version, models, manual_image_band);
                 Some(FeedItem {
                     skeet_id: item.skeet_id,
                     image_id: item.image_id,

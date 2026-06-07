@@ -68,6 +68,9 @@ async fn spawn_server() -> TestServer {
     let store = tempfile::tempdir().expect("create temp store");
     let bind = format!("127.0.0.1:{port}");
     let bin = env!("CARGO_BIN_EXE_skeet-appraise");
+    // The binary loads the model registry at startup; the default `config/refine.toml`
+    // is relative to CWD (the crate dir under nextest), so point at the repo's copy.
+    let model_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../config/refine.toml");
     let child = Command::new(bin)
         .args([
             "--store-path",
@@ -76,6 +79,8 @@ async fn spawn_server() -> TestServer {
             &bind,
             "--redis-publish-url",
             &redis_url,
+            "--model-path",
+            model_path,
         ])
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())

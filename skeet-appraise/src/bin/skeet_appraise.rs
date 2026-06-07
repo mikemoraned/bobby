@@ -1,15 +1,16 @@
 #![warn(clippy::all, clippy::nursery)]
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use chrono::Utc;
 use clap::Parser;
 use cot::project::Bootstrapper;
-use shared::Appraiser;
+use shared::{Appraiser, RefineModels};
 use skeet_appraise::auth_config::OAuthConfig;
 use skeet_appraise::project::AppraiseProject;
 use skeet_appraise::{
-    AppraiserLayer, OAuthConfigLayer, PublishedFeedLayer, StartedAtLayer, StoreLayer,
+    AppraiserLayer, ModelsLayer, OAuthConfigLayer, PublishedFeedLayer, StartedAtLayer, StoreLayer,
 };
 use skeet_publish::{Limit, Order, RedisFeedSource};
 use skeet_store::StoreArgs;
@@ -19,6 +20,11 @@ use tracing::info;
 struct Args {
     #[command(flatten)]
     store: StoreArgs,
+
+    /// Path to the refine model registry (refine.toml) — the display badges
+    /// resolve each score → band via the producing model's threshold.
+    #[arg(long, default_value = "config/refine.toml")]
+    model_path: PathBuf,
 
     /// Address to bind the server to
     #[arg(long, default_value = "127.0.0.1:8080")]
@@ -76,6 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(git_hash = env!("BUILD_GIT_HASH"), "skeet-appraise starting");
 
     let store = Arc::new(args.store.open_store("appraise").await?);
+    let models = Arc::new(RefineModels::load(&args.model_path)?);
 
     info!(bind = %args.bind, "starting skeet-appraise server");
 
@@ -117,6 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let project = AppraiseProject {
         published_feed_layer: PublishedFeedLayer::new(feed),
         store_layer: StoreLayer::from_shared(store),
+        models_layer: ModelsLayer::from_shared(models),
         appraiser_layer: AppraiserLayer::new(appraiser),
         oauth_config_layer: OAuthConfigLayer::new(oauth_config),
         started_at_layer: StartedAtLayer::new(Utc::now()),

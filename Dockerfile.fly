@@ -27,4 +27,5 @@ CMD ["skeet-feed"]
 
 FROM runner-base AS runner-skeet-appraise
 COPY --from=builder /build/out/skeet-appraise /usr/local/bin/skeet-appraise
-CMD ["skeet-appraise"]
+COPY config/refine.toml /etc/bobby/refine.toml
+CMD ["skeet-appraise", "--model-path", "/etc/bobby/refine.toml"]

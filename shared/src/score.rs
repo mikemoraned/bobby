@@ -69,6 +69,57 @@ impl PartialOrd for Score {
     }
 }
 
+/// A score rescaled so a model's decision threshold maps to 0.5, making scores
+/// produced by models with different thresholds comparable.
+///
+/// Always in `[0.0, 1.0]` and non-NaN (the constructor guards both), so `Eq` and
+/// `Ord` are sound via `f32::total_cmp` even though `f32` is not. Construction is
+/// `From<NormalizedScore> for f32` to read it back.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NormalizedScore(f32);
+
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("normalized score must be between 0.0 and 1.0, got {0}")]
+pub struct InvalidNormalizedScore(f32);
+
+impl NormalizedScore {
+    /// Validating constructor: rejects NaN and any value outside `[0.0, 1.0]`
+    /// rather than clamping, so an out-of-range input surfaces as an error.
+    pub fn new(value: f32) -> Result<Self, InvalidNormalizedScore> {
+        if (0.0..=1.0).contains(&value) {
+            Ok(Self(value))
+        } else {
+            Err(InvalidNormalizedScore(value))
+        }
+    }
+}
+
+impl From<NormalizedScore> for f32 {
+    fn from(score: NormalizedScore) -> Self {
+        score.0
+    }
+}
+
+impl std::fmt::Display for NormalizedScore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:.2}", self.0)
+    }
+}
+
+impl Eq for NormalizedScore {}
+
+impl Ord for NormalizedScore {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.total_cmp(&other.0)
+    }
+}
+
+impl PartialOrd for NormalizedScore {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 /// A threshold in the range 0.0–1.0.
 ///
 /// `Threshold::new` rejects NaN and out-of-range values, so `Eq` and `Ord`
@@ -153,6 +204,21 @@ mod tests {
             let sa = Score::new(a).expect("valid");
             let sb = Score::new(b).expect("valid");
             prop_assert_eq!(sa.partial_cmp(&sb), a.partial_cmp(&b));
+        }
+
+        /// `NormalizedScore::new(x).is_ok()` iff `0.0 ≤ x ≤ 1.0` (NaN and
+        /// out-of-range both rejected, never clamped).
+        #[test]
+        fn normalized_validity(x in proptest::num::f32::ANY) {
+            let expected_valid = (0.0..=1.0).contains(&x);
+            prop_assert_eq!(NormalizedScore::new(x).is_ok(), expected_valid);
+        }
+
+        #[test]
+        fn normalized_ordering_matches_f32(a in 0.0f32..=1.0f32, b in 0.0f32..=1.0f32) {
+            let na = NormalizedScore::new(a).expect("valid");
+            let nb = NormalizedScore::new(b).expect("valid");
+            prop_assert_eq!(na.cmp(&nb), a.total_cmp(&b));
         }
     }
 }

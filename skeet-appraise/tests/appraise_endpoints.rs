@@ -17,9 +17,10 @@ use shared::{Appraiser, BlueskyCid, ImageId};
 use skeet_appraise::auth_config::OAuthConfig;
 use skeet_appraise::project::AppraiseProject;
 use skeet_appraise::{
-    AppraiserLayer, OAuthConfigLayer, PublishedFeedLayer, StartedAtLayer, StoreLayer,
+    AppraiserLayer, ModelsLayer, OAuthConfigLayer, PublishedFeedLayer, StartedAtLayer, StoreLayer,
 };
 use skeet_publish::{ImageUrl, Limit, Order, Published, PublishedList, RedisFeedSource, connect};
+use test_support::test_models;
 use skeet_store::test_utils::{make_record, make_record_at, open_temp_store, test_image};
 use skeet_store::{DiscoveredAt, ImageRecord, ModelVersion, OriginalAt, Score, SkeetId, SkeetStore, Zone};
 use testcontainers::runners::AsyncRunner;
@@ -44,6 +45,7 @@ async fn client_for_with_feed(store: Arc<SkeetStore>, redis_url: &str) -> Client
     let project = AppraiseProject {
         published_feed_layer: PublishedFeedLayer::new(feed),
         store_layer: StoreLayer::from_shared(store),
+        models_layer: ModelsLayer::from_shared(test_models()),
         appraiser_layer: AppraiserLayer::new(Some(Arc::new(Appraiser::LocalAdmin))),
         oauth_config_layer: OAuthConfigLayer::new(None),
         started_at_layer: StartedAtLayer::new(Utc::now()),
@@ -512,6 +514,7 @@ async fn oauth_client(
     let project = AppraiseProject {
         published_feed_layer: PublishedFeedLayer::new(feed),
         store_layer: StoreLayer::from_shared(store),
+        models_layer: ModelsLayer::from_shared(test_models()),
         appraiser_layer: AppraiserLayer::new(None),
         oauth_config_layer: OAuthConfigLayer::new(Some(Arc::new(oauth_config))),
         started_at_layer: StartedAtLayer::new(Utc::now()),

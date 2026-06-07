@@ -10,6 +10,7 @@ use shared::{Band, ImageId};
 use tracing::{info, instrument, warn};
 
 use crate::AppraiserExtractor;
+use crate::Models;
 use crate::PublishedFeedExtractor;
 use crate::Store;
 use crate::feed_snapshot::FeedSnapshot;
@@ -63,12 +64,13 @@ pub async fn home(
     AppraiserExtractor(appraiser): AppraiserExtractor,
     PublishedFeedExtractor(feed): PublishedFeedExtractor,
     Store(store): Store,
+    Models(models): Models,
 ) -> cot::Result<Html> {
     info!("serving home");
 
     let is_admin = appraiser.is_some();
 
-    let snapshot = FeedSnapshot::load(&feed, &store)
+    let snapshot = FeedSnapshot::load(&feed, &store, &models)
         .await
         .map_err(|e| cot::Error::internal(format!("failed to load feed snapshot: {e}")))?;
 

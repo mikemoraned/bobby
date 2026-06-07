@@ -28,7 +28,9 @@ pub use refine_model::{
     Label, ModelName, ModelProvider, RefineModel, RefineModels, RefineModelsError, RefinePrompt,
 };
 pub use rejection::{Rejection, RejectionCategories, RejectionCategory};
-pub use score::{InvalidScore, InvalidThreshold, Score, Threshold};
+pub use score::{
+    InvalidNormalizedScore, InvalidScore, InvalidThreshold, NormalizedScore, Score, Threshold,
+};
 use serde::Deserialize;
 use skeet_id::SkeetId;
 pub use zone::Zone;

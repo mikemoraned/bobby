@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use shared::{Band, ImageId, RefineModels};
 use skeet_store::{ModelVersion, Score, SkeetId, StoredImageSummary};
 
-use crate::effective_band::image_score_is_positive;
+use crate::effective_band::{image_effective_band, skeet_effective_band};
 
 /// The data the feed-visibility policy reads: the scored entries plus the manual
 /// band overrides and model registry needed to interpret each score.
@@ -21,30 +21,28 @@ pub trait FeedData {
 
 /// Compute the set of skeet IDs whose effective band makes them visible in the feed.
 ///
-/// Score-based visibility uses the per-model threshold from `feed.models()`.
-/// Manual band overrides bypass the model lookup and use `Band::is_visible_in_feed`.
+/// Each image's band is the model-aware [`image_effective_band`] (manual override,
+/// else the score normalised by the producing model's threshold); a skeet is
+/// visible iff its [`skeet_effective_band`] — the min of its manual override and
+/// all image bands — clears feed visibility. Visibility and the quality sort thus
+/// read the same band.
 fn visible_skeet_ids<F: FeedData>(feed: &F) -> HashSet<SkeetId> {
-    // For each image: manual override wins; otherwise use per-model positive check.
-    // Track per-skeet whether every image clears its bar.
-    let mut skeet_visible: HashMap<&SkeetId, bool> = HashMap::new();
+    let mut per_skeet: HashMap<&SkeetId, Vec<Band>> = HashMap::new();
     for (summary, score, model_version) in feed.entries() {
-        let manual_image = feed.image_band(&summary.image_id);
-        let image_ok = manual_image.map_or_else(
-            || image_score_is_positive(*score, model_version, feed.models()),
-            |band| band.is_visible_in_feed(),
+        let band = image_effective_band(
+            *score,
+            model_version,
+            feed.models(),
+            feed.image_band(&summary.image_id),
         );
-        let entry = skeet_visible.entry(&summary.skeet_id).or_insert(true);
-        *entry = *entry && image_ok;
+        per_skeet.entry(&summary.skeet_id).or_default().push(band);
     }
 
-    skeet_visible
+    per_skeet
         .into_iter()
-        .filter(|(skeet_id, all_images_ok)| {
-            if !all_images_ok {
-                return false;
-            }
-            let manual_skeet = feed.skeet_band(skeet_id);
-            manual_skeet.is_none_or(|b| b.is_visible_in_feed())
+        .filter(|(skeet_id, image_bands)| {
+            skeet_effective_band(feed.skeet_band(skeet_id), image_bands)
+                .is_some_and(Band::is_visible_in_feed)
         })
         .map(|(skeet_id, _)| skeet_id.clone())
         .collect()

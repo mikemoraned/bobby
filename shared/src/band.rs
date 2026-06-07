@@ -1,6 +1,6 @@
 //! Quality bands for appraising skeets and images.
 
-use crate::Score;
+use crate::NormalizedScore;
 
 /// A quality band that a skeet or image falls into.
 ///
@@ -19,12 +19,12 @@ pub enum Band {
 pub struct ParseBandError(String);
 
 impl Band {
-    /// Assign a band to a score using half-open intervals:
+    /// Assign a band to a [`NormalizedScore`] using half-open intervals:
     /// `[0.0, 0.25)` → `Low`,
     /// `[0.25, 0.5)` → `MediumLow`,
     /// `[0.5, 0.75)` → `MediumHigh`,
     /// `[0.75, 1.0]` → `HighQuality`.
-    pub fn from_score(score: Score) -> Self {
+    pub fn from_normalized(score: NormalizedScore) -> Self {
         let value: f32 = score.into();
         if value < 0.25 {
             Self::Low
@@ -37,7 +37,12 @@ impl Band {
         }
     }
 
-    pub const ALL: &'static [Self] = &[Self::Low, Self::MediumLow, Self::MediumHigh, Self::HighQuality];
+    pub const ALL: &'static [Self] = &[
+        Self::Low,
+        Self::MediumLow,
+        Self::MediumHigh,
+        Self::HighQuality,
+    ];
 
     pub const fn wire_name(self) -> &'static str {
         match self {
@@ -59,7 +64,9 @@ impl Band {
 
     pub const fn description(self) -> &'static str {
         match self {
-            Self::Low => "Doesn't match the general layout at all; should be blocked at Prune stage",
+            Self::Low => {
+                "Doesn't match the general layout at all; should be blocked at Prune stage"
+            }
             Self::MediumLow => "Technically matches the general layout but doesn't match the theme",
             Self::MediumHigh => "Matches the general layout and theme, but not great",
             Self::HighQuality => "Great exemplar of the original idea, or really interesting",
@@ -97,21 +104,21 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
 
-    fn score(value: f32) -> Score {
-        Score::new(value).expect("valid score")
+    fn norm(value: f32) -> NormalizedScore {
+        NormalizedScore::new(value).expect("valid normalized score")
     }
 
-    /// Documents the exact threshold values (0.25, 0.5, 0.75) and their boundary behaviour.
+    /// Documents the exact normalised cut-points (0.25, 0.5, 0.75) and their boundary behaviour.
     #[test]
-    fn from_score_boundaries() {
-        assert_eq!(Band::from_score(score(0.0)), Band::Low);
-        assert_eq!(Band::from_score(score(0.24)), Band::Low);
-        assert_eq!(Band::from_score(score(0.25)), Band::MediumLow);
-        assert_eq!(Band::from_score(score(0.49)), Band::MediumLow);
-        assert_eq!(Band::from_score(score(0.5)), Band::MediumHigh);
-        assert_eq!(Band::from_score(score(0.74)), Band::MediumHigh);
-        assert_eq!(Band::from_score(score(0.75)), Band::HighQuality);
-        assert_eq!(Band::from_score(score(1.0)), Band::HighQuality);
+    fn from_normalized_boundaries() {
+        assert_eq!(Band::from_normalized(norm(0.0)), Band::Low);
+        assert_eq!(Band::from_normalized(norm(0.24)), Band::Low);
+        assert_eq!(Band::from_normalized(norm(0.25)), Band::MediumLow);
+        assert_eq!(Band::from_normalized(norm(0.49)), Band::MediumLow);
+        assert_eq!(Band::from_normalized(norm(0.5)), Band::MediumHigh);
+        assert_eq!(Band::from_normalized(norm(0.74)), Band::MediumHigh);
+        assert_eq!(Band::from_normalized(norm(0.75)), Band::HighQuality);
+        assert_eq!(Band::from_normalized(norm(1.0)), Band::HighQuality);
     }
 
     #[test]
@@ -144,20 +151,18 @@ mod tests {
     }
 
     proptest! {
-        /// `from_score` is non-decreasing: higher scores never yield lower bands.
+        /// `from_normalized` is non-decreasing: higher scores never yield lower bands.
         #[test]
-        fn band_from_score_monotone(a in 0.0f32..=1.0f32, b in 0.0f32..=1.0f32) {
-            let sa = Score::new(a).expect("valid");
-            let sb = Score::new(b).expect("valid");
+        fn band_from_normalized_monotone(a in 0.0f32..=1.0f32, b in 0.0f32..=1.0f32) {
             if a <= b {
-                prop_assert!(Band::from_score(sa) <= Band::from_score(sb));
+                prop_assert!(Band::from_normalized(norm(a)) <= Band::from_normalized(norm(b)));
             }
         }
 
         /// Visibility iff band ≥ MediumHigh — the threshold is always consistent.
         #[test]
         fn band_visibility_matches_threshold(a in 0.0f32..=1.0f32) {
-            let band = Band::from_score(Score::new(a).expect("valid"));
+            let band = Band::from_normalized(norm(a));
             prop_assert_eq!(band.is_visible_in_feed(), band >= Band::MediumHigh);
         }
     }

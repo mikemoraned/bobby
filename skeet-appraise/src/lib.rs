@@ -6,6 +6,7 @@ pub mod auth;
 pub mod auth_config;
 pub mod feed_snapshot;
 pub mod handlers;
+mod models_middleware;
 pub mod project;
 pub mod published_feed_middleware;
 pub mod started_at;
@@ -14,6 +15,7 @@ mod store_middleware;
 
 pub use appraiser_config::{AppraiserExtractor, AppraiserLayer};
 pub use auth_config::{OAuthConfigExtractor, OAuthConfigLayer};
+pub use models_middleware::{Models, ModelsLayer};
 pub use published_feed_middleware::{PublishedFeedExtractor, PublishedFeedLayer};
 pub use started_at::{StartedAtExtractor, StartedAtLayer};
 pub use static_assets::web_static_files;
