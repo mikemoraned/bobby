@@ -357,6 +357,10 @@ async fn home_selects_feed_from_query_docker() {
         body.contains(r#"value="quality-7d" selected"#),
         "dropdown should mark quality-7d selected"
     );
+
+    // An explicit unknown feed is rejected, not silently defaulted.
+    let (status, _) = get_body(&mut client, "/?feed=recency-7d").await;
+    assert_eq!(status, 400, "an unconfigured feed should be a bad request");
 }
 
 /// A manual skeet band must cap the band shown on the home view: a `0.95` score

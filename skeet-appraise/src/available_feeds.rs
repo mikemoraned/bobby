@@ -23,6 +23,12 @@ pub struct FeedOption {
 #[error("no feeds configured (need at least one --publish spec)")]
 pub struct NoFeedsConfigured;
 
+/// A `?feed=` value that doesn't name one of the configured feeds (unparseable,
+/// or a valid spec that wasn't configured).
+#[derive(Debug, thiserror::Error)]
+#[error("unknown feed: \"{0}\"")]
+pub struct UnknownFeed(pub String);
+
 fn spec_value((order, limit): (Order, Limit)) -> String {
     format!("{order}-{limit}")
 }
@@ -50,13 +56,19 @@ impl AvailableFeeds {
         self.specs[0]
     }
 
-    /// Resolve a requested `{order}-{limit}` value to a configured feed, falling
-    /// back to the default for an absent, unparseable, or unconfigured value.
-    pub fn resolve(&self, requested: Option<&str>) -> (Order, Limit) {
-        requested
-            .and_then(|r| parse_spec(r).ok())
-            .filter(|spec| self.readers.contains_key(spec))
-            .unwrap_or_else(|| self.default_spec())
+    /// Resolve a requested `{order}-{limit}` value to a configured feed. An absent
+    /// value uses the default; an explicit value that isn't a configured feed is
+    /// an error (rather than silently falling back).
+    pub fn resolve(&self, requested: Option<&str>) -> Result<(Order, Limit), UnknownFeed> {
+        requested.map_or_else(
+            || Ok(self.default_spec()),
+            |r| {
+                parse_spec(r)
+                    .ok()
+                    .filter(|spec| self.readers.contains_key(spec))
+                    .ok_or_else(|| UnknownFeed(r.to_string()))
+            },
+        )
     }
 
     /// The reader for a configured spec, if any.
@@ -107,24 +119,33 @@ mod tests {
     #[test]
     fn resolves_configured_values() {
         let feeds = feeds();
-        assert_eq!(feeds.resolve(Some("quality-7d")), (Order::Quality, Limit::days(7)));
-        assert_eq!(feeds.resolve(Some("recency-48h")), (Order::Recency, Limit::hours(48)));
+        assert_eq!(
+            feeds.resolve(Some("quality-7d")).expect("configured"),
+            (Order::Quality, Limit::days(7))
+        );
+        assert_eq!(
+            feeds.resolve(Some("recency-48h")).expect("configured"),
+            (Order::Recency, Limit::hours(48))
+        );
     }
 
     #[test]
-    fn falls_back_to_default_for_unknown_absent_or_unconfigured() {
+    fn absent_value_uses_the_default() {
+        assert_eq!(feeds().resolve(None).expect("default"), (Order::Quality, Limit::hours(48)));
+    }
+
+    #[test]
+    fn unknown_or_unconfigured_value_is_an_error() {
         let feeds = feeds();
-        let default = (Order::Quality, Limit::hours(48));
-        assert_eq!(feeds.resolve(None), default);
-        assert_eq!(feeds.resolve(Some("nonsense")), default);
+        assert!(feeds.resolve(Some("nonsense")).is_err());
         // A valid spec that wasn't configured isn't selectable.
-        assert_eq!(feeds.resolve(Some("recency-7d")), default);
+        assert!(feeds.resolve(Some("recency-7d")).is_err());
     }
 
     #[test]
     fn options_are_in_order_and_mark_the_selected() {
         let feeds = feeds();
-        let opts = feeds.options(feeds.resolve(Some("quality-7d")));
+        let opts = feeds.options(feeds.resolve(Some("quality-7d")).expect("configured"));
         let values: Vec<&str> = opts.iter().map(|o| o.value.as_str()).collect();
         assert_eq!(values, ["quality-48h", "quality-7d", "recency-48h"]);
         let selected: Vec<&str> = opts

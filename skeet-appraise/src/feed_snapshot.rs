@@ -8,7 +8,7 @@ use skeet_publish::effective_band::{image_effective_band, skeet_effective_band};
 use skeet_publish::{Limit, Order};
 use skeet_store::{Score, SkeetId, SkeetStore, StoreError};
 
-use crate::available_feeds::{AvailableFeeds, FeedOption};
+use crate::available_feeds::{AvailableFeeds, FeedOption, UnknownFeed};
 
 pub struct FeedItem {
     pub skeet_id: SkeetId,
@@ -69,8 +69,9 @@ impl FromRequestHead for FeedSnapshotSource {
 }
 
 impl FeedSnapshotSource {
-    /// Resolve a requested `?feed=` value to a configured spec (default-aware).
-    pub fn resolve(&self, requested: Option<&str>) -> (Order, Limit) {
+    /// Resolve a requested `?feed=` value to a configured spec. Absent uses the
+    /// default; an explicit unknown value is an error.
+    pub fn resolve(&self, requested: Option<&str>) -> Result<(Order, Limit), UnknownFeed> {
         self.feeds.resolve(requested)
     }
 

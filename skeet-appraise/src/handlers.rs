@@ -1,6 +1,5 @@
 use std::io::Cursor;
 
-use cot::html::Html;
 use cot::http::HeaderValue;
 use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::{Path, UrlQuery};
@@ -65,13 +64,29 @@ struct HomeTemplate {
     feeds: Vec<FeedOption>,
 }
 
+/// Plain-text `400 Bad Request` (an unknown `?feed=` value).
+fn bad_request(message: &str) -> Response {
+    let mut response = Response::new(Body::fixed(message.to_string()));
+    *response.status_mut() = StatusCode::BAD_REQUEST;
+    response
+        .headers_mut()
+        .insert("content-type", HeaderValue::from_static("text/plain; charset=utf-8"));
+    response
+}
+
 #[instrument(skip_all)]
 pub async fn home(
     AppraiserExtractor(appraiser): AppraiserExtractor,
     snapshot_source: FeedSnapshotSource,
     UrlQuery(query): UrlQuery<HomeQuery>,
-) -> cot::Result<Html> {
-    let spec = snapshot_source.resolve(query.feed.as_deref());
+) -> cot::Result<Response> {
+    let spec = match snapshot_source.resolve(query.feed.as_deref()) {
+        Ok(spec) => spec,
+        Err(e) => {
+            warn!(error = %e, "rejecting unknown feed selection");
+            return Ok(bad_request(&e.to_string()));
+        }
+    };
     info!(order = %spec.0, limit = %spec.1, "serving home");
 
     let is_admin = appraiser.is_some();
@@ -115,7 +130,11 @@ pub async fn home(
         feeds: snapshot_source.options(spec),
     }
     .render()?;
-    Ok(Html::new(rendered))
+    let mut response = Response::new(Body::fixed(rendered));
+    response
+        .headers_mut()
+        .insert("content-type", HeaderValue::from_static("text/html; charset=utf-8"));
+    Ok(response)
 }
 
 #[instrument(skip_all, fields(image_id = %image_id_str))]
