@@ -27,11 +27,27 @@ pub fn normalize(score: Score, threshold: Threshold) -> NormalizedScore {
         .expect("normalized score is in [0, 1] by construction")
 }
 
+/// The model-aware normalised score for an image's raw score: [`normalize`] by the
+/// producing model's `decision_threshold`.
+///
+/// `None` if `model_version` is no longer in the registry — such a score can't be
+/// calibrated, so callers decide how to treat it (see [`image_effective_band`]).
+pub fn image_normalized_score(
+    score: Score,
+    model_version: &ModelVersion,
+    models: &RefineModels,
+) -> Option<NormalizedScore> {
+    models
+        .get(model_version)
+        .map(|model| normalize(score, model.decision_threshold))
+}
+
 /// Per-image effective band: a manual override wins; otherwise the score is
 /// normalised by the producing model's threshold and banded.
 ///
-/// An unknown `model_version` cannot be calibrated, so its band is floored to
-/// `MediumLow` (below feed visibility)
+/// An unknown `model_version` cannot be calibrated ([`image_normalized_score`]
+/// returns `None`), so its band is floored to `MediumLow` (below feed visibility),
+/// matching the not-positive treatment stale-model scores had before.
 pub fn image_effective_band(
     score: Score,
     model_version: &ModelVersion,
@@ -41,7 +57,7 @@ pub fn image_effective_band(
     if let Some(band) = manual_image_band {
         return band;
     }
-    models.get(model_version).map_or_else(
+    image_normalized_score(score, model_version, models).map_or_else(
         || {
             warn!(
                 %model_version,
@@ -49,7 +65,7 @@ pub fn image_effective_band(
             );
             Band::MediumLow
         },
-        |model| Band::from_normalized(normalize(score, model.decision_threshold)),
+        Band::from_normalized,
     )
 }
 

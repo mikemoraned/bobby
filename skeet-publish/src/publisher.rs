@@ -1,15 +1,17 @@
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use deadpool_redis::redis;
-use shared::{ImageId, RefineModels};
+use shared::{Band, ImageId, NormalizedScore, RefineModels};
 use skeet_store::{
     Appraisal, ModelVersion, Score, SkeetId, SkeetStore, StoreError, StoredImageSummary, Version,
     VersionedCache,
 };
 use tokio::sync::RwLock;
 
+use crate::effective_band::{image_effective_band, image_normalized_score, skeet_effective_band};
 use crate::image_url_resolver::ImageUrlResolver;
 use crate::limit::Limit;
 use crate::order::Order;
@@ -50,12 +52,12 @@ impl FeedData for WindowedFeed {
 
 /// Compute the published pairs for one `(order, limit)` spec from a feed.
 ///
-/// Reuses the visibility policy ([`FeedData::visible_entries`]) to choose *which* skeets
-/// are allowed, then applies the spec's ordering and window: for
-/// [`Order::Recency`], keep only entries published within `limit.window()` of
-/// `now` and sort newest-first by `original_at`. Each surviving entry's
-/// representative image is resolved to a CDN url; entries whose image can't be
-/// resolved (non-`V3` ids) are dropped.
+/// Reuses the visibility policy ([`FeedData::visible_entries`]) to choose *which*
+/// skeets are allowed, then applies the spec's ordering within `limit.window()` of
+/// `now`: [`Order::Recency`] sorts newest-first by `original_at`; [`Order::Quality`]
+/// sorts by effective band then normalised score, best first (see [`QualityRank`]).
+/// Each surviving entry's representative image is resolved to a CDN url; entries
+/// whose image can't be resolved (non-`V3` ids) are dropped.
 pub fn published_for_spec<F: FeedData>(
     feed: &F,
     order: Order,
@@ -77,6 +79,8 @@ pub fn published_for_spec<F: FeedData>(
                 .timestamp_micros()
                 .cmp(&a.0.original_at.timestamp_micros())
         }),
+        // Best first: higher band, then higher normalised score (see `QualityRank`).
+        Order::Quality => windowed.sort_by_key(|entry| quality_rank(feed, entry)),
     }
 
     windowed
@@ -91,6 +95,58 @@ pub fn published_for_spec<F: FeedData>(
                 })
         })
         .collect()
+}
+
+/// Best-first ordering key for [`Order::Quality`]: higher effective band wins, then
+/// higher normalised score.
+///
+/// `Ord` ranks the *best* entry as least, so a plain ascending `sort_by_key` puts
+/// the best first. `band`/`score` are `Option` only to stay total for an entry
+/// whose model has left the registry (no band/score → sorts last).
+#[derive(Debug, PartialEq, Eq)]
+struct QualityRank {
+    band: Option<Band>,
+    score: Option<NormalizedScore>,
+}
+
+impl Ord for QualityRank {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Compare other→self so a higher band — then a higher score — ranks as
+        // `Less` and therefore sorts first.
+        other
+            .band
+            .cmp(&self.band)
+            .then_with(|| other.score.cmp(&self.score))
+    }
+}
+
+impl PartialOrd for QualityRank {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// The [`QualityRank`] for one entry.
+///
+/// The band is the entry's representative image's model-aware [`image_effective_band`]
+/// folded with the manual skeet override ([`skeet_effective_band`]); a manual override
+/// moves the band but never the score. The normalised-score tiebreak makes within-band
+/// order comparable across models with different thresholds.
+fn quality_rank<F: FeedData>(
+    feed: &F,
+    entry: &(StoredImageSummary, Score, ModelVersion),
+) -> QualityRank {
+    let (summary, score, model_version) = entry;
+    let image_band = image_effective_band(
+        *score,
+        model_version,
+        feed.models(),
+        feed.image_band(&summary.image_id),
+    );
+    QualityRank {
+        band: skeet_effective_band(feed.skeet_band(&summary.skeet_id), &[image_band]),
+        score: image_normalized_score(*score, model_version, feed.models()),
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -233,7 +289,8 @@ impl FeedPublisher {
 mod tests {
     use super::*;
 
-    use shared::{Appraiser, Band, BlueskyCid};
+    use shared::refine_model::{ModelName, ModelProvider, RefinePrompt};
+    use shared::{Appraiser, Band, BlueskyCid, RefineModel, Threshold};
     use skeet_store::{DiscoveredAt, OriginalAt, Zone};
     use test_support::test_models;
 
@@ -380,5 +437,146 @@ mod tests {
             now,
         );
         assert!(pairs.is_empty());
+    }
+
+    // ─── Quality ordering ───────────────────────────────────────────
+
+    /// A registry with one model per `(version, decision_threshold)` spec.
+    fn models_with(specs: &[(&str, f64)]) -> Arc<RefineModels> {
+        let mut models = RefineModels::new();
+        for (version, threshold) in specs {
+            models.insert_unverified(
+                version,
+                RefineModel {
+                    model_provider: ModelProvider::openai(),
+                    model_name: ModelName::gpt_4o(),
+                    prompt: RefinePrompt::new("test"),
+                    decision_threshold: Threshold::new(*threshold).expect("valid"),
+                },
+            );
+        }
+        Arc::new(models)
+    }
+
+    /// A recent entry (inside any window) scored `score` by model `model`.
+    fn entry_m(
+        now: DateTime<Utc>,
+        rkey: &str,
+        score: f32,
+        model: &str,
+    ) -> (StoredImageSummary, Score, ModelVersion) {
+        let mut e = entry(rkey, now - chrono::Duration::hours(1), score);
+        e.2 = ModelVersion::from(model);
+        e
+    }
+
+    fn quality_feed(
+        entries: Vec<(StoredImageSummary, Score, ModelVersion)>,
+        models: Arc<RefineModels>,
+    ) -> WindowedFeed {
+        WindowedFeed {
+            entries,
+            skeet_appraisals: HashMap::new(),
+            image_appraisals: HashMap::new(),
+            models,
+        }
+    }
+
+    fn quality_rkeys(feed: &WindowedFeed, now: DateTime<Utc>) -> Vec<String> {
+        let pairs = published_for_spec(
+            feed,
+            Order::Quality,
+            Limit::hours(48),
+            &CdnImageUrlResolver,
+            now,
+        );
+        skeet_rkeys(&pairs)
+    }
+
+    #[test]
+    fn quality_band_beats_score() {
+        let now = Utc::now();
+        // `lower` (lenient t=0.2) bands High at score 0.6; `higher` (t=0.5) bands
+        // only MedHigh at the *higher* score 0.7 — band dominates raw score.
+        let feed = quality_feed(
+            vec![
+                entry_m(now, "medhigh", 0.7, "t05"),
+                entry_m(now, "high", 0.6, "t02"),
+            ],
+            models_with(&[("t02", 0.2), ("t05", 0.5)]),
+        );
+        assert_eq!(quality_rkeys(&feed, now), ["high", "medhigh"]);
+    }
+
+    #[test]
+    fn quality_within_band_higher_score_first() {
+        let now = Utc::now();
+        // Both MedHigh under t=0.5; the higher score sorts first.
+        let feed = quality_feed(
+            vec![
+                entry_m(now, "lo", 0.6, "t05"),
+                entry_m(now, "hi", 0.7, "t05"),
+            ],
+            models_with(&[("t05", 0.5)]),
+        );
+        assert_eq!(quality_rkeys(&feed, now), ["hi", "lo"]);
+    }
+
+    #[test]
+    fn quality_manual_band_reorders_relative_to_score() {
+        let now = Utc::now();
+        let demoted = entry_m(now, "demoted", 0.95, "t05");
+        let plain = entry_m(now, "plain", 0.90, "t05");
+        let demoted_skeet = demoted.0.skeet_id.clone();
+
+        // Score-alone both land in High, so the higher score (`demoted`, 0.95) leads.
+        let feed = quality_feed(
+            vec![demoted.clone(), plain.clone()],
+            models_with(&[("t05", 0.5)]),
+        );
+        assert_eq!(quality_rkeys(&feed, now), ["demoted", "plain"]);
+
+        // A manual MedHigh on `demoted` drops it a band below `plain` (still High),
+        // flipping the order despite `demoted`'s higher score.
+        let mut feed = quality_feed(vec![demoted, plain], models_with(&[("t05", 0.5)]));
+        feed.skeet_appraisals.insert(
+            demoted_skeet,
+            Appraisal {
+                band: Band::MediumHigh,
+                appraiser: Appraiser::LocalAdmin,
+            },
+        );
+        assert_eq!(quality_rkeys(&feed, now), ["plain", "demoted"]);
+    }
+
+    #[test]
+    fn quality_drops_below_threshold_score_for_strict_model() {
+        let now = Utc::now();
+        // With t=0.6, a 0.55 score normalises below 0.5 → MedLow → hidden; 0.9 stays.
+        let feed = quality_feed(
+            vec![
+                entry_m(now, "kept", 0.9, "t06"),
+                entry_m(now, "below", 0.55, "t06"),
+            ],
+            models_with(&[("t06", 0.6)]),
+        );
+        assert_eq!(quality_rkeys(&feed, now), ["kept"]);
+    }
+
+    #[test]
+    fn quality_within_band_tiebreak_is_cross_model() {
+        let now = Utc::now();
+        // Same band (MedHigh), different thresholds: `a` (t=0.5, score 0.70) is
+        // further past its threshold than `b` (t=0.6, score 0.72 → normalises 0.65),
+        // so `a` leads even though its raw score is lower. Raw-score sort would
+        // invert this — the regression guard for normalisation.
+        let feed = quality_feed(
+            vec![
+                entry_m(now, "b", 0.72, "t06"),
+                entry_m(now, "a", 0.70, "t05"),
+            ],
+            models_with(&[("t05", 0.5), ("t06", 0.6)]),
+        );
+        assert_eq!(quality_rkeys(&feed, now), ["a", "b"]);
     }
 }

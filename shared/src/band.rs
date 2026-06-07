@@ -121,6 +121,15 @@ mod tests {
         assert_eq!(Band::from_normalized(norm(1.0)), Band::HighQuality);
     }
 
+    /// `Ord` ranks worst→best. Feed visibility (`>= MediumHigh`) and the quality
+    /// sort both rely on this direction, so lock it against an enum reordering.
+    #[test]
+    fn ord_is_worst_to_best() {
+        assert!(Band::Low < Band::MediumLow);
+        assert!(Band::MediumLow < Band::MediumHigh);
+        assert!(Band::MediumHigh < Band::HighQuality);
+    }
+
     #[test]
     fn short_labels_are_distinct() {
         let labels: Vec<_> = Band::ALL.iter().map(|b| b.short_label()).collect();
