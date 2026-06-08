@@ -62,7 +62,7 @@
 {% else %}
         <div class="grid">
 {% for card in cards %}
-            <a href="{{ card.bsky_url }}"><img src="{{ card.thumb_url }}" loading="lazy" alt="{{ card.alt }}"></a>
+            <a href="{{ card.bsky_url }}"><img src="{{ card.thumb_url }}" loading="lazy" alt="{{ card.alt }}"{% if let Some(ratio) = card.aspect_ratio %} style="aspect-ratio: {{ ratio }}"{% endif %}></a>
 {% endfor %}
         </div>
 {% endif %}

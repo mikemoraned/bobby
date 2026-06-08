@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{info, instrument, warn};
 
 use crate::feed_config::FeedConfig;
-use crate::{FeedSourceExtractor, PublishedImagesSourceExtractor};
+use crate::{DimensionCacheExtractor, FeedSourceExtractor, PublishedImagesSourceExtractor};
 
 fn wants_no_cache(head: &RequestHead) -> bool {
     head.headers
@@ -166,11 +166,14 @@ pub async fn get_feed_skeleton(
 }
 
 /// One image card on the home page: the Bluesky post it links to and the CDN
-/// thumbnail it shows.
+/// thumbnail it shows. `aspect_ratio` is the `W/H` for the `aspect-ratio` CSS
+/// property when the image's dimensions are known, so the tile reserves space
+/// and the grid doesn't reflow as images load.
 struct GridCard {
     bsky_url: String,
     thumb_url: String,
     alt: String,
+    aspect_ratio: Option<String>,
 }
 
 #[derive(Template)]
@@ -185,25 +188,29 @@ struct HomeTemplate {
 #[instrument(skip_all)]
 pub async fn home(
     PublishedImagesSourceExtractor(source): PublishedImagesSourceExtractor,
+    DimensionCacheExtractor(dimensions): DimensionCacheExtractor,
 ) -> cot::Result<Html> {
     let published = source
         .published_images()
         .await
         .map_err(|e| cot::Error::internal(format!("failed to read published images: {e}")))?;
 
-    let cards: Vec<GridCard> = published
-        .images
-        .into_iter()
-        .map(|item| {
-            let did = item.skeet_id.did();
-            let rkey = item.skeet_id.rkey();
-            GridCard {
-                bsky_url: format!("https://bsky.app/profile/{did}/post/{rkey}"),
-                thumb_url: item.image_url.to_string(),
-                alt: "Selfie with a landmark".to_string(),
-            }
-        })
-        .collect();
+    let mut cards: Vec<GridCard> = Vec::with_capacity(published.images.len());
+    for item in published.images {
+        let did = item.skeet_id.did();
+        let rkey = item.skeet_id.rkey();
+        let thumb_url = item.image_url.to_string();
+        let aspect_ratio = dimensions
+            .dimensions(&thumb_url)
+            .await
+            .map(|d| format!("{}/{}", d.width, d.height));
+        cards.push(GridCard {
+            bsky_url: format!("https://bsky.app/profile/{did}/post/{rkey}"),
+            thumb_url,
+            alt: "Selfie with a landmark".to_string(),
+            aspect_ratio,
+        });
+    }
 
     info!(count = cards.len(), "serving home grid");
     let rendered = HomeTemplate { cards }.render()?;

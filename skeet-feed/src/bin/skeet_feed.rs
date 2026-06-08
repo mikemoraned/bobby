@@ -6,9 +6,9 @@ use clap::Parser;
 use cot::project::Bootstrapper;
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
-use skeet_feed::{FeedSourceLayer, PublishedImagesSourceLayer};
+use skeet_feed::{DimensionCache, DimensionCacheLayer, FeedSourceLayer, PublishedImagesSourceLayer};
 use skeet_publish::{FeedSource, Limit, Order, PublishedImagesSource, RedisFeedSource};
-use tracing::info;
+use tracing::{info, warn};
 
 #[derive(Parser)]
 struct Args {
@@ -82,9 +82,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Limit::days(7),
     ));
 
+    // Warm the image-dimension cache for the current home feed in the background,
+    // so the per-render cost is only for images discovered after boot. This does
+    // not block serving; a render that races it just fetches its own misses.
+    // Failures are non-fatal — those images fall back to a lazy fetch on render.
+    let dimension_cache = Arc::new(DimensionCache::new());
+    {
+        let cache = Arc::clone(&dimension_cache);
+        let source = Arc::clone(&published_images_source);
+        tokio::spawn(async move {
+            match source.published_images().await {
+                Ok(published) => {
+                    let urls: Vec<String> =
+                        published.images.iter().map(|i| i.image_url.to_string()).collect();
+                    info!(count = urls.len(), "prefetching image dimensions for home feed");
+                    cache.prefetch(urls).await;
+                }
+                Err(e) => warn!(
+                    error = %e,
+                    "could not read home feed for dimension prefetch; will fetch lazily"
+                ),
+            }
+        });
+    }
+
     let project = FeedProject {
         feed_source_layer: FeedSourceLayer::new(feed_source),
         published_images_source_layer: PublishedImagesSourceLayer::new(published_images_source),
+        dimension_cache_layer: DimensionCacheLayer::new(dimension_cache),
         feed_config_layer: FeedConfigLayer::new(feed_params),
     };
     let bootstrapper = Bootstrapper::new(project)

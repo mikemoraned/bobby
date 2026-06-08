@@ -16,7 +16,7 @@ use cot::test::Client;
 use shared::{BlueskyCid, ImageId};
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
-use skeet_feed::{FeedSourceLayer, PublishedImagesSourceLayer};
+use skeet_feed::{DimensionCache, DimensionCacheLayer, FeedSourceLayer, PublishedImagesSourceLayer};
 use skeet_publish::{
     FeedSkeleton, FeedSource, FeedSourceError, ImageUrl, PublishedImage, PublishedImages,
     PublishedImagesSource,
@@ -74,36 +74,52 @@ fn project_for(
     params: FeedParams,
     feed_source: Arc<dyn FeedSource>,
     images_source: Arc<dyn PublishedImagesSource>,
+    dimension_cache: Arc<DimensionCache>,
 ) -> FeedProject {
     FeedProject {
         feed_source_layer: FeedSourceLayer::new(feed_source),
         published_images_source_layer: PublishedImagesSourceLayer::new(images_source),
+        dimension_cache_layer: DimensionCacheLayer::new(dimension_cache),
         feed_config_layer: FeedConfigLayer::new(params),
     }
 }
 
 async fn client_for(params: FeedParams, source: StubFeedSource) -> Client {
     let empty_images = Arc::new(StubPublishedImagesSource { images: vec![] });
-    let project = project_for(params, Arc::new(source), empty_images);
+    let project = project_for(
+        params,
+        Arc::new(source),
+        empty_images,
+        Arc::new(DimensionCache::cache_only()),
+    );
     Client::new(project).await
 }
 
 async fn client_with_images(params: FeedParams, images: Vec<PublishedImage>) -> Client {
+    client_with_images_and_cache(params, images, Arc::new(DimensionCache::cache_only())).await
+}
+
+async fn client_with_images_and_cache(
+    params: FeedParams,
+    images: Vec<PublishedImage>,
+    dimension_cache: Arc<DimensionCache>,
+) -> Client {
     let empty_feed = Arc::new(StubFeedSource {
         skeet_ids: vec![],
         refreshed_at: None,
     });
     let images_source = Arc::new(StubPublishedImagesSource { images });
-    let project = project_for(params, empty_feed, images_source);
+    let project = project_for(params, empty_feed, images_source, dimension_cache);
     Client::new(project).await
+}
+
+fn thumb_url(cid: &str) -> String {
+    format!("https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc/{cid}@jpeg")
 }
 
 fn published_image(rkey: &str, cid: &str) -> PublishedImage {
     PublishedImage {
-        image_url: ImageUrl::new(format!(
-            "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc/{cid}@jpeg"
-        ))
-        .expect("valid url"),
+        image_url: ImageUrl::new(thumb_url(cid)).expect("valid url"),
         image_id: ImageId::V3(BlueskyCid::new(cid).expect("valid cid")),
         skeet_id: skeet_id(rkey),
     }
@@ -275,6 +291,38 @@ async fn home_renders_empty_state_when_no_images() {
     assert!(
         !body.contains("class=\"grid\""),
         "no grid should render when there are no images"
+    );
+}
+
+#[tokio::test]
+async fn home_sets_aspect_ratio_when_dimensions_known() {
+    const CID: &str = "bafkreiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    let cache = Arc::new(DimensionCache::cache_only());
+    cache.preset(thumb_url(CID), 800, 600);
+    let mut client =
+        client_with_images_and_cache(test_params(), vec![published_image("p", CID)], cache).await;
+
+    let (status, body) = get_body(&mut client, "/").await;
+    assert_eq!(status, 200);
+    assert!(
+        body.contains(r#"style="aspect-ratio: 800/600""#),
+        "card should carry the known aspect ratio"
+    );
+}
+
+#[tokio::test]
+async fn home_omits_aspect_ratio_when_dimensions_unknown() {
+    const CID: &str = "bafkreiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    // cache_only with nothing preset → no dimensions, no fetch.
+    let mut client = client_with_images(test_params(), vec![published_image("p", CID)]).await;
+
+    let (status, body) = get_body(&mut client, "/").await;
+    assert_eq!(status, 200);
+    assert!(
+        !body.contains("aspect-ratio"),
+        "no aspect-ratio style when dimensions are unknown"
     );
 }
 

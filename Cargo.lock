@@ -10903,6 +10903,7 @@ dependencies = [
  "chrono",
  "clap",
  "cot",
+ "image",
  "reqwest 0.13.2",
  "rustls 0.23.37",
  "serde",

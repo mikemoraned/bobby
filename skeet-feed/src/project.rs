@@ -5,7 +5,7 @@ use cot::{App, AppBuilder, Project};
 
 use crate::feed_config::FeedConfigLayer;
 use crate::handlers::{describe_feed_generator, did_document, get_feed_skeleton, home};
-use crate::{FeedSourceLayer, PublishedImagesSourceLayer};
+use crate::{DimensionCacheLayer, FeedSourceLayer, PublishedImagesSourceLayer};
 
 pub struct FeedApp;
 
@@ -35,6 +35,7 @@ impl App for FeedApp {
 pub struct FeedProject {
     pub feed_source_layer: FeedSourceLayer,
     pub published_images_source_layer: PublishedImagesSourceLayer,
+    pub dimension_cache_layer: DimensionCacheLayer,
     pub feed_config_layer: FeedConfigLayer,
 }
 
@@ -57,6 +58,7 @@ impl Project for FeedProject {
         handler
             .middleware(self.feed_source_layer.clone())
             .middleware(self.published_images_source_layer.clone())
+            .middleware(self.dimension_cache_layer.clone())
             .middleware(self.feed_config_layer.clone())
             .build()
     }
