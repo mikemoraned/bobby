@@ -66,6 +66,16 @@
             }
             .card .links a { color: #0066cc; text-decoration: none; }
             .card .links a:hover { text-decoration: underline; }
+            .card .links .copy-id {
+                margin-left: 0.5rem;
+                padding: 0.1rem 0.35rem;
+                border: 1px solid #999;
+                border-radius: 4px;
+                background: #fff;
+                cursor: pointer;
+                font-size: 0.75rem;
+            }
+            .card .links .copy-id:hover { background: #eee; }
             .appraise-section {
                 padding: 0.5rem 0.75rem 0.75rem;
                 border-top: 1px solid #eee;
@@ -120,6 +130,7 @@
 {% endif %}
                     <div class="links">
                         <a href="{{ entry.web_url }}" target="_blank">bsky.app</a>
+                        <button type="button" class="copy-id" data-id="{{ entry.image_id }}" title="Copy image id: {{ entry.image_id }}">copy image id</button>
                     </div>
                 </div>
 {% if is_admin %}
@@ -144,5 +155,16 @@
 {% endfor %}
         </div>
 {% endif %}
+        <script>
+            document.addEventListener("click", function (event) {
+                const button = event.target.closest(".copy-id");
+                if (!button) return;
+                navigator.clipboard.writeText(button.dataset.id).then(function () {
+                    const original = button.textContent;
+                    button.textContent = "copied!";
+                    setTimeout(function () { button.textContent = original; }, 1200);
+                });
+            });
+        </script>
     </body>
 </html>
