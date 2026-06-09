@@ -10,7 +10,6 @@ workspace = true
 chrono = { workspace = true }
 clap = { workspace = true }
 cot = { workspace = true }
-image = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -26,6 +25,7 @@ build-support = { workspace = true }
 
 [dev-dependencies]
 async-trait = { workspace = true }
+bluesky = { workspace = true }
 skeet-store = { path = "../skeet-store" }
 testcontainers = { workspace = true }
 testcontainers-modules = { workspace = true }

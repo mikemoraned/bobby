@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 atrium-api = { version = "0.25", default-features = false, features = ["namespace-appbsky"] }
+bluesky = { workspace = true }
 eval = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }

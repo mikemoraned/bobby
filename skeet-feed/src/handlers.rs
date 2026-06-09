@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{info, instrument, warn};
 
 use crate::feed_config::FeedConfig;
-use crate::{DimensionCacheExtractor, FeedSourceExtractor, PublishedImagesSourceExtractor};
+use crate::{FeedSourceExtractor, PublishedImagesSourceExtractor};
 
 fn wants_no_cache(head: &RequestHead) -> bool {
     head.headers
@@ -188,29 +188,28 @@ struct HomeTemplate {
 #[instrument(skip_all)]
 pub async fn home(
     PublishedImagesSourceExtractor(source): PublishedImagesSourceExtractor,
-    DimensionCacheExtractor(dimensions): DimensionCacheExtractor,
 ) -> cot::Result<Html> {
     let published = source
         .published_images()
         .await
         .map_err(|e| cot::Error::internal(format!("failed to read published images: {e}")))?;
 
-    let mut cards: Vec<GridCard> = Vec::with_capacity(published.images.len());
-    for item in published.images {
-        let did = item.skeet_id.did();
-        let rkey = item.skeet_id.rkey();
-        let thumb_url = item.image_url.to_string();
-        let aspect_ratio = dimensions
-            .dimensions(&thumb_url)
-            .await
-            .map(|d| format!("{}/{}", d.width, d.height));
-        cards.push(GridCard {
-            bsky_url: format!("https://bsky.app/profile/{did}/post/{rkey}"),
-            thumb_url,
-            alt: "Selfie with a landmark".to_string(),
-            aspect_ratio,
-        });
-    }
+    let cards: Vec<GridCard> = published
+        .images
+        .into_iter()
+        .map(|item| {
+            let did = item.skeet_id.did();
+            let rkey = item.skeet_id.rkey();
+            GridCard {
+                bsky_url: format!("https://bsky.app/profile/{did}/post/{rkey}"),
+                thumb_url: item.image_url.to_string(),
+                alt: "Selfie with a landmark".to_string(),
+                aspect_ratio: item
+                    .image_url_dimensions
+                    .map(|d| format!("{}/{}", d.width, d.height)),
+            }
+        })
+        .collect();
 
     info!(count = cards.len(), "serving home grid");
     let rendered = HomeTemplate { cards }.render()?;

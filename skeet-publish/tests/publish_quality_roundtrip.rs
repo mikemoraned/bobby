@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use chrono::Utc;
 use shared::{BlueskyCid, ImageId};
+use bluesky::StaticExistenceChecker;
 use skeet_publish::{
     CdnImageUrlResolver, FeedPublisher, FeedSource, Limit, Order, RedisFeedSource, connect,
 };
@@ -119,6 +120,7 @@ async fn quality_list_roundtrips_publisher_to_reader_docker() {
         Arc::clone(&store),
         test_support::test_models(),
         Arc::new(CdnImageUrlResolver),
+        Arc::new(StaticExistenceChecker::all_present()),
         vec![(Order::Quality, Limit::hours(48))],
     );
     let mut conn = connect(&url).await.expect("connect");
@@ -150,6 +152,7 @@ async fn quality_7d_window_includes_older_skeets_excluded_from_48h_docker() {
         Arc::clone(&store),
         test_support::test_models(),
         Arc::new(CdnImageUrlResolver),
+        Arc::new(StaticExistenceChecker::all_present()),
         vec![
             (Order::Quality, Limit::hours(48)),
             (Order::Quality, Limit::days(7)),

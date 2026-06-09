@@ -11,11 +11,12 @@ use std::sync::Arc;
 use chrono::Utc;
 use common::{CIDS, redis_url, scored_record, seed, v3, wait_ready};
 use deadpool_redis::redis;
+use bluesky::StaticExistenceChecker;
 use skeet_publish::{
     CdnImageUrlResolver, FeedPublisher, Limit, Order, PublishOutcome, PublishedList, connect,
 };
 use skeet_store::test_utils::open_temp_store;
-use skeet_store::{ModelVersion, Score};
+use skeet_store::{ModelVersion, Score, SkeetId};
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::redis::Redis;
 
@@ -43,6 +44,7 @@ async fn skips_publish_when_no_relevant_change_docker() {
         Arc::clone(&store),
         models,
         Arc::new(CdnImageUrlResolver),
+        Arc::new(StaticExistenceChecker::all_present()),
         vec![spec],
     );
     let mut conn = connect(&url).await.expect("connect");
@@ -84,6 +86,51 @@ async fn skips_publish_when_no_relevant_change_docker() {
 }
 
 #[tokio::test]
+async fn publish_writes_existence_flags_from_checker_docker() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = Arc::new(open_temp_store(&dir).await);
+    seed(&store).await;
+    let models = test_support::test_models();
+    let spec = (Order::Recency, Limit::hours(48));
+    let list = PublishedList::new(spec.0, spec.1);
+
+    let container = Redis::default().start().await.expect("start redis");
+    let url = redis_url(&container).await;
+    wait_ready(&url).await;
+
+    // The double marks one seeded skeet missing; everything else is present.
+    let missing: SkeetId = "at://did:plc:abc/app.bsky.feed.post/vis2"
+        .parse()
+        .expect("valid skeet id");
+    let checker = StaticExistenceChecker::all_present().with_missing_skeets([missing.clone()]);
+
+    let publisher = FeedPublisher::new(
+        Arc::clone(&store),
+        models,
+        Arc::new(CdnImageUrlResolver),
+        Arc::new(checker),
+        vec![spec],
+    );
+    let mut conn = connect(&url).await.expect("connect");
+    publisher.publish(&mut conn, Utc::now()).await.expect("publish");
+
+    let pairs = list.read(&mut conn).await.expect("read");
+    assert!(
+        pairs.iter().any(|p| p.skeet_id == missing),
+        "the missing skeet stays in the stored list, just flagged"
+    );
+    for p in &pairs {
+        assert_eq!(
+            p.skeet_id_exists,
+            p.skeet_id != missing,
+            "skeet_id_exists flag for {}",
+            p.skeet_id
+        );
+        assert!(p.image_url_exists, "all images reported present");
+    }
+}
+
+#[tokio::test]
 async fn republishes_when_the_list_was_deleted_docker() {
     let dir = tempfile::tempdir().expect("tempdir");
     let store = Arc::new(open_temp_store(&dir).await);
@@ -100,6 +147,7 @@ async fn republishes_when_the_list_was_deleted_docker() {
         Arc::clone(&store),
         models,
         Arc::new(CdnImageUrlResolver),
+        Arc::new(StaticExistenceChecker::all_present()),
         vec![spec],
     );
     let mut conn = connect(&url).await.expect("connect");

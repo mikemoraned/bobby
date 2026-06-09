@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use bluesky::{ExistenceChecker, ExistenceResults, ImageUrl};
 use chrono::{DateTime, Utc};
 use deadpool_redis::redis;
 use shared::{Band, ImageId, NormalizedScore, RefineModels};
@@ -76,13 +77,25 @@ pub fn published_for_spec<F: FeedData>(
         .filter_map(|(summary, _, _)| {
             resolver
                 .resolve(&summary.skeet_id, &summary.image_id)
-                .map(|image_url| PublishedImage {
-                    image_url,
-                    image_id: summary.image_id,
-                    skeet_id: summary.skeet_id,
+                .map(|image_url| {
+                    PublishedImage::unprobed(image_url, summary.image_id, summary.skeet_id)
                 })
         })
         .collect()
+}
+
+/// Overwrite a pair's existence flags + dimensions from an existence check.
+///
+/// A skeet/url absent from `results` keeps the fail-open defaults set by
+/// [`PublishedImage::unprobed`] (present, dimensions unknown).
+fn enrich(pair: &mut PublishedImage, results: &ExistenceResults) {
+    if let Some(&exists) = results.skeets.get(&pair.skeet_id) {
+        pair.skeet_id_exists = exists;
+    }
+    if let Some(status) = results.images.get(&pair.image_url) {
+        pair.image_url_exists = status.exists;
+        pair.image_url_dimensions = status.dimensions;
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -191,6 +204,7 @@ pub struct FeedPublisher {
     store: Arc<SkeetStore>,
     models: Arc<RefineModels>,
     resolver: Arc<dyn ImageUrlResolver>,
+    checker: Arc<dyn ExistenceChecker>,
     specs: Vec<(Order, Limit)>,
     /// Gates republishing on the relevant table versions at the last publish.
     last_relevant: RwLock<VersionedCache<HashSet<Version>, ()>>,
@@ -201,12 +215,14 @@ impl FeedPublisher {
         store: Arc<SkeetStore>,
         models: Arc<RefineModels>,
         resolver: Arc<dyn ImageUrlResolver>,
+        checker: Arc<dyn ExistenceChecker>,
         specs: Vec<(Order, Limit)>,
     ) -> Self {
         Self {
             store,
             models,
             resolver,
+            checker,
             specs,
             last_relevant: RwLock::new(VersionedCache::new()),
         }
@@ -248,14 +264,37 @@ impl FeedPublisher {
     }
 
     /// Compute and atomically publish every spec's list to redis.
+    ///
+    /// Candidate pairs for all specs are computed first, then enriched in one
+    /// existence check over their union (so a skeet/url shared by several specs
+    /// is probed once) before each list is written.
     pub async fn publish<C>(&self, conn: &mut C, now: DateTime<Utc>) -> Result<(), PublishError>
     where
         C: redis::aio::ConnectionLike + Send,
     {
         let feed = self.fetch(now).await?;
+        let mut per_spec: Vec<((Order, Limit), Vec<PublishedImage>)> =
+            Vec::with_capacity(self.specs.len());
         for (order, limit) in &self.specs {
             let pairs = published_for_spec(&feed, *order, *limit, self.resolver.as_ref(), now);
-            PublishedList::new(*order, *limit)
+            per_spec.push(((*order, *limit), pairs));
+        }
+
+        let items: Vec<(SkeetId, ImageUrl)> = per_spec
+            .iter()
+            .flat_map(|(_, pairs)| {
+                pairs
+                    .iter()
+                    .map(|p| (p.skeet_id.clone(), p.image_url.clone()))
+            })
+            .collect();
+        let results = self.checker.check(&items).await;
+
+        for ((order, limit), mut pairs) in per_spec {
+            for pair in &mut pairs {
+                enrich(pair, &results);
+            }
+            PublishedList::new(order, limit)
                 .replace(conn, &pairs, now)
                 .await?;
         }

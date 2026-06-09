@@ -1562,6 +1562,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "bluesky"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "image",
+ "reqwest 0.13.2",
+ "serde",
+ "serde_json",
+ "shared",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "bollard"
 version = "0.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10865,6 +10881,7 @@ checksum = "b2aa850e253778c88a04c3d7323b043aeda9d3e30d5971937c1855769763678e"
 name = "skeet-appraise"
 version = "0.1.0"
 dependencies = [
+ "bluesky",
  "build-support",
  "chrono",
  "clap",
@@ -10899,11 +10916,11 @@ name = "skeet-feed"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "bluesky",
  "build-support",
  "chrono",
  "clap",
  "cot",
- "image",
  "reqwest 0.13.2",
  "rustls 0.23.37",
  "serde",
@@ -10923,6 +10940,7 @@ name = "skeet-prune"
 version = "0.1.0"
 dependencies = [
  "atrium-api",
+ "bluesky",
  "build-support",
  "chrono",
  "clap",
@@ -10954,6 +10972,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "backon",
+ "bluesky",
  "chrono",
  "clap",
  "deadpool-redis",
@@ -10972,7 +10991,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "url",
 ]
 
 [[package]]

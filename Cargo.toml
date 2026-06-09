@@ -1,5 +1,5 @@
 [workspace]
-members = ["build-support", "eval", "skeet-store", "skeet-prune", "skeet-feed", "skeet-appraise", "skeet-publish", "skeet-refine", "face-detection", "shared", "skin-detection", "text-detection", "cloudflare-exporter", "openai-exporter", "test-support"]
+members = ["bluesky", "build-support", "eval", "skeet-store", "skeet-prune", "skeet-feed", "skeet-appraise", "skeet-publish", "skeet-refine", "face-detection", "shared", "skin-detection", "text-detection", "cloudflare-exporter", "openai-exporter", "test-support"]
 resolver = "2"
 
 [workspace.lints.clippy]
@@ -11,6 +11,7 @@ build-support = { path = "build-support" }
 eval = { path = "eval" }
 test-support = { path = "test-support" }
 chrono = "0.4"
+bluesky = { path = "bluesky" }
 clap = { version = "4", features = ["derive", "env"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 serde = { version = "1", features = ["derive"] }

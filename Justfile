@@ -9,6 +9,7 @@ import 'just/container.just'
 import 'just/cluster.just'
 import 'just/cloudflare.just'
 import 'just/openai.just'
+import 'just/local.just'
 
 default:
     just --list

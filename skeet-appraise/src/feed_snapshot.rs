@@ -17,6 +17,8 @@ pub struct FeedItem {
     pub effective_band: Band,
     pub manual_image_band: Option<Band>,
     pub manual_skeet_band: Option<Band>,
+    pub image_url_exists: bool,
+    pub skeet_id_exists: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -129,6 +131,8 @@ impl FeedSnapshotSource {
                     effective_band,
                     manual_image_band,
                     manual_skeet_band,
+                    image_url_exists: item.image_url_exists,
+                    skeet_id_exists: item.skeet_id_exists,
                 })
             })
             .collect();

@@ -52,6 +52,14 @@
             }
             .card .band.HighQuality { background: #c8e6c9; }
             .card .band.MediumHigh  { background: #fff9c4; }
+            .card .missing {
+                display: inline-block;
+                padding: 0.15rem 0.4rem;
+                border-radius: 4px;
+                font-size: 0.8rem;
+                background: #ffcdd2;
+                color: #b71c1c;
+            }
             .card .links {
                 margin-top: 0.4rem;
                 font-size: 0.85rem;
@@ -107,6 +115,9 @@
                 <div class="info">
                     <span class="score">{{ entry.score }}</span>
                     <span class="band {{ entry.band }}">{{ entry.band }}</span>
+{% if let Some(note) = entry.missing_note %}
+                    <span class="missing">{{ note }}</span>
+{% endif %}
                     <div class="links">
                         <a href="{{ entry.web_url }}" target="_blank">bsky.app</a>
                     </div>

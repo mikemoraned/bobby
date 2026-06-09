@@ -9,6 +9,7 @@ workspace = true
 [dependencies]
 async-trait = { workspace = true }
 backon = { workspace = true }
+bluesky = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 deadpool-redis = { workspace = true }
@@ -22,7 +23,6 @@ skeet-store = { path = "../skeet-store" }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-url = { workspace = true }
 
 [[bin]]
 name = "skeet-publish"

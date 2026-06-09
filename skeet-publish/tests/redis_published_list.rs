@@ -11,8 +11,11 @@ use std::time::Duration;
 
 use chrono::Utc;
 use deadpool_redis::redis::{self, AsyncCommands};
+use bluesky::ImageUrl;
 use shared::{BlueskyCid, ImageId};
-use skeet_publish::{ImageUrl, Limit, Order, PublishedImage, PublishedList};
+use skeet_publish::{
+    FeedSource, Limit, Order, PublishedImage, PublishedImagesSource, PublishedList, RedisFeedSource,
+};
 use skeet_store::SkeetId;
 use testcontainers::ContainerAsync;
 use testcontainers::runners::AsyncRunner;
@@ -64,16 +67,16 @@ const CID_3: &str = "bafkreiacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 const CID_4: &str = "bafkreiadaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 fn pair(rkey: &str, cid: &str) -> PublishedImage {
-    PublishedImage {
-        image_url: ImageUrl::new(format!(
+    PublishedImage::unprobed(
+        ImageUrl::new(format!(
             "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc/{cid}@jpeg"
         ))
         .expect("valid url"),
-        image_id: ImageId::V3(BlueskyCid::new(cid).expect("valid cid")),
-        skeet_id: format!("at://did:plc:abc/app.bsky.feed.post/{rkey}")
+        ImageId::V3(BlueskyCid::new(cid).expect("valid cid")),
+        format!("at://did:plc:abc/app.bsky.feed.post/{rkey}")
             .parse::<SkeetId>()
             .expect("valid skeet id"),
-    }
+    )
 }
 
 #[tokio::test]
@@ -88,7 +91,7 @@ async fn write_then_read_roundtrips_in_order_docker() {
     assert_eq!(read, pairs, "read back the same pairs in the same order");
 
     // It really lives under the {order}-{limit} key.
-    let exists: bool = conn.exists("v2-recency-48h").await.expect("exists");
+    let exists: bool = conn.exists("v3-recency-48h").await.expect("exists");
     assert!(exists);
 }
 
@@ -108,7 +111,7 @@ async fn replace_swaps_atomically_leaving_no_remnants_docker() {
     assert_eq!(read, second);
 
     // The scratch key used during the swap is gone.
-    let leftover: bool = conn.exists("v2-recency-48h:building").await.expect("exists");
+    let leftover: bool = conn.exists("v3-recency-48h:building").await.expect("exists");
     assert!(!leftover, "scratch key should not survive a replace");
 }
 
@@ -124,7 +127,7 @@ async fn empty_replace_clears_the_list_docker() {
 
     let read = list.read(&mut conn).await.expect("read");
     assert!(read.is_empty());
-    let exists: bool = conn.exists("v2-recency-7d").await.expect("exists");
+    let exists: bool = conn.exists("v3-recency-7d").await.expect("exists");
     assert!(!exists, "an empty list leaves no key");
 }
 
@@ -141,6 +144,50 @@ async fn distinct_names_do_not_collide_docker() {
 
     assert_eq!(short.read(&mut conn).await.expect("read short"), short_pairs);
     assert_eq!(long.read(&mut conn).await.expect("read long"), long_pairs);
+}
+
+#[tokio::test]
+async fn readers_filter_missing_items_but_published_keeps_them_docker() {
+    let container = Redis::default().start().await.expect("start redis container");
+    let host = container.get_host().await.expect("get host");
+    let port = container
+        .get_host_port_ipv4(REDIS_PORT)
+        .await
+        .expect("get mapped port");
+    let url = format!("redis://{host}:{port}");
+    let mut conn = connect_with_retry(&url).await;
+
+    let list = PublishedList::new(Order::Recency, Limit::hours(48));
+    let present = pair("present", CID_1);
+    let mut image_gone = pair("imagegone", CID_2);
+    image_gone.image_url_exists = false;
+    let mut skeet_gone = pair("skeetgone", CID_3);
+    skeet_gone.skeet_id_exists = false;
+    let pairs = vec![present, image_gone, skeet_gone];
+    list.replace(&mut conn, &pairs, Utc::now()).await.expect("replace");
+
+    let reader = RedisFeedSource::new(url, Order::Recency, Limit::hours(48));
+
+    // The raw read keeps every item (appraise needs them all)...
+    let (raw, _) = reader.published().await.expect("published");
+    assert_eq!(raw.len(), 3, "published() is unfiltered");
+
+    // ...but both reader views drop the items flagged missing.
+    let skeleton = reader.skeleton(false).await.expect("skeleton");
+    let skeleton_rkeys: Vec<String> = skeleton
+        .skeet_ids
+        .iter()
+        .map(|s| s.rkey().as_str().to_string())
+        .collect();
+    assert_eq!(skeleton_rkeys, ["present"]);
+
+    let images = reader.published_images().await.expect("published images");
+    let image_rkeys: Vec<String> = images
+        .images
+        .iter()
+        .map(|p| p.skeet_id.rkey().as_str().to_string())
+        .collect();
+    assert_eq!(image_rkeys, ["present"]);
 }
 
 #[tokio::test]

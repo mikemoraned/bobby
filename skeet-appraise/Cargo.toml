@@ -31,6 +31,7 @@ urlencoding = "2"
 build-support = { workspace = true }
 
 [dev-dependencies]
+bluesky = { workspace = true }
 proptest = { workspace = true }
 skeet-store = { path = "../skeet-store", features = ["test-helpers"] }
 test-support = { workspace = true }

@@ -23,6 +23,20 @@ pub struct HomeEntry {
     pub manual_skeet_band: String,
     pub manual_image_band: String,
     pub web_url: String,
+    /// A short note when the skeet or image has gone from Bluesky;
+    /// `None` when both are present.
+    pub missing_note: Option<String>,
+}
+
+/// A short label for a card whose skeet/image the publisher last saw as gone, or
+/// `None` when both are still present.
+fn missing_note(skeet_exists: bool, image_exists: bool) -> Option<String> {
+    match (skeet_exists, image_exists) {
+        (true, true) => None,
+        (false, false) => Some("post & image gone".to_string()),
+        (false, true) => Some("post deleted".to_string()),
+        (true, false) => Some("image gone".to_string()),
+    }
 }
 
 pub struct BandOption {
@@ -68,9 +82,10 @@ struct HomeTemplate {
 fn bad_request(message: &str) -> Response {
     let mut response = Response::new(Body::fixed(message.to_string()));
     *response.status_mut() = StatusCode::BAD_REQUEST;
-    response
-        .headers_mut()
-        .insert("content-type", HeaderValue::from_static("text/plain; charset=utf-8"));
+    response.headers_mut().insert(
+        "content-type",
+        HeaderValue::from_static("text/plain; charset=utf-8"),
+    );
     response
 }
 
@@ -118,6 +133,7 @@ pub async fn home(
                     .map(|b| b.to_string())
                     .unwrap_or_default(),
                 web_url: format!("https://bsky.app/profile/{did}/post/{rkey}"),
+                missing_note: missing_note(item.skeet_id_exists, item.image_url_exists),
             }
         })
         .collect();
@@ -131,9 +147,10 @@ pub async fn home(
     }
     .render()?;
     let mut response = Response::new(Body::fixed(rendered));
-    response
-        .headers_mut()
-        .insert("content-type", HeaderValue::from_static("text/html; charset=utf-8"));
+    response.headers_mut().insert(
+        "content-type",
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
     Ok(response)
 }
 

@@ -7,6 +7,7 @@ use std::time::Duration;
 use chrono::Utc;
 use clap::Parser;
 use shared::RefineModels;
+use bluesky::CdnExistenceChecker;
 use skeet_publish::{
     CdnImageUrlResolver, FeedPublisher, Limit, Order, PublishMetrics, PublishOutcome,
     PublishedList, connect, parse_spec,
@@ -39,6 +40,14 @@ struct Args {
     #[arg(long, default_value_t = 60)]
     interval_secs: u64,
 
+    /// How long an existence check result is reused before re-probing, in seconds
+    #[arg(long, default_value_t = 3600)]
+    existence_ttl_secs: u64,
+
+    /// Max images probed concurrently during an existence check
+    #[arg(long, default_value_t = 16)]
+    existence_check_concurrency: usize,
+
     /// Publish a single cycle and exit (for local verification)
     #[arg(long, default_value_t = false)]
     once: bool,
@@ -70,10 +79,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let store = Arc::new(args.store.open_store("skeet_publish").await?);
     let models = Arc::new(RefineModels::load(&args.model_path)?);
 
+    let checker = Arc::new(CdnExistenceChecker::new(
+        Duration::from_secs(args.existence_ttl_secs),
+        args.existence_check_concurrency,
+    ));
+
     let publisher = FeedPublisher::new(
         Arc::clone(&store),
         models,
         Arc::new(CdnImageUrlResolver),
+        checker,
         specs.clone(),
     );
     let metrics = PublishMetrics::new(&opentelemetry::global::meter("skeet_publish"));

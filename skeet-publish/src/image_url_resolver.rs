@@ -1,7 +1,6 @@
+use bluesky::ImageUrl;
 use shared::ImageId;
 use skeet_store::SkeetId;
-
-use crate::image_url::ImageUrl;
 
 /// Resolves a published image to its public image URL.
 ///

@@ -30,7 +30,7 @@ impl PublishedList {
     }
 
     /// The redis key for this list: `{version}-{order}-{limit}`, e.g.
-    /// `v2-recency-48h`. The schema version prefixes the name so an
+    /// `v3-recency-48h`. The schema version prefixes the name so an
     /// incompatible `PublishedImage` change doesn't collide with an old reader/writer
     /// (see [`SCHEMA_VERSION`]).
     pub fn name(&self) -> String {
@@ -157,14 +157,14 @@ mod tests {
     #[test]
     fn name_is_version_order_limit() {
         let list = PublishedList::new(Order::Recency, Limit::hours(48));
-        assert_eq!(list.name(), "v2-recency-48h");
+        assert_eq!(list.name(), "v3-recency-48h");
     }
 
     #[test]
     fn name_components_parse_back() {
         let order: Order = "recency".parse().expect("order");
         let limit: Limit = "48h".parse().expect("limit");
-        assert_eq!(PublishedList::new(order, limit).name(), "v2-recency-48h");
+        assert_eq!(PublishedList::new(order, limit).name(), "v3-recency-48h");
     }
 
     #[test]

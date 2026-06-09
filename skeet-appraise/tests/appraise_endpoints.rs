@@ -20,7 +20,8 @@ use skeet_appraise::project::AppraiseProject;
 use skeet_appraise::{
     AppraiserLayer, ModelsLayer, OAuthConfigLayer, PublishedFeedLayer, StartedAtLayer, StoreLayer,
 };
-use skeet_publish::{ImageUrl, Limit, Order, PublishedImage, PublishedList, connect};
+use bluesky::ImageUrl;
+use skeet_publish::{Limit, Order, PublishedImage, PublishedList, connect};
 use test_support::test_models;
 use skeet_store::test_utils::{make_record, make_record_at, open_temp_store, test_image};
 use skeet_store::{DiscoveredAt, ImageRecord, ModelVersion, OriginalAt, Score, SkeetId, SkeetStore, Zone};
@@ -227,14 +228,14 @@ async fn seed_and_publishable(
         )
         .await
         .expect("upsert score");
-    PublishedImage {
-        image_url: ImageUrl::new(format!(
+    PublishedImage::unprobed(
+        ImageUrl::new(format!(
             "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc/{cid}@jpeg"
         ))
         .expect("valid url"),
         image_id,
         skeet_id,
-    }
+    )
 }
 
 /// The home page renders exactly the published list joined to live store detail:
@@ -280,14 +281,14 @@ async fn home_page_shows_published_entries_docker() {
         .expect("redis port");
     let redis_url = format!("redis://{host}:{port}");
     let mut conn = connect_ready(&redis_url).await;
-    let published = PublishedImage {
-        image_url: ImageUrl::new(format!(
+    let published = PublishedImage::unprobed(
+        ImageUrl::new(format!(
             "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc/{HOME_CID}@jpeg"
         ))
         .expect("valid url"),
         image_id,
         skeet_id,
-    };
+    );
     PublishedList::new(Order::Quality, Limit::hours(48))
         .replace(&mut conn, &[published], Utc::now())
         .await
@@ -407,14 +408,14 @@ async fn home_effective_band_is_capped_by_manual_skeet_band_docker() {
         .expect("redis port");
     let redis_url = format!("redis://{host}:{port}");
     let mut conn = connect_ready(&redis_url).await;
-    let published = PublishedImage {
-        image_url: ImageUrl::new(format!(
+    let published = PublishedImage::unprobed(
+        ImageUrl::new(format!(
             "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc/{HOME_CID}@jpeg"
         ))
         .expect("valid url"),
         image_id,
-        skeet_id: skeet_id.clone(),
-    };
+        skeet_id.clone(),
+    );
     PublishedList::new(Order::Quality, Limit::hours(48))
         .replace(&mut conn, &[published], Utc::now())
         .await
