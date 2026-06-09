@@ -10,7 +10,7 @@ I want to get to the following different division of responsibilities:
         * public website listing skeets ordered by recency and filtered by band >= MedHigh; this is a much simpler page than today's homepage (the current rich homepage moves to `skeet-appraise`)
     * bias is towards simplicity, reliability and speed (latency/cachability)
 * `skeet-appraise`:
-    * lives at `bobby-appraisals-staging` (the eventual MagicDNS FQDN `bobby-appraisals-staging.<tailnet>.ts.net`) within the hetzner cluster, accessible via tailscale
+    * lives at `bobby-appraisals-staging.houseofmoran.io`, on fly.io
     * handles:
         * showing current status and editable controls (appraisals) for:
             * what is currently live as the feed (this is effectively the current `skeet-feed` homepage, moved here)
