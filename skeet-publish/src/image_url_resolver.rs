@@ -1,4 +1,4 @@
-use bluesky::ImageUrl;
+use bluesky::{ImageUrl, bsky_cdn_thumbnail_url};
 use shared::ImageId;
 use skeet_store::SkeetId;
 
@@ -24,11 +24,7 @@ impl ImageUrlResolver for CdnImageUrlResolver {
         let ImageId::V3(cid) = image_id else {
             return None;
         };
-        ImageUrl::new(format!(
-            "https://cdn.bsky.app/img/feed_thumbnail/plain/{}/{cid}@jpeg",
-            skeet_id.did()
-        ))
-        .ok()
+        ImageUrl::new(bsky_cdn_thumbnail_url(skeet_id.did().as_str(), &cid.to_string())).ok()
     }
 }
 

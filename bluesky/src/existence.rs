@@ -14,6 +14,38 @@ mod skeet_prober;
 pub use image_prober::{CdnImageProber, ImageProber};
 pub use skeet_prober::{CdnSkeetProber, SkeetProber};
 
+/// Run `probe` over each item with at most `concurrency` futures in flight,
+/// collecting the `(key, value)` each yields into a map. A panicked probe simply
+/// drops its item from the result.
+async fn probe_bounded<K, V, Fut>(
+    items: &[K],
+    concurrency: usize,
+    probe: impl Fn(K) -> Fut + Send,
+) -> HashMap<K, V>
+where
+    K: Clone + Eq + std::hash::Hash + Send + Sync + 'static,
+    V: Send + 'static,
+    Fut: std::future::Future<Output = (K, V)> + Send + 'static,
+{
+    let concurrency = concurrency.max(1);
+    let mut out = HashMap::with_capacity(items.len());
+    let mut pending = items.iter().cloned();
+    let mut in_flight = tokio::task::JoinSet::new();
+
+    for item in pending.by_ref().take(concurrency) {
+        in_flight.spawn(probe(item));
+    }
+    while let Some(result) = in_flight.join_next().await {
+        if let Ok((key, value)) = result {
+            out.insert(key, value);
+        }
+        if let Some(item) = pending.next() {
+            in_flight.spawn(probe(item));
+        }
+    }
+    out
+}
+
 /// Whether an image url still exists and, when known, its pixel dimensions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ImageStatus {

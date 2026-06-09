@@ -44,6 +44,12 @@ impl SkeetId {
     pub const fn rkey(&self) -> &RecordKey {
         &self.rkey
     }
+
+    /// The public Bluesky web URL for this post:
+    /// `https://bsky.app/profile/{did}/post/{rkey}`.
+    pub fn bsky_post_url(&self) -> String {
+        format!("https://bsky.app/profile/{}/post/{}", self.did, self.rkey)
+    }
 }
 
 impl PartialEq for SkeetId {
@@ -168,6 +174,15 @@ mod tests {
     fn for_post_constructs_at_uri() {
         let id = SkeetId::for_post("did:plc:abc123", "xyz789");
         assert_eq!(id.to_string(), "at://did:plc:abc123/app.bsky.feed.post/xyz789");
+    }
+
+    #[test]
+    fn bsky_post_url_from_components() {
+        let id = SkeetId::for_post("did:plc:abc123", "xyz789");
+        assert_eq!(
+            id.bsky_post_url(),
+            "https://bsky.app/profile/did:plc:abc123/post/xyz789"
+        );
     }
 
     #[test]

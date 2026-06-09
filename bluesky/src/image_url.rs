@@ -22,6 +22,13 @@ pub enum InvalidImageUrl {
     NotHttps { input: String, scheme: String },
 }
 
+/// The Bluesky CDN thumbnail URL for an image blob, from the post author's `did`
+/// and the blob's `cid`:
+/// `https://cdn.bsky.app/img/feed_thumbnail/plain/{did}/{cid}@jpeg`.
+pub fn bsky_cdn_thumbnail_url(did: &str, cid: &str) -> String {
+    format!("https://cdn.bsky.app/img/feed_thumbnail/plain/{did}/{cid}@jpeg")
+}
+
 impl ImageUrl {
     pub fn new(s: impl AsRef<str>) -> Result<Self, InvalidImageUrl> {
         let s = s.as_ref();

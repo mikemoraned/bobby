@@ -22,6 +22,17 @@ fn parse_http_date(value: &str) -> Option<DateTime<Utc>> {
         .map(|naive| naive.and_utc())
 }
 
+/// Set a response's `Last-Modified` to `at`.
+///
+/// The companion of [`not_modified_since`] for the full-render (`200`) path, so
+/// both the `200` and the `304` carry the same header from one place. A no-op in
+/// the impossible case that the HTTP-date can't be made into a header value.
+pub fn set_last_modified(response: &mut Response, at: DateTime<Utc>) {
+    if let Ok(value) = HeaderValue::from_str(&http_date(at)) {
+        response.headers_mut().insert(LAST_MODIFIED, value);
+    }
+}
+
 /// A `304 Not Modified` response when the resource has not changed since the
 /// client's `If-Modified-Since`, otherwise `None` (the caller renders in full).
 ///

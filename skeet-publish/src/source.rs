@@ -106,9 +106,7 @@ impl RedisFeedSource {
     ) -> Result<(Vec<PublishedImage>, Option<DateTime<Utc>>), FeedSourceError> {
         (|| async {
             let mut conn = connect(&self.url).await.map_err(PublishedListError::from)?;
-            let published = self.list.read(&mut conn).await?;
-            let refreshed_at = self.list.refreshed_at(&mut conn).await?;
-            Ok((published, refreshed_at))
+            Ok(self.list.read_with_refreshed_at(&mut conn).await?)
         })
         .retry(retry_policy())
         .when(is_transient)

@@ -218,9 +218,7 @@ fn build_rows(
             let row_id = s.image_id.to_string().replace(':', "-");
             let item_id_encoded = urlencoding::encode(&item_id).into_owned();
 
-            let did = s.skeet_id.did();
-            let rkey = s.skeet_id.rkey();
-            let web_url = format!("https://bsky.app/profile/{did}/post/{rkey}");
+            let web_url = s.skeet_id.bsky_post_url();
 
             AdminRow {
                 image_id: s.image_id.to_string(),

@@ -95,18 +95,16 @@ impl FeedSnapshotSource {
 
         let image_id_strs: Vec<String> = published.iter().map(|p| p.image_id.to_string()).collect();
         let id_refs: Vec<&str> = image_id_strs.iter().map(String::as_str).collect();
-        let scores = self.store.list_scores_for_ids(&id_refs).await?;
-        let image_bands: HashMap<ImageId, Band> = self
-            .store
-            .list_all_image_appraisals()
-            .await?
+        let (scores, image_appraisals, skeet_appraisals) = tokio::try_join!(
+            self.store.list_scores_for_ids(&id_refs),
+            self.store.list_all_image_appraisals(),
+            self.store.list_all_skeet_appraisals(),
+        )?;
+        let image_bands: HashMap<ImageId, Band> = image_appraisals
             .into_iter()
             .map(|(id, a)| (id, a.band))
             .collect();
-        let skeet_bands: HashMap<SkeetId, Band> = self
-            .store
-            .list_all_skeet_appraisals()
-            .await?
+        let skeet_bands: HashMap<SkeetId, Band> = skeet_appraisals
             .into_iter()
             .map(|(id, a)| (id, a.band))
             .collect();

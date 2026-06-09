@@ -49,30 +49,15 @@ impl CdnSkeetProber {
 #[async_trait]
 impl SkeetProber for CdnSkeetProber {
     async fn probe_skeets(&self, skeets: &[SkeetId]) -> HashMap<SkeetId, bool> {
-        let mut out = HashMap::with_capacity(skeets.len());
-        let mut pending = skeets.iter().cloned();
-        let mut in_flight = tokio::task::JoinSet::new();
-
-        let spawn = |set: &mut tokio::task::JoinSet<(SkeetId, bool)>, skeet: SkeetId| {
-            let client = self.client.clone();
-            set.spawn(async move {
+        let client = self.client.clone();
+        super::probe_bounded(skeets, self.concurrency, move |skeet| {
+            let client = client.clone();
+            async move {
                 let exists = probe_one_skeet(&client, &skeet).await;
                 (skeet, exists)
-            });
-        };
-
-        for skeet in pending.by_ref().take(self.concurrency) {
-            spawn(&mut in_flight, skeet);
-        }
-        while let Some(result) = in_flight.join_next().await {
-            if let Ok((skeet, exists)) = result {
-                out.insert(skeet, exists);
             }
-            if let Some(skeet) = pending.next() {
-                spawn(&mut in_flight, skeet);
-            }
-        }
-        out
+        })
+        .await
     }
 }
 

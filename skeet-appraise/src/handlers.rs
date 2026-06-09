@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
 use cot::http::HeaderValue;
-use cot::http::header::{CONTENT_TYPE, LAST_MODIFIED};
+use cot::http::header::CONTENT_TYPE;
 use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::{Path, UrlQuery};
 use cot::response::Response;
@@ -116,8 +116,6 @@ pub async fn home(
         .items
         .into_iter()
         .map(|item| {
-            let did = item.skeet_id.did();
-            let rkey = item.skeet_id.rkey();
             let image_id = item.image_id.to_string();
             HomeEntry {
                 skeet_id_encoded: urlencoding::encode(&item.skeet_id.to_string()).into_owned(),
@@ -133,7 +131,7 @@ pub async fn home(
                     .manual_image_band
                     .map(|b| b.to_string())
                     .unwrap_or_default(),
-                web_url: format!("https://bsky.app/profile/{did}/post/{rkey}"),
+                web_url: item.skeet_id.bsky_post_url(),
                 missing_note: missing_note(item.skeet_id_exists, item.image_url_exists),
             }
         })
@@ -192,16 +190,11 @@ pub async fn annotated_image(
         .write_to(&mut buf, image::ImageFormat::Png)
         .map_err(|e| cot::Error::internal(format!("failed to encode image: {e}")))?;
 
-    let last_modified_value: HeaderValue = web_support::http_date(started_at.0)
-        .parse()
-        .map_err(|e| cot::Error::internal(format!("invalid last-modified header: {e}")))?;
     let mut response = Response::new(Body::fixed(buf.into_inner()));
     response
         .headers_mut()
         .insert(CONTENT_TYPE, HeaderValue::from_static("image/png"));
-    response
-        .headers_mut()
-        .insert(LAST_MODIFIED, last_modified_value);
+    web_support::set_last_modified(&mut response, started_at.0);
     Ok(response)
 }
 

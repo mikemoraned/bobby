@@ -41,30 +41,15 @@ impl CdnImageProber {
 #[async_trait]
 impl ImageProber for CdnImageProber {
     async fn probe_images(&self, urls: &[ImageUrl]) -> HashMap<ImageUrl, ImageStatus> {
-        let mut out = HashMap::with_capacity(urls.len());
-        let mut pending = urls.iter().cloned();
-        let mut in_flight = tokio::task::JoinSet::new();
-
-        let spawn = |set: &mut tokio::task::JoinSet<(ImageUrl, ImageStatus)>, url: ImageUrl| {
-            let client = self.client.clone();
-            set.spawn(async move {
+        let client = self.client.clone();
+        super::probe_bounded(urls, self.concurrency, move |url| {
+            let client = client.clone();
+            async move {
                 let status = probe_one_image(&client, &url).await;
                 (url, status)
-            });
-        };
-
-        for url in pending.by_ref().take(self.concurrency) {
-            spawn(&mut in_flight, url);
-        }
-        while let Some(result) = in_flight.join_next().await {
-            if let Ok((url, status)) = result {
-                out.insert(url, status);
             }
-            if let Some(url) = pending.next() {
-                spawn(&mut in_flight, url);
-            }
-        }
-        out
+        })
+        .await
     }
 }
 

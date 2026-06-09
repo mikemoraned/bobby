@@ -15,5 +15,5 @@ pub use dimensions::Dimensions;
 pub use existence::{
     CdnExistenceChecker, ExistenceChecker, ExistenceResults, ImageStatus, StaticExistenceChecker,
 };
-pub use image_url::{ImageUrl, InvalidImageUrl};
+pub use image_url::{ImageUrl, InvalidImageUrl, bsky_cdn_thumbnail_url};
 pub use post_thread::{BlueskyError, blocked_labels, fetch_post_thread, post_is_available};

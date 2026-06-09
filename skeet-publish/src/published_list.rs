@@ -112,11 +112,7 @@ impl PublishedList {
             .arg(self.refreshed_at_key())
             .query_async(conn)
             .await?;
-        Ok(raw.and_then(|s| {
-            DateTime::parse_from_rfc3339(&s)
-                .ok()
-                .map(|dt| dt.with_timezone(&Utc))
-        }))
+        Ok(decode_refreshed_at(raw))
     }
 
     /// Read the full list in stored order.
@@ -130,9 +126,28 @@ impl PublishedList {
             .arg(-1)
             .query_async(conn)
             .await?;
-        raw.iter()
-            .map(|s| serde_json::from_str(s).map_err(PublishedListError::from))
-            .collect()
+        decode_images(raw)
+    }
+
+    /// Read the list and its publish time together in a single round-trip
+    /// (`LRANGE` + `GET` pipelined) — the pair every consumer reads at once.
+    pub async fn read_with_refreshed_at<C>(
+        &self,
+        conn: &mut C,
+    ) -> Result<(Vec<PublishedImage>, Option<DateTime<Utc>>), PublishedListError>
+    where
+        C: redis::aio::ConnectionLike + Send,
+    {
+        let (raw_list, raw_refreshed): (Vec<String>, Option<String>) = redis::pipe()
+            .cmd("LRANGE")
+            .arg(self.name())
+            .arg(0)
+            .arg(-1)
+            .cmd("GET")
+            .arg(self.refreshed_at_key())
+            .query_async(conn)
+            .await?;
+        Ok((decode_images(raw_list)?, decode_refreshed_at(raw_refreshed)))
     }
 
     /// Whether the list key currently exists in redis. Note an empty list has no
@@ -148,6 +163,22 @@ impl PublishedList {
             .await?;
         Ok(present)
     }
+}
+
+/// Decode the JSON-encoded list entries read back from redis.
+fn decode_images(raw: Vec<String>) -> Result<Vec<PublishedImage>, PublishedListError> {
+    raw.iter()
+        .map(|s| serde_json::from_str(s).map_err(PublishedListError::from))
+        .collect()
+}
+
+/// Decode the RFC 3339 `refreshed-at` value, treating an unparseable one as absent.
+fn decode_refreshed_at(raw: Option<String>) -> Option<DateTime<Utc>> {
+    raw.and_then(|s| {
+        DateTime::parse_from_rfc3339(&s)
+            .ok()
+            .map(|dt| dt.with_timezone(&Utc))
+    })
 }
 
 #[cfg(test)]

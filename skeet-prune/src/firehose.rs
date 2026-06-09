@@ -128,7 +128,7 @@ fn image_candidate(did: &str, blob_ref: &BlobRef) -> Option<ImageCandidate> {
         warn!("skipping image with unrecognized blob ref or CID");
         return None;
     };
-    let url = format!("https://cdn.bsky.app/img/feed_thumbnail/plain/{did}/{cid}@jpeg");
+    let url = bluesky::bsky_cdn_thumbnail_url(did, &cid.to_string());
     Some(ImageCandidate { cid, url })
 }
 

@@ -100,12 +100,6 @@ impl From<NormalizedScore> for f32 {
     }
 }
 
-impl std::fmt::Display for NormalizedScore {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:.2}", self.0)
-    }
-}
-
 impl Eq for NormalizedScore {}
 
 impl Ord for NormalizedScore {

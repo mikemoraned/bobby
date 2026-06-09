@@ -1,5 +1,5 @@
 use cot::http::HeaderValue;
-use cot::http::header::{CACHE_CONTROL, CONTENT_TYPE, LAST_MODIFIED};
+use cot::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::UrlQuery;
 use cot::response::Response;
@@ -26,10 +26,8 @@ fn set_last_modified_header(
     response: &mut Response,
     refreshed_at: Option<chrono::DateTime<chrono::Utc>>,
 ) {
-    if let Some(at) = refreshed_at
-        && let Ok(val) = web_support::http_date(at).parse()
-    {
-        response.headers_mut().insert(LAST_MODIFIED, val);
+    if let Some(at) = refreshed_at {
+        web_support::set_last_modified(response, at);
     }
 }
 
@@ -223,10 +221,8 @@ pub async fn home(
         .images
         .into_iter()
         .map(|item| {
-            let did = item.skeet_id.did();
-            let rkey = item.skeet_id.rkey();
             GridCard {
-                bsky_url: format!("https://bsky.app/profile/{did}/post/{rkey}"),
+                bsky_url: item.skeet_id.bsky_post_url(),
                 thumb_url: item.image_url.to_string(),
                 alt: "Selfie with a landmark".to_string(),
                 aspect_ratio: item
@@ -249,6 +245,7 @@ pub async fn home(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cot::http::header::LAST_MODIFIED;
 
     #[test]
     fn wants_no_cache_true_when_header_present() {
