@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use cot::html::Html;
 use cot::http::HeaderValue;
+use cot::http::header::CONTENT_TYPE;
 use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::UrlQuery;
 use cot::response::{IntoResponse, Redirect, Response};
@@ -423,6 +424,6 @@ async fn render_updated_row(
     let mut response = Response::new(Body::fixed(html));
     response
         .headers_mut()
-        .insert("content-type", HeaderValue::from_static("text/html"));
+        .insert(CONTENT_TYPE, HeaderValue::from_static("text/html"));
     Ok(response)
 }

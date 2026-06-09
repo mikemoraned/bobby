@@ -11,7 +11,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone as _, Utc};
 use cot::test::Client;
 use shared::{BlueskyCid, ImageId};
 use bluesky::{Dimensions, ImageUrl};
@@ -41,9 +41,11 @@ impl FeedSource for StubFeedSource {
     }
 }
 
-/// A `PublishedImagesSource` returning a fixed set of images for the home page.
+/// A `PublishedImagesSource` returning a fixed set of images (and an optional
+/// refresh time, for the caching headers) for the home page.
 struct StubPublishedImagesSource {
     images: Vec<PublishedImage>,
+    refreshed_at: Option<DateTime<Utc>>,
 }
 
 #[async_trait]
@@ -51,7 +53,7 @@ impl PublishedImagesSource for StubPublishedImagesSource {
     async fn published_images(&self) -> Result<PublishedImages, FeedSourceError> {
         Ok(PublishedImages {
             images: self.images.clone(),
-            refreshed_at: None,
+            refreshed_at: self.refreshed_at,
         })
     }
 }
@@ -84,17 +86,31 @@ fn project_for(
 }
 
 async fn client_for(params: FeedParams, source: StubFeedSource) -> Client {
-    let empty_images = Arc::new(StubPublishedImagesSource { images: vec![] });
+    let empty_images = Arc::new(StubPublishedImagesSource {
+        images: vec![],
+        refreshed_at: None,
+    });
     let project = project_for(params, Arc::new(source), empty_images);
     Client::new(project).await
 }
 
 async fn client_with_images(params: FeedParams, images: Vec<PublishedImage>) -> Client {
+    client_with_images_refreshed(params, images, None).await
+}
+
+async fn client_with_images_refreshed(
+    params: FeedParams,
+    images: Vec<PublishedImage>,
+    refreshed_at: Option<DateTime<Utc>>,
+) -> Client {
     let empty_feed = Arc::new(StubFeedSource {
         skeet_ids: vec![],
         refreshed_at: None,
     });
-    let images_source = Arc::new(StubPublishedImagesSource { images });
+    let images_source = Arc::new(StubPublishedImagesSource {
+        images,
+        refreshed_at,
+    });
     let project = project_for(params, empty_feed, images_source);
     Client::new(project).await
 }
@@ -311,6 +327,65 @@ async fn home_omits_aspect_ratio_when_dimensions_unknown() {
     assert!(
         !body.contains("aspect-ratio"),
         "no aspect-ratio style when dimensions are unknown"
+    );
+}
+
+#[tokio::test]
+async fn home_sets_cache_control_header() {
+    let mut client = client_with_images(test_params(), vec![]).await;
+    let response = client.get("/").await.expect("GET /");
+    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(
+        response
+            .headers()
+            .get("cache-control")
+            .expect("cache-control header")
+            .to_str()
+            .expect("valid header"),
+        "public, max-age=60"
+    );
+}
+
+#[tokio::test]
+async fn home_sets_last_modified_from_refreshed_at() {
+    let refreshed = Utc.with_ymd_and_hms(2024, 6, 15, 9, 30, 0).unwrap();
+    let mut client = client_with_images_refreshed(test_params(), vec![], Some(refreshed)).await;
+    let response = client.get("/").await.expect("GET /");
+    assert_eq!(
+        response
+            .headers()
+            .get("last-modified")
+            .expect("last-modified header")
+            .to_str()
+            .expect("valid header"),
+        "Sat, 15 Jun 2024 09:30:00 GMT"
+    );
+}
+
+#[tokio::test]
+async fn home_returns_304_when_if_modified_since_matches() {
+    let refreshed = Utc.with_ymd_and_hms(2024, 6, 15, 9, 30, 0).unwrap();
+    let mut client = client_with_images_refreshed(test_params(), vec![], Some(refreshed)).await;
+
+    let first = client.get("/").await.expect("GET /");
+    let last_modified = first
+        .headers()
+        .get("last-modified")
+        .expect("last-modified header")
+        .to_str()
+        .expect("valid header")
+        .to_string();
+
+    let request = cot::http::Request::builder()
+        .uri("/")
+        .header("if-modified-since", &last_modified)
+        .body(cot::Body::empty())
+        .expect("build request");
+    let response = client.request(request).await.expect("conditional GET");
+    assert_eq!(
+        response.status().as_u16(),
+        304,
+        "matching If-Modified-Since should return 304"
     );
 }
 

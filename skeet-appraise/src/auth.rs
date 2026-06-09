@@ -127,8 +127,8 @@ pub async fn auth_callback(
     let http_client = reqwest::Client::new();
     let user_response = http_client
         .get(format!("{}/user", config.github_api_base_url))
-        .header("authorization", format!("Bearer {access_token}"))
-        .header("user-agent", "bobby-feed")
+        .header(reqwest::header::AUTHORIZATION, format!("Bearer {access_token}"))
+        .header(reqwest::header::USER_AGENT, "bobby-feed")
         .send()
         .await
         .map_err(|e| cot::Error::internal(format!("GitHub API error: {e}")))?;

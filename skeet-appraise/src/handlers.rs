@@ -1,6 +1,7 @@
 use std::io::Cursor;
 
 use cot::http::HeaderValue;
+use cot::http::header::{CONTENT_TYPE, LAST_MODIFIED};
 use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::{Path, UrlQuery};
 use cot::response::Response;
@@ -83,7 +84,7 @@ fn bad_request(message: &str) -> Response {
     let mut response = Response::new(Body::fixed(message.to_string()));
     *response.status_mut() = StatusCode::BAD_REQUEST;
     response.headers_mut().insert(
-        "content-type",
+        CONTENT_TYPE,
         HeaderValue::from_static("text/plain; charset=utf-8"),
     );
     response
@@ -148,7 +149,7 @@ pub async fn home(
     .render()?;
     let mut response = Response::new(Body::fixed(rendered));
     response.headers_mut().insert(
-        "content-type",
+        CONTENT_TYPE,
         HeaderValue::from_static("text/html; charset=utf-8"),
     );
     Ok(response)
@@ -163,18 +164,10 @@ pub async fn annotated_image(
 ) -> cot::Result<Response> {
     info!(image_id = %image_id_str, "serving annotated image");
 
-    let last_modified = started_at.http_date();
-
-    // Conditional GET: if the client already has a copy from this server boot, return 304.
-    if let Some(ims) = head
-        .headers
-        .get("if-modified-since")
-        .and_then(|v| v.to_str().ok())
-        && ims == last_modified
-    {
-        let mut response = Response::new(Body::empty());
-        *response.status_mut() = StatusCode::NOT_MODIFIED;
-        return Ok(response);
+    // Conditional GET: skip the store read + PNG encode when the client's copy
+    // (from this server boot) is still current.
+    if let Some(not_modified) = web_support::not_modified_since(&head, started_at.0, None) {
+        return Ok(not_modified);
     }
 
     let image_id: ImageId = image_id_str
@@ -199,16 +192,16 @@ pub async fn annotated_image(
         .write_to(&mut buf, image::ImageFormat::Png)
         .map_err(|e| cot::Error::internal(format!("failed to encode image: {e}")))?;
 
-    let last_modified_value: HeaderValue = last_modified
+    let last_modified_value: HeaderValue = web_support::http_date(started_at.0)
         .parse()
         .map_err(|e| cot::Error::internal(format!("invalid last-modified header: {e}")))?;
     let mut response = Response::new(Body::fixed(buf.into_inner()));
     response
         .headers_mut()
-        .insert("content-type", HeaderValue::from_static("image/png"));
+        .insert(CONTENT_TYPE, HeaderValue::from_static("image/png"));
     response
         .headers_mut()
-        .insert("last-modified", last_modified_value);
+        .insert(LAST_MODIFIED, last_modified_value);
     Ok(response)
 }
 

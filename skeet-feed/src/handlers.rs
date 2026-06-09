@@ -1,5 +1,5 @@
-use cot::html::Html;
 use cot::http::HeaderValue;
+use cot::http::header::{CACHE_CONTROL, CONTENT_TYPE, LAST_MODIFIED};
 use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::UrlQuery;
 use cot::response::Response;
@@ -10,9 +10,14 @@ use tracing::{info, instrument, warn};
 use crate::feed_config::FeedConfig;
 use crate::{FeedSourceExtractor, PublishedImagesSourceExtractor};
 
+/// The grid is republished at most once a publish cycle and the app suspends
+/// when idle, so a short shared cache with revalidation is the right trade: a
+/// burst is absorbed, yet a republish is picked up within the window.
+const GRID_CACHE_CONTROL: &str = "public, max-age=60";
+
 fn wants_no_cache(head: &RequestHead) -> bool {
     head.headers
-        .get("cache-control")
+        .get(CACHE_CONTROL)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|v| v.contains("no-cache"))
 }
@@ -21,12 +26,20 @@ fn set_last_modified_header(
     response: &mut Response,
     refreshed_at: Option<chrono::DateTime<chrono::Utc>>,
 ) {
-    if let Some(at) = refreshed_at {
-        let date = at.format("%a, %d %b %Y %H:%M:%S GMT").to_string();
-        if let Ok(val) = date.parse() {
-            response.headers_mut().insert("last-modified", val);
-        }
+    if let Some(at) = refreshed_at
+        && let Ok(val) = web_support::http_date(at).parse()
+    {
+        response.headers_mut().insert(LAST_MODIFIED, val);
     }
+}
+
+/// Set the grid's caching headers: a short shared `cache-control` always, plus
+/// `last-modified` when the backing list has a known refresh time.
+fn set_cache_headers(response: &mut Response, refreshed_at: Option<chrono::DateTime<chrono::Utc>>) {
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static(GRID_CACHE_CONTROL));
+    set_last_modified_header(response, refreshed_at);
 }
 
 fn json_response(body: &impl Serialize) -> cot::Result<Response> {
@@ -35,7 +48,7 @@ fn json_response(body: &impl Serialize) -> cot::Result<Response> {
     let mut response = Response::new(Body::fixed(json));
     response
         .headers_mut()
-        .insert("content-type", HeaderValue::from_static("application/json"));
+        .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     Ok(response)
 }
 
@@ -130,7 +143,7 @@ pub async fn get_feed_skeleton(
         *response.status_mut() = StatusCode::BAD_REQUEST;
         response
             .headers_mut()
-            .insert("content-type", HeaderValue::from_static("application/json"));
+            .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         return Ok(response);
     }
 
@@ -187,12 +200,24 @@ struct HomeTemplate {
 /// this page only renders HTML.
 #[instrument(skip_all)]
 pub async fn home(
+    head: RequestHead,
     PublishedImagesSourceExtractor(source): PublishedImagesSourceExtractor,
-) -> cot::Result<Html> {
+) -> cot::Result<Response> {
     let published = source
         .published_images()
         .await
         .map_err(|e| cot::Error::internal(format!("failed to read published images: {e}")))?;
+
+    let refreshed_at = published.refreshed_at;
+
+    // Conditional GET: if the client already holds this revision, skip rendering.
+    if let Some(at) = refreshed_at
+        && let Some(not_modified) =
+            web_support::not_modified_since(&head, at, Some(GRID_CACHE_CONTROL))
+    {
+        info!("not modified since client's copy — 304");
+        return Ok(not_modified);
+    }
 
     let cards: Vec<GridCard> = published
         .images
@@ -213,7 +238,12 @@ pub async fn home(
 
     info!(count = cards.len(), "serving home grid");
     let rendered = HomeTemplate { cards }.render()?;
-    Ok(Html::new(rendered))
+    let mut response = Response::new(Body::fixed(rendered));
+    response
+        .headers_mut()
+        .insert(CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+    set_cache_headers(&mut response, refreshed_at);
+    Ok(response)
 }
 
 #[cfg(test)]
@@ -223,7 +253,7 @@ mod tests {
     #[test]
     fn wants_no_cache_true_when_header_present() {
         let req = cot::http::Request::builder()
-            .header("cache-control", "no-cache")
+            .header(CACHE_CONTROL, "no-cache")
             .body(())
             .expect("build");
         let (head, _) = req.into_parts();
@@ -240,7 +270,7 @@ mod tests {
     #[test]
     fn wants_no_cache_false_for_other_directives() {
         let req = cot::http::Request::builder()
-            .header("cache-control", "max-age=60")
+            .header(CACHE_CONTROL, "max-age=60")
             .body(())
             .expect("build");
         let (head, _) = req.into_parts();
@@ -255,7 +285,7 @@ mod tests {
         set_last_modified_header(&mut response, Some(dt));
         let val = response
             .headers()
-            .get("last-modified")
+            .get(LAST_MODIFIED)
             .expect("header should be set")
             .to_str()
             .expect("valid str");
@@ -266,6 +296,6 @@ mod tests {
     fn set_last_modified_header_noop_when_none() {
         let mut response = Response::new(Body::empty());
         set_last_modified_header(&mut response, None);
-        assert!(response.headers().get("last-modified").is_none());
+        assert!(response.headers().get(LAST_MODIFIED).is_none());
     }
 }

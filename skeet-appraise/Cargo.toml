@@ -26,6 +26,7 @@ tower-sessions = { workspace = true }
 rustls = { workspace = true }
 tracing = { workspace = true }
 urlencoding = "2"
+web-support = { workspace = true }
 
 [build-dependencies]
 build-support = { workspace = true }

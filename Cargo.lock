@@ -10908,6 +10908,7 @@ dependencies = [
  "tower-sessions 0.14.0",
  "tracing",
  "urlencoding",
+ "web-support",
  "wiremock",
 ]
 
@@ -10933,6 +10934,7 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
+ "web-support",
 ]
 
 [[package]]
@@ -13020,6 +13022,14 @@ dependencies = [
  "hashbrown 0.15.5",
  "indexmap 2.13.0",
  "semver",
+]
+
+[[package]]
+name = "web-support"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "cot",
 ]
 
 [[package]]

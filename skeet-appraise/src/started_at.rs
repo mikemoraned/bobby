@@ -6,16 +6,10 @@ use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::FromRequestHead;
 use tower::{Layer, Service};
 
-/// Wall-clock time when the server started, used for HTTP cache headers.
+/// Wall-clock time when the server started; its instant (`.0`) drives the
+/// `Last-Modified` / `If-Modified-Since` cache headers (see `web_support`).
 #[derive(Clone, Debug)]
 pub struct StartedAt(pub DateTime<Utc>);
-
-impl StartedAt {
-    /// Format as an HTTP-date for use in `Last-Modified` / `Date` headers.
-    pub fn http_date(&self) -> String {
-        self.0.format("%a, %d %b %Y %H:%M:%S GMT").to_string()
-    }
-}
 
 /// Extracts `StartedAt` from request extensions.
 pub struct StartedAtExtractor(pub StartedAt);
@@ -76,24 +70,5 @@ where
     fn call(&mut self, mut req: cot::http::Request<ReqBody>) -> Self::Future {
         req.extensions_mut().insert(self.started_at.clone());
         self.inner.call(req)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use chrono::TimeZone as _;
-
-    #[test]
-    fn http_date_format() {
-        let dt = chrono::Utc.with_ymd_and_hms(2024, 6, 15, 9, 30, 0).unwrap();
-        assert_eq!(StartedAt(dt).http_date(), "Sat, 15 Jun 2024 09:30:00 GMT");
-    }
-
-    #[test]
-    fn http_date_differs_for_different_times() {
-        let dt1 = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
-        let dt2 = chrono::Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap();
-        assert_ne!(StartedAt(dt1).http_date(), StartedAt(dt2).http_date());
     }
 }

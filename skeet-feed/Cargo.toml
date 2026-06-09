@@ -19,6 +19,7 @@ tokio = { workspace = true }
 tower = { workspace = true }
 rustls = { workspace = true }
 tracing = { workspace = true }
+web-support = { workspace = true }
 
 [build-dependencies]
 build-support = { workspace = true }

@@ -86,7 +86,7 @@ async fn get<T: serde::de::DeserializeOwned>(
 ) -> Result<T, R2RestError> {
     let envelope: Envelope<T> = client
         .get(url)
-        .header("Authorization", format!("Bearer {}", api_token.as_str()))
+        .header(reqwest::header::AUTHORIZATION, format!("Bearer {}", api_token.as_str()))
         .send()
         .await?
         .json()
