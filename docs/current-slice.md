@@ -16,6 +16,15 @@ What I want:
     * this also means we should have a more explicit "promotion" process where we use model or k8s labels, or similar, to promote something developed on a branch into a main prod version. This should be supported by local cli lifecycle commands and/or third-party tools.
     * build and deployment can continue to be done locally on my laptop.
 
+The way the versioning would generally work is that we have a split between across-infra versioning and within-infra versionings i.e.
+* we have an R2 `encrypted-store` which is the main version which is shared across prod and any staging setup
+  * within this (lancedb) store, we name tables by `<type>_<version>`, so if type = `images`, version = `v3` -> then table is `images_v3`; if something needs to make a backwards-incompatible change to a type or introduce a new type then it should create a new table
+  * then, within each table, individual columns may support more fine-grained versioning, like the model version or ImageId format string. this means that prod and staging components could still be writing data which only they understand into different rows of the same table. This is fine as long as we write the software so that it only selects for what it knows, or discards anything it sees which it doesn't understand.
+  * if a slice needed to make a change that is more fundamental (e.g. we are not using lancedb anymore, but we still use R2) then it should create an entirely new top-level store e.g. `some-other-store`
+* similarly, we should have a shared redis store in upstash which is named `bobby-v1`
+  * within this redis store, items are prefixed with a version string e.g. like `v3-recency-48h` so format is effectively `<version>-<type>`. A slice that needs to introduce a new type or version can do so without affecting prod.
+  * note that there is no easily equivalent of more fine-grained versioning here. An example of why is the JSON data we write to something like `v3-recency-48h`: if we are extending this to add a new JSON key, we can make prod handle that whilst staging is writing new stuff by telling serde to ignore unknown new keys. However, of prod can still write the old setup then it doesn't work as staging needs those new keys: prod could write a JSON value which isn't understood by the staging version as it is missing the new keys needed. IIRC, I think this is similar to the problem of covariance of reads and contravariance of writes in functions?
+
 ### Approach: lightweight, conventions-first
 
 Much of this already exists in some form — there's a staging/prod split at the deployment layer (`bobby-staging.houseofmoran.io`), table versioning (`images_v1/v2/v3`), a model registry carrying `decision_threshold` + `ModelVersion`, and per-`(order, limit)` redis keys. The job here is mostly to **make the conventions I already follow explicit and systematic**, plus add a lightweight promotion path — *not* to build a generic multi-environment framework.
