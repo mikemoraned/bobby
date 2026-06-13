@@ -2,6 +2,7 @@ STORE := "store"
 R2_STORE := "s3://hom-bobby/encrypted-store"
 
 import 'just/store.just'
+import 'just/refine.just'
 import 'just/feed.just'
 import 'just/appraise.just'
 import 'just/publish.just'

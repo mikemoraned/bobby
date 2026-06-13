@@ -238,9 +238,10 @@ impl FeedPublisher {
             .max()
             .unwrap_or_else(chrono::Duration::zero);
 
+        let known_versions = self.models.versions().cloned().collect();
         let entries = self
             .store
-            .list_scored_summaries_published_since(now - widest)
+            .list_scored_summaries_published_since(now - widest, &known_versions)
             .await?;
         let skeet_appraisals = self
             .store

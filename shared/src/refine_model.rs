@@ -138,7 +138,10 @@ pub enum RefineModelsError {
         recomputed: ModelVersion,
     },
     #[error("label {label} references unknown model_version {version}")]
-    UnknownLabelVersion { label: String, version: ModelVersion },
+    UnknownLabelVersion {
+        label: String,
+        version: ModelVersion,
+    },
     #[error("duplicate model_version {version} — each model must appear once")]
     DuplicateVersion { version: ModelVersion },
     #[error("io error: {0}")]
@@ -282,23 +285,47 @@ impl RefineModels {
         self.models.get(version)
     }
 
+    /// Every registered `ModelVersion` — the "known set".
+    pub fn versions(&self) -> impl Iterator<Item = &ModelVersion> {
+        self.models.keys()
+    }
+
     /// Look up a model by label (e.g. `Label::production()`).
     pub fn by_label(&self, label: &Label) -> Option<&RefineModel> {
         let version = self.labels.get(label)?;
         self.models.get(version)
     }
 
-    /// Insert a model and assign the given labels to its `ModelVersion`.
-    /// Any label listed here is moved to the new entry's version (removing
-    /// it from whichever entry previously held it, if any). Historical V1
-    /// entries are loaded via `load`, not `insert` — V1 is only a
-    /// parse-time concept for legacy stored data.
-    pub fn insert(&mut self, model: RefineModel, labels: &[Label]) {
-        let version = model.version();
-        for label in labels {
-            self.labels.insert(label.clone(), version.clone());
+    /// Every label and the version it currently points at.
+    pub fn labels(&self) -> impl Iterator<Item = (&Label, &ModelVersion)> {
+        self.labels.iter()
+    }
+
+    /// Point `label` at an already-registered `version` (e.g. promotion:
+    /// repoint `production`). No data migration — only the label moves. Errors
+    /// with [`RefineModelsError::UnknownLabelVersion`] if `version` is not in
+    /// the registry, mirroring the load-time validation.
+    pub fn set_label(
+        &mut self,
+        label: Label,
+        version: ModelVersion,
+    ) -> Result<(), RefineModelsError> {
+        if !self.models.contains_key(&version) {
+            return Err(RefineModelsError::UnknownLabelVersion {
+                label: label.to_string(),
+                version,
+            });
         }
-        self.models.insert(version, model);
+        self.labels.insert(label, version);
+        Ok(())
+    }
+
+    /// Register a model under its `ModelVersion`. Labels are managed separately
+    /// via [`Self::set_label`] — registering a model never moves a label.
+    /// Historical V1 entries are loaded via `load`, not `insert` — V1 is only a
+    /// parse-time concept for legacy stored data.
+    pub fn insert(&mut self, model: RefineModel) {
+        self.models.insert(model.version(), model);
     }
 }
 
@@ -365,8 +392,13 @@ mod tests {
         let path = dir.path().join("refine.toml");
 
         let mut models = RefineModels::new();
-        models.insert(model_with("old prompt", 0.5), &[]);
-        models.insert(model_with("new prompt", 0.6), &[Label::production()]);
+        models.insert(model_with("old prompt", 0.5));
+        let new = model_with("new prompt", 0.6);
+        let new_version = new.version();
+        models.insert(new);
+        models
+            .set_label(Label::production(), new_version)
+            .expect("registered");
         models.save(&path).expect("save");
 
         let loaded = RefineModels::load(&path).expect("load");
@@ -411,8 +443,14 @@ prompt = "modern prompt"
         let loaded = RefineModels::load(&path).expect("load");
         assert!(!v1_mv.to_string().starts_with("v2:"));
         assert!(v2_mv.to_string().starts_with("v2:"));
-        assert_eq!(loaded.get(&v1_mv).map(|m| m.prompt.as_str()), Some("legacy prompt"));
-        assert_eq!(loaded.get(&v2_mv).map(|m| m.prompt.as_str()), Some("modern prompt"));
+        assert_eq!(
+            loaded.get(&v1_mv).map(|m| m.prompt.as_str()),
+            Some("legacy prompt")
+        );
+        assert_eq!(
+            loaded.get(&v2_mv).map(|m| m.prompt.as_str()),
+            Some("modern prompt")
+        );
     }
 
     #[test]
@@ -492,24 +530,60 @@ prompt = "prompt"
     }
 
     #[test]
-    fn insert_moves_label_to_new_model() {
+    fn set_label_repoints_to_registered_version() {
+        let old = model_with("old prompt", 0.5);
+        let new = model_with("new prompt", 0.6);
+        let new_version = new.version();
+
+        let old_version = old.version();
+        let mut models = RefineModels::new();
+        models.insert(old);
+        models.insert(new);
+        models
+            .set_label(Label::production(), old_version)
+            .expect("registered version");
+
+        models
+            .set_label(Label::production(), new_version)
+            .expect("registered version");
+        assert_eq!(
+            models
+                .by_label(&Label::production())
+                .map(|m| m.prompt.as_str()),
+            Some("new prompt")
+        );
+    }
+
+    #[test]
+    fn set_label_rejects_unregistered_version() {
+        let mut models = RefineModels::new();
+        models.insert(model_with("p", 0.5));
+        let err = models
+            .set_label(Label::production(), ModelVersion::from("v2:ffffffff"))
+            .expect_err("unregistered");
+        assert!(matches!(err, RefineModelsError::UnknownLabelVersion { .. }));
+    }
+
+    #[test]
+    fn insert_leaves_labels_untouched() {
         let old = model_with("old prompt", 0.5);
         let new = model_with("new prompt", 0.6);
         let old_version = old.version();
 
         let mut models = RefineModels::new();
-        models.insert(old, &[Label::production()]);
+        models.insert(old);
+        models
+            .set_label(Label::production(), old_version.clone())
+            .expect("registered");
+
+        // Registering another model does not move the label off `old`.
+        models.insert(new);
         assert_eq!(
-            models.by_label(&Label::production()).map(|m| m.prompt.as_str()),
+            models
+                .by_label(&Label::production())
+                .map(|m| m.prompt.as_str()),
             Some("old prompt")
         );
-
-        models.insert(new, &[Label::production()]);
-        assert_eq!(
-            models.by_label(&Label::production()).map(|m| m.prompt.as_str()),
-            Some("new prompt")
-        );
-        // Old entry is still present.
         assert!(models.get(&old_version).is_some());
     }
 }

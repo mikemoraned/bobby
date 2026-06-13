@@ -27,6 +27,16 @@ struct Args {
     /// Number of parallel image stage workers (default: 2)
     #[arg(long, default_value = "2")]
     image_workers: usize,
+
+    /// Permit writing to a remote, shared object store (e.g. R2). Off by
+    /// default: the pruner is the one writer to the shared `images_vN` table
+    /// keyed by content hash *without* a per-owner discriminator, so a staging
+    /// pruner running at the same table version would overwrite production's
+    /// rows in place. Iterate the pruner offline against a local `file://`
+    /// store; only the promoted pruner sets this flag (in production's
+    /// deployment manifest).
+    #[arg(long, default_value = "false")]
+    allow_shared_store_write: bool,
 }
 
 #[tokio::main]
@@ -39,6 +49,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     info!(git_hash = env!("BUILD_GIT_HASH"), "pruner starting");
+
+    if args.store.is_remote() && !args.allow_shared_store_write {
+        return Err(format!(
+            "refusing to write remote shared store {:?}: the pruner overwrites \
+             shared images rows in place; iterate offline against a local store, \
+             or pass --allow-shared-store-write for the promoted production pruner",
+            args.store.store_path
+        )
+        .into());
+    }
 
     let http = reqwest::Client::new();
 

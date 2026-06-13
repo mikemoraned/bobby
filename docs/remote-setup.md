@@ -1,6 +1,6 @@
 # Remote Setup (Hetzner k3s)
 
-Bobby's pruner and live-refine run on a single-node k3s cluster on Hetzner Cloud ARM (CAX21, Falkenstein). The cluster is disposable; persistent state lives in R2.
+Bobby's pruner, live-refine, skeet-publish, and exporter/optimise cronjobs run on a single-node k3s cluster on Hetzner Cloud ARM (CAX21, Falkenstein). The cluster is disposable; persistent state lives in R2. These stable components run in a dedicated `production` namespace — see [versioning.md](versioning.md) for the production/staging split they're the foundation of. (The feed itself runs on Fly, not k8s.)
 
 ## Prerequisites
 
@@ -74,10 +74,10 @@ op connect token create "bobby-k8s-operator" --server bobby-connect --vault Dev
 ### Install operator and apply secrets
 
 ```sh
-just cluster-secrets-install
+just cluster-secret-install
 ```
 
-This installs the 1Password Connect + Operator via Helm, then applies `OnePasswordItem` resources from `infra/k8s/onepassword-items.yaml`. The operator creates k8s Secrets from the following 1Password items:
+This creates the `production` namespace, installs the 1Password Connect + Operator via Helm (cluster-wide, in `default`), then applies the `production`-scoped `OnePasswordItem` resources from `infra/k8s/onepassword-items.yaml` plus the `ghcr-pull-secret`. The operator (which watches all namespaces) creates the k8s Secrets in `production` from these 1Password items:
 
 | k8s Secret name | 1Password item | Env var |
 |---|---|---|
@@ -86,13 +86,28 @@ This installs the 1Password Connect + Operator via Helm, then applies `OnePasswo
 | `bobby-r2-secret-access-key` | `hom-bobby-r2-local-rw-key` | `BOBBY_S3_SECRET_ACCESS_KEY` |
 | `bobby-sse-c-key` | `n2dy5qktxi7k3ukqinoym4l6nq` | `BOBBY_SSE_C_KEY` |
 | `bobby-openai-api-key` | `hom-bobby-openai-key` | `BOBBY_OPENAI_API_KEY` |
-| `bobby-otel-headers` | `hom-bobby-hcoltp-local-ingest` | `OTEL_EXPORTER_OTLP_HEADERS` |
+| `bobby-openai-admin-usage-key` | `bobby-openai-admin-usage-key` | `BOBBY_OPENAI_ADMIN_KEY` |
+| `bobby-redis-publish-url` | `bobby-upstash-redis-publish-tcp-url` | `BOBBY_REDIS_PUBLISH_URL` |
+| `bobby-grafana-oltp-endpoint` | `bobby-grafanacloud-oltp-endpoint` | `OTEL_EXPORTER_OTLP_ENDPOINT` |
+| `bobby-grafana-oltp-headers` | `bobby-grafanacloud-oltp-headers` | `OTEL_EXPORTER_OTLP_HEADERS` |
+| `bobby-cloudflare-analytics-token` | `bobby-cloudflare-analytics-token` | `BOBBY_CLOUDFLARE_API_TOKEN` |
+| `bobby-cloudflare-account-tag` | `bobby-cloudflare-account-tag` | `BOBBY_CLOUDFLARE_ACCOUNT_TAG` |
+| `bobby-grafanacloud-prom-endpoint` | `bobby-grafanacloud-prom-endpoint` | `BOBBY_PROM_ENDPOINT` |
+| `bobby-grafanacloud-prom-auth` | `bobby-grafanacloud-prom-auth` | `BOBBY_PROM_AUTH` |
 
 ### Check status
 
 ```sh
-just cluster-secrets-status
+just cluster-secret-status
 ```
+
+## Deploy workloads
+
+```sh
+just cluster-deploy-all
+```
+
+Builds and pushes images tagged with the current git hash, then applies every `infra/k8s/*.yaml` workload into the `production` namespace. Individual components have their own `cluster-deploy-*`, `cluster-logs-*`, `cluster-restart-*`, `cluster-enable-*`/`cluster-disable-*`, and `cluster-rollback-* <image_tag>` recipes; `cluster-status` shows everything in `production`.
 
 ## Cluster config
 

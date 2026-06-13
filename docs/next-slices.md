@@ -1,28 +1,6 @@
 # Next Slices
 
-> The first three slices below are the remainder of the original "move to 1.0" milestone, split out of the prod/staging-separation slice that now leads `current-slice.md`. They depend on that separation landing first (a stable production feed can't safely run next to dev worktrees until isolation is defined). Take them roughly in the order listed.
-
-## Slice: 1.0 public "Bobby" feed
-
-### Target
-
-`bobby.houseofmoran.io`: same underlying code as the staging version (`bobby-staging.houseofmoran.io`), but promoted to a real 1.0 public feed:
-
-* published on Bluesky as a feed called "Bobby" (i.e. not "Bobby Dev")
-    * has a small inline blurb explaining what this is, which is shared with the website (banner below)
-* tracking of usage via plausible.io
-* a small banner at top which shows:
-    * an explanation of what this is (the shared blurb)
-    * a small qr code for the `https://bobby.houseofmoran.io/` url
-    * instructions on how to subscribe to the feed on bluesky (with a link to it)
-    * summary data of how many images examined (should be precalculated by the publisher and saved in redis)
-
-Also promote the appraisals site to its own production URL — `bobby-appraisals.houseofmoran.io`:
-
-* nothing additional needed in code, i.e. it's the same thing, just running under an additional url
-* however, a new github app will need created for auth purposes
-
-(If the tailscale slice for `skeet-appraise` lands first, the appraisals production URL may instead be a tailnet FQDN — fold this into whichever auth model is current at the time.)
+> The 1.0 public feed slice (now in `current-slice.md`) plus the first two slices below are the remainder of the original "move to 1.0" milestone, split out of the prod/staging-separation slice (now completed — see `completed-slices.md`). They depended on that separation landing first (a stable production feed can't safely run next to dev worktrees until isolation is defined). Take them roughly in the order listed.
 
 ## Slice: dynamic social-media preview image for the feed
 

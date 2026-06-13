@@ -30,6 +30,14 @@ pub struct StoreArgs {
 }
 
 impl StoreArgs {
+    /// Whether `store_path` points at a remote, shared object store (`s3://`,
+    /// which includes Cloudflare R2) rather than a local directory. Pure
+    /// inspection of the configured path; callers decide what to do with it
+    /// (e.g. the pruner refuses to write a remote shared store by default).
+    pub fn is_remote(&self) -> bool {
+        self.store_path.starts_with("s3://")
+    }
+
     pub fn storage_options(&self) -> Vec<(String, String)> {
         let mut opts = Vec::new();
         if let Some(endpoint) = &self.s3_endpoint {
@@ -61,5 +69,33 @@ impl StoreArgs {
             cli_name,
         )
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args_with(store_path: &str) -> StoreArgs {
+        StoreArgs {
+            store_path: store_path.to_string(),
+            s3_endpoint: None,
+            s3_access_key_id: None,
+            s3_secret_access_key: None,
+            s3_region: "auto".into(),
+            sse_c_key: None,
+        }
+    }
+
+    #[test]
+    fn s3_paths_are_remote() {
+        assert!(args_with("s3://hom-bobby/encrypted-store").is_remote());
+    }
+
+    #[test]
+    fn local_paths_are_not_remote() {
+        assert!(!args_with("/tmp/store").is_remote());
+        assert!(!args_with("file:///tmp/store").is_remote());
+        assert!(!args_with("./store").is_remote());
     }
 }
