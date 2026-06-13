@@ -1,5 +1,51 @@
 # Next Slices
 
+> The first three slices below are the remainder of the original "move to 1.0" milestone, split out of the prod/staging-separation slice that now leads `current-slice.md`. They depend on that separation landing first (a stable production feed can't safely run next to dev worktrees until isolation is defined). Take them roughly in the order listed.
+
+## Slice: 1.0 public "Bobby" feed
+
+### Target
+
+`bobby.houseofmoran.io`: same underlying code as the staging version (`bobby-staging.houseofmoran.io`), but promoted to a real 1.0 public feed:
+
+* published on Bluesky as a feed called "Bobby" (i.e. not "Bobby Dev")
+    * has a small inline blurb explaining what this is, which is shared with the website (banner below)
+* tracking of usage via plausible.io
+* a small banner at top which shows:
+    * an explanation of what this is (the shared blurb)
+    * a small qr code for the `https://bobby.houseofmoran.io/` url
+    * instructions on how to subscribe to the feed on bluesky (with a link to it)
+    * summary data of how many images examined (should be precalculated by the publisher and saved in redis)
+
+Also promote the appraisals site to its own production URL — `bobby-appraisals.houseofmoran.io`:
+
+* nothing additional needed in code, i.e. it's the same thing, just running under an additional url
+* however, a new github app will need created for auth purposes
+
+(If the tailscale slice for `skeet-appraise` lands first, the appraisals production URL may instead be a tailnet FQDN — fold this into whichever auth model is current at the time.)
+
+## Slice: dynamic social-media preview image for the feed
+
+### Target
+
+A [social media preview image](https://support.metropublisher.com/hc/en-us/articles/31523564070420-Preview-Image-Settings-for-Social-Media) for `bobby.houseofmoran.io` which can be shown on facebook, twitter etc.
+
+* this should be calculated dynamically based on the same `quality-7d` content, and cached using the same last-modified caching from elsewhere.
+* We can use something like the layout algorithms used in [linzer](https://github.com/mikemoraned/geo/blob/main/apps/linzer/backend/layout/src/bin/layout.rs) e.g. `Guillotine` from the `binpack2d` crate.
+
+This is a genuine server-side image-composition feature (compose a montage, render it, wire up the OG/Twitter meta tags, cache it), which is why it's its own slice rather than part of the 1.0 feed polish.
+
+## Slice: 1.0 refactor, review and code minimisation
+
+### Target
+
+Refactor, review and minimisation of code for longer-term maintenance — the "I can walk away from this for a while" payoff slice.
+
+* each crate should have at least one human pass where all code is inspected, and deleted/reworked as needed.
+* the general expectation is that I want to be able to leave this repo for a while and go work on other stuff, and not need to worry about surprising code or lingering cruft/weirdness.
+* split out code into sub-dirs based on role e.g. crates are at top-level in repo, and so should go into a subdir; follow generally accepted conventions where possible.
+* refactor `just` rules into more logical chunks, and do a pass to remove any that no-longer make sense.
+
 ## Slice: try using embeddings for classification/scoring in refine
 
 ### Target
