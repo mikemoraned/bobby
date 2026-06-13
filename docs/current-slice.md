@@ -18,4 +18,3 @@ Also promote the appraisals site to its own production URL — `bobby-appraisals
 * nothing additional needed in code, i.e. it's the same thing, just running under an additional url
 * however, a new github app will need created for auth purposes
 
-(If the tailscale slice for `skeet-appraise` lands first, the appraisals production URL may instead be a tailnet FQDN — fold this into whichever auth model is current at the time.)
