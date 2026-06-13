@@ -66,6 +66,9 @@ cluster-deploy-pruner:
 cluster-deploy-live-refine:
     IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/live-refine-deployment.yaml | kubectl apply -f -
 
+cluster-deploy-skeet-publish:
+    IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/skeet-publish-deployment.yaml | kubectl apply -f -
+
 cluster-deploy-optimise:
     IMAGE_TAG={{ GIT_HASH }} envsubst < infra/k8s/optimise-cronjob.yaml | kubectl apply -f -
 
@@ -89,6 +92,10 @@ cluster-rollback-live-refine image_tag:
     IMAGE_TAG={{ image_tag }} envsubst < infra/k8s/live-refine-deployment.yaml | kubectl apply -f -
     kubectl rollout status deployment live-refine
 
+cluster-rollback-skeet-publish image_tag:
+    IMAGE_TAG={{ image_tag }} envsubst < infra/k8s/skeet-publish-deployment.yaml | kubectl apply -f -
+    kubectl rollout status deployment skeet-publish
+
 cluster-logs-optimise:
     kubectl logs -l app=optimise --tail=100 -f | lnav
 
@@ -104,13 +111,13 @@ cluster-deploy-openai-cost-exporter:
 cluster-logs-openai-cost-exporter:
     kubectl logs -l app=openai-cost-exporter --tail=100 -f | lnav
 
-cluster-deploy-all: push-pruner push-live-refine push-optimise push-cloudflare-exporter push-openai-exporter cluster-deploy-pruner cluster-deploy-live-refine cluster-deploy-optimise cluster-deploy-cloudflare-operations-exporter cluster-deploy-cloudflare-storage-exporter cluster-deploy-openai-cost-exporter
+cluster-deploy-all: push-pruner push-live-refine push-skeet-publish push-optimise push-cloudflare-exporter push-openai-exporter cluster-deploy-pruner cluster-deploy-live-refine cluster-deploy-skeet-publish cluster-deploy-optimise cluster-deploy-cloudflare-operations-exporter cluster-deploy-cloudflare-storage-exporter cluster-deploy-openai-cost-exporter
 
-cluster-restart-all: cluster-restart-pruner cluster-restart-live-refine
+cluster-restart-all: cluster-restart-pruner cluster-restart-live-refine cluster-restart-skeet-publish
 
-cluster-enable-all: cluster-enable-pruner cluster-enable-live-refine
+cluster-enable-all: cluster-enable-pruner cluster-enable-live-refine cluster-enable-skeet-publish
 
-cluster-disable-all: cluster-disable-pruner cluster-disable-live-refine
+cluster-disable-all: cluster-disable-pruner cluster-disable-live-refine cluster-disable-skeet-publish
 
 
 cluster-logs-pruner:
@@ -118,6 +125,9 @@ cluster-logs-pruner:
 
 cluster-logs-live-refine:
     kubectl logs -l app=live-refine --tail=100 -f | lnav
+
+cluster-logs-skeet-publish:
+    kubectl logs -l app=skeet-publish --tail=100 -f | lnav
 
 cluster-restart-pruner:
     kubectl rollout restart deployment pruner
@@ -128,14 +138,23 @@ cluster-enable-pruner:
 cluster-enable-live-refine:
     kubectl scale deployment live-refine --replicas 1
 
+cluster-enable-skeet-publish:
+    kubectl scale deployment skeet-publish --replicas 1
+
 cluster-disable-pruner:
     kubectl scale deployment pruner --replicas 0
 
 cluster-disable-live-refine:
     kubectl scale deployment live-refine --replicas 0
 
+cluster-disable-skeet-publish:
+    kubectl scale deployment skeet-publish --replicas 0
+
 cluster-restart-live-refine:
     kubectl rollout restart deployment live-refine
+
+cluster-restart-skeet-publish:
+    kubectl rollout restart deployment skeet-publish
 
 cluster-status:
     kubectl get deployments,cronjobs,jobs,pods

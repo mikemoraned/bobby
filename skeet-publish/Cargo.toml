@@ -1,0 +1,38 @@
+[package]
+name = "skeet-publish"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+backon = { workspace = true }
+bluesky = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+deadpool-redis = { workspace = true }
+opentelemetry = { workspace = true }
+regex = { workspace = true }
+rustls = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+shared = { workspace = true }
+skeet-store = { path = "../skeet-store" }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[[bin]]
+name = "skeet-publish"
+path = "src/bin/skeet_publish.rs"
+
+[dev-dependencies]
+proptest = { workspace = true }
+skeet-store = { path = "../skeet-store", features = ["test-helpers"] }
+test-support = { workspace = true }
+tempfile = { workspace = true }
+testcontainers = { workspace = true }
+testcontainers-modules = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }

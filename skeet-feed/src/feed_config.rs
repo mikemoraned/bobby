@@ -11,7 +11,6 @@ pub struct FeedParams {
     pub publisher_did: String,
     pub feed_name: String,
     pub max_entries: usize,
-    pub max_age_hours: u64,
 }
 
 impl FeedParams {

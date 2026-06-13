@@ -34,7 +34,7 @@ fn main() {
                 let json: serde_json::Value =
                     serde_json::from_str(&json_text).map_err(|e| format!("invalid JSON: {e}"))?;
 
-                let blocked = skeet_prune::content_filter::blocked_labels(&json);
+                let blocked = bluesky::blocked_labels(&json);
 
                 if blocked.is_empty() {
                     return Err(format!(

@@ -1,6 +1,7 @@
 #![warn(clippy::all, clippy::nursery)]
 
 use image::{DynamicImage, GrayImage, Luma};
+use shared::Percentage;
 
 /// Classify each pixel as skin (255) or not-skin (0) using combined
 /// RGB + YCbCr rules (Kovac, Peer & Solina, 2003).
@@ -54,13 +55,13 @@ fn is_skin_pixel(r: f32, g: f32, b: f32) -> bool {
 }
 
 /// Compute the percentage of skin pixels within a rectangular region.
-pub fn skin_pct_in_rect(mask: &GrayImage, x: u32, y: u32, w: u32, h: u32) -> f32 {
+pub fn skin_pct_in_rect(mask: &GrayImage, x: u32, y: u32, w: u32, h: u32) -> Percentage {
     let rect = clamp_rect(mask, x, y, w, h);
     skin_pct(mask, |px, py| rect.contains(px, py))
 }
 
 /// Compute the percentage of skin pixels outside a rectangular region.
-pub fn skin_pct_outside_rect(mask: &GrayImage, x: u32, y: u32, w: u32, h: u32) -> f32 {
+pub fn skin_pct_outside_rect(mask: &GrayImage, x: u32, y: u32, w: u32, h: u32) -> Percentage {
     let rect = clamp_rect(mask, x, y, w, h);
     skin_pct(mask, |px, py| !rect.contains(px, py))
 }
@@ -89,7 +90,10 @@ fn clamp_rect(mask: &GrayImage, x: u32, y: u32, w: u32, h: u32) -> Rect {
     }
 }
 
-fn skin_pct(mask: &GrayImage, include: impl Fn(u32, u32) -> bool) -> f32 {
+// `skin` is incremented only inside the `total` branch, so `skin <= total` always holds
+// here and `from_counts` cannot return its `CountExceedsTotal` error.
+#[allow(clippy::expect_used)]
+fn skin_pct(mask: &GrayImage, include: impl Fn(u32, u32) -> bool) -> Percentage {
     let mut total = 0u32;
     let mut skin = 0u32;
 
@@ -104,11 +108,7 @@ fn skin_pct(mask: &GrayImage, include: impl Fn(u32, u32) -> bool) -> f32 {
         }
     }
 
-    if total == 0 {
-        return 0.0;
-    }
-
-    (skin as f32 / total as f32) * 100.0
+    Percentage::from_counts(skin, total).expect("skin <= total by construction")
 }
 
 #[cfg(test)]
@@ -169,14 +169,14 @@ mod tests {
     #[test]
     fn skin_pct_in_rect_all_skin() {
         let mask = GrayImage::from_pixel(20, 20, Luma([255]));
-        let pct = skin_pct_in_rect(&mask, 5, 5, 10, 10);
+        let pct = skin_pct_in_rect(&mask, 5, 5, 10, 10).value();
         assert!((pct - 100.0).abs() < 0.01);
     }
 
     #[test]
     fn skin_pct_in_rect_no_skin() {
         let mask = GrayImage::from_pixel(20, 20, Luma([0]));
-        let pct = skin_pct_in_rect(&mask, 5, 5, 10, 10);
+        let pct = skin_pct_in_rect(&mask, 5, 5, 10, 10).value();
         assert!(pct.abs() < 0.01);
     }
 
@@ -188,14 +188,14 @@ mod tests {
                 mask.put_pixel(x, y, Luma([255]));
             }
         }
-        let outside = skin_pct_outside_rect(&mask, 5, 5, 10, 10);
+        let outside = skin_pct_outside_rect(&mask, 5, 5, 10, 10).value();
         assert!(outside.abs() < 0.01);
     }
 
     #[test]
     fn skin_pct_outside_rect_nonzero_when_skin_outside() {
         let mask = GrayImage::from_pixel(20, 20, Luma([255]));
-        let outside = skin_pct_outside_rect(&mask, 5, 5, 10, 10);
+        let outside = skin_pct_outside_rect(&mask, 5, 5, 10, 10).value();
         assert!(outside > 0.0);
     }
 
@@ -207,8 +207,8 @@ mod tests {
                 mask.put_pixel(x, y, Luma([255]));
             }
         }
-        let inside = skin_pct_in_rect(&mask, 5, 5, 10, 10);
-        let outside = skin_pct_outside_rect(&mask, 5, 5, 10, 10);
+        let inside = skin_pct_in_rect(&mask, 5, 5, 10, 10).value();
+        let outside = skin_pct_outside_rect(&mask, 5, 5, 10, 10).value();
         assert!((inside - 100.0).abs() < 0.01);
         assert!(outside.abs() < 0.01);
     }

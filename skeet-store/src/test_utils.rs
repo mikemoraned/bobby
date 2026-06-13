@@ -1,3 +1,9 @@
+// Test scaffolding: every fallible call here is a fixture setup step whose
+// failure should abort the test loudly, so panicking via `expect` is the
+// intended behaviour. (The module isn't `#[cfg(test)]` — it's exposed through the
+// `test-helpers` feature — so the in-tests clippy allowance doesn't reach it.)
+#![allow(clippy::expect_used)]
+
 use chrono::Utc;
 use image::{DynamicImage, ImageBuffer, Rgba};
 

@@ -11,6 +11,7 @@ const TRAINING_LOOP_THRESHOLD_F64: f64 = 0.5;
 /// floor before the candidate is rejected.
 pub const GATE_RECALL_TOLERANCE: f64 = 0.01;
 
+#[allow(clippy::expect_used)] // the constant is a compile-time literal in [0, 1]
 pub fn training_loop_threshold() -> Threshold {
     Threshold::new(TRAINING_LOOP_THRESHOLD_F64).expect("0.5 is in [0, 1]")
 }

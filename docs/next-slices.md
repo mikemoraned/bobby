@@ -1,5 +1,51 @@
 # Next Slices
 
+> The first three slices below are the remainder of the original "move to 1.0" milestone, split out of the prod/staging-separation slice that now leads `current-slice.md`. They depend on that separation landing first (a stable production feed can't safely run next to dev worktrees until isolation is defined). Take them roughly in the order listed.
+
+## Slice: 1.0 public "Bobby" feed
+
+### Target
+
+`bobby.houseofmoran.io`: same underlying code as the staging version (`bobby-staging.houseofmoran.io`), but promoted to a real 1.0 public feed:
+
+* published on Bluesky as a feed called "Bobby" (i.e. not "Bobby Dev")
+    * has a small inline blurb explaining what this is, which is shared with the website (banner below)
+* tracking of usage via plausible.io
+* a small banner at top which shows:
+    * an explanation of what this is (the shared blurb)
+    * a small qr code for the `https://bobby.houseofmoran.io/` url
+    * instructions on how to subscribe to the feed on bluesky (with a link to it)
+    * summary data of how many images examined (should be precalculated by the publisher and saved in redis)
+
+Also promote the appraisals site to its own production URL — `bobby-appraisals.houseofmoran.io`:
+
+* nothing additional needed in code, i.e. it's the same thing, just running under an additional url
+* however, a new github app will need created for auth purposes
+
+(If the tailscale slice for `skeet-appraise` lands first, the appraisals production URL may instead be a tailnet FQDN — fold this into whichever auth model is current at the time.)
+
+## Slice: dynamic social-media preview image for the feed
+
+### Target
+
+A [social media preview image](https://support.metropublisher.com/hc/en-us/articles/31523564070420-Preview-Image-Settings-for-Social-Media) for `bobby.houseofmoran.io` which can be shown on facebook, twitter etc.
+
+* this should be calculated dynamically based on the same `quality-7d` content, and cached using the same last-modified caching from elsewhere.
+* We can use something like the layout algorithms used in [linzer](https://github.com/mikemoraned/geo/blob/main/apps/linzer/backend/layout/src/bin/layout.rs) e.g. `Guillotine` from the `binpack2d` crate.
+
+This is a genuine server-side image-composition feature (compose a montage, render it, wire up the OG/Twitter meta tags, cache it), which is why it's its own slice rather than part of the 1.0 feed polish.
+
+## Slice: 1.0 refactor, review and code minimisation
+
+### Target
+
+Refactor, review and minimisation of code for longer-term maintenance — the "I can walk away from this for a while" payoff slice.
+
+* each crate should have at least one human pass where all code is inspected, and deleted/reworked as needed.
+* the general expectation is that I want to be able to leave this repo for a while and go work on other stuff, and not need to worry about surprising code or lingering cruft/weirdness.
+* split out code into sub-dirs based on role e.g. crates are at top-level in repo, and so should go into a subdir; follow generally accepted conventions where possible.
+* refactor `just` rules into more logical chunks, and do a pass to remove any that no-longer make sense.
+
 ## Slice: try using embeddings for classification/scoring in refine
 
 ### Target
@@ -64,6 +110,95 @@ The `refine_image_resilient` wrapper's `is_transient` treats **every** `RefineEr
 
 ...
 
+
+## Slice: Expose `skeet-appraise` as a service inside hetzner via tailscale
+
+Use the [Tailscale Kubernetes Operator](https://tailscale.com/kb/1236/kubernetes-operator). It spins up a proxy pod per exposed resource that joins the tailnet and forwards to the backing `Service`. No public ingress, no per-service load balancer cost.
+
+This means we can now use tailscale to expose `skeet-appraise` running as a local k8s Service inside the cluster but still have it accessible from my phone and my laptop. As part of this we need to introduce a new type of identity of appraiser based on tailscale identity.
+
+We can do this like in Phase 3 where we run new/old alongside each other for a little while before we delete the fly.io website for `skeet-appraise`.
+
+At end of this we can probably do a code and infra cleanup/simplification as we should no-longer need the github app / redis auth / oauth login stuff.
+
+### Use `Ingress`, not `Service`, for identity
+
+Of the operator's exposure modes, only [`Ingress`](https://tailscale.com/kb/1439/kubernetes-operator-cluster-ingress) injects Tailscale identity headers, which is the whole point here. Every request gets:
+
+* `Tailscale-User-Login` — caller's login (e.g. `mike@example.com`)
+* `Tailscale-User-Name` — display name
+* `Tailscale-User-Profile-Pic` — profile image URL
+
+The proxy strips incoming versions of these headers before forwarding, so they can't be spoofed from the tailnet. Anything else in-cluster reaching the backend `Service` directly could spoof them, so add a `NetworkPolicy` restricting the `Service` to only the Tailscale proxy pod.
+
+[tailscale/tailscale#15657](https://github.com/tailscale/tailscale/issues/15657) tracks identity headers for bare `Service` resources but is open and unmoving — `Ingress` is the only option today.
+
+### Constraints of `Ingress` mode
+
+* HTTPS-only, port 443 only; certs auto-provisioned from Let's Encrypt.
+* Requires HTTPS and MagicDNS enabled on the tailnet ([docs](https://tailscale.com/kb/1153/enabling-https)).
+* Reachable only by the full MagicDNS FQDN (e.g. `bobby-appraisals-staging.<tailnet>.ts.net`) so the cert matches.
+* First connection after deploy can be slow while the cert is provisioned.
+
+### Prerequisite
+
+OAuth client created in the Tailscale admin console for the operator — see the operator [setup section](https://tailscale.com/kb/1236/kubernetes-operator#setup). Needs **`Devices Core` + `Auth Keys` + `Services`** write scopes and the `tag:k8s-operator` tag (which must already exist in the tailnet policy file). MagicDNS + HTTPS must be enabled on the tailnet for `Ingress` mode to provision certs.
+
+### Tasks
+
+Spike first, then groups A–E. As in Phase 3, run the new (hetzner + tailscale) deployment alongside the old (fly + GitHub OAuth) one, verify, then cut over and clean up. Local dev keeps `--local-admin` throughout.
+
+#### Spike (do this first): prove the Tailscale operator + `Ingress` path with a dummy service
+
+This is the first time using Tailscale this way, so isolate the Tailscale dependency *before* touching `skeet-appraise`. Stand up the whole operator → `Ingress` → identity-header path with a throwaway workload and nothing of ours on the line. The operator and tailnet config that this sets up are **kept** and reused by group C; only the dummy workload is torn down.
+
+* [ ] **Install the operator + enable the tailnet features** (the riskiest, least-familiar bits). Order matters — do these in sequence:
+    1. **Add the operator tags to the tailnet policy file** *before* creating the OAuth client (the client must be tagged with one): `"tagOwners": { "tag:k8s-operator": [], "tag:k8s": ["tag:k8s-operator"] }`.
+    2. **Create the operator OAuth client** in the admin console (see Phase 4 Prerequisite) with **`Devices Core` + `Auth Keys` + `Services`** write scopes (the `Services` scope is newer and now required), tagged `tag:k8s-operator`; store id/secret in 1Password.
+    3. **Enable MagicDNS + HTTPS** on the tailnet.
+    4. **`helm install` the operator** (add a `cluster-install-tailscale-operator` recipe alongside the other addon installers in `just/cluster.just`, feeding `oauth.clientId`/`oauth.clientSecret` via inline `op read` like `cluster-ghcr-secret-install` does).
+* [ ] **Deploy a trivial header-echo service** — no code/build of ours: a stock multi-arch image like `traefik/whoami` (it echoes request headers, which is exactly what we need to *see* the injected identity). Give it a `Deployment` + `Service` and a tailscale-`ingressClassName` `Ingress` named e.g. `bobby-ts-spike`. Use the current Ingress shape — `spec.ingressClassName: tailscale` + `spec.defaultBackend.service` + `spec.tls.hosts` (only the **first label** of the host is used → `<label>.<tailnet>.ts.net`), *not* `rules`/`host`. **Do not set `tailscale.com/funnel: "true"`** — Funnel makes the service public *and* drops the identity headers this whole phase depends on; we want tailnet-only Serve traffic.
+* [ ] **Verify the unknowns, in order:**
+    * the `Ingress` provisions a Let's Encrypt cert and the service appears at `bobby-ts-spike.<tailnet>.ts.net` (first hit may be slow while the cert provisions);
+    * it's reachable from **phone and laptop** over the tailnet (and *not* publicly);
+    * the echo shows `Tailscale-User-Login` / `-Name` / `-Profile-Pic` populated with your identity — this is the make-or-break proof for group A;
+    * a request that *sends its own* `Tailscale-User-Login` still comes back with the proxy's value (inbound copies are stripped), confirming the header can be trusted behind the ingress.
+* [ ] **Prove the `NetworkPolicy`** (run it once here — group C depends on it, and NetworkPolicy enforcement is worth confirming on this hetzner-k3s cluster): restrict the dummy `Service` to the proxy pod and confirm a direct in-cluster curl is blocked while the ingress path still works — this de-risks the anti-spoofing control before group C relies on it.
+* [ ] **Tear down the dummy workload** (Deployment/Service/Ingress); keep the operator, OAuth client, and MagicDNS/HTTPS settings.
+
+#### A. Tailscale-based appraiser identity
+
+* [ ] **Add `Appraiser::Tailscale { login }`** in `shared/src/appraiser.rs`: extend the `provider:identifier` parse/display (`tailscale:mike@example.com`), a validated `new_tailscale` constructor, and round-trip + unknown-provider tests. Mirrors the existing `GitHub`/`LocalAdmin` variants.
+* [ ] **Add a header-based extractor path** for `skeet-appraise`: read `Tailscale-User-Login` from the request head and produce `Appraiser::Tailscale` (optionally surface `Tailscale-User-Name` / `-Profile-Pic` for display). This is a third source alongside the existing extensions (local-admin) and session (OAuth) paths in `AppraiserExtractor`.
+* [ ] **Gate header-trust on an explicit auth-mode flag**, not header presence (the header is only trustworthy behind the Tailscale ingress; on the fly deployment it could be spoofed). Add `--auth-mode tailscale|github|local-admin` (enablement separate from config, per the rust rule). Only `tailscale` mode reads the identity headers; never auto-detect from header presence.
+* [ ] **Authorization = tailnet ACLs + a required login allowlist** (decided — the allowlist is *not* optional). Tailnet ACLs gate who can reach the service; on top of that, an explicit allowlist of permitted `Tailscale-User-Login` values (the analogue of `BOBBY_ADMIN_USERS`, now holding tailscale logins/emails instead of GitHub usernames) gates who is accepted as an appraiser. Defense in depth: a tailnet identity that can reach the service but isn't on the allowlist gets `403`. The allowlist is required config in `tailscale` mode (startup fails if unset).
+* [ ] **Simplify the admin guard for tailscale mode**: every request through the ingress is already identified, so there's no login/logout redirect — a missing identity header is a `403` (shouldn't happen behind the proxy). The public/admin (`is_admin`) split on the homepage collapses, since `skeet-appraise` is now a private tool; decide whether to drop it.
+* [ ] **Test**: with a `Tailscale-User-Login` header in `tailscale` mode the extractor yields `Appraiser::Tailscale` and an appraisal round-trips; without it the request is denied; `github`/`local-admin` modes are unaffected.
+
+#### B. Deploy `skeet-appraise` into the hetzner cluster
+
+* [ ] **Build an `arm64` image** — the cluster is ARM (like `pruner`/`live-refine`), but `Dockerfile.skeet-appraise` ships `linux/amd64` for fly. During the parallel run both arches are live, so build multi-arch (`--platform linux/amd64,linux/arm64`) or add an arm64 tag; drop amd64 once fly is gone (group E).
+* [ ] **k8s Deployment + Service** (`infra/k8s/skeet-appraise-deployment.yaml`): unlike the `live-refine` worker this is a long-running HTTP server, so it needs a `Service` (port 8080) fronting the Deployment. Args: `--store-path`, `--model-path`, feed-shape params, `--auth-mode tailscale`, `--bind 0.0.0.0:8080`. Env: R2 + SSE-C + OTEL only — **no GitHub/session/redis**: tailscale mode has no OAuth and no sessions, so the redis-for-sessions dependency drops out here.
+* [ ] **`just/cluster.just` recipes**: `cluster-deploy-skeet-appraise`, logs, enable/disable, rollback, and add to the `cluster-*-all` aggregates (mirroring `live-refine`). Reuse the existing R2/SSE-C/OTEL `OnePasswordItem`s — no new secrets needed for the app itself.
+
+#### C. Expose it over tailscale via the operator (`Ingress`)
+
+The operator, OAuth client, and MagicDNS/HTTPS are already stood up and proven by the Spike — this group just applies the same, now-known-good pattern to the real service.
+
+* [ ] **`Ingress` (not `Service`) for identity** — only `Ingress` mode injects the `Tailscale-User-*` headers (see the "Use `Ingress`" notes above). Add an `Ingress` with the tailscale `ingressClassName` for `skeet-appraise`; it provisions the cert and publishes at `bobby-appraisals-staging.<tailnet>.ts.net` (HTTPS/443 only) — exactly the path validated by the spike.
+* [ ] **`NetworkPolicy` to prevent header spoofing** — the proxy strips inbound `Tailscale-User-*` headers, but anything in-cluster hitting the backend `Service` directly could forge them. Restrict the `Service` to accept traffic only from the Tailscale proxy pod (same control proven in the spike).
+
+#### D. Parallel run + verify
+
+* [ ] Reach `bobby-appraisals-staging.<tailnet>.ts.net` from phone and laptop over the tailnet; confirm the identity headers yield the right `Appraiser::Tailscale`, and that appraisals set/clear and the homepage + admin paging all work end-to-end (first connection may be slow while the cert provisions).
+* [ ] Leave it running alongside the fly site for a while; sanity-check that appraisals made via either reach the same store and behave identically.
+
+#### E. Cut over + cleanup
+
+* [ ] **Decommission the fly site**: `fly apps destroy bobby-appraisals-staging`; remove `fly.appraise-staging.toml`, the `deploy_appraise_staging_*` fly recipes, and the GitHub-OAuth / session / redis secrets for that app.
+* [ ] **Rip out the now-dead auth stack** from `skeet-appraise` (the cleanup the phase intro calls for): delete `auth.rs`, `auth_config.rs` (`OAuthConfig`), the `/auth/{login,callback,logout}` routes, the cot session middleware + `deadpool-redis` dep, and the `BOBBY_GITHUB_*` / `BOBBY_SESSION_SECRET` / sessions-redis config + 1Password items. Drop the `github` arm of `--auth-mode` (leaving `tailscale` + `local-admin`). Remove the GitHub OAuth app.
+* [ ] **Verify post-cleanup**: `just clippy`, `just test-no-docker`; `skeet-appraise` still builds without the oauth/session deps; the relocated integration tests (now tailscale-header based) pass; drop the amd64 image build.
+* [ ] Update docs (`docs/architecture.md`, any auth notes) to reflect tailscale identity replacing GitHub OAuth.
 
 ## Slice: reducing unintentional bias
 

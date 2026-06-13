@@ -5,7 +5,7 @@ image = "ghcr.io/mikemoraned/bobby/skeet-feed:latest"
 primary_region = "lhr"
 
 [processes]
-app = "skeet-feed --store-path s3://hom-bobby/encrypted-store --hostname bobby-staging.houseofmoran.io --publisher-did did:plc:cjvdzmk4iapi5p5orrasehxp --bind 0.0.0.0:8080 --use-redis --model-path /etc/bobby/refine.toml"
+app = "skeet-feed --hostname bobby-staging.houseofmoran.io --publisher-did did:plc:cjvdzmk4iapi5p5orrasehxp --bind 0.0.0.0:8080"
 
 [env]
 RUST_LOG = "skeet_feed=info,skeet_store=info"
@@ -19,6 +19,16 @@ force_https = true
 auto_stop_machines = "suspend"
 auto_start_machines = true
 min_machines_running = 0
+
+# Low limits tuned for a low-traffic, suspendable feed: the proxy uses
+# soft_limit to decide a machine is busy enough to start another, so a high
+# default keeps this single machine "hot" and works against auto-suspend.
+# https://fly.io/docs/reference/configuration/#http_service-concurrency
+# https://fly.io/docs/launch/autostop-autostart/
+[http_service.concurrency]
+type = "requests"
+soft_limit = 5
+hard_limit = 25
 
 [[http_service.checks]]
 grace_period = "10s"

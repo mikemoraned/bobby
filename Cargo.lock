@@ -1562,6 +1562,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "bluesky"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "image",
+ "reqwest 0.13.2",
+ "serde",
+ "serde_json",
+ "shared",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "bollard"
 version = "0.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10748,6 +10764,7 @@ name = "shared"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "cid",
  "hex",
  "image",
  "md5 0.7.0",
@@ -10861,9 +10878,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b2aa850e253778c88a04c3d7323b043aeda9d3e30d5971937c1855769763678e"
 
 [[package]]
-name = "skeet-feed"
+name = "skeet-appraise"
 version = "0.1.0"
 dependencies = [
+ "bluesky",
  "build-support",
  "chrono",
  "clap",
@@ -10878,17 +10896,45 @@ dependencies = [
  "serde",
  "serde_json",
  "shared",
+ "skeet-publish",
  "skeet-store",
  "tempfile",
  "test-support",
  "testcontainers",
  "testcontainers-modules",
+ "thiserror 2.0.18",
  "tokio",
  "tower",
  "tower-sessions 0.14.0",
  "tracing",
  "urlencoding",
+ "web-support",
  "wiremock",
+]
+
+[[package]]
+name = "skeet-feed"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bluesky",
+ "build-support",
+ "chrono",
+ "clap",
+ "cot",
+ "reqwest 0.13.2",
+ "rustls 0.23.37",
+ "serde",
+ "serde_json",
+ "shared",
+ "skeet-publish",
+ "skeet-store",
+ "testcontainers",
+ "testcontainers-modules",
+ "tokio",
+ "tower",
+ "tracing",
+ "web-support",
 ]
 
 [[package]]
@@ -10896,6 +10942,7 @@ name = "skeet-prune"
 version = "0.1.0"
 dependencies = [
  "atrium-api",
+ "bluesky",
  "build-support",
  "chrono",
  "clap",
@@ -10918,6 +10965,33 @@ dependencies = [
  "text-detection",
  "tokio",
  "toml 0.8.23",
+ "tracing",
+]
+
+[[package]]
+name = "skeet-publish"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "backon",
+ "bluesky",
+ "chrono",
+ "clap",
+ "deadpool-redis",
+ "opentelemetry",
+ "proptest",
+ "regex",
+ "rustls 0.23.37",
+ "serde",
+ "serde_json",
+ "shared",
+ "skeet-store",
+ "tempfile",
+ "test-support",
+ "testcontainers",
+ "testcontainers-modules",
+ "thiserror 2.0.18",
+ "tokio",
  "tracing",
 ]
 
@@ -11003,6 +11077,7 @@ name = "skin-detection"
 version = "0.1.0"
 dependencies = [
  "image",
+ "shared",
 ]
 
 [[package]]
@@ -12947,6 +13022,14 @@ dependencies = [
  "hashbrown 0.15.5",
  "indexmap 2.13.0",
  "semver",
+]
+
+[[package]]
+name = "web-support"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "cot",
 ]
 
 [[package]]

@@ -94,10 +94,13 @@ pub fn decode_and_filter(
     nms(&mut detections, nms_iou_threshold)
 }
 
+// The tensors are constructed as `f32`, so `to_vec::<f32>` cannot fail.
+#[allow(clippy::expect_used)]
 fn tensor_to_vec_1d(tensor: &Tensor<B, 3>) -> Vec<f32> {
     tensor.to_data().to_vec::<f32>().expect("float tensor")
 }
 
+#[allow(clippy::expect_used)] // tensor is `f32`, so `to_vec::<f32>` cannot fail
 fn tensor_to_vec_2d(tensor: &Tensor<B, 3>, cols: usize) -> Vec<Vec<f32>> {
     let flat: Vec<f32> = tensor.to_data().to_vec::<f32>().expect("float tensor");
     flat.chunks(cols).map(|c| c.to_vec()).collect()

@@ -1,5 +1,8 @@
 use burn_import::onnx::ModelGen;
 
+// Build script: panicking with a descriptive message is the idiomatic failure mode, and
+// `expect` keeps the precise reason (which env var) that a bare `?` on `VarError` would drop.
+#[allow(clippy::expect_used)]
 fn main() {
     ModelGen::new()
         .input("../models/face_detection_yunet_2023mar_opset16.onnx")

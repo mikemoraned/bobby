@@ -1,0 +1,11 @@
+[package]
+name = "web-support"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+chrono = { workspace = true }
+cot = { workspace = true }

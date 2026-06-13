@@ -1,25 +1,17 @@
 #![warn(clippy::all, clippy::nursery)]
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
-use chrono::Utc;
 use clap::Parser;
 use cot::project::Bootstrapper;
-use shared::{Appraiser, RefineModels};
-use skeet_feed::auth_config::OAuthConfig;
-use skeet_feed::feed_cache::{FeedCache, FeedCacheLayer};
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
-use skeet_feed::{AppraiserLayer, OAuthConfigLayer, StartedAtLayer, StoreLayer};
-use skeet_store::StoreArgs;
+use skeet_feed::{FeedSourceLayer, PublishedImagesSourceLayer};
+use skeet_publish::{FeedSource, Limit, Order, PublishedImagesSource, RedisFeedSource};
 use tracing::info;
 
 #[derive(Parser)]
 struct Args {
-    #[command(flatten)]
-    store: StoreArgs,
-
     /// Hostname for the feed generator (used in DID and service endpoint)
     #[arg(long)]
     hostname: String,
@@ -40,129 +32,62 @@ struct Args {
     #[arg(long, default_value_t = 10)]
     max_entries: usize,
 
-    /// Maximum age in hours for posts to be included
-    #[arg(long, default_value_t = 48)]
-    max_age_hours: u64,
-
-    /// Path to the refine model registry (refine.toml)
-    #[arg(long, default_value = "config/refine.toml")]
-    model_path: PathBuf,
-
-    /// Enable local admin mode (uses Appraiser::LocalAdmin for appraisals)
-    #[arg(long, default_value_t = false)]
-    local_admin: bool,
-
-    /// GitHub OAuth client ID (env: BOBBY_GITHUB_CLIENT_ID)
-    #[arg(long, env = "BOBBY_GITHUB_CLIENT_ID")]
-    github_client_id: Option<String>,
-
-    /// GitHub OAuth client secret (env: BOBBY_GITHUB_CLIENT_SECRET)
-    #[arg(long, env = "BOBBY_GITHUB_CLIENT_SECRET")]
-    github_client_secret: Option<String>,
-
-    /// Session signing secret (env: BOBBY_SESSION_SECRET)
-    #[arg(long, env = "BOBBY_SESSION_SECRET")]
-    session_secret: Option<String>,
-
-    /// whether Redis should be used for persistent session storage
-    #[arg(long, default_value_t = false)]
-    use_redis: bool,
-
-    /// Redis URL for persistent session storage (env: BOBBY_REDIS_URL)
-    #[arg(long, env = "BOBBY_REDIS_URL")]
-    redis_url: Option<String>,
-
-    /// Comma-separated list of allowed GitHub usernames (env: BOBBY_ADMIN_USERS)
-    #[arg(long, env = "BOBBY_ADMIN_USERS")]
-    admin_users: Option<String>,
+    /// Redis URL for the publish server (env: BOBBY_REDIS_PUBLISH_URL)
+    #[arg(long, env = "BOBBY_REDIS_PUBLISH_URL")]
+    redis_publish_url: String,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // The Upstash publish url is `rediss://`, so TLS runs through rustls — install
+    // the process-global crypto provider once before any connection is made.
+    #[allow(clippy::expect_used)]
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("install rustls crypto provider");
 
     let args = Args::parse();
 
-    let _guard =
-        shared::tracing::init_with_file("skeet_feed=info,shared=info,skeet_store=info", "feed.log");
+    let _guard = shared::tracing::init_with_file(
+        "skeet_feed=info,skeet_publish=info,shared=info",
+        "feed.log",
+    );
     info!(git_hash = env!("BUILD_GIT_HASH"), "skeet-feed starting");
-
-    let store = Arc::new(
-        args.store
-            .open_store("feed")
-            .await
-            .expect("failed to open store at startup"),
-    );
-
-    let models = Arc::new(
-        RefineModels::load(&args.model_path)
-            .unwrap_or_else(|e| panic!("failed to load {}: {e}", args.model_path.display())),
-    );
-    info!(path = %args.model_path.display(), "loaded refine models");
 
     let feed_params = FeedParams {
         hostname: args.hostname.clone(),
         publisher_did: args.publisher_did,
         feed_name: args.feed_name,
         max_entries: args.max_entries,
-        max_age_hours: args.max_age_hours,
     };
 
     info!(
         bind = %args.bind,
         hostname = %args.hostname,
         feed_uri = %feed_params.feed_uri(),
-        "starting skeet-feed server"
+        "starting skeet-feed server (feed from the redis publish server)"
     );
 
-    let cache = Arc::new(FeedCache::new(
-        Arc::clone(&store),
-        Arc::clone(&models),
-        feed_params.max_entries,
-        feed_params.max_age_hours,
+    // The Bluesky feed is the `quality-48h` list written by skeet-publish.
+    let feed_source: Arc<dyn FeedSource> = Arc::new(RedisFeedSource::new(
+        args.redis_publish_url.clone(),
+        Order::Quality,
+        Limit::hours(48),
     ));
-    cache.spawn_background_refresh();
 
-    let appraiser = if args.local_admin {
-        info!("local admin mode enabled");
-        Some(Arc::new(Appraiser::LocalAdmin))
-    } else {
-        None
-    };
-
-    let oauth_config = match (
-        args.github_client_id,
-        args.github_client_secret,
-        &args.admin_users,
-    ) {
-        (Some(client_id), Some(client_secret), Some(admin_users)) => {
-            let users: Vec<String> = admin_users
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .collect();
-            info!(admin_users = ?users, "GitHub OAuth configured");
-            Some(Arc::new(OAuthConfig::new(client_id, client_secret, users)))
-        }
-        _ => {
-            if !args.local_admin {
-                info!("no OAuth config — admin area will be inaccessible without --local-admin");
-            }
-            None
-        }
-    };
+    // The public image page renders the wider `quality-7d` list. Each published
+    // image already carries its dimensions (measured by the publisher's CDN
+    // probe), so the feed renders aspect ratios without fetching any image.
+    let published_images_source: Arc<dyn PublishedImagesSource> = Arc::new(RedisFeedSource::new(
+        args.redis_publish_url,
+        Order::Quality,
+        Limit::days(7),
+    ));
 
     let project = FeedProject {
-        cache_layer: FeedCacheLayer::new(cache),
+        feed_source_layer: FeedSourceLayer::new(feed_source),
+        published_images_source_layer: PublishedImagesSourceLayer::new(published_images_source),
         feed_config_layer: FeedConfigLayer::new(feed_params),
-        store_layer: StoreLayer::from_shared(store),
-        appraiser_layer: AppraiserLayer::new(appraiser),
-        oauth_config_layer: OAuthConfigLayer::new(oauth_config),
-        started_at_layer: StartedAtLayer::new(Utc::now()),
-        session_secret: args.session_secret,
-        use_redis: args.use_redis,
-        redis_url: args.redis_url,
     };
     let bootstrapper = Bootstrapper::new(project)
         .with_config_name("dev")?

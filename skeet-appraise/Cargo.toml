@@ -1,0 +1,52 @@
+[package]
+name = "skeet-appraise"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+chrono = { workspace = true }
+clap = { workspace = true }
+cot = { workspace = true }
+deadpool-redis = { workspace = true } # see workspace Cargo.toml for why this is here
+image = { workspace = true }
+oauth2 = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+shared = { workspace = true }
+skeet-publish = { workspace = true }
+skeet-store = { path = "../skeet-store" }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tower = { workspace = true }
+tower-sessions = { workspace = true }
+rustls = { workspace = true }
+tracing = { workspace = true }
+urlencoding = "2"
+web-support = { workspace = true }
+
+[build-dependencies]
+build-support = { workspace = true }
+
+[dev-dependencies]
+bluesky = { workspace = true }
+proptest = { workspace = true }
+skeet-store = { path = "../skeet-store", features = ["test-helpers"] }
+test-support = { workspace = true }
+tempfile = { workspace = true }
+rcgen = { workspace = true }
+testcontainers = { workspace = true }
+testcontainers-modules = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
+wiremock = "0.6"
+
+[features]
+test = ["cot/test"]
+integ = ["test"]
+
+[[bin]]
+name = "skeet-appraise"
+path = "src/bin/skeet_appraise.rs"

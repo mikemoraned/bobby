@@ -1,92 +1,25 @@
-use std::collections::{HashMap, HashSet};
-use std::io::Cursor;
-use std::sync::Arc;
-
-use cot::html::Html;
+use cot::http::HeaderValue;
+use cot::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use cot::http::request::Parts as RequestHead;
-use cot::request::extractors::{Path, UrlQuery};
+use cot::request::extractors::UrlQuery;
 use cot::response::Response;
 use cot::{Body, StatusCode, Template};
 use serde::{Deserialize, Serialize};
-use shared::{Band, ImageId};
-use skeet_store::{ModelVersion, Score, SkeetId, StoredImageSummary};
-use crate::Store;
-use crate::effective_band::{image_effective_band, image_score_is_positive};
 use tracing::{info, instrument, warn};
 
-use crate::AppraiserExtractor;
-use crate::FeedCacheExtractor;
-use crate::feed_cache::{CachedFeed, FeedCache};
 use crate::feed_config::FeedConfig;
+use crate::{FeedSourceExtractor, PublishedImagesSourceExtractor};
 
-/// Compute the set of skeet IDs whose effective band makes them visible in the feed.
-///
-/// Score-based visibility uses the per-model threshold from `feed.models`.
-/// Manual band overrides bypass the model lookup and use `Band::is_visible_in_feed`.
-fn visible_skeet_ids(feed: &CachedFeed) -> HashSet<SkeetId> {
-    // For each image: manual override wins; otherwise use per-model positive check.
-    // Track per-skeet whether every image clears its bar.
-    let mut skeet_visible: HashMap<&SkeetId, bool> = HashMap::new();
-    for (summary, score, model_version) in &feed.entries {
-        let manual_image = feed.image_appraisals.get(&summary.image_id).map(|a| a.band);
-        let image_ok = manual_image.map_or_else(
-            || image_score_is_positive(*score, model_version, &feed.models),
-            |band| band.is_visible_in_feed(),
-        );
-        let entry = skeet_visible.entry(&summary.skeet_id).or_insert(true);
-        *entry = *entry && image_ok;
-    }
-
-    skeet_visible
-        .into_iter()
-        .filter(|(skeet_id, all_images_ok)| {
-            if !all_images_ok {
-                return false;
-            }
-            let manual_skeet = feed.skeet_appraisals.get(skeet_id).map(|a| a.band);
-            manual_skeet.is_none_or(|b| b.is_visible_in_feed())
-        })
-        .map(|(skeet_id, _)| skeet_id.clone())
-        .collect()
-}
-
-/// Return scored entries filtered to only those from visible skeets,
-/// sorted best-to-worst by score, deduplicated by skeet_id.
-pub fn visible_entries(feed: &CachedFeed) -> Vec<(StoredImageSummary, Score, ModelVersion)> {
-    let visible = visible_skeet_ids(feed);
-
-    let mut seen = HashSet::new();
-    feed.entries
-        .iter()
-        .filter(|(summary, _, _)| {
-            summary.skeet_id.collection() == "app.bsky.feed.post"
-                && visible.contains(&summary.skeet_id)
-        })
-        .filter(|(summary, _, _)| seen.insert(summary.skeet_id.clone()))
-        .cloned()
-        .collect()
-}
+/// The grid is republished at most once a publish cycle and the app suspends
+/// when idle, so a short shared cache with revalidation is the right trade: a
+/// burst is absorbed, yet a republish is picked up within the window.
+const GRID_CACHE_CONTROL: &str = "public, max-age=60";
 
 fn wants_no_cache(head: &RequestHead) -> bool {
     head.headers
-        .get("cache-control")
+        .get(CACHE_CONTROL)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|v| v.contains("no-cache"))
-}
-
-async fn get_feed(cache: &Arc<FeedCache>, head: &RequestHead) -> cot::Result<CachedFeed> {
-    if wants_no_cache(head) {
-        info!("cache-control: no-cache — forcing refresh");
-        cache
-            .refresh()
-            .await
-            .map_err(|e| cot::Error::internal(format!("failed to refresh cache: {e}")))
-    } else {
-        cache
-            .get()
-            .await
-            .map_err(|e| cot::Error::internal(format!("failed to read store: {e}")))
-    }
 }
 
 fn set_last_modified_header(
@@ -94,11 +27,17 @@ fn set_last_modified_header(
     refreshed_at: Option<chrono::DateTime<chrono::Utc>>,
 ) {
     if let Some(at) = refreshed_at {
-        let date = at.format("%a, %d %b %Y %H:%M:%S GMT").to_string();
-        if let Ok(val) = date.parse() {
-            response.headers_mut().insert("last-modified", val);
-        }
+        web_support::set_last_modified(response, at);
     }
+}
+
+/// Set the grid's caching headers: a short shared `cache-control` always, plus
+/// `last-modified` when the backing list has a known refresh time.
+fn set_cache_headers(response: &mut Response, refreshed_at: Option<chrono::DateTime<chrono::Utc>>) {
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static(GRID_CACHE_CONTROL));
+    set_last_modified_header(response, refreshed_at);
 }
 
 fn json_response(body: &impl Serialize) -> cot::Result<Response> {
@@ -107,7 +46,7 @@ fn json_response(body: &impl Serialize) -> cot::Result<Response> {
     let mut response = Response::new(Body::fixed(json));
     response
         .headers_mut()
-        .insert("content-type", "application/json".parse().expect("valid header"));
+        .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     Ok(response)
 }
 
@@ -188,7 +127,7 @@ struct SkeletonFeedPost {
 #[instrument(skip_all, fields(feed = %query.feed))]
 pub async fn get_feed_skeleton(
     head: RequestHead,
-    FeedCacheExtractor(cache): FeedCacheExtractor,
+    FeedSourceExtractor(source): FeedSourceExtractor,
     FeedConfig(config): FeedConfig,
     UrlQuery(query): UrlQuery<FeedSkeletonQuery>,
 ) -> cot::Result<Response> {
@@ -202,19 +141,27 @@ pub async fn get_feed_skeleton(
         *response.status_mut() = StatusCode::BAD_REQUEST;
         response
             .headers_mut()
-            .insert("content-type", "application/json".parse().expect("valid header"));
+            .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         return Ok(response);
     }
 
     let limit = query.limit.unwrap_or(config.max_entries).min(config.max_entries);
 
-    let feed = get_feed(&cache, &head).await?;
+    let force_refresh = wants_no_cache(&head);
+    if force_refresh {
+        info!("cache-control: no-cache — forcing refresh");
+    }
+    let skeleton = source
+        .skeleton(force_refresh)
+        .await
+        .map_err(|e| cot::Error::internal(format!("failed to read feed source: {e}")))?;
 
-    let posts: Vec<SkeletonFeedPost> = visible_entries(&feed)
+    let posts: Vec<SkeletonFeedPost> = skeleton
+        .skeet_ids
         .into_iter()
         .take(limit)
-        .map(|(summary, _score, _model_version)| SkeletonFeedPost {
-            post: summary.skeet_id.to_string(),
+        .map(|skeet_id| SkeletonFeedPost {
+            post: skeet_id.to_string(),
         })
         .collect();
 
@@ -225,181 +172,85 @@ pub async fn get_feed_skeleton(
         cursor: None,
     };
     let mut response = json_response(&resp)?;
-    set_last_modified_header(&mut response, cache.refreshed_at().await);
+    set_last_modified_header(&mut response, skeleton.refreshed_at);
     Ok(response)
 }
 
-pub struct HomeEntry {
-    pub image_id: String,
-    pub skeet_id_encoded: String,
-    pub image_id_encoded: String,
-    pub score: String,
-    pub band: String,
-    pub manual_skeet_band: String,
-    pub manual_image_band: String,
-    pub web_url: String,
-}
-
-pub struct BandOption {
-    pub name: &'static str,
-    pub label: &'static str,
-    pub description: &'static str,
-}
-
-/// Bands ordered best-to-worst for UI button display.
-const BANDS_BEST_TO_WORST: &[Band] = &[
-    Band::HighQuality,
-    Band::MediumHigh,
-    Band::MediumLow,
-    Band::Low,
-];
-
-pub fn band_options() -> Vec<BandOption> {
-    BANDS_BEST_TO_WORST
-        .iter()
-        .map(|&b| BandOption {
-            name: b.wire_name(),
-            label: b.short_label(),
-            description: b.description(),
-        })
-        .collect()
+/// One image card on the home page: the Bluesky post it links to and the CDN
+/// thumbnail it shows. `aspect_ratio` is the `W/H` for the `aspect-ratio` CSS
+/// property when the image's dimensions are known, so the tile reserves space
+/// and the grid doesn't reflow as images load.
+struct GridCard {
+    bsky_url: String,
+    thumb_url: String,
+    alt: String,
+    aspect_ratio: Option<String>,
 }
 
 #[derive(Template)]
 #[template(path = "home.html")]
 struct HomeTemplate {
-    entries: Vec<HomeEntry>,
-    is_admin: bool,
-    band_options: Vec<BandOption>,
+    cards: Vec<GridCard>,
 }
 
+/// Home page: a server-rendered grid of the published `quality-7d` images, each
+/// linking through to its Bluesky post. Images are served by the Bluesky CDN, so
+/// this page only renders HTML.
 #[instrument(skip_all)]
 pub async fn home(
     head: RequestHead,
-    AppraiserExtractor(appraiser): AppraiserExtractor,
-    FeedCacheExtractor(cache): FeedCacheExtractor,
-) -> cot::Result<Html> {
-    info!("serving home");
+    PublishedImagesSourceExtractor(source): PublishedImagesSourceExtractor,
+) -> cot::Result<Response> {
+    let published = source
+        .published_images()
+        .await
+        .map_err(|e| cot::Error::internal(format!("failed to read published images: {e}")))?;
 
-    let is_admin = appraiser.is_some();
-    let feed = get_feed(&cache, &head).await?;
+    let refreshed_at = published.refreshed_at;
 
-    let entries: Vec<HomeEntry> = visible_entries(&feed)
+    // Conditional GET: if the client already holds this revision, skip rendering.
+    if let Some(at) = refreshed_at
+        && let Some(not_modified) =
+            web_support::not_modified_since(&head, at, Some(GRID_CACHE_CONTROL))
+    {
+        info!("not modified since client's copy — 304");
+        return Ok(not_modified);
+    }
+
+    let cards: Vec<GridCard> = published
+        .images
         .into_iter()
-        .filter_map(|(summary, score, _model_version)| {
-            if summary.skeet_id.collection() != "app.bsky.feed.post" {
-                return None;
+        .map(|item| {
+            GridCard {
+                bsky_url: item.skeet_id.bsky_post_url(),
+                thumb_url: item.image_url.to_string(),
+                alt: "Selfie with a landmark".to_string(),
+                aspect_ratio: item
+                    .image_url_dimensions
+                    .map(|d| format!("{}/{}", d.width, d.height)),
             }
-            let did = summary.skeet_id.did();
-            let rkey = summary.skeet_id.rkey();
-            let manual_image = feed.image_appraisals.get(&summary.image_id).map(|a| a.band);
-            let manual_skeet = feed.skeet_appraisals.get(&summary.skeet_id).map(|a| a.band);
-            let band = image_effective_band(score, manual_image);
-            let image_id = summary.image_id.to_string();
-            Some(HomeEntry {
-                skeet_id_encoded: urlencoding::encode(&summary.skeet_id.to_string()).into_owned(),
-                image_id_encoded: urlencoding::encode(&image_id).into_owned(),
-                image_id,
-                score: format!("{score}"),
-                band: band.to_string(),
-                manual_skeet_band: manual_skeet.map(|b| b.to_string()).unwrap_or_default(),
-                manual_image_band: manual_image.map(|b| b.to_string()).unwrap_or_default(),
-                web_url: format!("https://bsky.app/profile/{did}/post/{rkey}"),
-            })
         })
         .collect();
 
-    info!(count = entries.len(), is_admin, "serving home entries");
-    let rendered = HomeTemplate { entries, is_admin, band_options: band_options() }.render()?;
-    Ok(Html::new(rendered))
-}
-
-#[instrument(skip_all, fields(image_id = %image_id_str))]
-pub async fn annotated_image(
-    head: RequestHead,
-    Store(store): Store,
-    crate::StartedAtExtractor(started_at): crate::StartedAtExtractor,
-    Path(image_id_str): Path<String>,
-) -> cot::Result<Response> {
-    info!(image_id = %image_id_str, "serving annotated image");
-
-    let last_modified = started_at.http_date();
-
-    // Conditional GET: if the client already has a copy from this server boot, return 304.
-    if let Some(ims) = head.headers.get("if-modified-since").and_then(|v| v.to_str().ok())
-        && ims == last_modified
-    {
-        let mut response = Response::new(Body::empty());
-        *response.status_mut() = StatusCode::NOT_MODIFIED;
-        return Ok(response);
-    }
-
-    let image_id: ImageId = image_id_str
-        .parse()
-        .map_err(|_| cot::Error::internal(format!("invalid image id: {image_id_str}")))?;
-
-    let stored = store
-        .get_by_id(&image_id)
-        .await
-        .map_err(|e| cot::Error::internal(format!("store error: {e}")))?;
-
-    let Some(stored) = stored else {
-        warn!(image_id = %image_id_str, "image not found");
-        let mut response = Response::new(Body::fixed("not found"));
-        *response.status_mut() = StatusCode::NOT_FOUND;
-        return Ok(response);
-    };
-
-    let mut buf = Cursor::new(Vec::new());
-    stored
-        .annotated_image
-        .write_to(&mut buf, image::ImageFormat::Png)
-        .map_err(|e| cot::Error::internal(format!("failed to encode image: {e}")))?;
-
-    let mut response = Response::new(Body::fixed(buf.into_inner()));
+    info!(count = cards.len(), "serving home grid");
+    let rendered = HomeTemplate { cards }.render()?;
+    let mut response = Response::new(Body::fixed(rendered));
     response
         .headers_mut()
-        .insert("content-type", "image/png".parse().expect("valid header"));
-    response
-        .headers_mut()
-        .insert("last-modified", last_modified.parse().expect("valid header"));
+        .insert(CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+    set_cache_headers(&mut response, refreshed_at);
     Ok(response)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shared::Band;
-
-    #[test]
-    fn band_options_covers_all_bands() {
-        let options = band_options();
-        assert_eq!(options.len(), Band::ALL.len());
-    }
-
-    #[test]
-    fn band_options_names_are_distinct() {
-        let options = band_options();
-        let unique: std::collections::HashSet<_> = options.iter().map(|o| o.name).collect();
-        assert_eq!(unique.len(), options.len());
-    }
-
-    #[test]
-    fn band_options_ordered_best_to_worst() {
-        let options = band_options();
-        let bands: Vec<Band> = options
-            .iter()
-            .map(|o| o.name.parse().expect("valid band"))
-            .collect();
-        for w in bands.windows(2) {
-            assert!(w[0] > w[1]);
-        }
-    }
+    use cot::http::header::LAST_MODIFIED;
 
     #[test]
     fn wants_no_cache_true_when_header_present() {
         let req = cot::http::Request::builder()
-            .header("cache-control", "no-cache")
+            .header(CACHE_CONTROL, "no-cache")
             .body(())
             .expect("build");
         let (head, _) = req.into_parts();
@@ -416,7 +267,7 @@ mod tests {
     #[test]
     fn wants_no_cache_false_for_other_directives() {
         let req = cot::http::Request::builder()
-            .header("cache-control", "max-age=60")
+            .header(CACHE_CONTROL, "max-age=60")
             .body(())
             .expect("build");
         let (head, _) = req.into_parts();
@@ -431,7 +282,7 @@ mod tests {
         set_last_modified_header(&mut response, Some(dt));
         let val = response
             .headers()
-            .get("last-modified")
+            .get(LAST_MODIFIED)
             .expect("header should be set")
             .to_str()
             .expect("valid str");
@@ -442,6 +293,6 @@ mod tests {
     fn set_last_modified_header_noop_when_none() {
         let mut response = Response::new(Body::empty());
         set_last_modified_header(&mut response, None);
-        assert!(response.headers().get("last-modified").is_none());
+        assert!(response.headers().get(LAST_MODIFIED).is_none());
     }
 }

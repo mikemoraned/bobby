@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use chrono::Utc;
 use clap::Parser;
 use eval::{
-    Evaluation, EvalResultsLog, EvalSplits, LabelledScore, PricesRegistry, Purpose, Resources,
+    Evaluation, EvalResultsLog, EvalSplits, F1, LabelledScore, PricesRegistry, Purpose, Resources,
     RunId, RunRecord, SnapshotId, confusion_at, pin_at_precision, roc_auc_score,
 };
 use futures::stream::{self, StreamExt};
@@ -177,7 +177,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let matrix = confusion_at(&labelled, decision_threshold);
     let precision = matrix.precision().ok_or(EvalRunError::NoPositivePredictions)?;
     let recall = matrix.recall().ok_or(EvalRunError::NoPositives)?;
-    let f1 = matrix.f1().expect("precision and recall both defined");
+    let f1 = F1::harmonic(precision, recall);
     let roc_auc = roc_auc_score(&labelled);
     let pinned_precision = pin_at_precision(&labelled, precision);
 

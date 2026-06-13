@@ -129,6 +129,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .collect()
             .await;
 
+        // `model_name` is iterated from the snapshot itself, so it's always present.
+        #[allow(clippy::expect_used)]
         let costs: Vec<Usd> = results
             .iter()
             .map(|r| {
@@ -142,12 +144,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
-        let min = *costs.iter().min().expect("non-empty");
-        let max = *costs.iter().max().expect("non-empty");
+        // `costs` is non-empty (checked above) and `model_name` is from the snapshot.
+        #[allow(clippy::expect_used)]
+        let (min, max, prices) = (
+            *costs.iter().min().expect("non-empty"),
+            *costs.iter().max().expect("non-empty"),
+            snapshot.prices.get(model_name).expect("model is in snapshot"),
+        );
         let total = costs.iter().copied().fold(Usd::zero(), |acc, c| acc + c);
         let avg = total / costs.len() as u64;
-
-        let prices = snapshot.prices.get(model_name).expect("model is in snapshot");
 
         info!(
             model = %model_name,

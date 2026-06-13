@@ -3,10 +3,13 @@ R2_STORE := "s3://hom-bobby/encrypted-store"
 
 import 'just/store.just'
 import 'just/feed.just'
+import 'just/appraise.just'
+import 'just/publish.just'
 import 'just/container.just'
 import 'just/cluster.just'
 import 'just/cloudflare.just'
 import 'just/openai.just'
+import 'just/local.just'
 
 default:
     just --list
@@ -34,7 +37,7 @@ test:
 test-no-docker:
     cargo nextest run --release --features integ --profile no-docker
 
-end_to_end_test: end_to_end_test_cloudflare end_to_end_test_openai end_to_end_test_staging
+end_to_end_test: end_to_end_test_cloudflare end_to_end_test_openai end_to_end_test_feed_staging end_to_end_test_appraise_staging
 
 mutants-on-diff:
     git diff main > /tmp/bobby-mutants-diff.patch

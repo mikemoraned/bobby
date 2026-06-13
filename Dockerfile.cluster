@@ -1,0 +1,65 @@
+# Shared builder for the arm64 (Hetzner cluster) services. One cargo build compiles
+# every shipped crate so the dep tree is built once; each runner-* target copies out
+# only its own binary. Build a given service with `--target runner-<name>` (see
+# just/container.just). See .claude/rules/docker.md "Shared builder + --target".
+FROM rust:1.94-bookworm AS builder
+WORKDIR /build
+RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev && rm -rf /var/lib/apt/lists/*
+COPY . .
+COPY models/ models/
+ARG BUILD_GIT_HASH=unknown
+ENV BUILD_GIT_HASH=${BUILD_GIT_HASH}
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,target=/build/target,id=bobby-target-arm64,sharing=locked \
+    cargo build --release \
+      -p skeet-prune --bin pruner \
+      -p skeet-refine --bin live-refine \
+      -p skeet-publish --bin skeet-publish \
+      -p skeet-store --bin optimise \
+      -p cloudflare-exporter --bin sync_operations --bin sync_storage \
+      -p openai-exporter --bin sync_costs \
+    && mkdir -p /build/out \
+    && cp target/release/pruner target/release/live-refine target/release/skeet-publish target/release/optimise target/release/sync_operations target/release/sync_storage target/release/sync_costs /build/out/ \
+    && BPK_PATH=$(find /build/target/release/build -name "face_detection_yunet_2023mar_opset16.bpk" -print -quit) \
+    && cp "$BPK_PATH" /build/out/weights.bpk \
+    && echo "$BPK_PATH" > /build/out/bpk_original_path \
+    && cp /build/models/text-detection.rten /build/models/text-recognition.rten /build/out/
+
+FROM debian:bookworm-slim AS runner-base
+LABEL org.opencontainers.image.source=https://github.com/mikemoraned/bobby
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+
+FROM runner-base AS runner-pruner
+COPY --from=builder /build/out/pruner /usr/local/bin/pruner
+# Restore the .bpk weights / .rten models to the exact paths baked into the binary.
+COPY --from=builder /build/out/weights.bpk /tmp/weights.bpk
+COPY --from=builder /build/out/bpk_original_path /tmp/bpk_original_path
+RUN mkdir -p "$(dirname "$(cat /tmp/bpk_original_path)")" && \
+    cp /tmp/weights.bpk "$(cat /tmp/bpk_original_path)" && \
+    rm /tmp/weights.bpk /tmp/bpk_original_path
+COPY --from=builder /build/out/text-detection.rten /build/models/text-detection.rten
+COPY --from=builder /build/out/text-recognition.rten /build/models/text-recognition.rten
+COPY config/prune.toml /etc/bobby/prune.toml
+CMD ["pruner", "--config-path", "/etc/bobby/prune.toml"]
+
+FROM runner-base AS runner-live-refine
+COPY --from=builder /build/out/live-refine /usr/local/bin/live-refine
+COPY config/refine.toml /etc/bobby/refine.toml
+CMD ["live-refine", "--model-path", "/etc/bobby/refine.toml"]
+
+FROM runner-base AS runner-skeet-publish
+COPY --from=builder /build/out/skeet-publish /usr/local/bin/skeet-publish
+COPY config/refine.toml /etc/bobby/refine.toml
+CMD ["skeet-publish", "--model-path", "/etc/bobby/refine.toml"]
+
+FROM runner-base AS runner-optimise
+COPY --from=builder /build/out/optimise /usr/local/bin/optimise
+CMD ["optimise"]
+
+FROM runner-base AS runner-cloudflare-exporter
+COPY --from=builder /build/out/sync_operations /usr/local/bin/sync_operations
+COPY --from=builder /build/out/sync_storage /usr/local/bin/sync_storage
+
+FROM runner-base AS runner-openai-exporter
+COPY --from=builder /build/out/sync_costs /usr/local/bin/sync_costs

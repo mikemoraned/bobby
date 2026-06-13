@@ -12,6 +12,8 @@ pub enum R2RestError {
     Http(#[from] reqwest::Error),
     #[error("Cloudflare API errors: {0}")]
     Api(String),
+    #[error("Cloudflare reported success but returned no result")]
+    MissingResult,
     #[error("Cloudflare returned an invalid bucket name: {0}")]
     InvalidBucketName(#[from] BucketNameError),
 }
@@ -84,7 +86,7 @@ async fn get<T: serde::de::DeserializeOwned>(
 ) -> Result<T, R2RestError> {
     let envelope: Envelope<T> = client
         .get(url)
-        .header("Authorization", format!("Bearer {}", api_token.as_str()))
+        .header(reqwest::header::AUTHORIZATION, format!("Bearer {}", api_token.as_str()))
         .send()
         .await?
         .json()
@@ -104,7 +106,9 @@ async fn get<T: serde::de::DeserializeOwned>(
         }));
     }
 
-    Ok(envelope.result.expect("checked above"))
+    envelope
+        .result
+        .ok_or(R2RestError::MissingResult)
 }
 
 pub async fn list_buckets(

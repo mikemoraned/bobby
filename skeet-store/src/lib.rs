@@ -21,6 +21,7 @@ pub mod tempo;
 pub mod trace_analysis;
 mod types;
 mod version;
+pub mod versioned_cache;
 
 pub use appraisals::Appraisal;
 pub use args::StoreArgs;
@@ -35,6 +36,7 @@ pub use store_metrics::StoreMetrics;
 pub use summary::SkeetStoreSummary;
 pub use types::{DiscoveredAt, ImageRecord, OriginalAt, SkeetId, Zone};
 pub use version::Version;
+pub use versioned_cache::VersionedCache;
 
 use std::sync::Arc;
 
@@ -68,7 +70,7 @@ pub struct SkeetStore {
     /// per-table iteration (fragment counts, version snapshots). Populated in
     /// `SkeetStore::open` so adding or removing a table is a single edit.
     pub(crate) tables: Vec<(&'static str, lancedb::Table)>,
-    pub(crate) scores_cache: RwLock<Option<scores::ScoresCache>>,
+    pub(crate) scores_cache: RwLock<VersionedCache<u64, scores::ScoresMap>>,
     pub(crate) store_wrapper: Option<Arc<dyn WrappingObjectStore>>,
 }
 

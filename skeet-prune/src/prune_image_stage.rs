@@ -8,6 +8,14 @@ use tracing::{info, warn};
 
 use crate::pipeline::{ImageResult, MetaResult, PipelineCounters};
 
+// The text-detection models are compile-time-bundled assets; a load failure is an
+// unrecoverable startup error for the worker, so panicking the spawned task is intended.
+#[allow(clippy::expect_used)]
+fn load_text_detector() -> text_detection::TextDetector {
+    text_detection::TextDetector::from_bundled_models()
+        .expect("failed to load text detection models")
+}
+
 pub async fn run_workers(
     rx: mpsc::Receiver<MetaResult>,
     tx: mpsc::Sender<ImageResult>,
@@ -36,8 +44,7 @@ pub async fn run_workers(
             let face = FaceDetector::from_bundled_weights();
             let text = if enable_text {
                 info!(worker_id, "loading text detection models");
-                Some(text_detection::TextDetector::from_bundled_models()
-                    .expect("failed to load text detection models"))
+                Some(load_text_detector())
             } else {
                 None
             };

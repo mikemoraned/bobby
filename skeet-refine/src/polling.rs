@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use skeet_store::{DiscoveredAt, SkeetStore, StoreError, TABLE_NAME};
+use skeet_store::{DiscoveredAt, SkeetStore, StoreError, TABLE_NAME, VersionedCache};
 use tracing::info;
 
 use crate::batch::Batch;
 
 pub struct PollingBatchSource {
     store: Arc<SkeetStore>,
-    last_images_version: Option<u64>,
+    images_gate: VersionedCache<u64, ()>,
     last_discovered_at: Option<DiscoveredAt>,
 }
 
@@ -15,7 +15,7 @@ impl PollingBatchSource {
     pub const fn new(store: Arc<SkeetStore>) -> Self {
         Self {
             store,
-            last_images_version: None,
+            images_gate: VersionedCache::new(),
             last_discovered_at: None,
         }
     }
@@ -40,7 +40,7 @@ impl PollingBatchSource {
             .find(|(name, _)| *name == TABLE_NAME)
             .map(|(_, v)| *v);
 
-        if self.last_images_version.is_some() && images_version == self.last_images_version {
+        if images_version.is_some_and(|v| self.images_gate.is_cached_current(&v)) {
             return Ok(Batch::default());
         }
 
@@ -49,7 +49,9 @@ impl PollingBatchSource {
             .list_unscored_image_ids(self.last_discovered_at.as_ref())
             .await?;
 
-        self.last_images_version = images_version;
+        if let Some(v) = images_version {
+            self.images_gate.cache(v, ());
+        }
 
         if unscored_ids.is_empty() {
             return Ok(Batch::default());

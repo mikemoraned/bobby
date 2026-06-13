@@ -14,7 +14,7 @@ use crate::schema::{
     VALIDATE_TABLE_NAME, images_score_v2_schema, images_v6_schema,
     manual_image_appraisal_v1_schema, manual_skeet_appraisal_v1_schema, validate_v1_schema,
 };
-use crate::SkeetStore;
+use crate::{SkeetStore, VersionedCache};
 
 impl SkeetStore {
     #[instrument(skip(storage_options))]
@@ -189,7 +189,7 @@ impl SkeetStore {
             skeet_appraisal_table,
             image_appraisal_table,
             tables,
-            scores_cache: RwLock::new(None),
+            scores_cache: RwLock::new(VersionedCache::new()),
             store_wrapper: Some(store_wrapper),
         })
     }

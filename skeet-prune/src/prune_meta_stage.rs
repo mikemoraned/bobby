@@ -6,7 +6,6 @@ use shared::Rejection;
 use tokio::sync::mpsc;
 use tracing::{trace, warn};
 
-use crate::content_filter;
 use crate::firehose::SkeetCandidate;
 use crate::pipeline::{MetaResult, PipelineCounters};
 
@@ -20,7 +19,7 @@ pub enum MetaFilterOutcome {
 /// Inspects post labels, author labels, and quoted-record author labels for
 /// excluded values (adult content, `!no-unauthenticated`, etc.).
 pub fn check_metadata(post_thread_json: &Value) -> MetaFilterOutcome {
-    let blocked = content_filter::blocked_labels(post_thread_json);
+    let blocked = bluesky::blocked_labels(post_thread_json);
     if !blocked.is_empty() {
         return MetaFilterOutcome::Blocked(format!("blocked labels: {}", blocked.join(", ")));
     }
@@ -38,10 +37,10 @@ pub async fn run(
 ) {
     while let Some(candidate) = rx.recv().await {
         counters.meta.fetch_add(1, Ordering::Relaxed);
-        let image_count = candidate.image_urls.len() as u64;
+        let image_count = candidate.images.len() as u64;
 
         let (result, passed) =
-            match crate::metadata::fetch_post_thread(&http, &candidate.skeet_id).await {
+            match bluesky::fetch_post_thread(&http, &candidate.skeet_id).await {
                 Ok(json) => match check_metadata(&json) {
                     MetaFilterOutcome::Pass => (MetaResult::Candidate(candidate), true),
                     MetaFilterOutcome::Blocked(reason) => {

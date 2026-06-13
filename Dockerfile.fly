@@ -1,0 +1,31 @@
+# Shared builder for the amd64 (fly.io) services. One cargo build compiles both web
+# crates so the dep tree is built once; each runner-* target copies out only its own
+# binary. Build a given service with `--target runner-<name>` (see just/container.just).
+# See .claude/rules/docker.md "Shared builder + --target".
+FROM rust:1.94-bookworm AS builder
+WORKDIR /build
+RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev && rm -rf /var/lib/apt/lists/*
+COPY . .
+ARG BUILD_GIT_HASH=unknown
+ENV BUILD_GIT_HASH=${BUILD_GIT_HASH}
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,target=/build/target,id=bobby-target-amd64,sharing=locked \
+    cargo build --release \
+      -p skeet-feed --bin skeet-feed \
+      -p skeet-appraise --bin skeet-appraise \
+    && mkdir -p /build/out \
+    && cp target/release/skeet-feed target/release/skeet-appraise /build/out/
+
+FROM debian:bookworm-slim AS runner-base
+LABEL org.opencontainers.image.source=https://github.com/mikemoraned/bobby
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+
+FROM runner-base AS runner-skeet-feed
+COPY --from=builder /build/out/skeet-feed /usr/local/bin/skeet-feed
+CMD ["skeet-feed"]
+
+FROM runner-base AS runner-skeet-appraise
+COPY --from=builder /build/out/skeet-appraise /usr/local/bin/skeet-appraise
+COPY config/refine.toml /etc/bobby/refine.toml
+CMD ["skeet-appraise", "--model-path", "/etc/bobby/refine.toml"]

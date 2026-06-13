@@ -310,6 +310,9 @@ pub fn stratified_sample<T: Clone>(
         .collect()
 }
 
+// `DenseMatrix::new` is given a matching `(n, 1)` shape and an `n`-length value vec, so it
+// cannot fail.
+#[allow(clippy::expect_used)]
 fn sample_band<T: Clone>(group: Vec<T>, total_target: usize, total: usize, seed: u64) -> Vec<T> {
     let n = group.len();
     if n == 0 {
@@ -330,6 +333,9 @@ fn sample_band<T: Clone>(group: Vec<T>, total_target: usize, total: usize, seed:
     test_idx.into_iter().map(|i| group[i as usize].clone()).collect()
 }
 
+// `DenseMatrix::new` is given a matching `(n, 1)` shape and an `n`-length value vec, so it
+// cannot fail.
+#[allow(clippy::expect_used)]
 fn split_band<T: Clone>(group: Vec<T>, test_size: f32, seed: u64) -> (Vec<T>, Vec<T>) {
     let n = group.len();
     if (((n as f32) * test_size) as usize) < 1 {

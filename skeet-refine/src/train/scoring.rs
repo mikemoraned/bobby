@@ -76,6 +76,8 @@ pub fn fallback_count(scored: &HashMap<ImageId, ScoredCall>) -> usize {
         .count()
 }
 
+// `scored` is produced by scoring every image in `images`, so each id is present.
+#[allow(clippy::expect_used)]
 pub fn labelled_scores(
     images: &[LabelledImage],
     scored: &HashMap<ImageId, ScoredCall>,

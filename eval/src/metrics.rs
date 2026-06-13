@@ -6,6 +6,7 @@ use crate::metric_types::{LabelledScore, PinnedPrecision, Precision, RocAuc, Thr
 /// Computes the ROC-AUC score via `smartcore::metrics::roc_auc_score`.
 ///
 /// Returns `None` if either class is empty (AUC is undefined).
+#[allow(clippy::expect_used)] // smartcore returns AUC in [0.0, 1.0]
 pub fn roc_auc_score(labelled: &[LabelledScore]) -> Option<RocAuc> {
     let n_pos = labelled.iter().filter(|l| l.is_positive).count();
     let n_neg = labelled.len() - n_pos;

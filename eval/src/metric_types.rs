@@ -22,8 +22,16 @@ fn validated(name: &'static str, value: f64) -> Result<f64, InvalidMetric> {
 pub struct Precision(f64);
 
 impl Precision {
+    /// Validating constructor for untrusted input.
     pub fn new(value: f64) -> Result<Self, InvalidMetric> {
         validated("precision", value).map(Self)
+    }
+
+    /// precision = tp / (tp + fp); `None` iff tp + fp == 0.
+    /// Always in [0, 1]: tp <= tp + fp, preserved by the f64 cast.
+    pub fn from_counts(true_pos: u64, false_pos: u64) -> Option<Self> {
+        let denom = true_pos + false_pos;
+        (denom != 0).then(|| Self(true_pos as f64 / denom as f64))
     }
 }
 
@@ -45,8 +53,16 @@ impl std::fmt::Display for Precision {
 pub struct Recall(f64);
 
 impl Recall {
+    /// Validating constructor for untrusted input.
     pub fn new(value: f64) -> Result<Self, InvalidMetric> {
         validated("recall", value).map(Self)
+    }
+
+    /// recall = tp / (tp + fn); `None` iff tp + fn == 0.
+    /// Always in [0, 1]: tp <= tp + fn, preserved by the f64 cast.
+    pub fn from_counts(true_pos: u64, false_neg: u64) -> Option<Self> {
+        let denom = true_pos + false_neg;
+        (denom != 0).then(|| Self(true_pos as f64 / denom as f64))
     }
 }
 
@@ -81,8 +97,18 @@ impl PartialOrd for Recall {
 pub struct F1(f64);
 
 impl F1 {
+    /// Validating constructor for untrusted input.
     pub fn new(value: f64) -> Result<Self, InvalidMetric> {
         validated("f1", value).map(Self)
+    }
+
+    /// Harmonic mean of precision and recall (0 when both are 0).
+    /// Always in [0, 1]: the harmonic mean of two [0, 1] values stays in [0, 1],
+    /// guaranteed here by the `Precision`/`Recall` input types.
+    pub fn harmonic(p: Precision, r: Recall) -> Self {
+        let (p, r) = (f64::from(p), f64::from(r));
+        let denom = p + r;
+        Self(if denom == 0.0 { 0.0 } else { 2.0 * p * r / denom })
     }
 }
 

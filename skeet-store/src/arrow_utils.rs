@@ -27,6 +27,9 @@ pub fn encode_image_as_png(img: &DynamicImage) -> Result<Vec<u8>, image::ImageEr
     Ok(buf.into_inner())
 }
 
+// Microseconds read back from the store are always in chrono's representable range
+// and Utc is never ambiguous, so `single()` is always `Some`.
+#[allow(clippy::expect_used)]
 pub fn micros_to_datetime(micros: i64) -> DateTime<Utc> {
     Utc.timestamp_micros(micros)
         .single()

@@ -8,3 +8,4 @@ workspace = true
 
 [dependencies]
 image = { workspace = true }
+shared = { workspace = true }
