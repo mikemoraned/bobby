@@ -133,6 +133,10 @@ fn test_model_version() -> ModelVersion {
     ModelVersion::from("test_v1")
 }
 
+fn known(versions: &[&ModelVersion]) -> std::collections::HashSet<ModelVersion> {
+    versions.iter().map(|v| (*v).clone()).collect()
+}
+
 #[tokio::test]
 async fn upsert_and_read_score() {
     let dir = tempfile::tempdir().unwrap();
@@ -214,7 +218,7 @@ async fn scores_roundtrip_preserves_v1_and_v2_schemes() {
 
     // Bulk path (list_scored_summaries_by_score → cached_scores) also preserves each scheme.
     let summaries = store
-        .list_scored_summaries_by_score(10, None)
+        .list_scored_summaries_by_score(10, None, &known(&[&v1_mv, &v2_mv]))
         .await
         .unwrap();
     let by_id: std::collections::HashMap<_, _> = summaries
@@ -367,7 +371,7 @@ async fn list_scored_summaries_ordered_by_score() {
     // r3 not scored
 
     let scored = store
-        .list_scored_summaries_by_score(10, None)
+        .list_scored_summaries_by_score(10, None, &known(&[&mv]))
         .await
         .unwrap();
     assert_eq!(scored.len(), 2);
@@ -401,7 +405,7 @@ async fn setup_cache_test(prefix: &str) -> CacheTestFixture {
 
     // Populate any internal cache
     let scored = store
-        .list_scored_summaries_by_score(10, None)
+        .list_scored_summaries_by_score(10, None, &known(&[&mv]))
         .await
         .unwrap();
     assert_eq!(scored.len(), 1);
@@ -423,7 +427,7 @@ async fn assert_scores_reflect_update(
     expected_second_score: Score,
 ) {
     let scored = store
-        .list_scored_summaries_by_score(10, None)
+        .list_scored_summaries_by_score(10, None, &known(&[&test_model_version()]))
         .await
         .unwrap();
     assert_eq!(scored.len(), 2);
@@ -851,7 +855,9 @@ async fn validate_succeeds_on_healthy_store() {
 async fn list_scored_summaries_rejects_excessive_limit() {
     let dir = tempfile::tempdir().unwrap();
     let store = open_temp_store(&dir).await;
-    let result = store.list_scored_summaries_by_score(101, None).await;
+    let result = store
+        .list_scored_summaries_by_score(101, None, &known(&[]))
+        .await;
     assert!(result.is_err());
 }
 
@@ -909,7 +915,7 @@ async fn list_scored_summaries_filters_by_max_age() {
 
     // With 24h max age, only recent should appear
     let scored = store
-        .list_scored_summaries_by_score(10, Some(24))
+        .list_scored_summaries_by_score(10, Some(24), &known(&[&mv]))
         .await
         .unwrap();
     assert_eq!(scored.len(), 1);
@@ -917,7 +923,7 @@ async fn list_scored_summaries_filters_by_max_age() {
 
     // With None (no age filter), both should appear
     let scored_all = store
-        .list_scored_summaries_by_score(10, None)
+        .list_scored_summaries_by_score(10, None, &known(&[&mv]))
         .await
         .unwrap();
     assert_eq!(scored_all.len(), 2);
@@ -974,7 +980,7 @@ async fn list_scored_summaries_published_since_windows_by_original_at_and_requir
 
     // 24h window: only the recent scored image.
     let windowed = store
-        .list_scored_summaries_published_since(now - chrono::Duration::hours(24))
+        .list_scored_summaries_published_since(now - chrono::Duration::hours(24), &known(&[&mv]))
         .await
         .unwrap();
     assert_eq!(windowed.len(), 1);
@@ -982,7 +988,7 @@ async fn list_scored_summaries_published_since_windows_by_original_at_and_requir
 
     // 100h window: both scored images, but not the unscored one.
     let wider = store
-        .list_scored_summaries_published_since(now - chrono::Duration::hours(100))
+        .list_scored_summaries_published_since(now - chrono::Duration::hours(100), &known(&[&mv]))
         .await
         .unwrap();
     let ids: std::collections::HashSet<_> = wider.iter().map(|(s, _, _)| s.image_id.clone()).collect();
@@ -990,6 +996,46 @@ async fn list_scored_summaries_published_since_windows_by_original_at_and_requir
     assert!(ids.contains(&old.image_id));
     assert!(ids.contains(&recent.image_id));
     assert!(!ids.contains(&unscored.image_id));
+}
+
+#[tokio::test]
+async fn score_reads_discard_unknown_model_versions() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+    let now = Utc::now();
+
+    let known_mv = test_model_version();
+    let unknown_mv = ModelVersion::from("unregistered_staging");
+
+    let kept = scored_record("known_score", (10, 0, 0), OriginalAt::new(now));
+    store.add(&kept).await.unwrap();
+    store
+        .upsert_score(&kept.image_id, &Score::new(0.9).expect("valid"), &known_mv)
+        .await
+        .unwrap();
+
+    let dropped = scored_record("unknown_score", (0, 10, 0), OriginalAt::new(now));
+    store.add(&dropped).await.unwrap();
+    store
+        .upsert_score(&dropped.image_id, &Score::new(0.9).expect("valid"), &unknown_mv)
+        .await
+        .unwrap();
+
+    let registered = known(&[&known_mv]);
+
+    let by_score = store
+        .list_scored_summaries_by_score(10, None, &registered)
+        .await
+        .unwrap();
+    assert_eq!(by_score.len(), 1);
+    assert_eq!(by_score[0].0.image_id, kept.image_id);
+
+    let windowed = store
+        .list_scored_summaries_published_since(now - chrono::Duration::hours(24), &registered)
+        .await
+        .unwrap();
+    assert_eq!(windowed.len(), 1);
+    assert_eq!(windowed[0].0.image_id, kept.image_id);
 }
 
 #[tokio::test]

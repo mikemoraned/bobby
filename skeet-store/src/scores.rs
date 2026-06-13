@@ -141,11 +141,15 @@ impl SkeetStore {
             .collect())
     }
 
-    #[instrument(skip(self))]
+    /// Top scored summaries, considering only scores whose `model_version` is in
+    /// `known_versions`. Unknown versions (e.g. written by an unregistered staging
+    /// model) are discarded at read time — see `docs/versioning.md`.
+    #[instrument(skip(self, known_versions))]
     pub async fn list_scored_summaries_by_score(
         &self,
         limit: usize,
         max_age_hours: Option<u64>,
+        known_versions: &HashSet<ModelVersion>,
     ) -> Result<Vec<(StoredImageSummary, Score, ModelVersion)>, StoreError> {
         if limit > Self::MAX_SCORED_SUMMARIES {
             return Err(StoreError::LimitExceeded {
@@ -155,7 +159,9 @@ impl SkeetStore {
         }
 
         let recent_ids = self.find_recent_image_ids(max_age_hours).await?;
-        let top_scores = self.read_top_scores(limit, &recent_ids).await?;
+        let top_scores = self
+            .read_top_scores(limit, &recent_ids, known_versions)
+            .await?;
 
         if top_scores.is_empty() {
             return Ok(Vec::new());
@@ -165,16 +171,19 @@ impl SkeetStore {
     }
 
     /// All scored summaries whose skeet was published (`original_at`) at or after
-    /// `cutoff`, **uncapped** and in no particular order (the caller orders).
+    /// `cutoff` and whose `model_version` is in `known_versions`, **uncapped** and
+    /// in no particular order (the caller orders).
     ///
     /// Unlike [`Self::list_scored_summaries_by_score`] there is no top-N-by-score
     /// truncation: every scored image in the recency window is returned, so a
     /// recent low-score image is never dropped. Windowing is on publish time
-    /// (`original_at`), not discovery time.
-    #[instrument(skip(self))]
+    /// (`original_at`), not discovery time. Scores from unregistered model
+    /// versions are discarded at read time — see `docs/versioning.md`.
+    #[instrument(skip(self, known_versions))]
     pub async fn list_scored_summaries_published_since(
         &self,
         cutoff: chrono::DateTime<chrono::Utc>,
+        known_versions: &HashSet<ModelVersion>,
     ) -> Result<Vec<(StoredImageSummary, Score, ModelVersion)>, StoreError> {
         let windowed_ids = self.find_image_ids_published_since(cutoff).await?;
         if windowed_ids.is_empty() {
@@ -187,6 +196,7 @@ impl SkeetStore {
             .filter_map(|id| {
                 all_scores
                     .get(id)
+                    .filter(|(_, mv)| known_versions.contains(mv))
                     .map(|(score, mv)| (*score, mv.clone(), id.clone()))
             })
             .collect();
@@ -256,17 +266,19 @@ impl SkeetStore {
         Ok(Some(ids))
     }
 
-    #[instrument(skip(self, recent_ids))]
+    #[instrument(skip(self, recent_ids, known_versions))]
     async fn read_top_scores(
         &self,
         limit: usize,
         recent_ids: &Option<std::collections::HashSet<ImageId>>,
+        known_versions: &HashSet<ModelVersion>,
     ) -> Result<Vec<(Score, ModelVersion, ImageId)>, StoreError> {
         let all_scores_map = self.cached_scores().await?;
 
         let mut all_scores: Vec<(Score, ModelVersion, ImageId)> = all_scores_map
             .iter()
             .filter(|(id, _)| recent_ids.as_ref().is_none_or(|recent| recent.contains(id)))
+            .filter(|(_, (_, mv))| known_versions.contains(mv))
             .map(|(id, (score, mv))| (*score, mv.clone(), id.clone()))
             .collect();
         info!(

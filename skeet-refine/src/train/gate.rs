@@ -94,7 +94,10 @@ mod tests {
             Threshold::new(0.5).expect("valid"),
         );
         let mut models = RefineModels::new();
-        models.insert(candidate.clone(), &[Label::production()]);
+        models.insert(candidate.clone());
+        models
+            .set_label(Label::production(), candidate.version())
+            .expect("just-inserted version is registered");
 
         let resolved = models
             .by_label(&Label::production())

@@ -2,6 +2,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: cloudflare-operations-exporter
+  namespace: production
   labels:
     app: cloudflare-operations-exporter
 spec:

@@ -165,7 +165,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match report.outcome {
         GateOutcome::Accepted => {
-            models.insert(report.candidate_model.clone(), &[Label::production()]);
+            let promoted = report.candidate_model.version();
+            models.insert(report.candidate_model.clone());
+            models.set_label(Label::production(), promoted)?;
             models.save(&args.model_output)?;
             print_accepted(&args, &baseline, &report);
             info!(

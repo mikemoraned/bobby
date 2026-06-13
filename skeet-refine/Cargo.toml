@@ -57,3 +57,7 @@ path = "src/bin/refine_eval.rs"
 [[bin]]
 name = "sample-costs"
 path = "src/bin/sample_costs.rs"
+
+[[bin]]
+name = "promote"
+path = "src/bin/promote.rs"

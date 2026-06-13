@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: pruner
+  namespace: production
   labels:
     app: pruner
 spec:
@@ -26,6 +27,7 @@ spec:
             - "/etc/bobby/prune.toml"
             - "--store-path"
             - "s3://hom-bobby/encrypted-store"
+            - "--allow-shared-store-write"
           env:
             - name: BOBBY_S3_ENDPOINT
               valueFrom:

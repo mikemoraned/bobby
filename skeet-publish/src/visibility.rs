@@ -7,7 +7,6 @@ use crate::effective_band::{image_effective_band, skeet_visible_in_feed};
 
 /// The data the feed-visibility policy reads: the scored entries plus the manual
 /// band overrides and model registry needed to interpret each score.
-
 pub trait FeedData {
     fn entries(&self) -> &[(StoredImageSummary, Score, ModelVersion)];
     /// Manual band override for an image, if one has been set.
