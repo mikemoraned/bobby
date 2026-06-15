@@ -1,70 +1,10 @@
-# Current Slice: 1.0 public "Bobby" feed
+# Current Slice: 1.0 refactor, review and code minimisation
 
 ### Target
 
-`bobby.houseofmoran.io`: same underlying code as the staging version (`bobby-staging.houseofmoran.io`), but promoted to a real 1.0 public feed:
+Refactor, review and minimisation of code for longer-term maintenance — the "I can walk away from this for a while" payoff slice.
 
-* published on Bluesky as a feed called "Bobby" (i.e. not "Bobby Dev")
-    * has a small inline blurb explaining what this is, which is shared with the website (banner below)
-* tracking of usage via plausible.io
-* a small banner at top which shows:
-    * an explanation of what this is (the shared blurb)
-    * a small qr code for the `https://bobby.houseofmoran.io/` url
-    * instructions on how to subscribe to the feed on bluesky (with a link to it)
-    * summary data of how many images examined (should be precalculated by the publisher and saved in redis)
-
-Also promote the appraisals site to its own production URL — `bobby-appraisals.houseofmoran.io`:
-
-* nothing additional needed in code, i.e. it's the same thing, just running under an additional url
-* however, a new github app will need created for auth purposes
-
-### Decisions (confirmed 2026-06-14)
-
-* **Deploy topology: new, separate Fly apps.** Production = a new `bobby` app (`fly.production.toml`) and a new `bobby-appraisals` app (`fly.appraise.toml`), each running the *same* GHCR image as its staging counterpart, just under the production hostname and config. Staging's `fly.staging.toml` / `fly.appraise-staging.toml` stay untouched. This mirrors the prod/staging separation already done for k8s — prod and staging are distinct compute that share the backend stores.
-* **"Images examined" = estimated images *processed* by the pruner.** We want to show how many images were seen/processed, not just how many were saved. The pruner doesn't persist a seen-count, so the publisher *estimates* it: count the distinct images that made it through refine scoring (distinct images with a known-version score), then scale up by the inverse of a hard-coded save rate (~0.2%, i.e. ×500) to estimate how many were originally seen. The publisher precalculates this estimate and writes it to redis; the feed reads it for the banner unchanged. No new pruner-side counter. The save rate is hard-coded in the publisher (`SAVE_RATE_PERCENT`); revisit it if the real save percentage drifts.
-* **Plausible: feed website only.** Only `bobby.houseofmoran.io` gets the plausible script. The appraisals site is auth-gated/internal — no tracking there.
-* **QR code: server-side rendered inline SVG.** Generate the QR for `https://bobby.houseofmoran.io/` with a Rust crate (e.g. `qrcode`) and inline it as SVG in the banner. No external calls, no committed binary asset.
-
-### Tasks
-
-#### "Images examined" stat (publisher → redis → feed)
-
-* [x] **Publisher precalculates the count and writes it to redis.** In `skeet-publish`, compute the total scored/appraised image count during the publish cycle (it already loads the scored data) and write it under a versioned redis key following the existing `<SCHEMA_VERSION>-<type>` convention (e.g. `v3-examined-count`) — derive the prefix from `SCHEMA_VERSION`, don't hardcode. Reuse the existing redis client/serialisation path.
-    * Note: the saved count comes from a new `SkeetStore::count_scored_images(known_versions)` (distinct images with a known-version score, fresh table scan — not the scores cache, which can lag). The publisher scales it by the inverse of `SAVE_RATE_PERCENT` (0.2%) to write an *estimated processed* count, not the raw saved count (see the Decisions note).
-* [x] **Feed reads the count for the banner.** Extend the published-images source (or add a sibling read) so the home handler can fetch the count and pass it to the template. Tolerate the key being absent (feed renders without the number rather than erroring) — covariant read.
-    * Note: `home.html` already renders the count inline (a minimal `<p class="examined">` line) so the template field isn't dead — the banner task folds this into the full banner.
-
-#### Production deploy plumbing (new Fly apps)
-
-* [x] **Production feed Fly app.** Add `fly.production.toml` (app `bobby`, production hostname, same GHCR `skeet-feed` image) and the just recipes to deploy it (secrets import from a new `bobby-feed.env`, app deploy, end-to-end check) — mirror the `deploy_feed_staging*` recipes. Wire `bobby.houseofmoran.io` DNS / `did:web` to the new app.
-    * Note: `deploy_feed_production*` recipes + `end_to_end_test_feed_production` (hits `bobby-feed.fly.dev`) added to `feed.just`; `bobby-feed.env` mirrors the staging feed env (shared stores). Deployed and confirmed live: `bobby-feed` Fly app (`bobby` was taken globally; serves `bobby.houseofmoran.io`) deployed via `just deploy_feed_production`, with `bobby.houseofmoran.io` DNS / cert / `did:web` wired up.
-* [x] **Production appraisals Fly app + new GitHub OAuth app.** Add `fly.appraise.toml` (app `bobby-appraisals`, `bobby-appraisals.houseofmoran.io`, same `skeet-appraise` image). Create a new GitHub OAuth app with the production callback URL (`https://bobby-appraisals.houseofmoran.io/auth/callback`). Add the deploy just recipe mirroring the staging appraise recipe. New `bobby-appraisals.env` reuses the shared backend-store / OTel / redis items from `bobby-appraisals-staging.env` unchanged (R2, SSE-C, redis URLs are shared stores), and points at **new** 1Password items for the production-only secrets:
-    * `BOBBY_GITHUB_CLIENT_ID=op://Dev/bobby-github-oauth-appraisals-production-client-id/password`
-    * `BOBBY_GITHUB_CLIENT_SECRET=op://Dev/bobby-github-oauth-appraisals-production-client-secret/password` (mirrors the existing `...-appraisals-staging-...` pair, `staging`→`production`)
-    * `BOBBY_SESSION_SECRET=op://Dev/bobby-session-secret/password` — reuses the shared session secret, same as staging's appraisals env (no dedicated production secret; appraisals is auth-gated/internal).
-  * **1Password items to create (in the `Dev` vault):** `bobby-github-oauth-appraisals-production-client-id`, `bobby-github-oauth-appraisals-production-client-secret` (from the new GitHub OAuth app). All other `op://Dev/...` refs are reused as-is.
-  * Note: `fly.appraise.toml` (app `bobby-appraisals`), `bobby-appraisals.env` (production OAuth `op://` refs per above; session secret + all other refs shared with staging), and `deploy_appraise_production*` + `end_to_end_test_appraise_production` (hits `bobby-appraisals.fly.dev`) added to `appraise.just`. Deployed and confirmed live: GitHub OAuth app created (callback `https://bobby-appraisals.houseofmoran.io/auth/callback`), the two 1Password items created, `bobby-appraisals` Fly app deployed, DNS/cert live, and login at `https://bobby-appraisals.houseofmoran.io` verified.
-
-#### Plausible tracking (feed only)
-
-* [x] **Add the plausible.io script to `home.html`** with `data-domain="bobby.houseofmoran.io"`. Confirm it only loads on the production host (so staging/local don't pollute stats) — gate via config rather than hardcoding the domain into the template.
-    * Note: used Plausible's newer script-tag install (no `data-domain`; the site is identified by a script URL `pa-….js` plus a static `plausible.init()` block) per a later instruction. Gated via a `--plausible-script-url` CLI param threaded through `FeedParams` → `home` handler → template: `None` (staging/local) renders nothing, production sets it in `fly.production.toml`. The site-specific URL lives in config, not the committed template.
-
-#### Feed website: shared blurb + banner
-
-* [x] **Single source of truth for the blurb.** Define the shared explanatory blurb once (a `const`/function in a shared place the feed can render and the registration bin can read) so the Bluesky feed `description` and the website banner can't drift. Keep the existing tagline or fold it into the blurb — one canonical wording.
-    * Note: `skeet_feed::FEED_BLURB` const (in `skeet-feed/src/lib.rs`, the crate shared by both the `home` handler and the `register-feed` bin — not the workspace `shared` crate). `register-feed`'s `--description` now defaults to it; the old tagline is folded in. Canonical wording: "Selfies people take with landmarks — famous buildings, monuments and places — found on Bluesky."
-* [x] **Render the banner at the top of `home.html`.** Add a banner above the grid showing: the shared blurb; an inline server-rendered QR SVG for `https://bobby.houseofmoran.io/`; subscribe-to-the-feed instructions with a link to the feed on Bluesky (derive the link from `FeedParams::feed_uri()` / a `bsky.app` URL); and the "images examined" summary count. Keep it small and unobtrusive; style inline like the rest of `home.html`.
-    * Note: QR target and bsky link derive from config (`FeedParams::site_url()` / `feed_bsky_url()`), so staging encodes the staging URL. QR is best-effort — a render error drops the QR, not the page.
-* [x] **Server-side QR generation.** Add the `qrcode` crate (stable, non-`-pre`); render the production URL to inline SVG. Pure function, unit-tested for non-empty/well-formed output. The encoded URL comes from config (the feed hostname), not hardcoded.
-    * Note: `qrcode = "0.14"`; pure `skeet_feed::qr::qr_svg(url) -> Result<String, QrError>`.
-
-#### Bluesky: register the real "Bobby" feed
-
-* [x] **Register the production feed as "Bobby".** Run `register-feed` for the production hostname with `--feed-name bobby` / `--display-name Bobby` and the shared blurb as `--description`. Add a `register-feed-production` just recipe pointing at the production hostname (don't change the staging `bobby-dev` defaults). The `bobby-dev` staging feed stays as-is.
-    * Note: `register-feed-production` recipe added (`--feed-name bobby --display-name Bobby`; `--description` defaults to `FEED_BLURB`, so it's omitted to stay single-source). Also had to add `--feed-name bobby` to `fly.production.toml`'s process command — the app defaulted to `bobby-dev`, so without it `getFeedSkeleton` for the registered `bobby` feed would `UnknownFeed`. Still manual: redeploy the feed app (`just deploy_feed_production`) so it serves `--feed-name bobby`, then run `just register-feed-production` (live Bluesky write).
-
-#### Wrap-up
-
-* [x] **Capture all new invocations in the Justfile** (register-production, both production deploys) and run `just clippy` + `just test-no-docker`.
-    * Note: `register-feed-production`, `deploy_feed_production*`, `deploy_appraise_production*` all in the Justfile. `just clippy` clean; `just test-no-docker` green.
+* each crate should have at least one human pass where all code is inspected, and deleted/reworked as needed.
+* the general expectation is that I want to be able to leave this repo for a while and go work on other stuff, and not need to worry about surprising code or lingering cruft/weirdness.
+* split out code into sub-dirs based on role e.g. crates are at top-level in repo, and so should go into a subdir; follow generally accepted conventions where possible.
+* refactor `just` rules into more logical chunks, and do a pass to remove any that no-longer make sense.
