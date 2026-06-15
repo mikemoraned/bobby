@@ -59,10 +59,10 @@ Also promote the appraisals site to its own production URL — `bobby-appraisals
 * [x] **Server-side QR generation.** Add the `qrcode` crate (stable, non-`-pre`); render the production URL to inline SVG. Pure function, unit-tested for non-empty/well-formed output. The encoded URL comes from config (the feed hostname), not hardcoded.
     * Note: `qrcode = "0.14"`; pure `skeet_feed::qr::qr_svg(url) -> Result<String, QrError>`.
 
-
 #### Bluesky: register the real "Bobby" feed
 
-* [ ] **Register the production feed as "Bobby".** Run `register-feed` for the production hostname with `--feed-name bobby` / `--display-name Bobby` and the shared blurb as `--description`. Add a `register-feed-production` just recipe pointing at the production hostname (don't change the staging `bobby-dev` defaults). The `bobby-dev` staging feed stays as-is.
+* [x] **Register the production feed as "Bobby".** Run `register-feed` for the production hostname with `--feed-name bobby` / `--display-name Bobby` and the shared blurb as `--description`. Add a `register-feed-production` just recipe pointing at the production hostname (don't change the staging `bobby-dev` defaults). The `bobby-dev` staging feed stays as-is.
+    * Note: `register-feed-production` recipe added (`--feed-name bobby --display-name Bobby`; `--description` defaults to `FEED_BLURB`, so it's omitted to stay single-source). Also had to add `--feed-name bobby` to `fly.production.toml`'s process command — the app defaulted to `bobby-dev`, so without it `getFeedSkeleton` for the registered `bobby` feed would `UnknownFeed`. Still manual: redeploy the feed app (`just deploy_feed_production`) so it serves `--feed-name bobby`, then run `just register-feed-production` (live Bluesky write).
 
 #### Wrap-up
 

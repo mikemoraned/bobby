@@ -30,3 +30,6 @@ end_to_end_test_feed_production:
 
 register-feed:
     op run --env-file register.env -- cargo run --release --bin register-feed -- --hostname {{ STAGING_HOSTNAME }}
+
+register-feed-production:
+    op run --env-file register.env -- cargo run --release --bin register-feed -- --hostname {{ PRODUCTION_HOSTNAME }} --feed-name bobby --display-name Bobby
