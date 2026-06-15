@@ -27,26 +27,12 @@ Also promote the appraisals site to its own production URL — `bobby-appraisals
 
 ### Tasks
 
-#### Feed website: shared blurb + banner
-
-* [ ] **Single source of truth for the blurb.** Define the shared explanatory blurb once (a `const`/function in a shared place the feed can render and the registration bin can read) so the Bluesky feed `description` and the website banner can't drift. Keep the existing tagline or fold it into the blurb — one canonical wording.
-* [ ] **Render the banner at the top of `home.html`.** Add a banner above the grid showing: the shared blurb; an inline server-rendered QR SVG for `https://bobby.houseofmoran.io/`; subscribe-to-the-feed instructions with a link to the feed on Bluesky (derive the link from `FeedParams::feed_uri()` / a `bsky.app` URL); and the "images examined" summary count. Keep it small and unobtrusive; style inline like the rest of `home.html`.
-* [ ] **Server-side QR generation.** Add the `qrcode` crate (stable, non-`-pre`); render the production URL to inline SVG. Pure function, unit-tested for non-empty/well-formed output. The encoded URL comes from config (the feed hostname), not hardcoded.
-
 #### "Images examined" stat (publisher → redis → feed)
 
 * [x] **Publisher precalculates the count and writes it to redis.** In `skeet-publish`, compute the total scored/appraised image count during the publish cycle (it already loads the scored data) and write it under a versioned redis key following the existing `<SCHEMA_VERSION>-<type>` convention (e.g. `v3-examined-count`) — derive the prefix from `SCHEMA_VERSION`, don't hardcode. Reuse the existing redis client/serialisation path.
     * Note: the saved count comes from a new `SkeetStore::count_scored_images(known_versions)` (distinct images with a known-version score, fresh table scan — not the scores cache, which can lag). The publisher scales it by the inverse of `SAVE_RATE_PERCENT` (0.2%) to write an *estimated processed* count, not the raw saved count (see the Decisions note).
 * [x] **Feed reads the count for the banner.** Extend the published-images source (or add a sibling read) so the home handler can fetch the count and pass it to the template. Tolerate the key being absent (feed renders without the number rather than erroring) — covariant read.
     * Note: `home.html` already renders the count inline (a minimal `<p class="examined">` line) so the template field isn't dead — the banner task folds this into the full banner.
-
-#### Plausible tracking (feed only)
-
-* [ ] **Add the plausible.io script to `home.html`** with `data-domain="bobby.houseofmoran.io"`. Confirm it only loads on the production host (so staging/local don't pollute stats) — gate via config rather than hardcoding the domain into the template.
-
-#### Bluesky: register the real "Bobby" feed
-
-* [ ] **Register the production feed as "Bobby".** Run `register-feed` for the production hostname with `--feed-name bobby` / `--display-name Bobby` and the shared blurb as `--description`. Add a `register-feed-production` just recipe pointing at the production hostname (don't change the staging `bobby-dev` defaults). The `bobby-dev` staging feed stays as-is.
 
 #### Production deploy plumbing (new Fly apps)
 
@@ -56,6 +42,20 @@ Also promote the appraisals site to its own production URL — `bobby-appraisals
     * `BOBBY_GITHUB_CLIENT_SECRET=op://Dev/bobby-github-oauth-appraisals-production-client-secret/password` (mirrors the existing `...-appraisals-staging-...` pair, `staging`→`production`)
     * `BOBBY_SESSION_SECRET=op://Dev/bobby-session-secret-appraisals-production/password` — a **dedicated** production session secret, not the shared `bobby-session-secret` staging uses, so prod/staging sessions can't cross over.
   * **1Password items to create (in the `Dev` vault):** `bobby-github-oauth-appraisals-production-client-id`, `bobby-github-oauth-appraisals-production-client-secret` (from the new GitHub OAuth app), and `bobby-session-secret-appraisals-production` (freshly generated random secret). All other `op://Dev/...` refs are reused as-is.
+
+#### Feed website: shared blurb + banner
+
+* [ ] **Single source of truth for the blurb.** Define the shared explanatory blurb once (a `const`/function in a shared place the feed can render and the registration bin can read) so the Bluesky feed `description` and the website banner can't drift. Keep the existing tagline or fold it into the blurb — one canonical wording.
+* [ ] **Render the banner at the top of `home.html`.** Add a banner above the grid showing: the shared blurb; an inline server-rendered QR SVG for `https://bobby.houseofmoran.io/`; subscribe-to-the-feed instructions with a link to the feed on Bluesky (derive the link from `FeedParams::feed_uri()` / a `bsky.app` URL); and the "images examined" summary count. Keep it small and unobtrusive; style inline like the rest of `home.html`.
+* [ ] **Server-side QR generation.** Add the `qrcode` crate (stable, non-`-pre`); render the production URL to inline SVG. Pure function, unit-tested for non-empty/well-formed output. The encoded URL comes from config (the feed hostname), not hardcoded.
+
+#### Plausible tracking (feed only)
+
+* [ ] **Add the plausible.io script to `home.html`** with `data-domain="bobby.houseofmoran.io"`. Confirm it only loads on the production host (so staging/local don't pollute stats) — gate via config rather than hardcoding the domain into the template.
+
+#### Bluesky: register the real "Bobby" feed
+
+* [ ] **Register the production feed as "Bobby".** Run `register-feed` for the production hostname with `--feed-name bobby` / `--display-name Bobby` and the shared blurb as `--description`. Add a `register-feed-production` just recipe pointing at the production hostname (don't change the staging `bobby-dev` defaults). The `bobby-dev` staging feed stays as-is.
 
 #### Wrap-up
 
