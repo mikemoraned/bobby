@@ -52,9 +52,12 @@ Also promote the appraisals site to its own production URL — `bobby-appraisals
 
 #### Feed website: shared blurb + banner
 
-* [ ] **Single source of truth for the blurb.** Define the shared explanatory blurb once (a `const`/function in a shared place the feed can render and the registration bin can read) so the Bluesky feed `description` and the website banner can't drift. Keep the existing tagline or fold it into the blurb — one canonical wording.
-* [ ] **Render the banner at the top of `home.html`.** Add a banner above the grid showing: the shared blurb; an inline server-rendered QR SVG for `https://bobby.houseofmoran.io/`; subscribe-to-the-feed instructions with a link to the feed on Bluesky (derive the link from `FeedParams::feed_uri()` / a `bsky.app` URL); and the "images examined" summary count. Keep it small and unobtrusive; style inline like the rest of `home.html`.
-* [ ] **Server-side QR generation.** Add the `qrcode` crate (stable, non-`-pre`); render the production URL to inline SVG. Pure function, unit-tested for non-empty/well-formed output. The encoded URL comes from config (the feed hostname), not hardcoded.
+* [x] **Single source of truth for the blurb.** Define the shared explanatory blurb once (a `const`/function in a shared place the feed can render and the registration bin can read) so the Bluesky feed `description` and the website banner can't drift. Keep the existing tagline or fold it into the blurb — one canonical wording.
+    * Note: `skeet_feed::FEED_BLURB` const (in `skeet-feed/src/lib.rs`, the crate shared by both the `home` handler and the `register-feed` bin — not the workspace `shared` crate). `register-feed`'s `--description` now defaults to it; the old tagline is folded in. Canonical wording: "Selfies people take with landmarks — famous buildings, monuments and places — found on Bluesky."
+* [x] **Render the banner at the top of `home.html`.** Add a banner above the grid showing: the shared blurb; an inline server-rendered QR SVG for `https://bobby.houseofmoran.io/`; subscribe-to-the-feed instructions with a link to the feed on Bluesky (derive the link from `FeedParams::feed_uri()` / a `bsky.app` URL); and the "images examined" summary count. Keep it small and unobtrusive; style inline like the rest of `home.html`.
+    * Note: QR target and bsky link derive from config (`FeedParams::site_url()` / `feed_bsky_url()`), so staging encodes the staging URL. QR is best-effort — a render error drops the QR, not the page.
+* [x] **Server-side QR generation.** Add the `qrcode` crate (stable, non-`-pre`); render the production URL to inline SVG. Pure function, unit-tested for non-empty/well-formed output. The encoded URL comes from config (the feed hostname), not hardcoded.
+    * Note: `qrcode = "0.14"`; pure `skeet_feed::qr::qr_svg(url) -> Result<String, QrError>`.
 
 
 #### Bluesky: register the real "Bobby" feed

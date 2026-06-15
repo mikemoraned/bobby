@@ -32,6 +32,20 @@ impl FeedParams {
     pub fn service_endpoint(&self) -> String {
         format!("https://{}", self.hostname)
     }
+
+    /// The site's own public URL — the destination the home-page QR code
+    /// encodes so a phone scan lands on the feed website.
+    pub fn site_url(&self) -> String {
+        format!("https://{}/", self.hostname)
+    }
+
+    /// The `bsky.app` URL where a user can view and subscribe to this feed.
+    pub fn feed_bsky_url(&self) -> String {
+        format!(
+            "https://bsky.app/profile/{}/feed/{}",
+            self.publisher_did, self.feed_name
+        )
+    }
 }
 
 #[derive(Clone)]

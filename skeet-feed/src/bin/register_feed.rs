@@ -26,7 +26,7 @@ struct Args {
     display_name: String,
 
     /// Description shown in Bluesky
-    #[arg(long, default_value = "Selfies with landmarks, found by Bobby")]
+    #[arg(long, default_value_t = skeet_feed::FEED_BLURB.to_string())]
     description: String,
 }
 

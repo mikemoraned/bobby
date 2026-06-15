@@ -194,6 +194,13 @@ struct GridCard {
 #[template(path = "home.html")]
 struct HomeTemplate {
     cards: Vec<GridCard>,
+    /// The shared explanatory blurb shown in the banner.
+    blurb: &'static str,
+    /// `bsky.app` URL for subscribing to the feed.
+    feed_bsky_url: String,
+    /// Inline SVG QR code for the site URL; `None` if encoding failed (the
+    /// banner then renders without it rather than failing the page).
+    qr_svg: Option<String>,
     /// The "images examined" banner stat, pre-formatted with thousands
     /// separators (e.g. `"21,621,500"`) for display.
     examined_count: Option<String>,
@@ -267,9 +274,18 @@ pub async fn home(
         })
         .map(group_thousands);
 
+    // The QR is best-effort decoration: if encoding ever fails, render the
+    // banner without it rather than failing the whole page.
+    let qr_svg = crate::qr::qr_svg(&config.site_url())
+        .map_err(|e| warn!(error = %e, "failed to render site QR; rendering without it"))
+        .ok();
+
     info!(count = cards.len(), "serving home grid");
     let rendered = HomeTemplate {
         cards,
+        blurb: crate::FEED_BLURB,
+        feed_bsky_url: config.feed_bsky_url(),
+        qr_svg,
         examined_count,
         plausible_script_url: config.plausible_script_url.clone(),
     }

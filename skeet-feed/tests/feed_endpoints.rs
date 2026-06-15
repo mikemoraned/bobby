@@ -276,6 +276,26 @@ async fn rejects_unknown_feed() {
 }
 
 #[tokio::test]
+async fn home_renders_banner_with_blurb_subscribe_link_and_qr() {
+    let mut client = client_with_images(test_params(), vec![]).await;
+
+    let (status, body) = get_body(&mut client, "/").await;
+    assert_eq!(status, 200);
+    assert!(
+        body.contains(skeet_feed::FEED_BLURB),
+        "the banner should render the shared blurb"
+    );
+    assert!(
+        body.contains("https://bsky.app/profile/did:web:test.example.com/feed/bobby-dev"),
+        "the banner should link to the feed on bsky.app for subscribing"
+    );
+    assert!(
+        body.contains("<svg"),
+        "the banner should embed the inline QR SVG"
+    );
+}
+
+#[tokio::test]
 async fn home_renders_grid_of_cards_in_order() {
     const CID_1: &str = "bafkreiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const CID_2: &str = "bafkreiabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
