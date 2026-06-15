@@ -11,3 +11,14 @@ deploy_appraise_staging_app: push-skeet-appraise
 
 end_to_end_test_appraise_staging:
     TEST_BASE_URL=https://bobby-appraisals-staging.fly.dev cargo nextest run --release -p skeet-appraise --features integ --test appraise_integration
+
+deploy_appraise_production: deploy_appraise_production_secrets deploy_appraise_production_app end_to_end_test_appraise_production
+
+deploy_appraise_production_secrets:
+    op inject -i bobby-appraisals.env | grep "^BOBBY_\|^OTEL_" | fly secrets import --config fly.appraise.toml
+
+deploy_appraise_production_app: push-skeet-appraise
+    fly deploy --config fly.appraise.toml --image {{ GHCR_REPO }}/skeet-appraise:{{ GIT_HASH }} --env "OTEL_RESOURCE_ATTRIBUTES=deployment.environment=fly,service.version={{ GIT_HASH }}"
+
+end_to_end_test_appraise_production:
+    TEST_BASE_URL=https://bobby-appraisals.fly.dev cargo nextest run --release -p skeet-appraise --features integ --test appraise_integration

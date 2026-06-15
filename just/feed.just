@@ -1,4 +1,5 @@
 STAGING_HOSTNAME := "bobby-staging.houseofmoran.io"
+PRODUCTION_HOSTNAME := "bobby.houseofmoran.io"
 PUBLISHER_DID := "did:plc:cjvdzmk4iapi5p5orrasehxp"
 
 
@@ -15,6 +16,17 @@ deploy_feed_staging_app: push-skeet-feed
 
 end_to_end_test_feed_staging:
     TEST_BASE_URL=https://bobby-staging.fly.dev cargo nextest run --release -p skeet-feed --features integ --test feed_integration
+
+deploy_feed_production: deploy_feed_production_secrets deploy_feed_production_app end_to_end_test_feed_production
+
+deploy_feed_production_secrets:
+    op inject -i bobby-feed.env | grep "^BOBBY_\|^OTEL_" | fly secrets import --config fly.production.toml
+
+deploy_feed_production_app: push-skeet-feed
+    fly deploy --config fly.production.toml --image {{ GHCR_REPO }}/skeet-feed:{{ GIT_HASH }} --env "OTEL_RESOURCE_ATTRIBUTES=deployment.environment=fly,service.version={{ GIT_HASH }}"
+
+end_to_end_test_feed_production:
+    TEST_BASE_URL=https://bobby.fly.dev cargo nextest run --release -p skeet-feed --features integ --test feed_integration
 
 register-feed:
     op run --env-file register.env -- cargo run --release --bin register-feed -- --hostname {{ STAGING_HOSTNAME }}

@@ -1,8 +1,8 @@
-app = "bobby-staging"
+app = "bobby"
 primary_region = "lhr"
 
 [processes]
-app = "skeet-feed --hostname bobby-staging.houseofmoran.io --publisher-did did:plc:cjvdzmk4iapi5p5orrasehxp --bind 0.0.0.0:8080"
+app = "skeet-feed --hostname bobby.houseofmoran.io --publisher-did did:plc:cjvdzmk4iapi5p5orrasehxp --bind 0.0.0.0:8080"
 
 [env]
 RUST_LOG = "skeet_feed=info,skeet_store=info"
