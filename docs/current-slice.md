@@ -37,13 +37,17 @@ Also promote the appraisals site to its own production URL — `bobby-appraisals
 #### Production deploy plumbing (new Fly apps)
 
 * [x] **Production feed Fly app.** Add `fly.production.toml` (app `bobby`, production hostname, same GHCR `skeet-feed` image) and the just recipes to deploy it (secrets import from a new `bobby-feed.env`, app deploy, end-to-end check) — mirror the `deploy_feed_staging*` recipes. Wire `bobby.houseofmoran.io` DNS / `did:web` to the new app.
-    * Note: plumbing only. `deploy_feed_production*` recipes + `end_to_end_test_feed_production` (hits `bobby.fly.dev`) added to `feed.just`; `bobby-feed.env` mirrors the staging feed env (shared stores). Still manual: create the `bobby-feed` Fly app (`bobby` was taken globally; serves `bobby.houseofmoran.io`), run `just deploy_feed_production`, and wire `bobby.houseofmoran.io` DNS / `did:web` to it.
+    * Note: `deploy_feed_production*` recipes + `end_to_end_test_feed_production` (hits `bobby-feed.fly.dev`) added to `feed.just`; `bobby-feed.env` mirrors the staging feed env (shared stores). Deployed and confirmed live: `bobby-feed` Fly app (`bobby` was taken globally; serves `bobby.houseofmoran.io`) deployed via `just deploy_feed_production`, with `bobby.houseofmoran.io` DNS / cert / `did:web` wired up.
 * [x] **Production appraisals Fly app + new GitHub OAuth app.** Add `fly.appraise.toml` (app `bobby-appraisals`, `bobby-appraisals.houseofmoran.io`, same `skeet-appraise` image). Create a new GitHub OAuth app with the production callback URL (`https://bobby-appraisals.houseofmoran.io/auth/callback`). Add the deploy just recipe mirroring the staging appraise recipe. New `bobby-appraisals.env` reuses the shared backend-store / OTel / redis items from `bobby-appraisals-staging.env` unchanged (R2, SSE-C, redis URLs are shared stores), and points at **new** 1Password items for the production-only secrets:
     * `BOBBY_GITHUB_CLIENT_ID=op://Dev/bobby-github-oauth-appraisals-production-client-id/password`
     * `BOBBY_GITHUB_CLIENT_SECRET=op://Dev/bobby-github-oauth-appraisals-production-client-secret/password` (mirrors the existing `...-appraisals-staging-...` pair, `staging`→`production`)
     * `BOBBY_SESSION_SECRET=op://Dev/bobby-session-secret/password` — reuses the shared session secret, same as staging's appraisals env (no dedicated production secret; appraisals is auth-gated/internal).
   * **1Password items to create (in the `Dev` vault):** `bobby-github-oauth-appraisals-production-client-id`, `bobby-github-oauth-appraisals-production-client-secret` (from the new GitHub OAuth app). All other `op://Dev/...` refs are reused as-is.
-  * Note: plumbing only. `fly.appraise.toml` (app `bobby-appraisals`), `bobby-appraisals.env` (production OAuth `op://` refs per above; session secret + all other refs shared with staging), and `deploy_appraise_production*` + `end_to_end_test_appraise_production` (hits `bobby-appraisals.fly.dev`) added to `appraise.just`. Still manual: create the new GitHub OAuth app (callback `https://bobby-appraisals.houseofmoran.io/auth/callback`), create the two 1Password items above, create the `bobby-appraisals` Fly app, run `just deploy_appraise_production`, and wire `bobby-appraisals.houseofmoran.io` DNS.
+  * Note: `fly.appraise.toml` (app `bobby-appraisals`), `bobby-appraisals.env` (production OAuth `op://` refs per above; session secret + all other refs shared with staging), and `deploy_appraise_production*` + `end_to_end_test_appraise_production` (hits `bobby-appraisals.fly.dev`) added to `appraise.just`. Deployed and confirmed live: GitHub OAuth app created (callback `https://bobby-appraisals.houseofmoran.io/auth/callback`), the two 1Password items created, `bobby-appraisals` Fly app deployed, DNS/cert live, and login at `https://bobby-appraisals.houseofmoran.io` verified.
+
+#### Plausible tracking (feed only)
+
+* [ ] **Add the plausible.io script to `home.html`** with `data-domain="bobby.houseofmoran.io"`. Confirm it only loads on the production host (so staging/local don't pollute stats) — gate via config rather than hardcoding the domain into the template.
 
 #### Feed website: shared blurb + banner
 
@@ -51,9 +55,6 @@ Also promote the appraisals site to its own production URL — `bobby-appraisals
 * [ ] **Render the banner at the top of `home.html`.** Add a banner above the grid showing: the shared blurb; an inline server-rendered QR SVG for `https://bobby.houseofmoran.io/`; subscribe-to-the-feed instructions with a link to the feed on Bluesky (derive the link from `FeedParams::feed_uri()` / a `bsky.app` URL); and the "images examined" summary count. Keep it small and unobtrusive; style inline like the rest of `home.html`.
 * [ ] **Server-side QR generation.** Add the `qrcode` crate (stable, non-`-pre`); render the production URL to inline SVG. Pure function, unit-tested for non-empty/well-formed output. The encoded URL comes from config (the feed hostname), not hardcoded.
 
-#### Plausible tracking (feed only)
-
-* [ ] **Add the plausible.io script to `home.html`** with `data-domain="bobby.houseofmoran.io"`. Confirm it only loads on the production host (so staging/local don't pollute stats) — gate via config rather than hardcoding the domain into the template.
 
 #### Bluesky: register the real "Bobby" feed
 
