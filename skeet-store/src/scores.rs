@@ -438,6 +438,42 @@ impl SkeetStore {
         Ok(score_map)
     }
 
+    /// Count the distinct images that have a score from a *known* model version —
+    /// the "images examined" total, i.e. images that made it through refine
+    /// scoring. Each image is counted once; scores from unregistered model
+    /// versions are excluded, mirroring the feed read path (see
+    /// `docs/versioning.md`).
+    ///
+    /// Scans the scores table fresh rather than reading the scores cache: callers
+    /// want the current total, and the cache may lag the live table.
+    #[instrument(skip(self, known_versions))]
+    pub async fn count_scored_images(
+        &self,
+        known_versions: &HashSet<ModelVersion>,
+    ) -> Result<usize, StoreError> {
+        let query = self.scores_table.query().select(
+            lancedb::query::Select::columns(&["image_id", "model_version"]),
+        );
+        let batches = execute_query(&query, "count_scored_images").await?;
+
+        // Dedupe by image id (last row wins) so an image scored more than once is
+        // counted once, with its latest model version deciding known-ness.
+        let mut latest_version: HashMap<ImageId, ModelVersion> = HashMap::new();
+        for batch in &batches {
+            let image_ids = typed_column::<StringArray>(batch, "image_id")?;
+            let model_versions = typed_column::<StringArray>(batch, "model_version")?;
+            for i in 0..batch.num_rows() {
+                let image_id: ImageId = image_ids.value(i).parse()?;
+                latest_version.insert(image_id, ModelVersion::from(model_versions.value(i)));
+            }
+        }
+
+        Ok(latest_version
+            .values()
+            .filter(|mv| known_versions.contains(mv))
+            .count())
+    }
+
     /// Scan all scores and return a count per distinct `model_version`.
     #[instrument(skip(self))]
     pub async fn count_scores_by_model_version(

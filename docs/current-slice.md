@@ -21,7 +21,7 @@ Also promote the appraisals site to its own production URL — `bobby-appraisals
 ### Decisions (confirmed 2026-06-14)
 
 * **Deploy topology: new, separate Fly apps.** Production = a new `bobby` app (`fly.production.toml`) and a new `bobby-appraisals` app (`fly.appraise.toml`), each running the *same* GHCR image as its staging counterpart, just under the production hostname and config. Staging's `fly.staging.toml` / `fly.appraise-staging.toml` stay untouched. This mirrors the prod/staging separation already done for k8s — prod and staging are distinct compute that share the backend stores.
-* **"Images examined" = total scored/appraised images.** The count is of images that made it through refine scoring (distinct images with a known-version score). The publisher already queries this data, so it precalculates the count and writes it to redis; the feed reads it for the banner. No new pruner-side counter.
+* **"Images examined" = estimated images *processed* by the pruner.** We want to show how many images were seen/processed, not just how many were saved. The pruner doesn't persist a seen-count, so the publisher *estimates* it: count the distinct images that made it through refine scoring (distinct images with a known-version score), then scale up by the inverse of a hard-coded save rate (~0.2%, i.e. ×500) to estimate how many were originally seen. The publisher precalculates this estimate and writes it to redis; the feed reads it for the banner unchanged. No new pruner-side counter. The save rate is hard-coded in the publisher (`SAVE_RATE_PERCENT`); revisit it if the real save percentage drifts.
 * **Plausible: feed website only.** Only `bobby.houseofmoran.io` gets the plausible script. The appraisals site is auth-gated/internal — no tracking there.
 * **QR code: server-side rendered inline SVG.** Generate the QR for `https://bobby.houseofmoran.io/` with a Rust crate (e.g. `qrcode`) and inline it as SVG in the banner. No external calls, no committed binary asset.
 
@@ -35,8 +35,10 @@ Also promote the appraisals site to its own production URL — `bobby-appraisals
 
 #### "Images examined" stat (publisher → redis → feed)
 
-* [ ] **Publisher precalculates the count and writes it to redis.** In `skeet-publish`, compute the total scored/appraised image count during the publish cycle (it already loads the scored data) and write it under a versioned redis key following the existing `<SCHEMA_VERSION>-<type>` convention (e.g. `v3-examined-count`) — derive the prefix from `SCHEMA_VERSION`, don't hardcode. Reuse the existing redis client/serialisation path.
-* [ ] **Feed reads the count for the banner.** Extend the published-images source (or add a sibling read) so the home handler can fetch the count and pass it to the template. Tolerate the key being absent (feed renders without the number rather than erroring) — covariant read.
+* [x] **Publisher precalculates the count and writes it to redis.** In `skeet-publish`, compute the total scored/appraised image count during the publish cycle (it already loads the scored data) and write it under a versioned redis key following the existing `<SCHEMA_VERSION>-<type>` convention (e.g. `v3-examined-count`) — derive the prefix from `SCHEMA_VERSION`, don't hardcode. Reuse the existing redis client/serialisation path.
+    * Note: the saved count comes from a new `SkeetStore::count_scored_images(known_versions)` (distinct images with a known-version score, fresh table scan — not the scores cache, which can lag). The publisher scales it by the inverse of `SAVE_RATE_PERCENT` (0.2%) to write an *estimated processed* count, not the raw saved count (see the Decisions note).
+* [x] **Feed reads the count for the banner.** Extend the published-images source (or add a sibling read) so the home handler can fetch the count and pass it to the template. Tolerate the key being absent (feed renders without the number rather than erroring) — covariant read.
+    * Note: `home.html` already renders the count inline (a minimal `<p class="examined">` line) so the template field isn't dead — the banner task folds this into the full banner.
 
 #### Plausible tracking (feed only)
 

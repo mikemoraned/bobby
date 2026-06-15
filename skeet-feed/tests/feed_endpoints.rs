@@ -46,6 +46,7 @@ impl FeedSource for StubFeedSource {
 struct StubPublishedImagesSource {
     images: Vec<PublishedImage>,
     refreshed_at: Option<DateTime<Utc>>,
+    examined_count: Option<u64>,
 }
 
 #[async_trait]
@@ -55,6 +56,10 @@ impl PublishedImagesSource for StubPublishedImagesSource {
             images: self.images.clone(),
             refreshed_at: self.refreshed_at,
         })
+    }
+
+    async fn examined_count(&self) -> Result<Option<u64>, FeedSourceError> {
+        Ok(self.examined_count)
     }
 }
 
@@ -89,6 +94,7 @@ async fn client_for(params: FeedParams, source: StubFeedSource) -> Client {
     let empty_images = Arc::new(StubPublishedImagesSource {
         images: vec![],
         refreshed_at: None,
+        examined_count: None,
     });
     let project = project_for(params, Arc::new(source), empty_images);
     Client::new(project).await
@@ -110,6 +116,22 @@ async fn client_with_images_refreshed(
     let images_source = Arc::new(StubPublishedImagesSource {
         images,
         refreshed_at,
+        examined_count: None,
+    });
+    let project = project_for(params, empty_feed, images_source);
+    Client::new(project).await
+}
+
+async fn client_with_examined_count(params: FeedParams, examined_count: Option<u64>) -> Client {
+    const CID: &str = "bafkreiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let empty_feed = Arc::new(StubFeedSource {
+        skeet_ids: vec![],
+        refreshed_at: None,
+    });
+    let images_source = Arc::new(StubPublishedImagesSource {
+        images: vec![published_image("p", CID)],
+        refreshed_at: None,
+        examined_count,
     });
     let project = project_for(params, empty_feed, images_source);
     Client::new(project).await
@@ -282,6 +304,30 @@ async fn home_renders_grid_of_cards_in_order() {
     let first_at = body.find("post/first").expect("first card present");
     let second_at = body.find("post/second").expect("second card present");
     assert!(first_at < second_at, "cards should be in published order");
+}
+
+#[tokio::test]
+async fn home_shows_examined_count_when_present() {
+    let mut client = client_with_examined_count(test_params(), Some(21_621_500)).await;
+
+    let (status, body) = get_body(&mut client, "/").await;
+    assert_eq!(status, 200);
+    assert!(
+        body.contains("(21,621,500 images checked)"),
+        "the examined count should render inline, with thousands separators, when present"
+    );
+}
+
+#[tokio::test]
+async fn home_omits_examined_count_when_absent() {
+    let mut client = client_with_examined_count(test_params(), None).await;
+
+    let (status, body) = get_body(&mut client, "/").await;
+    assert_eq!(status, 200);
+    assert!(
+        !body.contains("images checked"),
+        "no examined-count line when the publisher hasn't written it"
+    );
 }
 
 #[tokio::test]

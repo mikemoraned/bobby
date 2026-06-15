@@ -13,6 +13,7 @@ use skeet_store::{
 use tokio::sync::RwLock;
 
 use crate::effective_band::{image_effective_band, image_normalized_score, skeet_effective_band};
+use crate::examined_count::ExaminedCount;
 use crate::image_url_resolver::ImageUrlResolver;
 use crate::limit::Limit;
 use crate::order::Order;
@@ -178,6 +179,16 @@ fn recency_rank(entry: &(StoredImageSummary, Score, ModelVersion)) -> RecencyRan
     }
 }
 
+/// Of the images the pruner sees, roughly this percentage pass scoring and are
+/// saved to the store.
+const SAVE_RATE_PERCENT: f64 = 0.2;
+
+/// Estimate how many images the pruner has processed from the number that were
+/// scored and saved, by inverting the save rate (see [`SAVE_RATE_PERCENT`]).
+fn estimate_processed(scored: usize) -> u64 {
+    (scored as f64 * 100.0 / SAVE_RATE_PERCENT).round() as u64
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum PublishError {
     #[error("store error: {0}")]
@@ -299,6 +310,13 @@ impl FeedPublisher {
                 .replace(conn, &pairs, now)
                 .await?;
         }
+
+        let scored = self
+            .store
+            .count_scored_images(&self.models.versions().cloned().collect())
+            .await?;
+        ExaminedCount::write(conn, estimate_processed(scored)).await?;
+
         Ok(())
     }
 
@@ -394,6 +412,14 @@ mod tests {
             .iter()
             .map(|p| p.skeet_id.rkey().as_str().to_string())
             .collect()
+    }
+
+    #[test]
+    fn estimate_processed_inverts_the_save_rate() {
+        // 0.2% save rate ⇒ multiply the saved count by 500.
+        assert_eq!(estimate_processed(43243), 21_621_500);
+        assert_eq!(estimate_processed(0), 0);
+        assert_eq!(estimate_processed(1), 500);
     }
 
     #[test]
