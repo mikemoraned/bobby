@@ -1,6 +1,7 @@
 #![warn(clippy::all, clippy::nursery)]
 
 pub mod effective_band;
+pub mod examined_count;
 pub mod image_url_resolver;
 pub mod limit;
 pub mod metrics;
@@ -14,6 +15,7 @@ pub mod spec;
 pub mod table_watch;
 pub mod visibility;
 
+pub use examined_count::ExaminedCount;
 pub use image_url_resolver::{CdnImageUrlResolver, ImageUrlResolver};
 pub use limit::{InvalidLimit, Limit};
 pub use metrics::PublishMetrics;

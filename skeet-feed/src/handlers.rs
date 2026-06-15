@@ -145,7 +145,10 @@ pub async fn get_feed_skeleton(
         return Ok(response);
     }
 
-    let limit = query.limit.unwrap_or(config.max_entries).min(config.max_entries);
+    let limit = query
+        .limit
+        .unwrap_or(config.max_entries)
+        .min(config.max_entries);
 
     let force_refresh = wants_no_cache(&head);
     if force_refresh {
@@ -191,6 +194,35 @@ struct GridCard {
 #[template(path = "home.html")]
 struct HomeTemplate {
     cards: Vec<GridCard>,
+    /// The shared explanatory blurb shown in the banner.
+    blurb: &'static str,
+    /// `bsky.app` URL for subscribing to the feed.
+    feed_bsky_url: String,
+    /// Inline SVG QR code for the site URL; `None` if encoding failed (the
+    /// banner then renders without it rather than failing the page).
+    qr_svg: Option<String>,
+    /// The "images examined" banner stat, pre-formatted with thousands
+    /// separators (e.g. `"21,621,500"`) for display.
+    examined_count: Option<String>,
+    /// Site-specific Plausible analytics script URL; `Some` renders the
+    /// tracking script, `None` omits it.
+    plausible_script_url: Option<String>,
+}
+
+/// Group a non-negative integer with comma thousands separators, e.g.
+/// `21621500` → `"21,621,500"`. Neither Rust's formatter nor askama has built-in
+/// digit grouping, so the banner stat is grouped here at render time.
+fn group_thousands(n: u64) -> String {
+    let digits = n.to_string();
+    let bytes = digits.as_bytes();
+    let mut out = String::new();
+    for (i, b) in bytes.iter().enumerate() {
+        if i > 0 && (bytes.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(*b as char);
+    }
+    out
 }
 
 /// Home page: a server-rendered grid of the published `quality-7d` images, each
@@ -200,6 +232,7 @@ struct HomeTemplate {
 pub async fn home(
     head: RequestHead,
     PublishedImagesSourceExtractor(source): PublishedImagesSourceExtractor,
+    FeedConfig(config): FeedConfig,
 ) -> cot::Result<Response> {
     let published = source
         .published_images()
@@ -220,24 +253,42 @@ pub async fn home(
     let cards: Vec<GridCard> = published
         .images
         .into_iter()
-        .map(|item| {
-            GridCard {
-                bsky_url: item.skeet_id.bsky_post_url(),
-                thumb_url: item.image_url.to_string(),
-                alt: "Selfie with a landmark".to_string(),
-                aspect_ratio: item
-                    .image_url_dimensions
-                    .map(|d| format!("{}/{}", d.width, d.height)),
-            }
+        .map(|item| GridCard {
+            bsky_url: item.skeet_id.bsky_post_url(),
+            thumb_url: item.image_url.to_string(),
+            alt: "Selfie with a landmark".to_string(),
+            aspect_ratio: item
+                .image_url_dimensions
+                .map(|d| format!("{}/{}", d.width, d.height)),
         })
         .collect();
 
+    // The banner stat is best-effort: a missing or unreadable count must not
+    // fail the page, so fold any error into "no number shown".
+    let examined_count = source
+        .examined_count()
+        .await
+        .unwrap_or_else(|e| {
+            warn!(error = %e, "failed to read examined count; rendering without it");
+            None
+        })
+        .map(group_thousands);
+
     info!(count = cards.len(), "serving home grid");
-    let rendered = HomeTemplate { cards }.render()?;
+    let rendered = HomeTemplate {
+        cards,
+        blurb: crate::FEED_BLURB,
+        feed_bsky_url: config.feed_bsky_url(),
+        qr_svg: config.site_qr_svg.clone(),
+        examined_count,
+        plausible_script_url: config.plausible_script_url.clone(),
+    }
+    .render()?;
     let mut response = Response::new(Body::fixed(rendered));
-    response
-        .headers_mut()
-        .insert(CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+    response.headers_mut().insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
     set_cache_headers(&mut response, refreshed_at);
     Ok(response)
 }
@@ -246,6 +297,16 @@ pub async fn home(
 mod tests {
     use super::*;
     use cot::http::header::LAST_MODIFIED;
+
+    #[test]
+    fn group_thousands_inserts_separators_every_three_digits() {
+        assert_eq!(group_thousands(0), "0");
+        assert_eq!(group_thousands(7), "7");
+        assert_eq!(group_thousands(42), "42");
+        assert_eq!(group_thousands(999), "999");
+        assert_eq!(group_thousands(1_000), "1,000");
+        assert_eq!(group_thousands(21_621_500), "21,621,500");
+    }
 
     #[test]
     fn wants_no_cache_true_when_header_present() {

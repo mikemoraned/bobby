@@ -12,7 +12,8 @@ use chrono::Utc;
 use shared::{BlueskyCid, ImageId};
 use bluesky::StaticExistenceChecker;
 use skeet_publish::{
-    CdnImageUrlResolver, FeedPublisher, FeedSource, Limit, Order, RedisFeedSource, connect,
+    CdnImageUrlResolver, FeedPublisher, FeedSource, Limit, Order, PublishedImagesSource,
+    RedisFeedSource, connect,
 };
 use skeet_store::test_utils::{open_temp_store, test_image};
 use skeet_store::{
@@ -130,6 +131,35 @@ async fn quality_list_roundtrips_publisher_to_reader_docker() {
     // High first (b_high), then MedHigh by score (a_med 0.60 before c_med 0.55).
     let reader = RedisFeedSource::new(url, Order::Quality, Limit::hours(48));
     assert_eq!(rkeys(&reader).await, ["b_high", "a_med", "c_med"]);
+}
+
+/// The publisher precalculates the "images examined" estimate during a publish
+/// cycle and a `RedisFeedSource` reads it back. The estimate scales the saved
+/// count (three seeded `test`-model scores, regardless of the feed window) up by
+/// the inverse of the hard-coded save rate (0.2% ⇒ ×500).
+#[tokio::test]
+async fn examined_count_published_and_read_back_docker() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = Arc::new(open_temp_store(&dir).await);
+    seed_quality(&store).await; // three scored images on the `test` model
+
+    let (_container, url) = start_redis().await;
+
+    let publisher = FeedPublisher::new(
+        Arc::clone(&store),
+        test_support::test_models(),
+        Arc::new(CdnImageUrlResolver),
+        Arc::new(StaticExistenceChecker::all_present()),
+        vec![(Order::Quality, Limit::hours(48))],
+    );
+    let mut conn = connect(&url).await.expect("connect");
+    publisher.publish(&mut conn, Utc::now()).await.expect("publish");
+
+    let reader = RedisFeedSource::new(url, Order::Quality, Limit::hours(48));
+    assert_eq!(
+        reader.examined_count().await.expect("examined count"),
+        Some(1500) // 3 saved ÷ 0.2% save rate
+    );
 }
 
 /// The wider `quality-7d` window includes a High-band skeet published 4 days ago

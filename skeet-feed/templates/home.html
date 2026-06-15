@@ -1,70 +1,133 @@
 <!DOCTYPE html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Bobby — selfies with landmarks</title>
-        <style>
-            body {
-                font-family: system-ui, sans-serif;
-                max-width: 1200px;
-                margin: 2rem auto;
-                padding: 0 1rem;
-                color: #222;
-            }
-            h1 {
-                text-align: center;
-                font-weight: 600;
-                margin-bottom: 0.25rem;
-            }
-            p.tagline {
-                text-align: center;
-                color: #666;
-                margin-top: 0;
-            }
-            p.empty {
-                text-align: center;
-                color: #666;
-                margin-top: 3rem;
-            }
-            /* Masonry via CSS multi-column: each image keeps its own aspect
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {% if let Some(plausible_script_url) = plausible_script_url %}
+    <!-- Privacy-friendly analytics by Plausible -->
+    <script async src="{{ plausible_script_url }}"></script>
+    <script>
+        window.plausible = window.plausible || function () { (plausible.q = plausible.q || []).push(arguments) }, plausible.init = plausible.init || function (i) { plausible.o = i || {} };
+        plausible.init()
+    </script>
+    {% endif %}
+    <title>Bobby — selfies with landmarks</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            color: #222;
+        }
+
+        h1 {
+            text-align: center;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .banner {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            justify-content: center;
+            max-width: 720px;
+            margin: 0 auto 2rem;
+            padding: 0.75rem 1rem;
+            border: 1px solid #eee;
+            border-radius: 10px;
+            background: #fafafa;
+            color: #444;
+            font-size: 0.9rem;
+        }
+
+        .banner .blurb {
+            margin: 0 0 0.4rem;
+        }
+
+        .banner .subscribe {
+            margin: 0;
+        }
+
+        .banner .examined {
+            margin: 0.4rem 0 0;
+            color: #888;
+        }
+
+        .banner .qr {
+            flex: 0 0 auto;
+            line-height: 0;
+        }
+
+        .banner .qr svg {
+            width: 96px;
+            height: 96px;
+            display: block;
+        }
+
+        p.empty {
+            text-align: center;
+            color: #666;
+            margin-top: 3rem;
+        }
+
+        /* Masonry via CSS multi-column: each image keeps its own aspect
                ratio (no cropping) and the browser picks the column count from
                the available width. */
-            .grid {
-                column-width: 240px;
-                column-gap: 12px;
-            }
-            .grid a {
-                display: block;
-                margin: 0 0 12px;
-                break-inside: avoid;
-                -webkit-column-break-inside: avoid;
-                border-radius: 8px;
-                overflow: hidden;
-                background: #f2f2f2;
-            }
-            .grid img {
-                width: 100%;
-                height: auto;
-                display: block;
-                transition: transform 0.15s ease;
-            }
-            .grid a:hover img {
-                transform: scale(1.03);
-            }
-        </style>
-    </head>
-    <body>
-        <h1>Bobby</h1>
-        <p class="tagline">Selfies people take with landmarks, found on Bluesky.</p>
-{% if cards.is_empty() %}
-        <p class="empty">No selfies found just yet — check back soon.</p>
-{% else %}
-        <div class="grid">
-{% for card in cards %}
-            <a href="{{ card.bsky_url }}"><img src="{{ card.thumb_url }}" loading="lazy" alt="{{ card.alt }}"{% if let Some(ratio) = card.aspect_ratio %} style="aspect-ratio: {{ ratio }}"{% endif %}></a>
-{% endfor %}
+        .grid {
+            column-width: 240px;
+            column-gap: 12px;
+        }
+
+        .grid a {
+            display: block;
+            margin: 0 0 12px;
+            break-inside: avoid;
+            -webkit-column-break-inside: avoid;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #f2f2f2;
+        }
+
+        .grid img {
+            width: 100%;
+            height: auto;
+            display: block;
+            transition: transform 0.15s ease;
+        }
+
+        .grid a:hover img {
+            transform: scale(1.03);
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Bobby</h1>
+    <header class="banner">
+        <div class="banner-text">
+            <p class="blurb">{{ blurb }}</p>
+            <p class="subscribe"><a href="{{ feed_bsky_url }}">Subscribe to this feed on Bluesky</a></p>
+            {% if let Some(examined) = examined_count %}
+            <p class="examined">({{ examined }} images checked so far)</p>
+            {% endif %}
         </div>
-{% endif %}
-    </body>
+        {% if let Some(qr_svg) = qr_svg %}
+        <div class="qr" aria-label="QR code for this site">{{ qr_svg|safe }}</div>
+        {% endif %}
+    </header>
+    {% if cards.is_empty() %}
+    <p class="empty">No selfies found just yet — check back soon.</p>
+    {% else %}
+    <div class="grid">
+        {% for card in cards %}
+        <a href="{{ card.bsky_url }}"><img src="{{ card.thumb_url }}" loading="lazy" alt="{{ card.alt }}" {% if let
+                Some(ratio)=card.aspect_ratio %} style="aspect-ratio: {{ ratio }}" {% endif %}></a>
+        {% endfor %}
+    </div>
+    {% endif %}
+</body>
+
 </html>

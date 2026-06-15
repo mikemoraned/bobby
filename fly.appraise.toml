@@ -1,4 +1,4 @@
-app = "bobby-appraisals-staging"
+app = "bobby-appraisals"
 primary_region = "lhr"
 
 [processes]

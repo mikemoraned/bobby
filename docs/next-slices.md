@@ -1,29 +1,5 @@
 # Next Slices
 
-> The 1.0 public feed slice (now in `current-slice.md`) plus the first two slices below are the remainder of the original "move to 1.0" milestone, split out of the prod/staging-separation slice (now completed — see `completed-slices.md`). They depended on that separation landing first (a stable production feed can't safely run next to dev worktrees until isolation is defined). Take them roughly in the order listed.
-
-## Slice: dynamic social-media preview image for the feed
-
-### Target
-
-A [social media preview image](https://support.metropublisher.com/hc/en-us/articles/31523564070420-Preview-Image-Settings-for-Social-Media) for `bobby.houseofmoran.io` which can be shown on facebook, twitter etc.
-
-* this should be calculated dynamically based on the same `quality-7d` content, and cached using the same last-modified caching from elsewhere.
-* We can use something like the layout algorithms used in [linzer](https://github.com/mikemoraned/geo/blob/main/apps/linzer/backend/layout/src/bin/layout.rs) e.g. `Guillotine` from the `binpack2d` crate.
-
-This is a genuine server-side image-composition feature (compose a montage, render it, wire up the OG/Twitter meta tags, cache it), which is why it's its own slice rather than part of the 1.0 feed polish.
-
-## Slice: 1.0 refactor, review and code minimisation
-
-### Target
-
-Refactor, review and minimisation of code for longer-term maintenance — the "I can walk away from this for a while" payoff slice.
-
-* each crate should have at least one human pass where all code is inspected, and deleted/reworked as needed.
-* the general expectation is that I want to be able to leave this repo for a while and go work on other stuff, and not need to worry about surprising code or lingering cruft/weirdness.
-* split out code into sub-dirs based on role e.g. crates are at top-level in repo, and so should go into a subdir; follow generally accepted conventions where possible.
-* refactor `just` rules into more logical chunks, and do a pass to remove any that no-longer make sense.
-
 ## Slice: try using embeddings for classification/scoring in refine
 
 ### Target
@@ -46,6 +22,81 @@ Retire the central risk in an afternoon before building anything, reusing the sl
 * [ ] Train `linfa-logistic` (cross-validated) on the **same frozen 143-image split** used in phases 2–4, labels from `Band::is_visible_in_feed()`
 * [ ] Evaluate on the held-out test set and compare **recall-at-pinned-precision** against the deployed LLM baseline (0.870 @ P=0.800) — same gate as phase 4, so directly comparable
 * [ ] Caveat: the split has only ~88 positive training examples (~16%), thin for a learned head — if logreg underperforms, try kNN/one-class before concluding the embedding can't see the distinction. This is where the label-growth bullet (refine slice) pays off most.
+
+## Slice: dynamic social-media preview image for the feed
+
+### Target
+
+A [social media preview image](https://support.metropublisher.com/hc/en-us/articles/31523564070420-Preview-Image-Settings-for-Social-Media) for `bobby.houseofmoran.io` which can be shown on facebook, twitter etc.
+
+* this should be calculated dynamically based on the same `quality-7d` content, and cached using the same last-modified caching from elsewhere.
+* We can use something like the layout algorithms used in [linzer](https://github.com/mikemoraned/geo/blob/main/apps/linzer/backend/layout/src/bin/layout.rs) e.g. `Guillotine` from the `binpack2d` crate.
+
+This is a genuine server-side image-composition feature (compose a montage, render it, wire up the OG/Twitter meta tags, cache it), which is why it's its own slice rather than part of the 1.0 feed polish.
+
+## Slice: passkey + fingerprint-allowlist auth for `skeet-appraise`
+
+Replace GitHub OAuth on public `bobby-appraisals.houseofmoran.io` with passkey (WebAuthn) auth where **identity is an allowlisted credential fingerprint in config** — no IdP, no sessions, no redis. The server stores only public-key fingerprints (a few config lines, the analogue of `BOBBY_ADMIN_USERS`); the private key lives in the device's secure hardware, OS-synced across my devices, so there's no client-side key custody. Login is a challenge-response the OS prompt handles (Face/Touch ID). The core is a `--auth-mode`-selected verify-against-an-allowlist check, with `passkey` as one provider arm alongside `github` and `local-admin`.
+
+Run passkey alongside GitHub OAuth, verify, cut over, then rip the OAuth/session/redis stack out. Worktrees keep `--auth-mode local-admin` (reachable over the tailnet) throughout and never touch passkeys.
+
+### Target
+
+* Public prod is **default-deny**: no page, route, API, or image byte reachable without a valid passkey session — protects *access*, not just adding appraisals.
+* Identity = a copy-pasteable fingerprint I add to an allowlist in config. Add a device = paste a line; revoke = delete a line + redeploy.
+* Enrollment is scriptable: a short pairing code shown on the device also lands in the server logs on the same line as the credential, so `tail fly logs → grep code → extract credential → append` is a one-command `just enroll-device <code> <label>`.
+* End with **no GitHub OAuth app, no `/auth/*` routes, no session middleware, no redis**.
+
+### Decisions / constraints
+
+* **Default-deny at the root router.** One middleware wraps everything; the public surface is an explicit small allowlist (login page + the two ceremony endpoints + health). Everything else — assets and image bytes included — needs a valid signed cookie. Allowlisting the public routes (not annotating protected ones) means a new route can't ship unguarded.
+* **Close the image side-channel.** Serve images through the authed app (or short-lived presigned URLs), never as public R2 links. SSE-C already closes this; assert it with a test (unauthenticated image fetch → `401`).
+* **Allowlist the full fingerprint, never a prefix** (a truncated one is grindable). The fingerprint *identifies*; the full key in the assertion is what the signature is *verified* against. Both must pass: `hash(key) ∈ allowlist` **and** signature valid — the signature check is load-bearing since the public key is public.
+* **Enroll-then-bless.** A passkey's public key is minted *during* registration, so the ceremony runs first (harmless — it grants nothing), the server logs the fingerprint, and I paste it into the allowlist to bless it. An unblessed credential is inert, so the ceremony route needs no privileged gating.
+* **Pairing code is a correlation handle, not a credential** — it only lets me pick the right log line while holding the device; no private key, no deploy access, so it's safe to keep human-short.
+* **WebAuthn specifics:** `rp_id` is host-bound (a prod passkey won't work on a `.ts.net` host — fine, worktrees use `local-admin`); HTTPS required (fly TLS in prod, localhost in the spike); use [`webauthn-rs`](https://crates.io/crates/webauthn-rs) for the crypto — the only logic I own is the allowlist check; recovery = enroll two devices + deploy access as the re-bless path (no lockout cliff).
+
+### Tasks
+
+Spike first, then groups A–E. Run alongside GitHub OAuth, verify, cut over, clean up. Local dev keeps `--local-admin`.
+
+#### Spike (do this first): prove the `webauthn-rs` ceremony + allowlist-verify path on `localhost`
+
+* [ ] Minimal axum harness with register + authenticate ceremony endpoints and an in-memory fingerprint allowlist.
+* [ ] Verify, in order: registration yields a public key (print its fingerprint); an *unblessed* credential fails auth (`403`); after adding the fingerprint, auth succeeds and sets a signed cookie; a second device enrolls independently.
+* [ ] **Decide credential-id vs public-key-fingerprint** as the allowlist string (credential-id = zero extra hashing; public-key fingerprint = reusable later for signed-appraisal provenance) — group A depends on it. Then tear the harness down.
+
+#### A. Credential identity + allowlist
+
+* [ ] **`Appraiser::Passkey { fingerprint }`** in `shared/src/appraiser.rs`: `provider:identifier` parse/display (`passkey:SHA256:…`), validated constructor, round-trip + unknown-provider tests. Mirrors `GitHub`/`LocalAdmin`.
+* [ ] **Allowlist config**: `(fingerprint, label)` lines, 1Password-backed (same shape as `BOBBY_ADMIN_USERS`); required in `passkey` mode (startup fails if empty).
+* [ ] **`--auth-mode passkey`** alongside `tailscale`/`github`/`local-admin`; only this mode runs the ceremony + cookie path.
+
+#### B. Default-deny middleware + ceremony endpoints
+
+* [ ] **Root-router auth layer**: validates the signed cookie; only the public allowlist is reachable unauthenticated. Test a dummy route is denied by default.
+* [ ] **Ceremony routes** via `webauthn-rs`; on success, verify signature against the presented key **and** `hash(key) ∈ allowlist`, then set a stateless signed cookie (no redis).
+* [ ] **Minimal, content-free login page** (single "Sign in" button); rate-limit the ceremony endpoints.
+* [ ] **Test**: valid passkey → `Appraiser::Passkey` + appraisal round-trips; unblessed/absent → denied; other modes unaffected.
+
+#### C. Pairing-code enrollment + scripting
+
+* [ ] Client shows a pairing code (~6–8 base32 chars) and sends it with the registration finish.
+* [ ] **One structured log line** correlating both: `enroll pairing_id=K7QF2M credential=passkey:SHA256:… ua="…"` (same line — don't split). Log only public fingerprints, never the challenge/assertion. Expire codes after a few minutes.
+* [ ] **`just enroll-device <code> <label>`**: grep logs for the code, extract `credential=`, **stage** the line for me to commit + redeploy (never auto-write from a log scrape — logs are an injection surface; the deploy is the gate).
+
+#### D. Close image / asset access
+
+* [ ] Route image serving through auth (or short-lived presigned URLs) — no public R2 links.
+* [ ] Test an unauthenticated image/asset fetch `401`s.
+
+#### E. Parallel run, cut over, cleanup
+
+* [ ] **Parallel run**: passkey mode alongside the OAuth site; enroll laptop + phone via the pairing flow; confirm appraisals set/clear and homepage + admin paging work.
+* [ ] **Cut over** to passkey (on whichever host carries prod — fly with TLS).
+* [ ] **Rip out the dead stack**: delete `auth.rs`, `auth_config.rs` (`OAuthConfig`), the `/auth/{login,callback,logout}` routes, the session middleware + `deadpool-redis` dep, the `BOBBY_GITHUB_*` / `BOBBY_SESSION_SECRET` / sessions-redis config + 1Password items. Drop the `github` arm (leaving `passkey` + `local-admin`). Remove the GitHub OAuth app.
+* [ ] **Verify**: `just clippy`, `just test-no-docker`; builds without oauth/session/redis deps (`cargo machete` confirms); relocated integration tests pass.
+* [ ] Update docs (`docs/architecture.md`, auth notes) for passkey + fingerprint-allowlist identity.
 
 ## Slice: improving prune and refine quality
 
