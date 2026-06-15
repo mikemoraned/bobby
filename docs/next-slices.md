@@ -1,16 +1,5 @@
 # Next Slices
 
-## Slice: dynamic social-media preview image for the feed
-
-### Target
-
-A [social media preview image](https://support.metropublisher.com/hc/en-us/articles/31523564070420-Preview-Image-Settings-for-Social-Media) for `bobby.houseofmoran.io` which can be shown on facebook, twitter etc.
-
-* this should be calculated dynamically based on the same `quality-7d` content, and cached using the same last-modified caching from elsewhere.
-* We can use something like the layout algorithms used in [linzer](https://github.com/mikemoraned/geo/blob/main/apps/linzer/backend/layout/src/bin/layout.rs) e.g. `Guillotine` from the `binpack2d` crate.
-
-This is a genuine server-side image-composition feature (compose a montage, render it, wire up the OG/Twitter meta tags, cache it), which is why it's its own slice rather than part of the 1.0 feed polish.
-
 ## Slice: 1.0 refactor, review and code minimisation
 
 ### Target
@@ -44,6 +33,17 @@ Retire the central risk in an afternoon before building anything, reusing the sl
 * [ ] Train `linfa-logistic` (cross-validated) on the **same frozen 143-image split** used in phases 2–4, labels from `Band::is_visible_in_feed()`
 * [ ] Evaluate on the held-out test set and compare **recall-at-pinned-precision** against the deployed LLM baseline (0.870 @ P=0.800) — same gate as phase 4, so directly comparable
 * [ ] Caveat: the split has only ~88 positive training examples (~16%), thin for a learned head — if logreg underperforms, try kNN/one-class before concluding the embedding can't see the distinction. This is where the label-growth bullet (refine slice) pays off most.
+
+## Slice: dynamic social-media preview image for the feed
+
+### Target
+
+A [social media preview image](https://support.metropublisher.com/hc/en-us/articles/31523564070420-Preview-Image-Settings-for-Social-Media) for `bobby.houseofmoran.io` which can be shown on facebook, twitter etc.
+
+* this should be calculated dynamically based on the same `quality-7d` content, and cached using the same last-modified caching from elsewhere.
+* We can use something like the layout algorithms used in [linzer](https://github.com/mikemoraned/geo/blob/main/apps/linzer/backend/layout/src/bin/layout.rs) e.g. `Guillotine` from the `binpack2d` crate.
+
+This is a genuine server-side image-composition feature (compose a montage, render it, wire up the OG/Twitter meta tags, cache it), which is why it's its own slice rather than part of the 1.0 feed polish.
 
 ## Slice: passkey + fingerprint-allowlist auth for `skeet-appraise`
 
