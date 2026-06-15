@@ -35,6 +35,11 @@ struct Args {
     /// Redis URL for the publish server (env: BOBBY_REDIS_PUBLISH_URL)
     #[arg(long, env = "BOBBY_REDIS_PUBLISH_URL")]
     redis_publish_url: String,
+
+    /// Site-specific Plausible analytics script URL. When set, the home page
+    /// loads the Plausible script; omit it (staging/local) to load nothing.
+    #[arg(long)]
+    plausible_script_url: Option<String>,
 }
 
 #[tokio::main]
@@ -59,6 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         publisher_did: args.publisher_did,
         feed_name: args.feed_name,
         max_entries: args.max_entries,
+        plausible_script_url: args.plausible_script_url,
     };
 
     info!(

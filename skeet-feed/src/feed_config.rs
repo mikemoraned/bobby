@@ -11,6 +11,10 @@ pub struct FeedParams {
     pub publisher_did: String,
     pub feed_name: String,
     pub max_entries: usize,
+    /// Site-specific Plausible analytics script URL. `None` disables the
+    /// tracking script entirely, so only deployments configured with a URL
+    /// (i.e. production) load it.
+    pub plausible_script_url: Option<String>,
 }
 
 impl FeedParams {

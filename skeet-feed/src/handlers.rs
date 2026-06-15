@@ -197,6 +197,9 @@ struct HomeTemplate {
     /// The "images examined" banner stat, pre-formatted with thousands
     /// separators (e.g. `"21,621,500"`) for display.
     examined_count: Option<String>,
+    /// Site-specific Plausible analytics script URL; `Some` renders the
+    /// tracking script, `None` omits it.
+    plausible_script_url: Option<String>,
 }
 
 /// Group a non-negative integer with comma thousands separators, e.g.
@@ -222,6 +225,7 @@ fn group_thousands(n: u64) -> String {
 pub async fn home(
     head: RequestHead,
     PublishedImagesSourceExtractor(source): PublishedImagesSourceExtractor,
+    FeedConfig(config): FeedConfig,
 ) -> cot::Result<Response> {
     let published = source
         .published_images()
@@ -267,6 +271,7 @@ pub async fn home(
     let rendered = HomeTemplate {
         cards,
         examined_count,
+        plausible_script_url: config.plausible_script_url.clone(),
     }
     .render()?;
     let mut response = Response::new(Body::fixed(rendered));

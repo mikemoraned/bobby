@@ -47,7 +47,8 @@ Also promote the appraisals site to its own production URL — `bobby-appraisals
 
 #### Plausible tracking (feed only)
 
-* [ ] **Add the plausible.io script to `home.html`** with `data-domain="bobby.houseofmoran.io"`. Confirm it only loads on the production host (so staging/local don't pollute stats) — gate via config rather than hardcoding the domain into the template.
+* [x] **Add the plausible.io script to `home.html`** with `data-domain="bobby.houseofmoran.io"`. Confirm it only loads on the production host (so staging/local don't pollute stats) — gate via config rather than hardcoding the domain into the template.
+    * Note: used Plausible's newer script-tag install (no `data-domain`; the site is identified by a script URL `pa-….js` plus a static `plausible.init()` block) per a later instruction. Gated via a `--plausible-script-url` CLI param threaded through `FeedParams` → `home` handler → template: `None` (staging/local) renders nothing, production sets it in `fly.production.toml`. The site-specific URL lives in config, not the committed template.
 
 #### Feed website: shared blurb + banner
 

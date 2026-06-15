@@ -69,6 +69,7 @@ fn test_params() -> FeedParams {
         publisher_did: "did:web:test.example.com".to_string(),
         feed_name: "bobby-dev".to_string(),
         max_entries: 10,
+        plausible_script_url: None,
     }
 }
 
@@ -313,7 +314,7 @@ async fn home_shows_examined_count_when_present() {
     let (status, body) = get_body(&mut client, "/").await;
     assert_eq!(status, 200);
     assert!(
-        body.contains("(21,621,500 images checked)"),
+        body.contains("(21,621,500 images checked so far)"),
         "the examined count should render inline, with thousands separators, when present"
     );
 }
@@ -327,6 +328,35 @@ async fn home_omits_examined_count_when_absent() {
     assert!(
         !body.contains("images checked"),
         "no examined-count line when the publisher hasn't written it"
+    );
+}
+
+#[tokio::test]
+async fn home_loads_plausible_when_script_url_configured() {
+    let script_url = "https://plausible.io/js/pa-test.js";
+    let params = FeedParams {
+        plausible_script_url: Some(script_url.to_string()),
+        ..test_params()
+    };
+    let mut client = client_with_images(params, vec![]).await;
+
+    let (status, body) = get_body(&mut client, "/").await;
+    assert_eq!(status, 200);
+    assert!(
+        body.contains(&format!(r#"src="{script_url}""#)) && body.contains("plausible.init()"),
+        "the Plausible script should load from the configured URL with its init block"
+    );
+}
+
+#[tokio::test]
+async fn home_omits_plausible_when_script_url_absent() {
+    let mut client = client_with_images(test_params(), vec![]).await;
+
+    let (status, body) = get_body(&mut client, "/").await;
+    assert_eq!(status, 200);
+    assert!(
+        !body.contains("plausible.io"),
+        "no Plausible script when no domain is configured (staging/local)"
     );
 }
 
