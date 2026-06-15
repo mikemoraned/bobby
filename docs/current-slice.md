@@ -66,4 +66,5 @@ Also promote the appraisals site to its own production URL — `bobby-appraisals
 
 #### Wrap-up
 
-* [ ] **Capture all new invocations in the Justfile** (register-production, both production deploys) and run `just clippy` + `just test-no-docker`.
+* [x] **Capture all new invocations in the Justfile** (register-production, both production deploys) and run `just clippy` + `just test-no-docker`.
+    * Note: `register-feed-production`, `deploy_feed_production*`, `deploy_appraise_production*` all in the Justfile. `just clippy` clean; `just test-no-docker` green.
