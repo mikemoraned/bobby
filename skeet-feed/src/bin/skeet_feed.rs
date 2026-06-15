@@ -59,13 +59,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     info!(git_hash = env!("BUILD_GIT_HASH"), "skeet-feed starting");
 
-    let feed_params = FeedParams {
-        hostname: args.hostname.clone(),
-        publisher_did: args.publisher_did,
-        feed_name: args.feed_name,
-        max_entries: args.max_entries,
-        plausible_script_url: args.plausible_script_url,
-    };
+    let feed_params = FeedParams::new(
+        args.hostname.clone(),
+        args.publisher_did,
+        args.feed_name,
+        args.max_entries,
+        args.plausible_script_url,
+    );
 
     info!(
         bind = %args.bind,

@@ -64,13 +64,13 @@ impl PublishedImagesSource for StubPublishedImagesSource {
 }
 
 fn test_params() -> FeedParams {
-    FeedParams {
-        hostname: "test.example.com".to_string(),
-        publisher_did: "did:web:test.example.com".to_string(),
-        feed_name: "bobby-dev".to_string(),
-        max_entries: 10,
-        plausible_script_url: None,
-    }
+    FeedParams::new(
+        "test.example.com".to_string(),
+        "did:web:test.example.com".to_string(),
+        "bobby-dev".to_string(),
+        10,
+        None,
+    )
 }
 
 fn skeet_id(rkey: &str) -> SkeetId {

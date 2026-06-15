@@ -4,6 +4,7 @@ use std::task::{Context, Poll};
 use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::FromRequestHead;
 use tower::{Layer, Service};
+use tracing::warn;
 
 #[derive(Debug, Clone)]
 pub struct FeedParams {
@@ -15,9 +16,39 @@ pub struct FeedParams {
     /// tracking script entirely, so only deployments configured with a URL
     /// (i.e. production) load it.
     pub plausible_script_url: Option<String>,
+    /// Inline SVG QR code for the site URL, encoded once at construction since
+    /// it depends only on `hostname`. `None` if encoding failed (the banner
+    /// then renders without it).
+    pub site_qr_svg: Option<String>,
+}
+
+/// The site's own public URL — the destination the home-page QR code encodes
+/// so a phone scan lands on the feed website.
+fn site_url(hostname: &str) -> String {
+    format!("https://{hostname}/")
 }
 
 impl FeedParams {
+    pub fn new(
+        hostname: String,
+        publisher_did: String,
+        feed_name: String,
+        max_entries: usize,
+        plausible_script_url: Option<String>,
+    ) -> Self {
+        let site_qr_svg = crate::qr::qr_svg(&site_url(&hostname))
+            .map_err(|e| warn!(error = %e, "failed to render site QR; banner will omit it"))
+            .ok();
+        Self {
+            hostname,
+            publisher_did,
+            feed_name,
+            max_entries,
+            plausible_script_url,
+            site_qr_svg,
+        }
+    }
+
     pub fn did(&self) -> String {
         format!("did:web:{}", self.hostname)
     }
@@ -31,12 +62,6 @@ impl FeedParams {
 
     pub fn service_endpoint(&self) -> String {
         format!("https://{}", self.hostname)
-    }
-
-    /// The site's own public URL — the destination the home-page QR code
-    /// encodes so a phone scan lands on the feed website.
-    pub fn site_url(&self) -> String {
-        format!("https://{}/", self.hostname)
     }
 
     /// The `bsky.app` URL where a user can view and subscribe to this feed.

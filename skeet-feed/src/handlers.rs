@@ -215,7 +215,7 @@ struct HomeTemplate {
 fn group_thousands(n: u64) -> String {
     let digits = n.to_string();
     let bytes = digits.as_bytes();
-    let mut out = String::with_capacity(digits.len() + (digits.len() - 1) / 3);
+    let mut out = String::new();
     for (i, b) in bytes.iter().enumerate() {
         if i > 0 && (bytes.len() - i).is_multiple_of(3) {
             out.push(',');
@@ -274,18 +274,12 @@ pub async fn home(
         })
         .map(group_thousands);
 
-    // The QR is best-effort decoration: if encoding ever fails, render the
-    // banner without it rather than failing the whole page.
-    let qr_svg = crate::qr::qr_svg(&config.site_url())
-        .map_err(|e| warn!(error = %e, "failed to render site QR; rendering without it"))
-        .ok();
-
     info!(count = cards.len(), "serving home grid");
     let rendered = HomeTemplate {
         cards,
         blurb: crate::FEED_BLURB,
         feed_bsky_url: config.feed_bsky_url(),
-        qr_svg,
+        qr_svg: config.site_qr_svg.clone(),
         examined_count,
         plausible_script_url: config.plausible_script_url.clone(),
     }
