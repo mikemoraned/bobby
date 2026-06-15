@@ -26,7 +26,7 @@ deploy_feed_production_app: push-skeet-feed
     fly deploy --config fly.production.toml --image {{ GHCR_REPO }}/skeet-feed:{{ GIT_HASH }} --env "OTEL_RESOURCE_ATTRIBUTES=deployment.environment=fly,service.version={{ GIT_HASH }}"
 
 end_to_end_test_feed_production:
-    TEST_BASE_URL=https://bobby.fly.dev cargo nextest run --release -p skeet-feed --features integ --test feed_integration
+    TEST_BASE_URL=https://bobby-feed.fly.dev cargo nextest run --release -p skeet-feed --features integ --test feed_integration
 
 register-feed:
     op run --env-file register.env -- cargo run --release --bin register-feed -- --hostname {{ STAGING_HOSTNAME }}

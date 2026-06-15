@@ -1,4 +1,4 @@
-app = "bobby"
+app = "bobby-feed"
 primary_region = "lhr"
 
 [processes]
