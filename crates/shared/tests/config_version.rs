@@ -6,7 +6,7 @@ use shared::PruneConfig;
 
 #[test]
 fn config_version() {
-    let config_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../config/prune.toml");
+    let config_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../config/prune.toml");
     let config = PruneConfig::from_file(&config_path, None)
         .unwrap_or_else(|e| panic!("failed to load {}: {e}", config_path.display()));
 

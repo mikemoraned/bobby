@@ -52,7 +52,7 @@ fn expected_classification(example: &Example) -> Classification {
 fn main() {
     let args = Arguments::from_args();
 
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
 
     let config = PruneConfig::from_file(&root.join("config/prune.toml"), None)
         .unwrap_or_else(|e| panic!("failed to load prune.toml: {e}"));

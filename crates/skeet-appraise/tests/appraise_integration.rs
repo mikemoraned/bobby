@@ -70,7 +70,7 @@ async fn spawn_server() -> TestServer {
     let bin = env!("CARGO_BIN_EXE_skeet-appraise");
     // The binary loads the model registry at startup; the default `config/refine.toml`
     // is relative to CWD (the crate dir under nextest), so point at the repo's copy.
-    let model_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../config/refine.toml");
+    let model_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../config/refine.toml");
     let child = Command::new(bin)
         .args([
             "--store-path",

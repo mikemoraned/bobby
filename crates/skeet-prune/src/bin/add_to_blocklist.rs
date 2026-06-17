@@ -23,7 +23,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(git_hash = env!("BUILD_GIT_HASH"), "add-to-blocklist starting");
 
     let args = Args::parse();
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let blocklist_dir = root.join("blocklist");
 
     let skeet_id: SkeetId = args.at_uri.parse()?;

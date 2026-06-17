@@ -5,7 +5,7 @@
 fn main() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     let models_dir = std::path::Path::new(&manifest_dir)
-        .join("../models")
+        .join("../../models")
         .canonicalize()
         .expect("models directory not found");
     let detection = models_dir.join("text-detection.rten");

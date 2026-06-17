@@ -5,7 +5,7 @@ use burn_import::onnx::ModelGen;
 #[allow(clippy::expect_used)]
 fn main() {
     ModelGen::new()
-        .input("../models/face_detection_yunet_2023mar_opset16.onnx")
+        .input("../../models/face_detection_yunet_2023mar_opset16.onnx")
         .out_dir("model/")
         .run_from_script();
 

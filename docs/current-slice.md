@@ -18,8 +18,8 @@ Refactor, review and minimisation of code for longer-term maintenance — the "I
 
 #### Directory reorg
 
-* [ ] **Move all crates under `crates/`.** Relocate every workspace member into `crates/`, then update: workspace `members` and `[workspace.dependencies]` path entries in the root `Cargo.toml`, each crate's own relative path deps, Dockerfile `COPY` paths (`Dockerfile.fly`, `Dockerfile.cluster`), and any just recipes / config that reference a crate path. `just clippy` + `just test-no-docker` must pass unchanged afterwards.
-* [ ] **Move deploy artifacts under `deploy/`.** Relocate `fly.*.toml`, `Dockerfile.*`, and the root `*.env` files into `deploy/`, then fix the just recipes that reference them (`op run --env-file`, `fly deploy --config`, `docker build -f`). Verify with a dry-run / `fly config validate` where possible.
+* [x] **Move all crates under `crates/`.** Relocate every workspace member into `crates/`, then update: workspace `members` and `[workspace.dependencies]` path entries in the root `Cargo.toml`, each crate's own relative path deps, Dockerfile `COPY` paths (`Dockerfile.fly`, `Dockerfile.cluster`), and any just recipes / config that reference a crate path. `just clippy` + `just test-no-docker` must pass unchanged afterwards.
+* [x] **Move deploy artifacts under `deploy/`.** Relocate `fly.*.toml`, `Dockerfile.*`, and the root `*.env` files into `deploy/`, then fix the just recipes that reference them (`op run --env-file`, `fly deploy --config`, `docker build -f`). Verify with a dry-run / `fly config validate` where possible. (`fly config validate` passed for all four configs. Also added `deploy/` to `.dockerignore` since the fly tomls/Dockerfiles aren't needed inside the build context.)
 
 #### Per-crate inspection passes
 
@@ -31,7 +31,6 @@ Each crate gets at least one full human pass: read all code, delete dead code, r
 * [ ] **ML/detection libs — `face-detection`, `skin-detection`, `text-detection`.** Model loading/inference wrappers; confirm each model is still documented in `docs/`.
 * [ ] **Shared/support libs — `shared`, `bluesky`, `web-support`, `build-support`, `test-support`, `eval`.** Cross-crate types and helpers; check `shared`'s types stay pure data (no policy methods).
 * [ ] **Metrics exporters — `cloudflare-exporter`, `openai-exporter`.** Confirm both are still wired up and used; delete if obsolete.
-
 
 #### Justfile pass
 

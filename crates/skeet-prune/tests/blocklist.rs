@@ -8,7 +8,7 @@ use shared::BlocklistConfig;
 fn main() {
     let args = Arguments::from_args();
 
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let blocklist_dir = root.join("blocklist");
 
     let config = BlocklistConfig::from_file(&blocklist_dir.join("blocklist.toml"))

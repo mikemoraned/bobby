@@ -8,7 +8,7 @@ use shared::{Classification, PruneConfig};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("git_hash={}", env!("BUILD_GIT_HASH"));
 
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let examples_dir = root.join("examples");
 
     let config = PruneConfig::from_file(&root.join("config/prune.toml"), None)?;

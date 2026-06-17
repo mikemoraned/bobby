@@ -6,7 +6,7 @@ use shared::{Label, RefineModels};
 
 #[test]
 fn load_refine_models_and_resolve_production() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../config/refine.toml");
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../config/refine.toml");
     let models = RefineModels::load(&path)
         .unwrap_or_else(|e| panic!("failed to load {}: {e}", path.display()));
 
