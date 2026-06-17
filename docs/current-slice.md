@@ -14,7 +14,7 @@ Refactor, review and minimisation of code for longer-term maintenance — the "I
 * **Crate layout: flat `crates/`.** Move every workspace member under a single `crates/` dir (the common Cargo convention) — `crates/skeet-feed`, `crates/shared`, etc. No role subgrouping inside `crates/`; keep paths shallow. Non-crate role dirs (`docs/`, `config/`, `infra/`, `just/`) stay where they are.
 * **Deploy artifacts: `deploy/`.** Group `fly.*.toml`, `Dockerfile.*`, and the `*.env` files under `deploy/`, updating the just recipes (`op run --env-file`, `fly --config`) and Dockerfile `COPY` paths accordingly.
 
-### Tasks
+### Tasks: Refactors / Cleanups
 
 #### Directory reorg
 
@@ -39,3 +39,15 @@ Each crate gets at least one full human pass: read all code, delete dead code, r
 #### Wrap-up
 
 * [ ] **Capture all changes and verify.** Ensure CLAUDE.md / docs references to moved paths are updated, then run `just clippy`, `just test-no-docker`, and `just mutants-on-diff` clean.
+
+### Tasks: Features
+
+#### Add `quality-1y`, `recency-1y`, `quality-4w`, `recency-4w` and make `quality-4w` the default
+
+* [ ] Add `y` (meaning 1 one year window) and `w` (meaning 1 week window) as `Limit` options
+* [ ] in `skeet-appraise` make discovery of `AvailableFeeds` dynamic i.e. it should automatically discovery feeds by naming convention as opposed to a hard-code list
+    * this may require changes in `skeet-publish`
+* [ ] Add `quality-1y`, `recency-1y`, `quality-4w`, `recency-4w` as pregenerated lists
+* [ ] Change default choices for `skeet-feed` to be:
+    * `quality-48h` for bluesky feed (skeleton)
+    * `quality-4w` for main homepage
