@@ -3,21 +3,22 @@ use std::task::{Context, Poll};
 
 use tower::{Layer, Service};
 
-use crate::available_feeds::AvailableFeeds;
+use crate::available_feeds::PublishedListCatalogReader;
 
-/// Injects the configured published feeds (`Arc<AvailableFeeds>`) into request
+/// Injects the feed-catalog reader (`Arc<PublishedListCatalogReader>`) into request
 /// extensions.
 ///
 /// The home page renders whichever published list the viewer selects, joined to
-/// live store detail. Read it via [`crate::feed_snapshot::FeedSnapshotSource`].
+/// live store detail. The available feeds are discovered per render from the
+/// publisher's catalog via [`crate::feed_snapshot::FeedSnapshotSource`].
 #[derive(Clone)]
 pub struct PublishedFeedLayer {
-    feeds: Arc<AvailableFeeds>,
+    reader: Arc<PublishedListCatalogReader>,
 }
 
 impl PublishedFeedLayer {
-    pub const fn new(feeds: Arc<AvailableFeeds>) -> Self {
-        Self { feeds }
+    pub const fn new(reader: Arc<PublishedListCatalogReader>) -> Self {
+        Self { reader }
     }
 }
 
@@ -27,7 +28,7 @@ impl<S> Layer<S> for PublishedFeedLayer {
     fn layer(&self, inner: S) -> Self::Service {
         PublishedFeedService {
             inner,
-            feeds: self.feeds.clone(),
+            reader: self.reader.clone(),
         }
     }
 }
@@ -35,7 +36,7 @@ impl<S> Layer<S> for PublishedFeedLayer {
 #[derive(Clone)]
 pub struct PublishedFeedService<S> {
     inner: S,
-    feeds: Arc<AvailableFeeds>,
+    reader: Arc<PublishedListCatalogReader>,
 }
 
 impl<S, ReqBody> Service<cot::http::Request<ReqBody>> for PublishedFeedService<S>
@@ -51,7 +52,7 @@ where
     }
 
     fn call(&mut self, mut req: cot::http::Request<ReqBody>) -> Self::Future {
-        req.extensions_mut().insert(self.feeds.clone());
+        req.extensions_mut().insert(self.reader.clone());
         self.inner.call(req)
     }
 }

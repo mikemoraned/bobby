@@ -22,6 +22,7 @@
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
+use skeet_publish::{Limit, Order, PublishedList, PublishedListCatalog};
 use testcontainers::ContainerAsync;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::redis::{REDIS_PORT, Redis};
@@ -66,6 +67,17 @@ async fn spawn_server() -> TestServer {
         .expect("redis port");
     let redis_url = format!("redis://{host}:{redis_port}");
     wait_redis_ready(&redis_url).await;
+
+    // The home page discovers its feeds from the publisher's catalog on each
+    // render; in production a running skeet-publish writes it. There's no
+    // publisher here, so seed a minimal catalog directly — otherwise the home
+    // page has no feeds to show.
+    let mut conn = skeet_publish::connect(&redis_url)
+        .await
+        .expect("connect redis to seed catalog");
+    PublishedListCatalog::write(&mut conn, &[PublishedList::new(Order::Quality, Limit::hours(48))])
+        .await
+        .expect("seed feed catalog");
 
     let port = pick_free_port();
     let store = tempfile::tempdir().expect("create temp store");

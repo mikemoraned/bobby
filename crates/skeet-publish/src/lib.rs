@@ -8,6 +8,7 @@ pub mod metrics;
 pub mod order;
 pub mod published;
 pub mod published_list;
+pub mod published_list_catalog;
 pub mod publisher;
 pub mod redis_client;
 pub mod source;
@@ -21,7 +22,8 @@ pub use limit::{InvalidLimit, Limit};
 pub use metrics::PublishMetrics;
 pub use order::{InvalidOrder, Order};
 pub use published::PublishedImage;
-pub use published_list::{PublishedList, PublishedListError};
+pub use published_list::{InvalidListName, PublishedList, PublishedListError};
+pub use published_list_catalog::PublishedListCatalog;
 pub use publisher::{
     FeedPublisher, PublishError, PublishOutcome, WindowedFeed, published_for_spec,
 };

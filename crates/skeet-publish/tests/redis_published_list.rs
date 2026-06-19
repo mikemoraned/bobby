@@ -15,7 +15,7 @@ use deadpool_redis::redis::{self, AsyncCommands};
 use shared::{BlueskyCid, ImageId};
 use skeet_publish::{
     ExaminedCount, FeedSource, Limit, Order, PublishedImage, PublishedImagesSource, PublishedList,
-    RedisFeedSource,
+    PublishedListCatalog, RedisFeedSource,
 };
 use skeet_store::SkeetId;
 use testcontainers::ContainerAsync;
@@ -234,6 +234,60 @@ async fn examined_count_roundtrips_and_is_absent_before_first_write_docker() {
     // It lives under the version-prefixed key.
     let exists: bool = conn.exists("v3-examined-count").await.expect("exists");
     assert!(exists);
+}
+
+#[tokio::test]
+async fn published_list_catalog_roundtrips_as_a_set_docker() {
+    let (_container, mut conn) = start_redis().await;
+
+    // Empty before the publisher advertises anything.
+    assert!(
+        PublishedListCatalog::read(&mut conn)
+            .await
+            .expect("read")
+            .is_empty()
+    );
+
+    let lists = vec![
+        PublishedList::new(Order::Quality, Limit::weeks(4)),
+        PublishedList::new(Order::Recency, Limit::hours(48)),
+        PublishedList::new(Order::Quality, Limit::years(1)),
+    ];
+    PublishedListCatalog::write(&mut conn, &lists)
+        .await
+        .expect("write");
+
+    // Membership matches regardless of order (it's a set).
+    let mut read: Vec<String> = PublishedListCatalog::read(&mut conn)
+        .await
+        .expect("read")
+        .iter()
+        .map(PublishedList::name)
+        .collect();
+    read.sort();
+    let mut expected: Vec<String> = lists.iter().map(PublishedList::name).collect();
+    expected.sort();
+    assert_eq!(read, expected);
+
+    // Members are the published-list keys (version-prefixed).
+    assert!(expected.iter().all(|n| n.starts_with("v3-")));
+
+    // The catalog itself lives under the version-prefixed key.
+    let exists: bool = conn.exists("v3-feed-catalog").await.expect("exists");
+    assert!(exists);
+
+    // An empty write clears it.
+    PublishedListCatalog::write(&mut conn, &[])
+        .await
+        .expect("clear");
+    assert!(
+        PublishedListCatalog::read(&mut conn)
+            .await
+            .expect("read")
+            .is_empty()
+    );
+    let exists: bool = conn.exists("v3-feed-catalog").await.expect("exists");
+    assert!(!exists, "an empty catalog leaves no key");
 }
 
 #[tokio::test]

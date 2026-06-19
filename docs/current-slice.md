@@ -44,10 +44,12 @@ Each crate gets at least one full human pass: read all code, delete dead code, r
 
 #### Add `quality-1y`, `recency-1y`, `quality-4w`, `recency-4w` and make `quality-4w` the default
 
-* [ ] Add `y` (meaning 1 one year window) and `w` (meaning 1 week window) as `Limit` options
-* [ ] in `skeet-appraise` make discovery of `AvailableFeeds` dynamic i.e. it should automatically discovery feeds by naming convention as opposed to a hard-code list
+* [x] Add `y` (meaning 1 one year window) and `w` (meaning 1 week window) as `Limit` options
+* [x] in `skeet-appraise` make discovery of `AvailableFeeds` dynamic i.e. it should automatically discovery feeds by naming convention as opposed to a hard-code list
     * this may require changes in `skeet-publish`
-* [ ] Add `quality-1y`, `recency-1y`, `quality-4w`, `recency-4w` as pregenerated lists
-* [ ] Change default choices for `skeet-feed` to be:
+    * Approach: `skeet-publish` advertises its published lists in a redis SET (`v{N}-feed-catalog`) at startup, keyed by `PublishedList` name (`PublishedListCatalog`). `skeet-appraise` drops its `--publish` args and instead discovers feeds from the catalog **on every home render** (`PublishedListCatalogReader`), so feeds published after appraise started up are picked up without a restart. Appraise sorts the discovered feeds quality-first then ascending window, defaulting to `quality-4w` (falling back to the first feed if absent).
+* [x] Add `quality-1y`, `recency-1y`, `quality-4w`, `recency-4w` as pregenerated lists
+    * Added alongside the existing `recency-48h`/`quality-48h`/`quality-7d` in every place skeet-publish's `--publish` set is configured (k8s deployment, `publish.just`, `local.just`). `quality-7d` was left in place (still selectable in appraise).
+* [x] Change default choices for `skeet-feed` to be:
     * `quality-48h` for bluesky feed (skeleton)
     * `quality-4w` for main homepage

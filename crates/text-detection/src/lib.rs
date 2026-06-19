@@ -308,8 +308,8 @@ mod tests {
             if result.lines.is_empty() {
                 prop_assert_eq!(full, "");
             } else {
-                let parts: Vec<&str> = full.split('\n').collect();
-                prop_assert_eq!(parts.len(), result.lines.len());
+                let line_count = full.split('\n').count();
+                prop_assert_eq!(line_count, result.lines.len());
             }
         }
     }
