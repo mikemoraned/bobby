@@ -81,13 +81,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Limit::hours(48),
     ));
 
-    // The public image page renders the wider `quality-7d` list. Each published
+    // The public image page renders the wider `quality-4w` list. Each published
     // image already carries its dimensions (measured by the publisher's CDN
     // probe), so the feed renders aspect ratios without fetching any image.
     let published_images_source: Arc<dyn PublishedImagesSource> = Arc::new(RedisFeedSource::new(
         args.redis_publish_url,
         Order::Quality,
-        Limit::days(7),
+        Limit::weeks(4),
     ));
 
     let project = FeedProject {

@@ -33,7 +33,7 @@ valkey-cli:
 
 # Publish one cycle from real R2 into local valkey (live Bluesky existence/dimension probes).
 publish-local:
-    RUST_BACKTRACE=1 OTEL_SERVICE_NAME=skeet-publish {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file deploy/bobby-publish-local.env -- cargo run --release --bin skeet-publish -- --store-path {{ R2_STORE }} --redis-publish-url {{ LOCAL_REDIS }} --publish recency-48h --publish quality-48h --publish quality-7d --once
+    RUST_BACKTRACE=1 OTEL_SERVICE_NAME=skeet-publish {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file deploy/bobby-publish-local.env -- cargo run --release --bin skeet-publish -- --store-path {{ R2_STORE }} --redis-publish-url {{ LOCAL_REDIS }} --publish recency-48h --publish quality-48h --publish quality-7d --publish quality-4w --publish recency-4w --publish quality-1y --publish recency-1y --once
 
 # Serve the Bluesky feed + public grid locally, reading the local valkey.
 feed-local:
@@ -41,4 +41,4 @@ feed-local:
 
 # Serve the appraise UI locally (local admin) on :8081, reading local valkey + real R2.
 appraise-local:
-    RUST_BACKTRACE=1 OTEL_SERVICE_NAME=skeet-appraise {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file deploy/bobby-local.env -- cargo run --release --bin skeet-appraise -- --store-path {{ R2_STORE }} --redis-publish-url {{ LOCAL_REDIS }} --local-admin --bind 127.0.0.1:8081 --publish quality-48h --publish quality-7d --publish recency-48h
+    RUST_BACKTRACE=1 OTEL_SERVICE_NAME=skeet-appraise {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file deploy/bobby-local.env -- cargo run --release --bin skeet-appraise -- --store-path {{ R2_STORE }} --redis-publish-url {{ LOCAL_REDIS }} --local-admin --bind 127.0.0.1:8081

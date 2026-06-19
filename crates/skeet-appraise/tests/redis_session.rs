@@ -17,15 +17,14 @@ use common::{extract_query_param, extract_session_cookie, get_with_cookie, mount
 use cot::test::Client;
 use rcgen::{CertificateParams, KeyPair};
 use skeet_appraise::auth_config::OAuthConfig;
-use skeet_appraise::available_feeds::AvailableFeeds;
+use skeet_appraise::available_feeds::PublishedListCatalogReader;
 use skeet_appraise::project::AppraiseProject;
 use skeet_appraise::{
     AppraiserLayer, ModelsLayer, OAuthConfigLayer, PublishedFeedLayer, StartedAtLayer, StoreLayer,
 };
-use skeet_publish::{Limit, Order};
-use test_support::test_models;
 use skeet_store::test_utils::{make_record, open_temp_store};
 use skeet_store::{ModelVersion, Score, SkeetStore};
+use test_support::test_models;
 use testcontainers::core::{IntoContainerPort, WaitFor};
 use testcontainers::runners::AsyncRunner;
 use testcontainers::{ContainerAsync, CopyTargetOptions, GenericImage, ImageExt};
@@ -51,10 +50,9 @@ async fn oauth_client_with_redis(
         mock_server.uri().to_string(),
     );
     let project = AppraiseProject {
-        published_feed_layer: PublishedFeedLayer::new(Arc::new(
-            AvailableFeeds::new(DUMMY_PUBLISH_URL, vec![(Order::Quality, Limit::hours(48))])
-                .expect("one feed"),
-        )),
+        published_feed_layer: PublishedFeedLayer::new(Arc::new(PublishedListCatalogReader::new(
+            DUMMY_PUBLISH_URL,
+        ))),
         store_layer: StoreLayer::from_shared(store),
         models_layer: ModelsLayer::from_shared(test_models()),
         appraiser_layer: AppraiserLayer::new(None),
@@ -156,7 +154,9 @@ async fn start_redis_with_tls() -> (ContainerAsync<GenericImage>, String) {
             "--tls-auth-clients",
             "no",
         ])
-        .with_ready_conditions(vec![WaitFor::message_on_stdout("Ready to accept connections")])
+        .with_ready_conditions(vec![WaitFor::message_on_stdout(
+            "Ready to accept connections",
+        )])
         .start()
         .await
         .expect("start Redis TLS container");

@@ -1,9 +1,9 @@
 use lancedb::table::{CompactionOptions, OptimizeAction};
 use tracing::{info, instrument};
 
+use crate::StoreError;
 use crate::health;
 use crate::schema::TABLE_NAME;
-use crate::StoreError;
 
 // images_table stores ~2MB PNG blobs per row. Lance's compaction planner
 // treats any fragment with physical_rows < target_rows_per_fragment as a
@@ -43,9 +43,7 @@ impl super::SkeetStore {
     /// All `(name, table, compact_options)` triples drawn from the
     /// `SkeetStore::tables` registry. Single source of truth for which tables
     /// a maintenance op walks.
-    fn maintenance_tables(
-        &self,
-    ) -> Vec<(&'static str, &lancedb::Table, CompactionOptions)> {
+    fn maintenance_tables(&self) -> Vec<(&'static str, &lancedb::Table, CompactionOptions)> {
         self.tables
             .iter()
             .map(|(name, table)| (*name, table, compact_options_for(name)))

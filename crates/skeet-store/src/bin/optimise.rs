@@ -5,7 +5,9 @@ use skeet_store::{StoreArgs, StoreMetrics};
 use tracing::info;
 
 #[derive(Parser)]
-#[command(about = "Optimise a LanceDB store: compact fragments, rebuild indices, prune old versions")]
+#[command(
+    about = "Optimise a LanceDB store: compact fragments, rebuild indices, prune old versions"
+)]
 struct Args {
     #[command(flatten)]
     store: StoreArgs,

@@ -1,5 +1,5 @@
-use burn::prelude::*;
 use burn::backend::NdArray;
+use burn::prelude::*;
 
 type B = NdArray;
 
@@ -36,7 +36,20 @@ pub fn decode_and_filter(
     score_threshold: f32,
     nms_iou_threshold: f32,
 ) -> Vec<Detection> {
-    let (cls_8, cls_16, cls_32, obj_8, obj_16, obj_32, bbox_8, bbox_16, bbox_32, kps_8, kps_16, kps_32) = outputs;
+    let (
+        cls_8,
+        cls_16,
+        cls_32,
+        obj_8,
+        obj_16,
+        obj_32,
+        bbox_8,
+        bbox_16,
+        bbox_32,
+        kps_8,
+        kps_16,
+        kps_32,
+    ) = outputs;
 
     let cls = [cls_8, cls_16, cls_32];
     let obj = [obj_8, obj_16, obj_32];
@@ -107,7 +120,11 @@ fn tensor_to_vec_2d(tensor: &Tensor<B, 3>, cols: usize) -> Vec<Vec<f32>> {
 }
 
 fn nms(detections: &mut [Detection], iou_threshold: f32) -> Vec<Detection> {
-    detections.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    detections.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let mut keep = Vec::new();
     let mut suppressed = vec![false; detections.len()];

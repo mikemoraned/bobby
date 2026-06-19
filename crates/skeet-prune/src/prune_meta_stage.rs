@@ -1,5 +1,5 @@
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use serde_json::Value;
 use shared::Rejection;
@@ -39,20 +39,25 @@ pub async fn run(
         counters.meta.fetch_add(1, Ordering::Relaxed);
         let image_count = candidate.images.len() as u64;
 
-        let (result, passed) =
-            match bluesky::fetch_post_thread(&http, &candidate.skeet_id).await {
-                Ok(json) => match check_metadata(&json) {
-                    MetaFilterOutcome::Pass => (MetaResult::Candidate(candidate), true),
-                    MetaFilterOutcome::Blocked(reason) => {
-                        trace!(skeet_id = %candidate.skeet_id, reason, "blocked by metadata");
-                        (MetaResult::Rejected(vec![Rejection::BlockedByMetadata]), false)
-                    }
-                },
-                Err(e) => {
-                    trace!(skeet_id = %candidate.skeet_id, error = %e, "failed to fetch post metadata, rejecting");
-                    (MetaResult::Rejected(vec![Rejection::BlockedByMetadata]), false)
+        let (result, passed) = match bluesky::fetch_post_thread(&http, &candidate.skeet_id).await {
+            Ok(json) => match check_metadata(&json) {
+                MetaFilterOutcome::Pass => (MetaResult::Candidate(candidate), true),
+                MetaFilterOutcome::Blocked(reason) => {
+                    trace!(skeet_id = %candidate.skeet_id, reason, "blocked by metadata");
+                    (
+                        MetaResult::Rejected(vec![Rejection::BlockedByMetadata]),
+                        false,
+                    )
                 }
-            };
+            },
+            Err(e) => {
+                trace!(skeet_id = %candidate.skeet_id, error = %e, "failed to fetch post metadata, rejecting");
+                (
+                    MetaResult::Rejected(vec![Rejection::BlockedByMetadata]),
+                    false,
+                )
+            }
+        };
 
         if tx.send(result).await.is_err() {
             warn!("downstream dropped, shutting down meta filter");

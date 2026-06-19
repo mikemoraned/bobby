@@ -7,7 +7,9 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use image::DynamicImage;
 use rig::agent::{Agent, AgentBuilder};
 use rig::client::CompletionClient;
-use rig::completion::message::{AssistantContent, ImageDetail, ImageMediaType, Message, UserContent};
+use rig::completion::message::{
+    AssistantContent, ImageDetail, ImageMediaType, Message, UserContent,
+};
 use rig::completion::{Completion, Usage};
 use rig::one_or_many::OneOrMany;
 use rig::providers::openai;
@@ -69,7 +71,10 @@ fn parse_score(response: &str) -> Result<Score, RefineError> {
     // Accept either the requested `{"score": X}` object or a bare numeric
     // response `X` — some models drift to returning the number alone.
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(json_str)
-        && let Some(score) = v.get("score").and_then(|s| s.as_f64()).or_else(|| v.as_f64())
+        && let Some(score) = v
+            .get("score")
+            .and_then(|s| s.as_f64())
+            .or_else(|| v.as_f64())
     {
         return Score::new(score as f32).map_err(|e| RefineError::ParseScore(e.to_string()));
     }
@@ -191,10 +196,7 @@ fn fallback_score(duration: Duration) -> ResilientScore {
 /// `duration` measures total wall time including any backoff sleeps and
 /// failed attempts — the operation-level latency, not the last attempt's.
 #[instrument(skip(agent, image))]
-pub async fn refine_image_resilient(
-    agent: &RefineAgent,
-    image: &DynamicImage,
-) -> ResilientScore {
+pub async fn refine_image_resilient(agent: &RefineAgent, image: &DynamicImage) -> ResilientScore {
     let start = Instant::now();
     let result = retry_refine_call(default_retry_policy(), || refine_image(agent, image)).await;
     let duration = start.elapsed();
@@ -253,8 +255,7 @@ pub fn build_agent(
 // a startup configuration error, surfaced immediately when the binary builds its client.
 #[allow(clippy::expect_used)]
 pub fn create_client(api_key: &str) -> openai::client::CompletionsClient {
-    openai::client::CompletionsClient::new(api_key)
-        .expect("failed to create OpenAI client")
+    openai::client::CompletionsClient::new(api_key).expect("failed to create OpenAI client")
 }
 
 pub const SEED_PROMPT: &str = r#"You are an image scoring assistant for a project that finds selfies taken by people with recognizable physical landmarks (famous buildings, monuments, places like the Eiffel Tower, Statue of Liberty, Big Ben, etc.).

@@ -9,13 +9,13 @@
 
 use std::time::Duration;
 
+use bluesky::ImageUrl;
 use chrono::Utc;
 use deadpool_redis::redis::{self, AsyncCommands};
-use bluesky::ImageUrl;
 use shared::{BlueskyCid, ImageId};
 use skeet_publish::{
     ExaminedCount, FeedSource, Limit, Order, PublishedImage, PublishedImagesSource, PublishedList,
-    RedisFeedSource,
+    PublishedListCatalog, RedisFeedSource,
 };
 use skeet_store::SkeetId;
 use testcontainers::ContainerAsync;
@@ -24,7 +24,10 @@ use testcontainers_modules::redis::{REDIS_PORT, Redis};
 use tokio::time::{Instant, sleep};
 
 async fn start_redis() -> (ContainerAsync<Redis>, redis::aio::MultiplexedConnection) {
-    let container = Redis::default().start().await.expect("start redis container");
+    let container = Redis::default()
+        .start()
+        .await
+        .expect("start redis container");
     let host = container.get_host().await.expect("get host");
     let port = container
         .get_host_port_ipv4(REDIS_PORT)
@@ -86,7 +89,9 @@ async fn write_then_read_roundtrips_in_order_docker() {
     let list = PublishedList::new(Order::Recency, Limit::hours(48));
 
     let pairs = vec![pair("rk1", CID_1), pair("rk2", CID_2), pair("rk3", CID_3)];
-    list.replace(&mut conn, &pairs, Utc::now()).await.expect("replace");
+    list.replace(&mut conn, &pairs, Utc::now())
+        .await
+        .expect("replace");
 
     let read = list.read(&mut conn).await.expect("read");
     assert_eq!(read, pairs, "read back the same pairs in the same order");
@@ -102,17 +107,24 @@ async fn replace_swaps_atomically_leaving_no_remnants_docker() {
     let list = PublishedList::new(Order::Recency, Limit::hours(48));
 
     let first = vec![pair("rk1", CID_1), pair("rk2", CID_2)];
-    list.replace(&mut conn, &first, Utc::now()).await.expect("first replace");
+    list.replace(&mut conn, &first, Utc::now())
+        .await
+        .expect("first replace");
 
     // A shorter second list must fully overwrite the first — no stale tail.
     let second = vec![pair("rk9", CID_4)];
-    list.replace(&mut conn, &second, Utc::now()).await.expect("second replace");
+    list.replace(&mut conn, &second, Utc::now())
+        .await
+        .expect("second replace");
 
     let read = list.read(&mut conn).await.expect("read");
     assert_eq!(read, second);
 
     // The scratch key used during the swap is gone.
-    let leftover: bool = conn.exists("v3-recency-48h:building").await.expect("exists");
+    let leftover: bool = conn
+        .exists("v3-recency-48h:building")
+        .await
+        .expect("exists");
     assert!(!leftover, "scratch key should not survive a replace");
 }
 
@@ -124,7 +136,9 @@ async fn empty_replace_clears_the_list_docker() {
     list.replace(&mut conn, &[pair("rk1", CID_1)], Utc::now())
         .await
         .expect("seed");
-    list.replace(&mut conn, &[], Utc::now()).await.expect("clear");
+    list.replace(&mut conn, &[], Utc::now())
+        .await
+        .expect("clear");
 
     let read = list.read(&mut conn).await.expect("read");
     assert!(read.is_empty());
@@ -140,16 +154,27 @@ async fn distinct_names_do_not_collide_docker() {
 
     let short_pairs = vec![pair("rk1", CID_1)];
     let long_pairs = vec![pair("rk2", CID_2), pair("rk3", CID_3)];
-    short.replace(&mut conn, &short_pairs, Utc::now()).await.expect("short");
-    long.replace(&mut conn, &long_pairs, Utc::now()).await.expect("long");
+    short
+        .replace(&mut conn, &short_pairs, Utc::now())
+        .await
+        .expect("short");
+    long.replace(&mut conn, &long_pairs, Utc::now())
+        .await
+        .expect("long");
 
-    assert_eq!(short.read(&mut conn).await.expect("read short"), short_pairs);
+    assert_eq!(
+        short.read(&mut conn).await.expect("read short"),
+        short_pairs
+    );
     assert_eq!(long.read(&mut conn).await.expect("read long"), long_pairs);
 }
 
 #[tokio::test]
 async fn readers_filter_missing_items_but_published_keeps_them_docker() {
-    let container = Redis::default().start().await.expect("start redis container");
+    let container = Redis::default()
+        .start()
+        .await
+        .expect("start redis container");
     let host = container.get_host().await.expect("get host");
     let port = container
         .get_host_port_ipv4(REDIS_PORT)
@@ -165,7 +190,9 @@ async fn readers_filter_missing_items_but_published_keeps_them_docker() {
     let mut skeet_gone = pair("skeetgone", CID_3);
     skeet_gone.skeet_id_exists = false;
     let pairs = vec![present, image_gone, skeet_gone];
-    list.replace(&mut conn, &pairs, Utc::now()).await.expect("replace");
+    list.replace(&mut conn, &pairs, Utc::now())
+        .await
+        .expect("replace");
 
     let reader = RedisFeedSource::new(url, Order::Recency, Limit::hours(48));
 
@@ -199,11 +226,68 @@ async fn examined_count_roundtrips_and_is_absent_before_first_write_docker() {
     assert_eq!(ExaminedCount::read(&mut conn).await.expect("read"), None);
 
     ExaminedCount::write(&mut conn, 42).await.expect("write");
-    assert_eq!(ExaminedCount::read(&mut conn).await.expect("read"), Some(42));
+    assert_eq!(
+        ExaminedCount::read(&mut conn).await.expect("read"),
+        Some(42)
+    );
 
     // It lives under the version-prefixed key.
     let exists: bool = conn.exists("v3-examined-count").await.expect("exists");
     assert!(exists);
+}
+
+#[tokio::test]
+async fn published_list_catalog_roundtrips_as_a_set_docker() {
+    let (_container, mut conn) = start_redis().await;
+
+    // Empty before the publisher advertises anything.
+    assert!(
+        PublishedListCatalog::read(&mut conn)
+            .await
+            .expect("read")
+            .is_empty()
+    );
+
+    let lists = vec![
+        PublishedList::new(Order::Quality, Limit::weeks(4)),
+        PublishedList::new(Order::Recency, Limit::hours(48)),
+        PublishedList::new(Order::Quality, Limit::years(1)),
+    ];
+    PublishedListCatalog::write(&mut conn, &lists)
+        .await
+        .expect("write");
+
+    // Membership matches regardless of order (it's a set).
+    let mut read: Vec<String> = PublishedListCatalog::read(&mut conn)
+        .await
+        .expect("read")
+        .iter()
+        .map(PublishedList::name)
+        .collect();
+    read.sort();
+    let mut expected: Vec<String> = lists.iter().map(PublishedList::name).collect();
+    expected.sort();
+    assert_eq!(read, expected);
+
+    // Members are the published-list keys (version-prefixed).
+    assert!(expected.iter().all(|n| n.starts_with("v3-")));
+
+    // The catalog itself lives under the version-prefixed key.
+    let exists: bool = conn.exists("v3-feed-catalog").await.expect("exists");
+    assert!(exists);
+
+    // An empty write clears it.
+    PublishedListCatalog::write(&mut conn, &[])
+        .await
+        .expect("clear");
+    assert!(
+        PublishedListCatalog::read(&mut conn)
+            .await
+            .expect("read")
+            .is_empty()
+    );
+    let exists: bool = conn.exists("v3-feed-catalog").await.expect("exists");
+    assert!(!exists, "an empty catalog leaves no key");
 }
 
 #[tokio::test]
@@ -212,7 +296,12 @@ async fn refreshed_at_is_recorded_on_replace_docker() {
     let list = PublishedList::new(Order::Recency, Limit::hours(48));
 
     // Absent before the first publish.
-    assert!(list.refreshed_at(&mut conn).await.expect("read ts").is_none());
+    assert!(
+        list.refreshed_at(&mut conn)
+            .await
+            .expect("read ts")
+            .is_none()
+    );
 
     let when = Utc::now();
     list.replace(&mut conn, &[pair("rk1", CID_1)], when)

@@ -13,5 +13,4 @@ pub use published_images_source::{PublishedImagesSourceExtractor, PublishedImage
 /// The one canonical description of the feed, shared by the Bluesky feed
 /// registration (`register-feed`'s `--description`) and the website banner so
 /// the two can't drift.
-pub const FEED_BLURB: &str =
-    "Selfies people take with landmarks — famous buildings, monuments and places — found on Bluesky.";
+pub const FEED_BLURB: &str = "Selfies people take with landmarks — famous buildings, monuments and places — found on Bluesky.";

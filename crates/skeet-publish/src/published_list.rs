@@ -4,6 +4,7 @@ use deadpool_redis::redis;
 use crate::limit::Limit;
 use crate::order::Order;
 use crate::published::{PublishedImage, SCHEMA_VERSION};
+use crate::spec::{InvalidSpec, parse_spec};
 
 /// A published redis list, identified by its `{order}-{limit}` name (e.g.
 /// `recency-48h`), with the read/write helpers both the publisher and
@@ -24,9 +25,34 @@ pub enum PublishedListError {
     Json(#[from] serde_json::Error),
 }
 
+/// A string that isn't a valid published-list key (as produced by
+/// [`PublishedList::name`]).
+#[derive(Debug, thiserror::Error)]
+pub enum InvalidListName {
+    #[error("not a published-list key (missing version prefix): \"{0}\"")]
+    WrongVersion(String),
+    #[error(transparent)]
+    Spec(#[from] InvalidSpec),
+}
+
 impl PublishedList {
     pub const fn new(order: Order, limit: Limit) -> Self {
         Self { order, limit }
+    }
+
+    /// This list's `(order, limit)` spec.
+    pub const fn spec(&self) -> (Order, Limit) {
+        (self.order, self.limit)
+    }
+
+    /// Parse a list key `{version}-{order}-{limit}` (as produced by
+    /// [`Self::name`]) back into a `PublishedList`. The inverse of [`Self::name`].
+    pub fn from_name(name: &str) -> Result<Self, InvalidListName> {
+        let spec = name
+            .strip_prefix(&format!("{SCHEMA_VERSION}-"))
+            .ok_or_else(|| InvalidListName::WrongVersion(name.to_string()))?;
+        let (order, limit) = parse_spec(spec)?;
+        Ok(Self::new(order, limit))
     }
 
     /// The redis key for this list: `{version}-{order}-{limit}`, e.g.
@@ -202,5 +228,30 @@ mod tests {
     fn building_key_is_distinct_from_name() {
         let list = PublishedList::new(Order::Recency, Limit::days(7));
         assert_ne!(list.building_key(), list.name());
+    }
+
+    #[test]
+    fn name_roundtrips_through_from_name() {
+        for spec in [
+            (Order::Recency, Limit::hours(48)),
+            (Order::Quality, Limit::weeks(4)),
+            (Order::Quality, Limit::years(1)),
+        ] {
+            let list = PublishedList::new(spec.0, spec.1);
+            let parsed = PublishedList::from_name(&list.name()).expect("roundtrip");
+            assert_eq!(parsed.spec(), spec);
+        }
+    }
+
+    #[test]
+    fn from_name_rejects_wrong_prefix_or_spec() {
+        assert!(matches!(
+            PublishedList::from_name("quality-4w"),
+            Err(InvalidListName::WrongVersion(_))
+        ));
+        assert!(matches!(
+            PublishedList::from_name("v3-bogus-4w"),
+            Err(InvalidListName::Spec(_))
+        ));
     }
 }

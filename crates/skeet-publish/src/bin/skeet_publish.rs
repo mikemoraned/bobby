@@ -4,13 +4,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use bluesky::CdnExistenceChecker;
 use chrono::Utc;
 use clap::Parser;
 use shared::RefineModels;
-use bluesky::CdnExistenceChecker;
 use skeet_publish::{
     CdnImageUrlResolver, FeedPublisher, Limit, Order, PublishMetrics, PublishOutcome,
-    PublishedList, connect, parse_spec,
+    PublishedList, PublishedListCatalog, connect, parse_spec,
 };
 use skeet_store::StoreArgs;
 use tracing::{info, warn};
@@ -92,6 +92,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         specs.clone(),
     );
     let metrics = PublishMetrics::new(&opentelemetry::global::meter("skeet_publish"));
+
+    // Advertise the published feeds so consumers (skeet-appraise) can discover
+    // them. The set is fixed for the process lifetime, so writing it once at
+    // startup is enough and is independent of the change-gated publish loop.
+    {
+        let lists: Vec<PublishedList> = specs
+            .iter()
+            .map(|&(order, limit)| PublishedList::new(order, limit))
+            .collect();
+        let mut conn = connect(&args.redis_publish_url).await?;
+        PublishedListCatalog::write(&mut conn, &lists).await?;
+        info!(catalog = ?args.publish, "wrote feed catalog");
+    }
 
     // `--once` runs a single cycle (and on a fresh publisher the gate always
     // fires, so it publishes); the loop gates on table-version changes so an

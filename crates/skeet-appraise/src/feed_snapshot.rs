@@ -8,7 +8,7 @@ use skeet_publish::effective_band::{image_effective_band, skeet_effective_band};
 use skeet_publish::{Limit, Order};
 use skeet_store::{Score, SkeetId, SkeetStore, StoreError};
 
-use crate::available_feeds::{AvailableFeeds, FeedOption, UnknownFeed};
+use crate::available_feeds::{AvailableFeeds, FeedOption, PublishedListCatalogReader, UnknownFeed};
 
 pub struct FeedItem {
     pub skeet_id: SkeetId,
@@ -39,10 +39,11 @@ pub struct FeedSnapshot {
 ///
 /// Handlers depend on this one extractor instead of the feeds/store/models trio,
 /// so adding a new input to snapshot loading happens here, not in every handler
-/// that renders one. The published list to read is chosen per request (see
-/// [`FeedSnapshotSource::load`]) from the configured [`AvailableFeeds`].
+/// that renders one. The available feeds are discovered fresh per request from
+/// the publisher's catalog (so feeds published after startup are picked up), and
+/// the published list to read is chosen from them (see [`FeedSnapshotSource::load`]).
 pub struct FeedSnapshotSource {
-    feeds: Arc<AvailableFeeds>,
+    feeds: AvailableFeeds,
     store: Arc<SkeetStore>,
     models: Arc<RefineModels>,
 }
@@ -50,12 +51,19 @@ pub struct FeedSnapshotSource {
 impl FromRequestHead for FeedSnapshotSource {
     async fn from_request_head(head: &RequestHead) -> cot::Result<Self> {
         let get = |missing: &'static str| move || cot::Error::internal(missing);
+        let reader = head
+            .extensions
+            .get::<Arc<PublishedListCatalogReader>>()
+            .cloned()
+            .ok_or_else(get(
+                "PublishedListCatalogReader not found in request extensions",
+            ))?;
+        let feeds = reader
+            .discover()
+            .await
+            .map_err(|e| cot::Error::internal(format!("discovering feeds: {e}")))?;
         Ok(Self {
-            feeds: head
-                .extensions
-                .get::<Arc<AvailableFeeds>>()
-                .cloned()
-                .ok_or_else(get("AvailableFeeds not found in request extensions"))?,
+            feeds,
             store: head
                 .extensions
                 .get::<Arc<SkeetStore>>()

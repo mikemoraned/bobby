@@ -247,10 +247,7 @@ async fn list_unscored_returns_images_without_scores() {
         .await
         .unwrap();
 
-    let unscored = store
-        .list_unscored_image_ids(None)
-        .await
-        .unwrap();
+    let unscored = store.list_unscored_image_ids(None).await.unwrap();
     assert_eq!(unscored.len(), 2);
     assert!(unscored.contains(&r2.image_id));
     assert!(unscored.contains(&r3.image_id));
@@ -296,10 +293,7 @@ async fn list_unscored_with_since_filter_returns_only_newer() {
     store.add(&r_new).await.unwrap();
 
     let cutoff = DiscoveredAt::new(t_mid);
-    let unscored = store
-        .list_unscored_image_ids(Some(&cutoff))
-        .await
-        .unwrap();
+    let unscored = store.list_unscored_image_ids(Some(&cutoff)).await.unwrap();
 
     assert_eq!(unscored.len(), 2, "rows at or after cutoff");
     assert!(unscored.contains(&r_new.image_id));
@@ -535,7 +529,11 @@ async fn batch_upsert_scores_version_increments_by_one() {
         .await
         .unwrap();
     let version_after = f.store.scores_table.version().await.unwrap();
-    assert_eq!(version_after - version_before, 1, "batch_upsert_scores must produce exactly one commit regardless of batch size");
+    assert_eq!(
+        version_after - version_before,
+        1,
+        "batch_upsert_scores must produce exactly one commit regardless of batch size"
+    );
 }
 
 fn test_appraiser() -> Appraiser {
@@ -991,7 +989,8 @@ async fn list_scored_summaries_published_since_windows_by_original_at_and_requir
         .list_scored_summaries_published_since(now - chrono::Duration::hours(100), &known(&[&mv]))
         .await
         .unwrap();
-    let ids: std::collections::HashSet<_> = wider.iter().map(|(s, _, _)| s.image_id.clone()).collect();
+    let ids: std::collections::HashSet<_> =
+        wider.iter().map(|(s, _, _)| s.image_id.clone()).collect();
     assert_eq!(wider.len(), 2);
     assert!(ids.contains(&old.image_id));
     assert!(ids.contains(&recent.image_id));
@@ -1025,7 +1024,11 @@ async fn count_scored_images_counts_distinct_known_version_scores() {
     let unknown = scored_record("c", (0, 0, 10), OriginalAt::new(now));
     store.add(&unknown).await.unwrap();
     store
-        .upsert_score(&unknown.image_id, &Score::new(0.9).expect("valid"), &unknown_mv)
+        .upsert_score(
+            &unknown.image_id,
+            &Score::new(0.9).expect("valid"),
+            &unknown_mv,
+        )
         .await
         .unwrap();
 
@@ -1051,7 +1054,11 @@ async fn score_reads_discard_unknown_model_versions() {
     let dropped = scored_record("unknown_score", (0, 10, 0), OriginalAt::new(now));
     store.add(&dropped).await.unwrap();
     store
-        .upsert_score(&dropped.image_id, &Score::new(0.9).expect("valid"), &unknown_mv)
+        .upsert_score(
+            &dropped.image_id,
+            &Score::new(0.9).expect("valid"),
+            &unknown_mv,
+        )
         .await
         .unwrap();
 

@@ -20,7 +20,10 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     shared::tracing::init("info");
-    info!(git_hash = env!("BUILD_GIT_HASH"), "add-to-blocklist starting");
+    info!(
+        git_hash = env!("BUILD_GIT_HASH"),
+        "add-to-blocklist starting"
+    );
 
     let args = Args::parse();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -39,8 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(path = %json_path.display(), "saved JSON");
 
     let toml_path = blocklist_dir.join("blocklist.toml");
-    let mut config = shared::BlocklistConfig::from_file(&toml_path)
-        .unwrap_or_default();
+    let mut config = shared::BlocklistConfig::from_file(&toml_path).unwrap_or_default();
 
     let entry = shared::BlockedEntry {
         skeet_id,

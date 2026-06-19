@@ -140,7 +140,10 @@ pub async fn fetch_r2_operations(
 
     let response: GraphQLResponse = client
         .post(GRAPHQL_ENDPOINT)
-        .header(reqwest::header::AUTHORIZATION, format!("Bearer {}", api_token.as_str()))
+        .header(
+            reqwest::header::AUTHORIZATION,
+            format!("Bearer {}", api_token.as_str()),
+        )
         .json(&body)
         .send()
         .await?

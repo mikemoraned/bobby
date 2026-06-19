@@ -18,11 +18,7 @@ pub struct OAuthConfig {
 }
 
 impl OAuthConfig {
-    pub fn new(
-        client_id: String,
-        client_secret: String,
-        admin_users: Vec<String>,
-    ) -> Self {
+    pub fn new(client_id: String, client_secret: String, admin_users: Vec<String>) -> Self {
         Self::with_urls(
             client_id,
             client_secret,
@@ -54,12 +50,17 @@ impl OAuthConfig {
     // The auth/token URLs come from fixed configuration; a malformed value is a startup
     // configuration error surfaced when the OAuth client is first built.
     #[allow(clippy::expect_used)]
-    pub fn build_client(&self, redirect_url: &str) -> BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet> {
+    pub fn build_client(
+        &self,
+        redirect_url: &str,
+    ) -> BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet> {
         BasicClient::new(ClientId::new(self.client_id.clone()))
             .set_client_secret(ClientSecret::new(self.client_secret.clone()))
             .set_auth_uri(AuthUrl::new(self.auth_url.clone()).expect("valid auth URL"))
             .set_token_uri(TokenUrl::new(self.token_url.clone()).expect("valid token URL"))
-            .set_redirect_uri(RedirectUrl::new(redirect_url.to_string()).expect("valid redirect URL"))
+            .set_redirect_uri(
+                RedirectUrl::new(redirect_url.to_string()).expect("valid redirect URL"),
+            )
     }
 
     pub fn is_allowed(&self, username: &str) -> bool {

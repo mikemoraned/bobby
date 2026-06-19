@@ -49,7 +49,10 @@ async fn spawn_server() -> TestServer {
         };
     }
 
-    let container = Redis::default().start().await.expect("start redis container");
+    let container = Redis::default()
+        .start()
+        .await
+        .expect("start redis container");
     let host = container.get_host().await.expect("redis host");
     let redis_port = container
         .get_host_port_ipv4(REDIS_PORT)
@@ -108,17 +111,12 @@ async fn wait_redis_ready(url: &str) {
 
 fn pick_free_port() -> u16 {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
-    listener
-        .local_addr()
-        .expect("local addr")
-        .port()
+    listener.local_addr().expect("local addr").port()
 }
 
 async fn discover_feed_uri(client: &reqwest::Client, base: &str) -> String {
     let resp = client
-        .get(format!(
-            "{base}/xrpc/app.bsky.feed.describeFeedGenerator"
-        ))
+        .get(format!("{base}/xrpc/app.bsky.feed.describeFeedGenerator"))
         .send()
         .await
         .expect("describeFeedGenerator request");
@@ -126,7 +124,10 @@ async fn discover_feed_uri(client: &reqwest::Client, base: &str) -> String {
 
     let body: serde_json::Value = resp.json().await.expect("valid json");
     let feeds = body["feeds"].as_array().expect("feeds array");
-    assert!(!feeds.is_empty(), "server should advertise at least one feed");
+    assert!(
+        !feeds.is_empty(),
+        "server should advertise at least one feed"
+    );
     feeds[0]["uri"]
         .as_str()
         .expect("feed uri is a string")
@@ -140,9 +141,7 @@ async fn describe_feed_generator_returns_feed_docker() {
     let client = reqwest::Client::new();
 
     let resp = client
-        .get(format!(
-            "{base}/xrpc/app.bsky.feed.describeFeedGenerator"
-        ))
+        .get(format!("{base}/xrpc/app.bsky.feed.describeFeedGenerator"))
         .send()
         .await
         .expect("request failed");
@@ -205,10 +204,7 @@ async fn get_feed_skeleton_with_discovered_uri_docker() {
     );
 
     let body: serde_json::Value = resp.json().await.expect("valid json");
-    assert!(
-        body["feed"].is_array(),
-        "response should have a feed array"
-    );
+    assert!(body["feed"].is_array(), "response should have a feed array");
 }
 
 #[tokio::test]

@@ -57,8 +57,14 @@ mod tests {
         let (metrics, provider, exporter) = make_test_metrics();
         metrics.record_fragment_counts(&[("images_v6", 64), ("images_score_v2", 4)]);
         let snap = flush_and_collect(&provider, &exporter);
-        assert_eq!(snap.last_gauge_u64("lance.table.fragments", Some(("table", "images_v6"))), 64);
-        assert_eq!(snap.last_gauge_u64("lance.table.fragments", Some(("table", "images_score_v2"))), 4);
+        assert_eq!(
+            snap.last_gauge_u64("lance.table.fragments", Some(("table", "images_v6"))),
+            64
+        );
+        assert_eq!(
+            snap.last_gauge_u64("lance.table.fragments", Some(("table", "images_score_v2"))),
+            4
+        );
     }
 
     #[test]
@@ -66,7 +72,13 @@ mod tests {
         let (metrics, provider, exporter) = make_test_metrics();
         metrics.record_table_versions(&[("images_v6", 42), ("images_score_v2", 7)]);
         let snap = flush_and_collect(&provider, &exporter);
-        assert_eq!(snap.last_gauge_u64("lance.table.version", Some(("table", "images_v6"))), 42);
-        assert_eq!(snap.last_gauge_u64("lance.table.version", Some(("table", "images_score_v2"))), 7);
+        assert_eq!(
+            snap.last_gauge_u64("lance.table.version", Some(("table", "images_v6"))),
+            42
+        );
+        assert_eq!(
+            snap.last_gauge_u64("lance.table.version", Some(("table", "images_score_v2"))),
+            7
+        );
     }
 }

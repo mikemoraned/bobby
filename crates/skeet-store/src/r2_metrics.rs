@@ -11,7 +11,10 @@ use object_store::{
     GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, PutMultipartOptions,
     PutOptions, PutPayload, PutResult, Result as OSResult,
 };
-use opentelemetry::{KeyValue, metrics::{Counter, Histogram}};
+use opentelemetry::{
+    KeyValue,
+    metrics::{Counter, Histogram},
+};
 
 /// Implements [`WrappingObjectStore`] to count R2 API operations via OTel metrics.
 ///
@@ -153,7 +156,9 @@ impl<'a> MetricsRecorder<'a> {
 #[async_trait]
 impl object_store::ObjectStore for CountingObjectStore {
     async fn put(&self, location: &Path, payload: PutPayload) -> OSResult<PutResult> {
-        let recorder = self.recorder(location, "put", "A").add_bytes(payload.content_length() as u64);
+        let recorder = self
+            .recorder(location, "put", "A")
+            .add_bytes(payload.content_length() as u64);
         let result = self.inner.put(location, payload).await;
         recorder.completed();
         result
@@ -165,7 +170,9 @@ impl object_store::ObjectStore for CountingObjectStore {
         payload: PutPayload,
         opts: PutOptions,
     ) -> OSResult<PutResult> {
-        let recorder = self.recorder(location, "put", "A").add_bytes(payload.content_length() as u64);
+        let recorder = self
+            .recorder(location, "put", "A")
+            .add_bytes(payload.content_length() as u64);
         let result = self.inner.put_opts(location, payload, opts).await;
         recorder.completed();
         result
@@ -204,18 +211,18 @@ impl object_store::ObjectStore for CountingObjectStore {
     }
 
     async fn get_range(&self, location: &Path, range: Range<u64>) -> OSResult<Bytes> {
-        let recorder = self.recorder(location, "get_range", "B").add_bytes(bytes_for_range(&range));
+        let recorder = self
+            .recorder(location, "get_range", "B")
+            .add_bytes(bytes_for_range(&range));
         let result = self.inner.get_range(location, range).await;
         recorder.completed();
         result
     }
 
-    async fn get_ranges(
-        &self,
-        location: &Path,
-        ranges: &[Range<u64>],
-    ) -> OSResult<Vec<Bytes>> {
-        let recorder = self.recorder(location, "get_ranges", "B").add_bytes(bytes_for_ranges(ranges));
+    async fn get_ranges(&self, location: &Path, ranges: &[Range<u64>]) -> OSResult<Vec<Bytes>> {
+        let recorder = self
+            .recorder(location, "get_ranges", "B")
+            .add_bytes(bytes_for_ranges(ranges));
         let result = self.inner.get_ranges(location, ranges).await;
         recorder.completed();
         result
@@ -340,17 +347,13 @@ fn kind_from_path(location: &Path) -> &'static str {
 mod tests {
     use super::*;
     use bytes::Bytes;
-    use object_store::memory::InMemory;
     use object_store::ObjectStore;
+    use object_store::memory::InMemory;
     use opentelemetry::metrics::MeterProvider;
     use opentelemetry_sdk::metrics::{InMemoryMetricExporter, SdkMeterProvider};
     use test_support::{histogram_observation_count, sum_counter};
 
-    fn make_test_wrapper() -> (
-        R2MetricsWrapper,
-        SdkMeterProvider,
-        InMemoryMetricExporter,
-    ) {
+    fn make_test_wrapper() -> (R2MetricsWrapper, SdkMeterProvider, InMemoryMetricExporter) {
         let exporter = InMemoryMetricExporter::default();
         let provider = SdkMeterProvider::builder()
             .with_periodic_exporter(exporter.clone())
@@ -363,7 +366,9 @@ mod tests {
     #[test]
     fn table_from_path_extracts_lance_segment() {
         assert_eq!(
-            table_from_path(&Path::from("encrypted-store/images_v6.lance/data/abc.lance")),
+            table_from_path(&Path::from(
+                "encrypted-store/images_v6.lance/data/abc.lance"
+            )),
             "images_v6.lance"
         );
     }
@@ -384,7 +389,9 @@ mod tests {
     #[test]
     fn kind_from_path_data_segment() {
         assert_eq!(
-            kind_from_path(&Path::from("encrypted-store/images_v6.lance/data/abc.lance")),
+            kind_from_path(&Path::from(
+                "encrypted-store/images_v6.lance/data/abc.lance"
+            )),
             "data"
         );
     }
@@ -531,7 +538,11 @@ mod tests {
         let path = Path::from("test-object");
 
         store
-            .put_opts(&path, Bytes::from(vec![0u8; 17]).into(), PutOptions::default())
+            .put_opts(
+                &path,
+                Bytes::from(vec![0u8; 17]).into(),
+                PutOptions::default(),
+            )
             .await
             .unwrap();
 
@@ -552,6 +563,9 @@ mod tests {
         store.get_range(&path, 0u64..50u64).await.unwrap();
         store.get_range(&path, 50u64..100u64).await.unwrap();
 
-        assert_eq!(histogram_observation_count(&provider, &exporter, "r2.duration", None), 2);
+        assert_eq!(
+            histogram_observation_count(&provider, &exporter, "r2.duration", None),
+            2
+        );
     }
 }

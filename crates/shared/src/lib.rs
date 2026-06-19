@@ -11,8 +11,8 @@ mod bluesky_cid;
 mod image_id;
 pub mod labels;
 pub mod model_version;
-mod rejection;
 pub mod refine_model;
+mod rejection;
 pub mod score;
 pub mod skeet_id;
 pub mod tracing;
@@ -136,11 +136,26 @@ impl PruneConfig {
     /// produces a different version.
     pub fn version(&self) -> ModelVersion {
         let mut entries = vec![
-            ("max_face_area_pct", self.max_face_area_pct.value().to_bits()),
-            ("max_outside_face_skin_pct", self.max_outside_face_skin_pct.value().to_bits()),
-            ("max_text_area_pct", self.max_text_area_pct.value().to_bits()),
-            ("min_face_area_pct", self.min_face_area_pct.value().to_bits()),
-            ("min_face_skin_pct", self.min_face_skin_pct.value().to_bits()),
+            (
+                "max_face_area_pct",
+                self.max_face_area_pct.value().to_bits(),
+            ),
+            (
+                "max_outside_face_skin_pct",
+                self.max_outside_face_skin_pct.value().to_bits(),
+            ),
+            (
+                "max_text_area_pct",
+                self.max_text_area_pct.value().to_bits(),
+            ),
+            (
+                "min_face_area_pct",
+                self.min_face_area_pct.value().to_bits(),
+            ),
+            (
+                "min_face_skin_pct",
+                self.min_face_skin_pct.value().to_bits(),
+            ),
         ];
         entries.sort_by_key(|(k, _)| *k);
 

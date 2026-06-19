@@ -9,9 +9,7 @@ use shared::refine_model::Label;
 use tracing::info;
 
 #[derive(Parser)]
-#[command(
-    about = "Fetch OpenAI pricing from models.dev and append a snapshot to eval/prices.toml"
-)]
+#[command(about = "Fetch OpenAI pricing from models.dev and append a snapshot to eval/prices.toml")]
 struct Args {
     /// Comma-separated list of model names to include
     #[arg(long, value_delimiter = ',')]
