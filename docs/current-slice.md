@@ -26,6 +26,15 @@ Refactor, review and minimisation of code for longer-term maintenance — the "I
 Each crate gets at least one full human pass: read all code, delete dead code, rework anything surprising, enforce the house rules along the way — `lib.rs` under 300 lines (extract modules if over), no `#[allow(dead_code)]`, no `unwrap`/`expect` in non-test code without a justified allow, and strip comment-rot (slice/phase/PR/task refs — see [[no-slice-phase-refs-in-code-comments]]). Note any non-obvious findings per crate.
 
 * [ ] **Data/store layer — `skeet-store`.** The largest crate (~6.3k LOC); pay attention to module boundaries and the read/write paths. Run `just validate-storage` after.
+    * Trivial/Small fixes from the reviews (scoped to `skeet-store` + its `shared` deps):
+        * [ ] Delete the dead `StoreError::InvalidUri` variant.
+        * [ ] Drop `#[instrument]` from per-row helpers (`to_summary`, `extract`, `typed_column`, `encode_image_as_png`).
+        * [ ] Drop the always-`Some` `Option` wrapping `store_wrapper`.
+        * [ ] `list_scores_for_ids(&[&str])` → `&[ImageId]` — closes the one real SQL-injection hole.
+        * [ ] `get_by_ids` / `get_originals_by_ids` return `HashMap<ImageId, _>` instead of `Vec` — deletes the hand-rolled map in `skeet-refine/loader.rs`.
+        * [ ] Typed error variants: `ValidationFailed(String)` → `#[from] shared::InvalidScore`; `InvalidZone(String)` → `#[source]`, which needs `shared`'s `Zone::FromStr` to return a new `ParseZoneError` instead of `type Err = String`.
+        * [ ] Consolidate upserts on `merge_insert` — make test-only `upsert_score` a one-row wrapper over `batch_upsert_scores`; switch `set_skeet_band`/`set_image_band` off `delete`-then-`add`.
+    * [ ] Extract the unrelated trace tooling into a new `observability` crate — `tempo` (Grafana Tempo client) + `trace_analysis` + the `trace-summary` bin (~850 LOC / 13%, touching nothing in the store); sheds `reqwest`/`serde_json` from the store's deps. Move the shared `query_plan` type into `shared` (the store's live query-logging keeps using it from there). Larger move — do after the cleanup batch above.
 * [ ] **Processing-pipeline binaries — `skeet-prune`, `skeet-refine`, `skeet-publish`.** The firehose → classify → score → publish chain.
 * [ ] **Web services — `skeet-feed`, `skeet-appraise`.** The two HTTP-facing crates (banner/feed + auth-gated appraisals).
 * [ ] **ML/detection libs — `face-detection`, `skin-detection`, `text-detection`.** Model loading/inference wrappers; confirm each model is still documented in `docs/`.
