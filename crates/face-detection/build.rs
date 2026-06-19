@@ -1,17 +1,11 @@
 use burn_import::onnx::ModelGen;
 
-// Build script: panicking with a descriptive message is the idiomatic failure mode, and
-// `expect` keeps the precise reason (which env var) that a bare `?` on `VarError` would drop.
-#[allow(clippy::expect_used)]
 fn main() {
+    // `embed_states(true)` bakes the weights into the binary via `include_bytes!`, so the
+    // generated model loads from `.rodata` at runtime with no external file to locate.
     ModelGen::new()
         .input("../../models/face_detection_yunet_2023mar_opset16.onnx")
         .out_dir("model/")
+        .embed_states(true)
         .run_from_script();
-
-    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
-    println!(
-        "cargo:rustc-env=YUNET_WEIGHTS_PATH={}/model/face_detection_yunet_2023mar_opset16.bpk",
-        out_dir
-    );
 }

@@ -104,14 +104,10 @@ impl Face {
 }
 
 impl FaceDetector {
-    pub fn new(weights_path: &str) -> Self {
-        let device = Default::default();
-        let model = model::Model::<Backend>::from_file(weights_path, &device);
-        Self { model }
-    }
-
     pub fn from_bundled_weights() -> Self {
-        Self::new(env!("YUNET_WEIGHTS_PATH"))
+        let device = Default::default();
+        let model = model::Model::<Backend>::from_embedded(&device);
+        Self { model }
     }
 
     pub fn detect(&self, image: &DynamicImage) -> Vec<Face> {
@@ -193,6 +189,13 @@ pub fn face_zone(face: &Face, image_width: u32, image_height: u32) -> Zone {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bundled_weights_load() {
+        // Guards the embedded-weights path: the model is baked into the binary via
+        // `include_bytes!` and must be loadable without any external file.
+        let _ = FaceDetector::from_bundled_weights();
+    }
 
     fn make_face(x: f32, y: f32, w: f32, h: f32) -> Face {
         Face {

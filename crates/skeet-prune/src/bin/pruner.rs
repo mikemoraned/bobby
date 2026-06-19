@@ -74,11 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Early sanity check: verify all required models can be loaded before
     // starting the pipeline, so we fail fast with clear errors.
     if prune_config.is_category_enabled(RejectionCategory::Text) {
-        info!(
-            detection_model = text_detection::TextDetector::bundled_detection_model_path(),
-            recognition_model = text_detection::TextDetector::bundled_recognition_model_path(),
-            "validating text detection models"
-        );
+        info!("validating text detection models");
         text_detection::TextDetector::from_bundled_models()?;
         info!("text detection models validated");
     }

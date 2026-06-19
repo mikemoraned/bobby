@@ -1,7 +1,5 @@
 #![warn(clippy::all, clippy::nursery)]
 
-use std::path::Path;
-
 use geo::{Area, BooleanOps, Rect as GeoRect, coord};
 use image::DynamicImage;
 use ocrs::{ImageSource, OcrEngine, OcrEngineParams, TextItem};
@@ -13,27 +11,19 @@ pub struct TextDetector {
 
 #[derive(Debug)]
 pub enum TextDetectorError {
-    DetectionModelNotFound(String),
-    RecognitionModelNotFound(String),
-    DetectionModelLoad(String, rten::LoadError),
-    RecognitionModelLoad(String, rten::LoadError),
+    DetectionModelLoad(rten::LoadError),
+    RecognitionModelLoad(rten::LoadError),
     EngineInit(String),
 }
 
 impl std::fmt::Display for TextDetectorError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::DetectionModelNotFound(path) => {
-                write!(f, "text detection model not found at: {path}")
+            Self::DetectionModelLoad(err) => {
+                write!(f, "failed to load embedded text detection model: {err}")
             }
-            Self::RecognitionModelNotFound(path) => {
-                write!(f, "text recognition model not found at: {path}")
-            }
-            Self::DetectionModelLoad(path, err) => {
-                write!(f, "failed to load text detection model at {path}: {err}")
-            }
-            Self::RecognitionModelLoad(path, err) => {
-                write!(f, "failed to load text recognition model at {path}: {err}")
+            Self::RecognitionModelLoad(err) => {
+                write!(f, "failed to load embedded text recognition model: {err}")
             }
             Self::EngineInit(msg) => write!(f, "failed to create OCR engine: {msg}"),
         }
@@ -126,25 +116,17 @@ impl TextDetectionResult {
 }
 
 impl TextDetector {
-    pub fn new(
-        detection_model_path: &str,
-        recognition_model_path: &str,
-    ) -> Result<Self, TextDetectorError> {
-        if !Path::new(detection_model_path).exists() {
-            return Err(TextDetectorError::DetectionModelNotFound(
-                detection_model_path.to_string(),
-            ));
-        }
-        if !Path::new(recognition_model_path).exists() {
-            return Err(TextDetectorError::RecognitionModelNotFound(
-                recognition_model_path.to_string(),
-            ));
-        }
-        let detection_model = Model::load_file(detection_model_path)
-            .map_err(|e| TextDetectorError::DetectionModelLoad(detection_model_path.to_string(), e))?;
-        let recognition_model = Model::load_file(recognition_model_path).map_err(|e| {
-            TextDetectorError::RecognitionModelLoad(recognition_model_path.to_string(), e)
-        })?;
+    pub fn from_bundled_models() -> Result<Self, TextDetectorError> {
+        // The models are baked into the binary via `include_bytes!`, so there is no
+        // external file to locate at runtime. `load_static_slice` is rten's intended
+        // entry point for `include_bytes!`-embedded models.
+        static DETECTION_MODEL: &[u8] = include_bytes!(env!("TEXT_DETECTION_MODEL_PATH"));
+        static RECOGNITION_MODEL: &[u8] = include_bytes!(env!("TEXT_RECOGNITION_MODEL_PATH"));
+
+        let detection_model = Model::load_static_slice(DETECTION_MODEL)
+            .map_err(TextDetectorError::DetectionModelLoad)?;
+        let recognition_model = Model::load_static_slice(RECOGNITION_MODEL)
+            .map_err(TextDetectorError::RecognitionModelLoad)?;
         let engine = OcrEngine::new(OcrEngineParams {
             detection_model: Some(detection_model),
             recognition_model: Some(recognition_model),
@@ -152,21 +134,6 @@ impl TextDetector {
         })
         .map_err(|e| TextDetectorError::EngineInit(e.to_string()))?;
         Ok(Self { engine })
-    }
-
-    pub fn from_bundled_models() -> Result<Self, TextDetectorError> {
-        Self::new(
-            env!("TEXT_DETECTION_MODEL_PATH"),
-            env!("TEXT_RECOGNITION_MODEL_PATH"),
-        )
-    }
-
-    pub const fn bundled_detection_model_path() -> &'static str {
-        env!("TEXT_DETECTION_MODEL_PATH")
-    }
-
-    pub const fn bundled_recognition_model_path() -> &'static str {
-        env!("TEXT_RECOGNITION_MODEL_PATH")
     }
 
     /// Detect and recognize text in the image, returning bounding boxes and text.
@@ -218,6 +185,13 @@ impl TextDetector {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    #[test]
+    fn bundled_models_load() {
+        // Guards the embedded-weights path: the models are baked into the binary via
+        // `include_bytes!` and must be loadable by rten without any external file.
+        TextDetector::from_bundled_models().expect("bundled text detection models should load");
+    }
 
     fn arb_detected_text() -> impl Strategy<Value = DetectedText> {
         (0..500i32, 0..500i32, 0..200i32, 0..200i32, "[a-z ]{0,20}")
