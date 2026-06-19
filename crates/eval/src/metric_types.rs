@@ -108,11 +108,7 @@ impl F1 {
     pub fn harmonic(p: Precision, r: Recall) -> Self {
         let (p, r) = (f64::from(p), f64::from(r));
         let denom = p + r;
-        Self(if denom == 0.0 {
-            0.0
-        } else {
-            2.0 * p * r / denom
-        })
+        Self(if denom == 0.0 { 0.0 } else { 2.0 * p * r / denom })
     }
 }
 

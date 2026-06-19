@@ -24,11 +24,7 @@ impl ImageUrlResolver for CdnImageUrlResolver {
         let ImageId::V3(cid) = image_id else {
             return None;
         };
-        ImageUrl::new(bsky_cdn_thumbnail_url(
-            skeet_id.did().as_str(),
-            &cid.to_string(),
-        ))
-        .ok()
+        ImageUrl::new(bsky_cdn_thumbnail_url(skeet_id.did().as_str(), &cid.to_string())).ok()
     }
 }
 
@@ -53,9 +49,7 @@ mod tests {
             .expect("v3 resolves");
         assert_eq!(
             url.as_str(),
-            format!(
-                "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc123/{SAMPLE_CID}@jpeg"
-            )
+            format!("https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc123/{SAMPLE_CID}@jpeg")
         );
     }
 

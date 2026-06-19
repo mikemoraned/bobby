@@ -57,12 +57,7 @@ mod tests {
         let (metrics, provider, exporter) = make_test_metrics();
         metrics.record_success(4);
         assert_eq!(
-            sum_counter(
-                &provider,
-                &exporter,
-                "openai_exporter_run_total",
-                Some(("status", "success"))
-            ),
+            sum_counter(&provider, &exporter, "openai_exporter_run_total", Some(("status", "success"))),
             1
         );
     }
@@ -72,12 +67,7 @@ mod tests {
         let (metrics, provider, exporter) = make_test_metrics();
         metrics.record_failure();
         assert_eq!(
-            sum_counter(
-                &provider,
-                &exporter,
-                "openai_exporter_run_total",
-                Some(("status", "failure"))
-            ),
+            sum_counter(&provider, &exporter, "openai_exporter_run_total", Some(("status", "failure"))),
             1
         );
     }

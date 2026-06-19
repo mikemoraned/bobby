@@ -85,10 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let create_resp = client
         .post("https://bsky.social/xrpc/com.atproto.repo.putRecord")
-        .header(
-            reqwest::header::AUTHORIZATION,
-            format!("Bearer {access_jwt}"),
-        )
+        .header(reqwest::header::AUTHORIZATION, format!("Bearer {access_jwt}"))
         .json(&serde_json::json!({
             "repo": user_did,
             "collection": "app.bsky.feed.generator",

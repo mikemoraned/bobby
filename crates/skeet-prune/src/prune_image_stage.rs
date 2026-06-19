@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 use face_detection::FaceDetector;
 use shared::{ModelVersion, PruneConfig};
@@ -50,16 +50,7 @@ pub async fn run_workers(
             };
             let detectors = Detectors { face, text };
             info!(worker_id, "image worker ready");
-            run_single(
-                rx,
-                tx,
-                http,
-                detectors,
-                prune_config,
-                config_version,
-                counters,
-            )
-            .await;
+            run_single(rx, tx, http, detectors, prune_config, config_version, counters).await;
         }));
     }
 

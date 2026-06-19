@@ -23,8 +23,6 @@ pub struct Limit {
 enum Unit {
     Hours,
     Days,
-    Weeks,
-    Years,
 }
 
 impl Unit {
@@ -32,14 +30,12 @@ impl Unit {
         match self {
             Self::Hours => 'h',
             Self::Days => 'd',
-            Self::Weeks => 'w',
-            Self::Years => 'y',
         }
     }
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("unknown limit unit '{0}' (expected 'h', 'd', 'w' or 'y')")]
+#[error("unknown limit unit '{0}' (expected 'h' or 'd')")]
 struct UnknownUnit(char);
 
 impl TryFrom<char> for Unit {
@@ -49,21 +45,18 @@ impl TryFrom<char> for Unit {
         match c {
             'h' => Ok(Self::Hours),
             'd' => Ok(Self::Days),
-            'w' => Ok(Self::Weeks),
-            'y' => Ok(Self::Years),
             other => Err(UnknownUnit(other)),
         }
     }
 }
 
-/// A whole `<count><unit>` limit: a run of digits followed by a single unit
-/// character (`h`/`d`/`w`/`y`).
+/// A whole `<count><unit>` limit: a run of digits followed by a single `h`/`d`.
 #[allow(clippy::expect_used)] // compile-time-constant regex literal
 static LIMIT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^([0-9]+)([hdwy])$").expect("static regex"));
+    LazyLock::new(|| Regex::new(r"^([0-9]+)([hd])$").expect("static regex"));
 
 #[derive(Debug, thiserror::Error)]
-#[error("invalid limit: \"{0}\" (expected <count><h|d|w|y>, e.g. 48h, 7d, 4w or 1y)")]
+#[error("invalid limit: \"{0}\" (expected <count><h|d>, e.g. 48h or 7d)")]
 pub struct InvalidLimit(String);
 
 impl TryFrom<&str> for Limit {
@@ -76,8 +69,8 @@ impl TryFrom<&str> for Limit {
         if count == 0 {
             return Err(invalid());
         }
-        // The regex restricts group 2 to a single unit character, which
-        // `Unit::try_from` turns into the enum.
+        // The regex restricts group 2 to a single `h`/`d`, which `Unit::try_from`
+        // turns into the enum.
         let unit_char = caps[2].chars().next().ok_or_else(invalid)?;
         let unit = Unit::try_from(unit_char).map_err(|_| invalid())?;
         Ok(Self { count, unit })
@@ -104,29 +97,11 @@ impl Limit {
         }
     }
 
-    pub const fn weeks(count: u64) -> Self {
-        Self {
-            count,
-            unit: Unit::Weeks,
-        }
-    }
-
-    pub const fn years(count: u64) -> Self {
-        Self {
-            count,
-            unit: Unit::Years,
-        }
-    }
-
-    /// The window as a `chrono::Duration` for filtering by age. A year is taken
-    /// as 365 days (the windowing is a coarse recency cut-off, not a calendar
-    /// computation, so leap years don't matter).
+    /// The window as a `chrono::Duration` for filtering by age.
     pub const fn window(self) -> chrono::Duration {
         match self.unit {
             Unit::Hours => chrono::Duration::hours(self.count as i64),
             Unit::Days => chrono::Duration::days(self.count as i64),
-            Unit::Weeks => chrono::Duration::weeks(self.count as i64),
-            Unit::Years => chrono::Duration::days(self.count as i64 * 365),
         }
     }
 }
@@ -154,8 +129,6 @@ mod tests {
         assert_eq!(Limit::hours(48).to_string(), "48h");
         assert_eq!(Limit::days(7).to_string(), "7d");
         assert_eq!(Limit::days(365).to_string(), "365d");
-        assert_eq!(Limit::weeks(4).to_string(), "4w");
-        assert_eq!(Limit::years(1).to_string(), "1y");
     }
 
     #[test]
@@ -167,13 +140,7 @@ mod tests {
 
     #[test]
     fn roundtrips_through_display() {
-        for limit in [
-            Limit::hours(48),
-            Limit::days(7),
-            Limit::days(365),
-            Limit::weeks(4),
-            Limit::years(1),
-        ] {
+        for limit in [Limit::hours(48), Limit::days(7), Limit::days(365)] {
             let parsed: Limit = limit.to_string().parse().expect("roundtrip");
             assert_eq!(parsed, limit);
         }
@@ -183,15 +150,11 @@ mod tests {
     fn window_matches_unit() {
         assert_eq!(Limit::hours(48).window(), chrono::Duration::hours(48));
         assert_eq!(Limit::days(7).window(), chrono::Duration::days(7));
-        assert_eq!(Limit::weeks(4).window(), chrono::Duration::weeks(4));
-        assert_eq!(Limit::years(1).window(), chrono::Duration::days(365));
     }
 
     #[test]
     fn rejects_malformed() {
-        for bad in [
-            "", "h", "d", "w", "y", "48", "48m", "0h", "-1h", "hh", "4.5d",
-        ] {
+        for bad in ["", "h", "d", "48", "48m", "0h", "-1h", "hh", "4.5d"] {
             assert!(bad.parse::<Limit>().is_err(), "should reject {bad:?}");
         }
     }
@@ -200,8 +163,6 @@ mod tests {
     fn unit_try_from_recognises_known_suffixes() {
         assert_eq!(Unit::try_from('h').expect("hours"), Unit::Hours);
         assert_eq!(Unit::try_from('d').expect("days"), Unit::Days);
-        assert_eq!(Unit::try_from('w').expect("weeks"), Unit::Weeks);
-        assert_eq!(Unit::try_from('y').expect("years"), Unit::Years);
         assert!(Unit::try_from('m').is_err());
     }
 }

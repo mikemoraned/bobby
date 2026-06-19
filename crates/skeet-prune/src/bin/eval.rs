@@ -79,13 +79,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .ok()
             });
-            let classification = skeet_prune::classify(
-                &faces,
-                &stored.image,
-                &skin_mask,
-                text_area_pct,
-                &prune_config,
-            );
+            let classification =
+                skeet_prune::classify(&faces, &stored.image, &skin_mask, text_area_pct, &prune_config);
             let was_pruned = matches!(classification, Classification::Rejected(_));
             matrix.record(should_be_pruned, was_pruned);
         }

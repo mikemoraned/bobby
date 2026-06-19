@@ -108,29 +108,13 @@ mod tests {
         metrics.emit(5, 3, &HashMap::new(), &[]);
         // Bump.
         metrics.emit(8, 5, &HashMap::new(), &[]);
-        assert_eq!(
-            sum_counter(
-                &provider,
-                &exporter,
-                "skeet_live_refine.images.unscored",
-                None
-            ),
-            8
-        );
+        assert_eq!(sum_counter(&provider, &exporter, "skeet_live_refine.images.unscored", None), 8);
         // Need a fresh provider read after reset for second metric.
         let (mut metrics2, provider2, exporter2) = make_test_metrics();
         metrics2.emit(5, 3, &HashMap::new(), &[]);
         metrics2.emit(5, 3, &HashMap::new(), &[]);
         metrics2.emit(8, 5, &HashMap::new(), &[]);
-        assert_eq!(
-            sum_counter(
-                &provider2,
-                &exporter2,
-                "skeet_live_refine.images.scored",
-                None
-            ),
-            5
-        );
+        assert_eq!(sum_counter(&provider2, &exporter2, "skeet_live_refine.images.scored", None), 5);
     }
 
     #[test]
@@ -144,12 +128,7 @@ mod tests {
         errs.insert("Completion".to_string(), 5);
         metrics.emit(0, 0, &errs, &[]);
         assert_eq!(
-            sum_counter(
-                &provider,
-                &exporter,
-                "skeet_live_refine.images.errors",
-                Some(("reason", "Completion"))
-            ),
+            sum_counter(&provider, &exporter, "skeet_live_refine.images.errors", Some(("reason", "Completion"))),
             5
         );
         let (mut m2, p2, e2) = make_test_metrics();
@@ -157,12 +136,7 @@ mod tests {
         errs2.insert("ParseScore".to_string(), 1);
         m2.emit(0, 0, &errs2, &[]);
         assert_eq!(
-            sum_counter(
-                &p2,
-                &e2,
-                "skeet_live_refine.images.errors",
-                Some(("reason", "ParseScore"))
-            ),
+            sum_counter(&p2, &e2, "skeet_live_refine.images.errors", Some(("reason", "ParseScore"))),
             1
         );
     }
@@ -171,9 +145,6 @@ mod tests {
     fn histogram_records_one_observation_per_tick_score() {
         let (mut metrics, provider, exporter) = make_test_metrics();
         metrics.emit(0, 0, &HashMap::new(), &[0.1, 0.5, 0.9]);
-        assert_eq!(
-            histogram_observation_count(&provider, &exporter, "skeet_live_refine.scores", None),
-            3
-        );
+        assert_eq!(histogram_observation_count(&provider, &exporter, "skeet_live_refine.scores", None), 3);
     }
 }

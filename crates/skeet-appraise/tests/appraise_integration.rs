@@ -55,10 +55,7 @@ async fn spawn_server() -> TestServer {
         };
     }
 
-    let container = Redis::default()
-        .start()
-        .await
-        .expect("start redis container");
+    let container = Redis::default().start().await.expect("start redis container");
     let host = container.get_host().await.expect("redis host");
     let redis_port = container
         .get_host_port_ipv4(REDIS_PORT)
@@ -119,7 +116,10 @@ async fn wait_redis_ready(url: &str) {
 
 fn pick_free_port() -> u16 {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
-    listener.local_addr().expect("local addr").port()
+    listener
+        .local_addr()
+        .expect("local addr")
+        .port()
 }
 
 #[tokio::test]
@@ -128,7 +128,11 @@ async fn home_page_renders_docker() {
     let base = &server.url;
     let client = reqwest::Client::new();
 
-    let resp = client.get(base).send().await.expect("request failed");
+    let resp = client
+        .get(base)
+        .send()
+        .await
+        .expect("request failed");
     assert_eq!(resp.status(), 200, "home page should render");
 
     let body = resp.text().await.expect("body text");

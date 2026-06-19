@@ -27,10 +27,7 @@ mod tests {
         let svg = qr_svg("https://bobby.houseofmoran.io/").expect("should encode");
         assert!(svg.contains("<svg"), "output should be an SVG element");
         assert!(svg.contains("</svg>"), "SVG element should be closed");
-        assert!(
-            !svg.contains("http://www.w3.org/1999/xlink"),
-            "no external refs"
-        );
+        assert!(!svg.contains("http://www.w3.org/1999/xlink"), "no external refs");
     }
 
     #[test]

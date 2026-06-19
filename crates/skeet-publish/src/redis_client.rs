@@ -1,8 +1,6 @@
 use std::time::Duration;
 
-use deadpool_redis::redis::{
-    AsyncConnectionConfig, Client, RedisError, aio::MultiplexedConnection,
-};
+use deadpool_redis::redis::{AsyncConnectionConfig, Client, RedisError, aio::MultiplexedConnection};
 
 /// redis's defaults (1s connect, 500ms response) are far too tight for a remote
 /// Upstash TLS endpoint reached over the public internet; use generous timeouts

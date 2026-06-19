@@ -2,9 +2,9 @@ use std::fmt;
 
 use chrono::{DateTime, Utc};
 use image::DynamicImage;
+use shared::{ImageId, ModelVersion};
 pub use shared::Zone;
 pub use shared::skeet_id::SkeetId;
-use shared::{ImageId, ModelVersion};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DiscoveredAt(DateTime<Utc>);

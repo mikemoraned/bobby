@@ -118,7 +118,8 @@ impl FaceDetector {
         let (tensor, scale_x, scale_y) = image_to_tensor(image);
         let outputs = self.model.forward(tensor);
 
-        let detections = decode_and_filter(outputs, SCORE_THRESHOLD, NMS_IOU_THRESHOLD);
+        let detections =
+            decode_and_filter(outputs, SCORE_THRESHOLD, NMS_IOU_THRESHOLD);
 
         detections
             .into_iter()
@@ -167,33 +168,15 @@ pub fn face_zone(face: &Face, image_width: u32, image_height: u32) -> Zone {
 
     let base = Rect::new(Point2D::origin(), Size2D::new(unit_w * 2.0, unit_h * 2.0));
     let zones: [(Zone, Rect<f32>); 9] = [
-        (Zone::TopLeft, base.translate(Vector2D::new(0.0, 0.0))),
-        (Zone::TopCenter, base.translate(Vector2D::new(unit_w, 0.0))),
-        (
-            Zone::TopRight,
-            base.translate(Vector2D::new(unit_w * 2.0, 0.0)),
-        ),
-        (Zone::CenterLeft, base.translate(Vector2D::new(0.0, unit_h))),
-        (
-            Zone::CenterCenter,
-            base.translate(Vector2D::new(unit_w, unit_h)),
-        ),
-        (
-            Zone::CenterRight,
-            base.translate(Vector2D::new(unit_w * 2.0, unit_h)),
-        ),
-        (
-            Zone::BottomLeft,
-            base.translate(Vector2D::new(0.0, unit_h * 2.0)),
-        ),
-        (
-            Zone::BottomCenter,
-            base.translate(Vector2D::new(unit_w, unit_h * 2.0)),
-        ),
-        (
-            Zone::BottomRight,
-            base.translate(Vector2D::new(unit_w * 2.0, unit_h * 2.0)),
-        ),
+        (Zone::TopLeft,      base.translate(Vector2D::new(0.0,          0.0))),
+        (Zone::TopCenter,    base.translate(Vector2D::new(unit_w,       0.0))),
+        (Zone::TopRight,     base.translate(Vector2D::new(unit_w * 2.0, 0.0))),
+        (Zone::CenterLeft,   base.translate(Vector2D::new(0.0,          unit_h))),
+        (Zone::CenterCenter, base.translate(Vector2D::new(unit_w,       unit_h))),
+        (Zone::CenterRight,  base.translate(Vector2D::new(unit_w * 2.0, unit_h))),
+        (Zone::BottomLeft,   base.translate(Vector2D::new(0.0,          unit_h * 2.0))),
+        (Zone::BottomCenter, base.translate(Vector2D::new(unit_w,       unit_h * 2.0))),
+        (Zone::BottomRight,  base.translate(Vector2D::new(unit_w * 2.0, unit_h * 2.0))),
     ];
 
     zones

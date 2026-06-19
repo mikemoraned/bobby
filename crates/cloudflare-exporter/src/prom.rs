@@ -1,8 +1,8 @@
 #![warn(clippy::all, clippy::nursery)]
 
 use prometheus_reqwest_remote_write::{
-    CONTENT_TYPE, HEADER_NAME_REMOTE_WRITE_VERSION, Label, REMOTE_WRITE_VERSION_01, Sample,
-    TimeSeries, WriteRequest,
+    Label, Sample, TimeSeries, WriteRequest, CONTENT_TYPE, HEADER_NAME_REMOTE_WRITE_VERSION,
+    REMOTE_WRITE_VERSION_01,
 };
 use reqwest::Client;
 use thiserror::Error;
@@ -29,7 +29,9 @@ pub async fn push_timeseries(
     basic_auth: &str,
     timeseries: Vec<TimeSeries>,
 ) -> Result<(), PromError> {
-    let (username, password) = basic_auth.split_once(':').ok_or(PromError::InvalidAuth)?;
+    let (username, password) = basic_auth
+        .split_once(':')
+        .ok_or(PromError::InvalidAuth)?;
 
     let compressed = WriteRequest { timeseries }
         .sorted()

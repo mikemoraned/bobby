@@ -94,10 +94,7 @@ mod tests {
             format!("https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc/{CID}@jpeg")
         );
         assert_eq!(json["image_id"], format!("v3:{CID}"));
-        assert_eq!(
-            json["skeet_id"],
-            "at://did:plc:abc/app.bsky.feed.post/rkey1"
-        );
+        assert_eq!(json["skeet_id"], "at://did:plc:abc/app.bsky.feed.post/rkey1");
         assert_eq!(json["skeet_id_exists"], true);
         assert_eq!(json["image_url_exists"], false);
         assert_eq!(json["image_url_dimensions"]["width"], 800);

@@ -67,8 +67,8 @@ impl SkeetStore {
 mod tests {
     use chrono::{Duration, Utc};
 
-    use crate::DiscoveredAt;
     use crate::test_utils::{make_record_at, open_temp_store};
+    use crate::DiscoveredAt;
 
     fn at_minutes_ago(minutes: i64) -> DiscoveredAt {
         DiscoveredAt::new(Utc::now() - Duration::minutes(minutes))
@@ -81,8 +81,13 @@ mod tests {
 
         for i in 0..5u8 {
             let minutes_ago = (4 - i) as i64 * 10;
-            let record =
-                make_record_at(&format!("p{i}"), i * 40, 0, 0, at_minutes_ago(minutes_ago));
+            let record = make_record_at(
+                &format!("p{i}"),
+                i * 40,
+                0,
+                0,
+                at_minutes_ago(minutes_ago),
+            );
             store.add(&record).await.unwrap();
         }
 
@@ -137,8 +142,13 @@ mod tests {
         let store = open_temp_store(&dir).await;
 
         for i in 0..2u8 {
-            let record =
-                make_record_at(&format!("e{i}"), i * 80, 0, 0, at_minutes_ago(i as i64 * 5));
+            let record = make_record_at(
+                &format!("e{i}"),
+                i * 80,
+                0,
+                0,
+                at_minutes_ago(i as i64 * 5),
+            );
             store.add(&record).await.unwrap();
         }
 
@@ -155,8 +165,13 @@ mod tests {
         // Insert 4 rows at distinct, strictly-decreasing ages.
         for i in 0..4u8 {
             let minutes_ago = (3 - i) as i64 * 10 + 30; // 60, 50, 40, 30 min ago
-            let record =
-                make_record_at(&format!("c{i}"), i * 60, 0, 0, at_minutes_ago(minutes_ago));
+            let record = make_record_at(
+                &format!("c{i}"),
+                i * 60,
+                0,
+                0,
+                at_minutes_ago(minutes_ago),
+            );
             store.add(&record).await.unwrap();
         }
 

@@ -121,27 +121,15 @@ pub enum AttrValue {
 
 impl AttrValue {
     pub const fn as_str(&self) -> Option<&str> {
-        if let Self::Str(s) = self {
-            Some(s.as_str())
-        } else {
-            None
-        }
+        if let Self::Str(s) = self { Some(s.as_str()) } else { None }
     }
 
     pub const fn as_i64(&self) -> Option<i64> {
-        if let Self::Int(n) = self {
-            Some(*n)
-        } else {
-            None
-        }
+        if let Self::Int(n) = self { Some(*n) } else { None }
     }
 
     pub const fn as_bool(&self) -> Option<bool> {
-        if let Self::Bool(b) = self {
-            Some(*b)
-        } else {
-            None
-        }
+        if let Self::Bool(b) = self { Some(*b) } else { None }
     }
 }
 
@@ -229,12 +217,13 @@ impl TempoClient {
 }
 
 #[cfg(test)]
-const TRACE_FIXTURE_FOR_TESTS: &str = include_str!("../tests/fixtures/tempo_trace_response.json");
+const TRACE_FIXTURE_FOR_TESTS: &str =
+    include_str!("../tests/fixtures/tempo_trace_response.json");
 
 #[cfg(test)]
 pub(crate) fn trace_from_fixture_for_tests() -> Trace {
-    let resp: TraceResponse =
-        serde_json::from_str(TRACE_FIXTURE_FOR_TESTS).expect("trace fixture should parse");
+    let resp: TraceResponse = serde_json::from_str(TRACE_FIXTURE_FOR_TESTS)
+        .expect("trace fixture should parse");
     flatten_trace(resp)
 }
 
@@ -242,7 +231,8 @@ pub(crate) fn trace_from_fixture_for_tests() -> Trace {
 mod tests {
     use super::*;
 
-    const SEARCH_FIXTURE: &str = include_str!("../tests/fixtures/tempo_search_response.json");
+    const SEARCH_FIXTURE: &str =
+        include_str!("../tests/fixtures/tempo_search_response.json");
     const TRACE_FIXTURE: &str = TRACE_FIXTURE_FOR_TESTS;
 
     #[test]
@@ -253,14 +243,8 @@ mod tests {
         let first = &resp.traces[0];
         // Catches traceID (capital D) vs traceId mismatches
         assert!(!first.trace_id.is_empty(), "trace_id is populated");
-        assert!(
-            !first.root_service_name.is_empty(),
-            "root_service_name populated"
-        );
-        assert!(
-            !first.start_time_unix_nano.is_empty(),
-            "start_time_unix_nano populated"
-        );
+        assert!(!first.root_service_name.is_empty(), "root_service_name populated");
+        assert!(!first.start_time_unix_nano.is_empty(), "start_time_unix_nano populated");
     }
 
     #[test]

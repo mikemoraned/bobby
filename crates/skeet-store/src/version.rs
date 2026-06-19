@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 use tracing::instrument;
 
-use crate::SkeetStore;
 use crate::error::StoreError;
+use crate::SkeetStore;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Version {
@@ -88,10 +88,7 @@ mod tests {
         let record = make_record("vsnap1", 10, 0, 0);
         store.add(&record).await.expect("add image");
 
-        let after_image = store
-            .version_snapshot()
-            .await
-            .expect("snapshot after image");
+        let after_image = store.version_snapshot().await.expect("snapshot after image");
         assert_ne!(
             tag_for(&before, TABLE_NAME),
             tag_for(&after_image, TABLE_NAME),
@@ -112,10 +109,7 @@ mod tests {
             .await
             .expect("upsert score");
 
-        let after_score = store
-            .version_snapshot()
-            .await
-            .expect("snapshot after score");
+        let after_score = store.version_snapshot().await.expect("snapshot after score");
         assert_ne!(
             tag_for(&after_image, SCORE_TABLE_NAME),
             tag_for(&after_score, SCORE_TABLE_NAME),

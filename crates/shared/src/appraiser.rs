@@ -50,9 +50,9 @@ impl std::str::FromStr for Appraiser {
         match provider {
             "github" => Self::new_github(identifier),
             "local" if identifier == "admin" => Ok(Self::LocalAdmin),
-            "local" => Err(ParseAppraiserError::UnknownProvider(format!(
-                "local:{identifier}"
-            ))),
+            "local" => Err(ParseAppraiserError::UnknownProvider(
+                format!("local:{identifier}"),
+            )),
             other => Err(ParseAppraiserError::UnknownProvider(other.to_string())),
         }
     }

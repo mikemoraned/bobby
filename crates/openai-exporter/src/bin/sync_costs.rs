@@ -30,16 +30,9 @@ struct Args {
 }
 
 fn start_of_day(dt: DateTime<Utc>) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(
-        dt.date_naive().year(),
-        dt.date_naive().month(),
-        dt.date_naive().day(),
-        0,
-        0,
-        0,
-    )
-    .single()
-    .unwrap_or(dt)
+    Utc.with_ymd_and_hms(dt.date_naive().year(), dt.date_naive().month(), dt.date_naive().day(), 0, 0, 0)
+        .single()
+        .unwrap_or(dt)
 }
 
 #[tokio::main]
@@ -92,14 +85,7 @@ async fn sync(args: &Args) -> Result<u64, Box<dyn std::error::Error>> {
     let start_of_hour = Utc::now().duration_trunc(chrono::Duration::hours(1))?;
     let timestamp_ms = start_of_hour.timestamp_millis();
 
-    prom::push(
-        &client,
-        &args.prom_endpoint,
-        &args.prom_auth,
-        &entries,
-        timestamp_ms,
-    )
-    .await?;
+    prom::push(&client, &args.prom_endpoint, &args.prom_auth, &entries, timestamp_ms).await?;
 
     Ok(entries.len() as u64)
 }

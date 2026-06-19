@@ -9,8 +9,8 @@ use std::collections::{HashMap, HashSet};
 
 use futures::stream::{self, StreamExt};
 use image::DynamicImage;
-use shared::ImageId;
 use shared::Score;
+use shared::ImageId;
 use skeet_store::{DiscoveredAt, StoredOriginal};
 
 #[derive(Default)]
@@ -68,7 +68,11 @@ impl Batch {
     /// Score every image concurrently. Each spawned future carries its own
     /// id, so out-of-order completion can't mis-attribute results. Successes
     /// are marked completed in place; the caller logs and persists outcomes.
-    pub async fn score_with<F, Fut, E>(&mut self, concurrency: usize, scorer: F) -> ScoreOutcomes<E>
+    pub async fn score_with<F, Fut, E>(
+        &mut self,
+        concurrency: usize,
+        scorer: F,
+    ) -> ScoreOutcomes<E>
     where
         F: Fn(DynamicImage) -> Fut + Send + Sync,
         Fut: std::future::Future<Output = Result<Score, E>> + Send,

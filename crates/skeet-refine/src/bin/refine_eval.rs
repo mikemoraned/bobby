@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use chrono::Utc;
 use clap::Parser;
 use eval::{
-    EvalResultsLog, EvalSplits, Evaluation, F1, LabelledScore, PricesRegistry, Purpose, Resources,
+    Evaluation, EvalResultsLog, EvalSplits, F1, LabelledScore, PricesRegistry, Purpose, Resources,
     RunId, RunRecord, SnapshotId, confusion_at, pin_at_precision, roc_auc_score,
 };
 use futures::stream::{self, StreamExt};
@@ -123,12 +123,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let split_label = Label::new(&args.split_label);
 
     let splits = EvalSplits::load(&args.splits_path)?;
-    let (split_id, split) = splits.by_label(&split_label).ok_or_else(|| {
-        format!(
-            "split label {split_label} not found in {}",
-            args.splits_path.display()
-        )
-    })?;
+    let (split_id, split) = splits
+        .by_label(&split_label)
+        .ok_or_else(|| format!("split label {split_label} not found in {}", args.splits_path.display()))?;
     info!(
         path = %args.splits_path.display(),
         %split_id,
@@ -158,10 +155,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let agent = build_agent(&client, model.model_name.as_str(), model.prompt.as_str());
     let scored = score_all(&agent, &test_images, args.concurrency).await;
 
-    let (input_tokens, output_tokens): (u64, u64) =
-        scored.iter().fold((0u64, 0u64), |(i, o), e| {
-            (i + e.input_tokens, o + e.output_tokens)
-        });
+    let (input_tokens, output_tokens): (u64, u64) = scored
+        .iter()
+        .fold((0u64, 0u64), |(i, o), e| (i + e.input_tokens, o + e.output_tokens));
 
     let fallbacks = scored
         .iter()
@@ -179,9 +175,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let decision_threshold = model.decision_threshold;
     let matrix = confusion_at(&labelled, decision_threshold);
-    let precision = matrix
-        .precision()
-        .ok_or(EvalRunError::NoPositivePredictions)?;
+    let precision = matrix.precision().ok_or(EvalRunError::NoPositivePredictions)?;
     let recall = matrix.recall().ok_or(EvalRunError::NoPositives)?;
     let f1 = F1::harmonic(precision, recall);
     let roc_auc = roc_auc_score(&labelled);
@@ -227,7 +221,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  model       : {} ({})", model.model_name, model_version);
     println!("  split       : {split_id}");
     println!("  test images : {}", test_images.len());
-    println!("  fallbacks   : {fallbacks} (score=0.0 substitutions after exhausted retries)");
+    println!(
+        "  fallbacks   : {fallbacks} (score=0.0 substitutions after exhausted retries)"
+    );
     println!("  precision   : {precision} (threshold {decision_threshold})");
     println!("  recall      : {recall} (threshold {decision_threshold})");
     println!("  f1          : {f1} (threshold {decision_threshold})");
@@ -242,7 +238,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
         None => println!("  pinned@P={precision}: no qualifying threshold"),
     }
-    println!("  tokens      : input={input_tokens}, output={output_tokens}, cost={cost}");
+    println!(
+        "  tokens      : input={input_tokens}, output={output_tokens}, cost={cost}"
+    );
     println!("  appended    : {}", args.eval_results_path.display());
 
     Ok(())

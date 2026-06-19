@@ -27,15 +27,13 @@ fn parse_s3_path(store_path: &str) -> Option<(String, String)> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     shared::tracing::init("info");
-    info!(
-        git_hash = env!("BUILD_GIT_HASH"),
-        "abort-multipart-uploads starting"
-    );
+    info!(git_hash = env!("BUILD_GIT_HASH"), "abort-multipart-uploads starting");
 
     let args = Args::parse();
 
-    let (bucket, prefix) = parse_s3_path(&args.store.store_path)
-        .ok_or("store-path must be an S3 URI like s3://bucket/prefix")?;
+    let (bucket, prefix) = parse_s3_path(&args.store.store_path).ok_or(
+        "store-path must be an S3 URI like s3://bucket/prefix",
+    )?;
 
     let endpoint = args
         .store
@@ -55,7 +53,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .as_ref()
         .ok_or("--s3-secret-access-key (or BOBBY_S3_SECRET_ACCESS_KEY) is required")?;
 
-    let credentials = Credentials::new(access_key_id, secret_access_key, None, None, "bobby-env");
+    let credentials =
+        Credentials::new(access_key_id, secret_access_key, None, None, "bobby-env");
 
     let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
         .region(Region::new(args.store.s3_region.clone()))
@@ -136,10 +135,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.abort {
         info!(total = total, aborted = aborted, "done");
     } else {
-        info!(
-            total = total,
-            "dry run complete — re-run with --abort to remove them"
-        );
+        info!(total = total, "dry run complete — re-run with --abort to remove them");
         if total > 0 {
             warn!("use --abort to actually remove the incomplete uploads");
         }

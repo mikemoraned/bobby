@@ -231,10 +231,7 @@ impl SkeetStore {
                 ids.insert(image_id);
             }
         }
-        info!(
-            windowed_image_ids = ids.len(),
-            "filtered images by publish time"
-        );
+        info!(windowed_image_ids = ids.len(), "filtered images by publish time");
         Ok(ids)
     }
 
@@ -454,13 +451,9 @@ impl SkeetStore {
         &self,
         known_versions: &HashSet<ModelVersion>,
     ) -> Result<usize, StoreError> {
-        let query = self
-            .scores_table
-            .query()
-            .select(lancedb::query::Select::columns(&[
-                "image_id",
-                "model_version",
-            ]));
+        let query = self.scores_table.query().select(
+            lancedb::query::Select::columns(&["image_id", "model_version"]),
+        );
         let batches = execute_query(&query, "count_scored_images").await?;
 
         // Dedupe by image id (last row wins) so an image scored more than once is

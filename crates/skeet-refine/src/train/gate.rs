@@ -88,8 +88,11 @@ mod tests {
 
     #[test]
     fn inserting_candidate_makes_it_resolvable_by_production_label() {
-        let candidate =
-            build_candidate_model("gpt-4o", "any prompt", Threshold::new(0.5).expect("valid"));
+        let candidate = build_candidate_model(
+            "gpt-4o",
+            "any prompt",
+            Threshold::new(0.5).expect("valid"),
+        );
         let mut models = RefineModels::new();
         models.insert(candidate.clone());
         models

@@ -178,9 +178,7 @@ impl EvalResultsLog {
                 return Err(EvalResultsLogError::DuplicateRunId(run.run_id));
             }
         }
-        Ok(Self {
-            runs: persisted.runs,
-        })
+        Ok(Self { runs: persisted.runs })
     }
 
     pub fn save(&self, path: &Path) -> Result<(), EvalResultsLogError> {
@@ -213,10 +211,7 @@ impl EvalResultsLog {
 
     /// All runs whose `model_version` equals `mv`, in insertion order.
     pub fn for_model(&self, mv: &ModelVersion) -> Vec<&RunRecord> {
-        self.runs
-            .iter()
-            .filter(|r| &r.model_version == mv)
-            .collect()
+        self.runs.iter().filter(|r| &r.model_version == mv).collect()
     }
 
     /// The run with the largest score returned by `score`. Runs for which
@@ -320,8 +315,7 @@ mod tests {
     #[test]
     fn append_rejects_duplicate_run_id() {
         let mut log = EvalResultsLog::new();
-        log.append(sample_run(run_id(1), "v2:abc", 0.8))
-            .expect("append");
+        log.append(sample_run(run_id(1), "v2:abc", 0.8)).expect("append");
         let err = log
             .append(sample_run(run_id(1), "v2:def", 0.5))
             .expect_err("duplicate must fail");
@@ -334,8 +328,7 @@ mod tests {
         let r1 = run_id(1);
         let r3 = run_id(3);
         log.append(sample_run(r1, "v2:abc", 0.8)).expect("append");
-        log.append(sample_run(run_id(2), "v2:def", 0.7))
-            .expect("append");
+        log.append(sample_run(run_id(2), "v2:def", 0.7)).expect("append");
         log.append(sample_run(r3, "v2:abc", 0.9)).expect("append");
 
         let abc = ModelVersion::from("v2:abc");
@@ -348,11 +341,9 @@ mod tests {
     fn best_by_picks_max() {
         let mut log = EvalResultsLog::new();
         let r2 = run_id(2);
-        log.append(sample_run(run_id(1), "v2:abc", 0.6))
-            .expect("append");
+        log.append(sample_run(run_id(1), "v2:abc", 0.6)).expect("append");
         log.append(sample_run(r2, "v2:abc", 0.9)).expect("append");
-        log.append(sample_run(run_id(3), "v2:abc", 0.8))
-            .expect("append");
+        log.append(sample_run(run_id(3), "v2:abc", 0.8)).expect("append");
 
         let best = log.best_by(|r| Some(r.evaluation.f1)).expect("non-empty");
         assert_eq!(best.run_id, r2);
@@ -361,8 +352,7 @@ mod tests {
     #[test]
     fn best_by_skips_none() {
         let mut log = EvalResultsLog::new();
-        log.append(sample_run(run_id(1), "v2:abc", 0.6))
-            .expect("append");
+        log.append(sample_run(run_id(1), "v2:abc", 0.6)).expect("append");
 
         let best = log.best_by(|_| Option::<F1>::None);
         assert!(best.is_none());

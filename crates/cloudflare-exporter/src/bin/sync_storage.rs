@@ -6,7 +6,8 @@ use chrono::Utc;
 use clap::Parser;
 use cloudflare_exporter::{
     metrics::SyncMetrics,
-    prom, r2_rest,
+    prom,
+    r2_rest,
     types::{AccountTag, ApiToken},
 };
 use tracing::info;
@@ -79,10 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match sync(&args).await {
         Ok(datapoints) => {
-            info!(
-                datapoints,
-                "all bucket usages pushed via Prometheus remote_write"
-            );
+            info!(datapoints, "all bucket usages pushed via Prometheus remote_write");
             sync_metrics.record_success(datapoints);
             Ok(())
         }

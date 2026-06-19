@@ -2,22 +2,22 @@
 mod appraisals;
 mod args;
 mod arrow_utils;
+mod optimise;
 mod error;
 pub mod health;
 mod lancedb_utils;
 mod open;
-mod optimise;
 mod paging;
 pub mod query_plan;
 mod r2_metrics;
 mod schema;
-mod scores;
 pub mod store_metrics;
+mod scores;
 mod stored;
 mod summary;
-pub mod tempo;
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod test_utils;
+pub mod tempo;
 pub mod trace_analysis;
 mod types;
 mod version;
@@ -31,8 +31,8 @@ pub use schema::{
     VALIDATE_TABLE_NAME,
 };
 pub use shared::{Appraiser, Band, ModelVersion, Score};
-pub use store_metrics::StoreMetrics;
 pub use stored::{StoredImage, StoredImageSummary, StoredOriginal};
+pub use store_metrics::StoreMetrics;
 pub use summary::SkeetStoreSummary;
 pub use types::{DiscoveredAt, ImageRecord, OriginalAt, SkeetId, Zone};
 pub use version::Version;
@@ -44,19 +44,20 @@ use lance_io::object_store::WrappingObjectStore;
 use tokio::sync::RwLock;
 
 use arrow_array::{
-    Int64Array, LargeBinaryArray, RecordBatch, StringArray, TimestampMicrosecondArray,
+    Int64Array, LargeBinaryArray, RecordBatch, StringArray,
+    TimestampMicrosecondArray,
 };
 use chrono::Utc;
 use lancedb::query::QueryBase;
 use tracing::instrument;
 
 use arrow_utils::{encode_image_as_png, typed_column};
+use shared::ImageId;
 use lance::dataset::{WriteMode, WriteParams};
 use lance_io::object_store::ObjectStoreParams;
 use lancedb::table::WriteOptions;
 use lancedb_utils::execute_query;
 use schema::{images_v6_schema, validate_v1_schema};
-use shared::ImageId;
 use stored::{batches_to_original_images, batches_to_stored_images, batches_to_summaries};
 
 pub struct SkeetStore {
@@ -140,9 +141,7 @@ impl SkeetStore {
                 ),
                 Arc::new(StringArray::from(vec![record.zone.to_string().as_str()])),
                 Arc::new(LargeBinaryArray::from_vec(vec![&annotated_bytes])),
-                Arc::new(StringArray::from(vec![
-                    record.config_version.to_string().as_str(),
-                ])),
+                Arc::new(StringArray::from(vec![record.config_version.to_string().as_str()])),
                 Arc::new(StringArray::from(vec![record.detected_text.as_str()])),
             ],
         )?;
@@ -348,17 +347,16 @@ impl SkeetStore {
         let mut id_times = Vec::new();
         for batch in &batches {
             let image_ids = typed_column::<StringArray>(batch, "image_id")?;
-            let discovered_ats = typed_column::<TimestampMicrosecondArray>(batch, "discovered_at")?;
+            let discovered_ats =
+                typed_column::<TimestampMicrosecondArray>(batch, "discovered_at")?;
             for i in 0..batch.num_rows() {
-                id_times.push((
-                    image_ids.value(i).parse::<ImageId>()?,
-                    discovered_ats.value(i),
-                ));
+                id_times.push((image_ids.value(i).parse::<ImageId>()?, discovered_ats.value(i)));
             }
         }
         id_times.sort_by(|a, b| b.1.cmp(&a.1));
         Ok(id_times.into_iter().map(|(id, _)| id).collect())
     }
+
 }
 
 fn id_in_list_filter(image_ids: &[ImageId]) -> String {

@@ -43,7 +43,9 @@ impl SkeetStore {
                 Arc::new(StringArray::from(vec![skeet_id_str.as_str()])),
                 Arc::new(StringArray::from(vec![band_str.as_str()])),
                 Arc::new(StringArray::from(vec![appraiser_str.as_str()])),
-                Arc::new(TimestampMicrosecondArray::from(vec![now_us]).with_timezone("UTC")),
+                Arc::new(
+                    TimestampMicrosecondArray::from(vec![now_us]).with_timezone("UTC"),
+                ),
             ],
         )?;
 
@@ -78,15 +80,12 @@ impl SkeetStore {
     }
 
     #[instrument(skip(self))]
-    pub async fn list_all_skeet_appraisals(&self) -> Result<Vec<(SkeetId, Appraisal)>, StoreError> {
-        let batches = execute_query(
-            &self.skeet_appraisal_table.query(),
-            "list_all_skeet_appraisals",
-        )
-        .await?;
-        parse_keyed_appraisals(&batches, "skeet_id", |s| {
-            s.parse().map_err(StoreError::from)
-        })
+    pub async fn list_all_skeet_appraisals(
+        &self,
+    ) -> Result<Vec<(SkeetId, Appraisal)>, StoreError> {
+        let batches =
+            execute_query(&self.skeet_appraisal_table.query(), "list_all_skeet_appraisals").await?;
+        parse_keyed_appraisals(&batches, "skeet_id", |s| s.parse().map_err(StoreError::from))
     }
 
     #[instrument(skip(self))]
@@ -112,7 +111,9 @@ impl SkeetStore {
                 Arc::new(StringArray::from(vec![image_id_str.as_str()])),
                 Arc::new(StringArray::from(vec![band_str.as_str()])),
                 Arc::new(StringArray::from(vec![appraiser_str.as_str()])),
-                Arc::new(TimestampMicrosecondArray::from(vec![now_us]).with_timezone("UTC")),
+                Arc::new(
+                    TimestampMicrosecondArray::from(vec![now_us]).with_timezone("UTC"),
+                ),
             ],
         )?;
 
@@ -147,15 +148,12 @@ impl SkeetStore {
     }
 
     #[instrument(skip(self))]
-    pub async fn list_all_image_appraisals(&self) -> Result<Vec<(ImageId, Appraisal)>, StoreError> {
-        let batches = execute_query(
-            &self.image_appraisal_table.query(),
-            "list_all_image_appraisals",
-        )
-        .await?;
-        parse_keyed_appraisals(&batches, "image_id", |s| {
-            s.parse().map_err(StoreError::from)
-        })
+    pub async fn list_all_image_appraisals(
+        &self,
+    ) -> Result<Vec<(ImageId, Appraisal)>, StoreError> {
+        let batches =
+            execute_query(&self.image_appraisal_table.query(), "list_all_image_appraisals").await?;
+        parse_keyed_appraisals(&batches, "image_id", |s| s.parse().map_err(StoreError::from))
     }
 }
 

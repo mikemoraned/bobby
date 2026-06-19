@@ -1,6 +1,6 @@
 use prometheus_reqwest_remote_write::{
-    CONTENT_TYPE, HEADER_NAME_REMOTE_WRITE_VERSION, Label, REMOTE_WRITE_VERSION_01, Sample,
-    TimeSeries, WriteRequest,
+    Label, Sample, TimeSeries, WriteRequest, CONTENT_TYPE, HEADER_NAME_REMOTE_WRITE_VERSION,
+    REMOTE_WRITE_VERSION_01,
 };
 use reqwest::Client;
 use thiserror::Error;
@@ -26,7 +26,9 @@ pub async fn push(
     entries: &[CostEntry],
     timestamp_ms: i64,
 ) -> Result<(), PromError> {
-    let (username, password) = basic_auth.split_once(':').ok_or(PromError::InvalidAuth)?;
+    let (username, password) = basic_auth
+        .split_once(':')
+        .ok_or(PromError::InvalidAuth)?;
 
     let compressed = build_write_request(entries, timestamp_ms)
         .encode_compressed()
@@ -57,25 +59,27 @@ pub async fn push(
 fn build_write_request(entries: &[CostEntry], timestamp_ms: i64) -> WriteRequest {
     let timeseries = entries
         .iter()
-        .map(|e| TimeSeries {
-            labels: vec![
-                Label {
-                    name: "__name__".into(),
-                    value: "openai_cost_usd_total".into(),
-                },
-                Label {
-                    name: "line_item".into(),
-                    value: e.line_item.clone(),
-                },
-                Label {
-                    name: "project_id".into(),
-                    value: e.project_id.clone(),
-                },
-            ],
-            samples: vec![Sample {
-                value: e.amount_usd,
-                timestamp: timestamp_ms,
-            }],
+        .map(|e| {
+            TimeSeries {
+                labels: vec![
+                    Label {
+                        name: "__name__".into(),
+                        value: "openai_cost_usd_total".into(),
+                    },
+                    Label {
+                        name: "line_item".into(),
+                        value: e.line_item.clone(),
+                    },
+                    Label {
+                        name: "project_id".into(),
+                        value: e.project_id.clone(),
+                    },
+                ],
+                samples: vec![Sample {
+                    value: e.amount_usd,
+                    timestamp: timestamp_ms,
+                }],
+            }
         })
         .collect();
 

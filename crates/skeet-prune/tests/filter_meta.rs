@@ -32,7 +32,10 @@ fn main() {
             format!("{rkey}::blocked_by_meta_filter"),
             move || {
                 let json_text = std::fs::read_to_string(&json_path).map_err(|e| {
-                    format!("missing JSON for {at_uri} at {}: {e}", json_path.display())
+                    format!(
+                        "missing JSON for {at_uri} at {}: {e}",
+                        json_path.display()
+                    )
                 })?;
 
                 let json: serde_json::Value =
@@ -42,9 +45,10 @@ fn main() {
 
                 match outcome {
                     MetaFilterOutcome::Blocked(_) => Ok(()),
-                    MetaFilterOutcome::Pass => {
-                        Err(format!("{at_uri} should be blocked by meta filter but was not").into())
-                    }
+                    MetaFilterOutcome::Pass => Err(format!(
+                        "{at_uri} should be blocked by meta filter but was not"
+                    )
+                    .into()),
                 }
             },
         ));

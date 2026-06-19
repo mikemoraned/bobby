@@ -51,10 +51,7 @@ use opentelemetry_sdk::metrics::{
 pub struct Snapshot(Vec<opentelemetry_sdk::metrics::data::ResourceMetrics>);
 
 impl Snapshot {
-    fn named(
-        &self,
-        metric: &str,
-    ) -> impl Iterator<Item = &opentelemetry_sdk::metrics::data::Metric> {
+    fn named(&self, metric: &str) -> impl Iterator<Item = &opentelemetry_sdk::metrics::data::Metric> {
         self.0
             .iter()
             .flat_map(|rm| rm.scope_metrics())
@@ -69,8 +66,7 @@ impl Snapshot {
                     s.data_points()
                         .filter(|dp| {
                             attr.is_none_or(|(k, v)| {
-                                dp.attributes()
-                                    .any(|kv| kv.key.as_str() == k && kv.value.as_str() == v)
+                                dp.attributes().any(|kv| kv.key.as_str() == k && kv.value.as_str() == v)
                             })
                         })
                         .map(|dp| dp.value())
@@ -89,8 +85,7 @@ impl Snapshot {
                     g.data_points()
                         .filter(|dp| {
                             attr.is_none_or(|(k, v)| {
-                                dp.attributes()
-                                    .any(|kv| kv.key.as_str() == k && kv.value.as_str() == v)
+                                dp.attributes().any(|kv| kv.key.as_str() == k && kv.value.as_str() == v)
                             })
                         })
                         .map(|dp| dp.value())
@@ -109,8 +104,7 @@ impl Snapshot {
                     .data_points()
                     .filter(|dp| {
                         attr.is_none_or(|(k, v)| {
-                            dp.attributes()
-                                .any(|kv| kv.key.as_str() == k && kv.value.as_str() == v)
+                            dp.attributes().any(|kv| kv.key.as_str() == k && kv.value.as_str() == v)
                         })
                     })
                     .map(|dp| dp.count())
@@ -119,8 +113,7 @@ impl Snapshot {
                     .data_points()
                     .filter(|dp| {
                         attr.is_none_or(|(k, v)| {
-                            dp.attributes()
-                                .any(|kv| kv.key.as_str() == k && kv.value.as_str() == v)
+                            dp.attributes().any(|kv| kv.key.as_str() == k && kv.value.as_str() == v)
                         })
                     })
                     .map(|dp| dp.count())

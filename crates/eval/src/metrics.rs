@@ -134,14 +134,8 @@ mod tests {
             pin_at_precision(&d, Precision::new(1.0).expect("valid")).expect("threshold exists");
         let threshold: f64 = pinned.threshold.into();
         let recall: f64 = pinned.recall.into();
-        assert!(
-            (threshold - 0.8).abs() < 1e-6,
-            "expected 0.8, got {threshold}"
-        );
-        assert!(
-            (recall - 2.0 / 3.0).abs() < 1e-6,
-            "expected 2/3, got {recall}"
-        );
+        assert!((threshold - 0.8).abs() < 1e-6, "expected 0.8, got {threshold}");
+        assert!((recall - 2.0 / 3.0).abs() < 1e-6, "expected 2/3, got {recall}");
     }
 
     #[test]

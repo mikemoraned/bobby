@@ -6,7 +6,7 @@ pub mod setup;
 
 use chrono::{DateTime, Utc};
 use eval::{
-    EvalSplit, Evaluation, F1, PricingError, Purpose, Resources, RunId, RunRecord, Snapshot,
+    Evaluation, EvalSplit, F1, PricingError, Purpose, Resources, RunId, RunRecord, Snapshot,
     SnapshotId, SplitId, Usd, confusion_at, pin_at_precision, roc_auc_score,
 };
 use shared::ImageId;
@@ -172,10 +172,11 @@ impl<'a> TrainingInputs<'a> {
         let test_images = load_labelled_images(self.store, &band_by_id, &self.split.test).await?;
         let test_agent = build_agent(&client, &self.model, &best_prompt);
         let test_agent_ref = &test_agent;
-        let test_scored = score_concurrent(&test_images, self.concurrency, |image| async move {
-            refine_image_resilient(test_agent_ref, &image).await
-        })
-        .await;
+        let test_scored =
+            score_concurrent(&test_images, self.concurrency, |image| async move {
+                refine_image_resilient(test_agent_ref, &image).await
+            })
+            .await;
         let (test_in, test_out) = token_totals(&test_scored);
         let test_fallbacks = fallback_count(&test_scored);
 
@@ -195,15 +196,13 @@ impl<'a> TrainingInputs<'a> {
 
         let pinned_at_baseline_precision =
             pin_at_precision(&test_labelled, self.baseline.evaluation.precision);
-        let outcome = evaluate_gate(
-            pinned_at_baseline_precision,
-            self.baseline.evaluation.recall,
-        );
+        let outcome = evaluate_gate(pinned_at_baseline_precision, self.baseline.evaluation.recall);
 
         let candidate_threshold = pinned_at_baseline_precision
             .map(|p| p.threshold)
             .unwrap_or_else(training_loop_threshold);
-        let candidate_model = build_candidate_model(&self.model, &best_prompt, candidate_threshold);
+        let candidate_model =
+            build_candidate_model(&self.model, &best_prompt, candidate_threshold);
 
         let run = RunRecord {
             run_id: RunId::from_run_at(self.run_at),

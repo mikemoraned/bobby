@@ -1,7 +1,8 @@
 use face_detection::{Face, FaceDetector, TextRegion, annotate_image};
 use image::{DynamicImage, GrayImage};
 use shared::{
-    Classification, ImageId, ModelVersion, Percentage, PruneConfig, Rejection, SkeetImage, Zone,
+    Classification, ImageId, ModelVersion, Percentage, PruneConfig, Rejection,
+    SkeetImage, Zone,
 };
 use skeet_store::{DiscoveredAt, ImageRecord, OriginalAt};
 
@@ -14,6 +15,7 @@ pub fn classify(
     text_area_pct: Option<Percentage>,
     config: &PruneConfig,
 ) -> Classification {
+
     if faces.len() > 1 {
         return Classification::Rejected(vec![Rejection::TooManyFaces]);
     }
@@ -107,7 +109,10 @@ pub fn classify_image(
 
     let text_result = text_detector.map(|td| td.detect(&skeet_image.image));
     let text_area_pct = text_result.as_ref().and_then(|r| {
-        Percentage::new(r.text_area_pct(skeet_image.image.width(), skeet_image.image.height())).ok()
+        Percentage::new(
+            r.text_area_pct(skeet_image.image.width(), skeet_image.image.height()),
+        )
+        .ok()
     });
 
     let faces = detector.detect(&skeet_image.image);

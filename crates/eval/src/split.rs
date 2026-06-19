@@ -109,10 +109,7 @@ pub enum EvalSplitsError {
     #[error("failed to serialize eval-splits.toml: {0}")]
     Serialize(#[from] toml::ser::Error),
     #[error("split_id mismatch: stored {stored}, recomputed {recomputed}")]
-    SplitIdMismatch {
-        stored: SplitId,
-        recomputed: SplitId,
-    },
+    SplitIdMismatch { stored: SplitId, recomputed: SplitId },
     #[error("label {label} references unknown split_id {split_id}")]
     UnknownLabelSplit { label: String, split_id: SplitId },
     #[error("duplicate split_id {0} — each split must appear once")]
@@ -291,7 +288,11 @@ pub fn stratified_split<T: Clone + ToString>(
 /// shuffles within the band and the quota is taken from the test partition.
 /// The seed offset per band matches `stratified_split` so the two functions
 /// behave consistently for the same `seed`.
-pub fn stratified_sample<T: Clone>(items: &[(T, Band)], sample_size: usize, seed: u64) -> Vec<T> {
+pub fn stratified_sample<T: Clone>(
+    items: &[(T, Band)],
+    sample_size: usize,
+    seed: u64,
+) -> Vec<T> {
     if items.is_empty() || sample_size == 0 {
         return Vec::new();
     }
@@ -324,14 +325,12 @@ fn sample_band<T: Clone>(group: Vec<T>, total_target: usize, total: usize, seed:
         return group;
     }
     let test_size = quota as f32 / n as f32;
-    let dummy_x =
-        DenseMatrix::new(n, 1, vec![0.0_f64; n], false).expect("(n, 1) shape matches values len");
+    let dummy_x = DenseMatrix::new(n, 1, vec![0.0_f64; n], false)
+        .expect("(n, 1) shape matches values len");
     let indices: Vec<u64> = (0..n as u64).collect();
-    let (_, _, _, test_idx) = train_test_split(&dummy_x, &indices, test_size, true, Some(seed));
-    test_idx
-        .into_iter()
-        .map(|i| group[i as usize].clone())
-        .collect()
+    let (_, _, _, test_idx) =
+        train_test_split(&dummy_x, &indices, test_size, true, Some(seed));
+    test_idx.into_iter().map(|i| group[i as usize].clone()).collect()
 }
 
 // `DenseMatrix::new` is given a matching `(n, 1)` shape and an `n`-length value vec, so it
@@ -348,14 +347,8 @@ fn split_band<T: Clone>(group: Vec<T>, test_size: f32, seed: u64) -> (Vec<T>, Ve
         let indices: Vec<u64> = (0..n as u64).collect();
         let (_, _, train_idx, test_idx) =
             train_test_split(&dummy_x, &indices, test_size, true, Some(seed));
-        let train: Vec<T> = train_idx
-            .into_iter()
-            .map(|i| group[i as usize].clone())
-            .collect();
-        let test: Vec<T> = test_idx
-            .into_iter()
-            .map(|i| group[i as usize].clone())
-            .collect();
+        let train: Vec<T> = train_idx.into_iter().map(|i| group[i as usize].clone()).collect();
+        let test: Vec<T> = test_idx.into_iter().map(|i| group[i as usize].clone()).collect();
         (train, test)
     }
 }
@@ -688,11 +681,7 @@ test = ["{test1}"]
     #[test]
     fn split_id_parse_rejects_wrong_length() {
         assert!("c393ad1ec67c1744".parse::<SplitId>().is_err());
-        assert!(
-            "not hex at all not hex at all !!"
-                .parse::<SplitId>()
-                .is_err()
-        );
+        assert!("not hex at all not hex at all !!".parse::<SplitId>().is_err());
     }
 
     #[test]

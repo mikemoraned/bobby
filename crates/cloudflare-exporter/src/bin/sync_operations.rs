@@ -13,9 +13,7 @@ use cloudflare_exporter::{
 use tracing::info;
 
 #[derive(Parser)]
-#[command(
-    about = "Sync Cloudflare R2 operations metrics to Grafana Cloud via Prometheus remote_write"
-)]
+#[command(about = "Sync Cloudflare R2 operations metrics to Grafana Cloud via Prometheus remote_write")]
 struct Args {
     /// Cloudflare API token (Account Analytics: Read scope)
     #[arg(long, env = "BOBBY_CLOUDFLARE_API_TOKEN", value_parser = ApiToken::from_str)]
@@ -44,12 +42,8 @@ struct Args {
 
 async fn sync(args: &Args) -> Result<u64, Box<dyn std::error::Error>> {
     let now = Utc::now();
-    let from = args
-        .from
-        .unwrap_or_else(|| now - chrono::Duration::minutes(6));
-    let to = args
-        .to
-        .unwrap_or_else(|| now - chrono::Duration::minutes(5));
+    let from = args.from.unwrap_or_else(|| now - chrono::Duration::minutes(6));
+    let to = args.to.unwrap_or_else(|| now - chrono::Duration::minutes(5));
 
     info!(%from, %to, "syncing Cloudflare R2 operations metrics");
 

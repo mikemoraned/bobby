@@ -2,7 +2,7 @@ app = "bobby-appraisals-staging"
 primary_region = "lhr"
 
 [processes]
-app = "skeet-appraise --store-path s3://hom-bobby/encrypted-store --bind 0.0.0.0:8080 --use-redis --model-path /etc/bobby/refine.toml"
+app = "skeet-appraise --store-path s3://hom-bobby/encrypted-store --bind 0.0.0.0:8080 --use-redis --model-path /etc/bobby/refine.toml --publish quality-48h --publish quality-7d --publish recency-48h"
 
 [env]
 RUST_LOG = "skeet_appraise=info,skeet_store=info"

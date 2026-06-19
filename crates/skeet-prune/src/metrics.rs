@@ -200,195 +200,52 @@ mod tests {
     }
 
     fn empty_emit(metrics: &mut PruneMetrics) {
-        metrics.emit(
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        metrics.emit(0, 0, 0, 0, 0, 0, 0, 0, 0, &HashMap::new(), &HashMap::new(), &HashMap::new());
     }
 
     #[test]
     fn throughput_counter_emits_delta_only_when_increasing() {
         let (mut metrics, provider, exporter) = make_test_metrics();
         // First emit: firehose=10 — counter should add 10.
-        metrics.emit(
-            10,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        metrics.emit(10, 0, 0, 0, 0, 0, 0, 0, 0, &HashMap::new(), &HashMap::new(), &HashMap::new());
         // Second emit: firehose=10 again (delta=0) — counter must NOT advance.
-        metrics.emit(
-            10,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        metrics.emit(10, 0, 0, 0, 0, 0, 0, 0, 0, &HashMap::new(), &HashMap::new(), &HashMap::new());
         // Third emit: firehose=15 (delta=5) — counter adds 5.
-        metrics.emit(
-            15,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-        );
-        let total = sum_counter(
-            &provider,
-            &exporter,
-            "skeet_prune.pipeline.throughput",
-            Some(("stage", "firehose")),
-        );
+        metrics.emit(15, 0, 0, 0, 0, 0, 0, 0, 0, &HashMap::new(), &HashMap::new(), &HashMap::new());
+        let total = sum_counter(&provider, &exporter, "skeet_prune.pipeline.throughput", Some(("stage", "firehose")));
         assert_eq!(total, 15, "cumulative firehose count after 10→10→15");
     }
 
     #[test]
     fn throughput_counter_keeps_stages_independent() {
         let (mut metrics, provider, exporter) = make_test_metrics();
-        metrics.emit(
-            7,
-            11,
-            13,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        metrics.emit(7, 11, 13, 0, 0, 0, 0, 0, 0, &HashMap::new(), &HashMap::new(), &HashMap::new());
         let snap = flush_and_collect(&provider, &exporter);
-        assert_eq!(
-            snap.sum_counter(
-                "skeet_prune.pipeline.throughput",
-                Some(("stage", "firehose"))
-            ),
-            7
-        );
-        assert_eq!(
-            snap.sum_counter("skeet_prune.pipeline.throughput", Some(("stage", "meta"))),
-            11
-        );
-        assert_eq!(
-            snap.sum_counter("skeet_prune.pipeline.throughput", Some(("stage", "image"))),
-            13
-        );
+        assert_eq!(snap.sum_counter("skeet_prune.pipeline.throughput", Some(("stage", "firehose"))), 7);
+        assert_eq!(snap.sum_counter("skeet_prune.pipeline.throughput", Some(("stage", "meta"))), 11);
+        assert_eq!(snap.sum_counter("skeet_prune.pipeline.throughput", Some(("stage", "image"))), 13);
     }
 
     #[test]
     fn depth_gauge_emits_current_value_each_call() {
         let (mut metrics, provider, exporter) = make_test_metrics();
         // Gauges emit current value unconditionally — even when "delta" would be zero.
-        metrics.emit(
-            0,
-            0,
-            0,
-            5,
-            7,
-            9,
-            0,
-            0,
-            0,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        metrics.emit(0, 0, 0, 5, 7, 9, 0, 0, 0, &HashMap::new(), &HashMap::new(), &HashMap::new());
         let snap = flush_and_collect(&provider, &exporter);
-        assert_eq!(
-            snap.last_gauge_u64("skeet_prune.pipeline.depth", Some(("stage", "firehose"))),
-            5
-        );
-        assert_eq!(
-            snap.last_gauge_u64("skeet_prune.pipeline.depth", Some(("stage", "meta"))),
-            7
-        );
-        assert_eq!(
-            snap.last_gauge_u64("skeet_prune.pipeline.depth", Some(("stage", "image"))),
-            9
-        );
+        assert_eq!(snap.last_gauge_u64("skeet_prune.pipeline.depth", Some(("stage", "firehose"))), 5);
+        assert_eq!(snap.last_gauge_u64("skeet_prune.pipeline.depth", Some(("stage", "meta"))), 7);
+        assert_eq!(snap.last_gauge_u64("skeet_prune.pipeline.depth", Some(("stage", "image"))), 9);
     }
 
     #[test]
     fn content_counters_emit_deltas() {
         let (mut metrics, provider, exporter) = make_test_metrics();
-        metrics.emit(
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            4,
-            6,
-            2,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        metrics.emit(0, 0, 0, 0, 0, 0, 4, 6, 2, &HashMap::new(), &HashMap::new(), &HashMap::new());
         // Emit again with same totals — must not double-count.
         empty_emit(&mut metrics);
-        metrics.emit(
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            4,
-            6,
-            2,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        metrics.emit(0, 0, 0, 0, 0, 0, 4, 6, 2, &HashMap::new(), &HashMap::new(), &HashMap::new());
         // Then bump.
-        metrics.emit(
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            5,
-            6,
-            3,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        metrics.emit(0, 0, 0, 0, 0, 0, 5, 6, 3, &HashMap::new(), &HashMap::new(), &HashMap::new());
         let snap = flush_and_collect(&provider, &exporter);
         assert_eq!(snap.sum_counter("skeet_prune.skeets.total", None), 5);
         assert_eq!(snap.sum_counter("skeet_prune.images.total", None), 6);
@@ -401,66 +258,15 @@ mod tests {
         let mut rejs: HashMap<Rejection, u64> = HashMap::new();
         rejs.insert(Rejection::TooMuchText, 3);
         rejs.insert(Rejection::FaceTooSmall, 1);
-        metrics.emit(
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            &rejs,
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        metrics.emit(0, 0, 0, 0, 0, 0, 0, 0, 0, &rejs, &HashMap::new(), &HashMap::new());
         // Same map again — no advance.
-        metrics.emit(
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            &rejs,
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        metrics.emit(0, 0, 0, 0, 0, 0, 0, 0, 0, &rejs, &HashMap::new(), &HashMap::new());
         // Bump TooMuchText to 7.
         rejs.insert(Rejection::TooMuchText, 7);
-        metrics.emit(
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            &rejs,
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        metrics.emit(0, 0, 0, 0, 0, 0, 0, 0, 0, &rejs, &HashMap::new(), &HashMap::new());
         let snap = flush_and_collect(&provider, &exporter);
-        assert_eq!(
-            snap.sum_counter(
-                "skeet_prune.rejected.total",
-                Some(("reason", "TooMuchText"))
-            ),
-            7
-        );
-        assert_eq!(
-            snap.sum_counter(
-                "skeet_prune.rejected.total",
-                Some(("reason", "FaceTooSmall"))
-            ),
-            1
-        );
+        assert_eq!(snap.sum_counter("skeet_prune.rejected.total", Some(("reason", "TooMuchText"))), 7);
+        assert_eq!(snap.sum_counter("skeet_prune.rejected.total", Some(("reason", "FaceTooSmall"))), 1);
     }
 
     #[test]
@@ -476,16 +282,7 @@ mod tests {
         sole.insert(RejectionCategory::Face, 3);
         metrics.emit(0, 0, 0, 0, 0, 0, 0, 0, 0, &HashMap::new(), &cats, &sole);
         let snap = flush_and_collect(&provider, &exporter);
-        assert_eq!(
-            snap.sum_counter("skeet_prune.categories.total", Some(("category", "Face"))),
-            8
-        );
-        assert_eq!(
-            snap.sum_counter(
-                "skeet_prune.categories.sole.total",
-                Some(("category", "Face"))
-            ),
-            3
-        );
+        assert_eq!(snap.sum_counter("skeet_prune.categories.total", Some(("category", "Face"))), 8);
+        assert_eq!(snap.sum_counter("skeet_prune.categories.sole.total", Some(("category", "Face"))), 3);
     }
 }

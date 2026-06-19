@@ -2,21 +2,16 @@ use std::path::PathBuf;
 
 use chrono::Utc;
 use clap::Parser;
-use eval::{
-    EvalResultsLog, EvalSplits, PricesRegistry, Purpose, RunId, RunRecord, SnapshotId, Usd,
-};
+use eval::{EvalResultsLog, EvalSplits, PricesRegistry, Purpose, RunId, RunRecord, SnapshotId, Usd};
 use shared::refine_model::Label;
 use skeet_refine::model::RefineModels;
-use skeet_refine::train::TrainingInputs;
 use skeet_refine::train::gate::GateOutcome;
+use skeet_refine::train::TrainingInputs;
 use skeet_store::StoreArgs;
 use tracing::{info, warn};
 
 #[derive(Parser)]
-#[command(
-    name = "train",
-    about = "Train a scoring prompt against the wider appraised dataset"
-)]
+#[command(name = "train", about = "Train a scoring prompt against the wider appraised dataset")]
 struct Args {
     #[command(flatten)]
     store: StoreArgs,
@@ -220,7 +215,10 @@ fn pick_baseline<'a>(
             .iter()
             .find(|r| r.run_id == run_id)
             .ok_or_else(|| {
-                TrainCliError::UnknownBaselineRunId(run_id, args.eval_results_path.clone())
+                TrainCliError::UnknownBaselineRunId(
+                    run_id,
+                    args.eval_results_path.clone(),
+                )
             });
     }
     let production = models
@@ -249,10 +247,7 @@ fn print_metrics(args: &Args, baseline: &RunRecord, report: &skeet_refine::train
     println!("=== Training results ===");
     println!("  run_id             : {}", run.run_id);
     println!("  purpose            : {}", run.purpose);
-    println!(
-        "  model              : {} ({})",
-        args.model, candidate_version
-    );
+    println!("  model              : {} ({})", args.model, candidate_version);
     println!("  iterations         : {}", args.max_iterations);
     println!("  per-iter sample    : {}", report.per_iter_size);
     println!(
@@ -285,10 +280,7 @@ fn print_metrics(args: &Args, baseline: &RunRecord, report: &skeet_refine::train
         run.resources.cost,
         run.total_cost(),
     );
-    println!(
-        "  appended to log    : {}",
-        args.eval_results_path.display()
-    );
+    println!("  appended to log    : {}", args.eval_results_path.display());
 }
 
 fn print_accepted(args: &Args, baseline: &RunRecord, report: &skeet_refine::train::TrainingReport) {
