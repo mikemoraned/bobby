@@ -33,7 +33,7 @@ pub use score::{
 };
 use serde::Deserialize;
 use skeet_id::SkeetId;
-pub use zone::Zone;
+pub use zone::{ParseZoneError, Zone};
 
 /// A percentage value in the range 0.0–100.0.
 #[derive(Debug, Clone, Copy, Deserialize)]

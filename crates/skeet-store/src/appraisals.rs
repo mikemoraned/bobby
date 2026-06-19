@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow_array::{RecordBatch, StringArray, TimestampMicrosecondArray};
+use arrow_array::{RecordBatch, RecordBatchIterator, StringArray, TimestampMicrosecondArray};
 use chrono::Utc;
 use lancedb::query::QueryBase;
 use shared::{Appraiser, Band, ImageId};
@@ -27,10 +27,6 @@ impl SkeetStore {
         band: Band,
         appraiser: &Appraiser,
     ) -> Result<(), StoreError> {
-        self.skeet_appraisal_table
-            .delete(&format!("skeet_id = '{skeet_id}'"))
-            .await?;
-
         let schema = manual_skeet_appraisal_v1_schema();
         let skeet_id_str = skeet_id.to_string();
         let band_str = band.to_string();
@@ -47,11 +43,11 @@ impl SkeetStore {
             ],
         )?;
 
-        self.skeet_appraisal_table
-            .add(vec![batch])
-            .write_options(self.write_options())
-            .execute()
-            .await?;
+        let reader = RecordBatchIterator::new(vec![Ok(batch)], schema);
+        let mut builder = self.skeet_appraisal_table.merge_insert(&["skeet_id"]);
+        builder.when_matched_update_all(None);
+        builder.when_not_matched_insert_all();
+        builder.execute(Box::new(reader)).await?;
         Ok(())
     }
 
@@ -96,10 +92,6 @@ impl SkeetStore {
         band: Band,
         appraiser: &Appraiser,
     ) -> Result<(), StoreError> {
-        self.image_appraisal_table
-            .delete(&format!("image_id = '{image_id}'"))
-            .await?;
-
         let schema = manual_image_appraisal_v1_schema();
         let image_id_str = image_id.to_string();
         let band_str = band.to_string();
@@ -116,11 +108,11 @@ impl SkeetStore {
             ],
         )?;
 
-        self.image_appraisal_table
-            .add(vec![batch])
-            .write_options(self.write_options())
-            .execute()
-            .await?;
+        let reader = RecordBatchIterator::new(vec![Ok(batch)], schema);
+        let mut builder = self.image_appraisal_table.merge_insert(&["image_id"]);
+        builder.when_matched_update_all(None);
+        builder.when_not_matched_insert_all();
+        builder.execute(Box::new(reader)).await?;
         Ok(())
     }
 

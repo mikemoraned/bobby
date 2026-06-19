@@ -58,7 +58,6 @@ pub struct SummaryColumns<'a> {
 }
 
 impl<'a> SummaryColumns<'a> {
-    #[instrument(skip(batch))]
     pub fn extract(batch: &'a RecordBatch) -> Result<Self, StoreError> {
         Ok(Self {
             image_ids: typed_column::<StringArray>(batch, "image_id")?,
@@ -71,13 +70,8 @@ impl<'a> SummaryColumns<'a> {
         })
     }
 
-    #[instrument(skip(self))]
     pub fn to_summary(&self, i: usize) -> Result<StoredImageSummary, StoreError> {
-        let zone: Zone = self
-            .archetypes
-            .value(i)
-            .parse()
-            .map_err(|_| StoreError::InvalidZone(self.archetypes.value(i).to_string()))?;
+        let zone: Zone = self.archetypes.value(i).parse()?;
         let config_version = ModelVersion::from(self.config_versions.value(i));
 
         Ok(StoredImageSummary {

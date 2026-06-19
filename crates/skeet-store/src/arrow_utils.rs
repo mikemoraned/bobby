@@ -3,11 +3,8 @@ use std::io::Cursor;
 use arrow_array::{Array, RecordBatch, TimestampMicrosecondArray};
 use chrono::{DateTime, TimeZone, Utc};
 use image::DynamicImage;
-use tracing::instrument;
-
 use crate::StoreError;
 
-#[instrument(skip(batch))]
 pub fn typed_column<'a, T: Array + 'static>(
     batch: &'a RecordBatch,
     name: &str,
@@ -20,7 +17,6 @@ pub fn typed_column<'a, T: Array + 'static>(
         })
 }
 
-#[instrument(skip(img))]
 pub fn encode_image_as_png(img: &DynamicImage) -> Result<Vec<u8>, image::ImageError> {
     let mut buf = Cursor::new(Vec::new());
     img.write_to(&mut buf, image::ImageFormat::Png)?;

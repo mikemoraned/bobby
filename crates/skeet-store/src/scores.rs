@@ -26,28 +26,8 @@ impl SkeetStore {
         score: &Score,
         model_version: &ModelVersion,
     ) -> Result<(), StoreError> {
-        self.scores_table
-            .delete(&format!("image_id = '{image_id}'"))
-            .await?;
-
-        let schema = images_score_v2_schema();
-        let image_id_str = image_id.to_string();
-        let model_version_str = model_version.to_string();
-        let batch = RecordBatch::try_new(
-            schema.clone(),
-            vec![
-                Arc::new(StringArray::from(vec![image_id_str.as_str()])),
-                Arc::new(Float32Array::from(vec![f32::from(*score)])),
-                Arc::new(StringArray::from(vec![model_version_str.as_str()])),
-            ],
-        )?;
-
-        self.scores_table
-            .add(vec![batch])
-            .write_options(self.write_options())
-            .execute()
-            .await?;
-        Ok(())
+        self.batch_upsert_scores(&[(image_id.clone(), *score, model_version.clone())])
+            .await
     }
 
     #[instrument(skip(self))]
@@ -107,7 +87,7 @@ impl SkeetStore {
         let scores = typed_column::<Float32Array>(&batches[0], "score")?;
         let model_versions = typed_column::<StringArray>(&batches[0], "model_version")?;
         let score =
-            Score::new(scores.value(0)).map_err(|e| StoreError::ValidationFailed(e.to_string()))?;
+            Score::new(scores.value(0))?;
         let model_version = ModelVersion::from(model_versions.value(0));
         Ok(Some((score, model_version)))
     }
@@ -328,8 +308,7 @@ impl SkeetStore {
             let model_versions = typed_column::<StringArray>(batch, "model_version")?;
             for i in 0..batch.num_rows() {
                 let image_id: ImageId = image_ids.value(i).parse()?;
-                let score = Score::new(score_vals.value(i))
-                    .map_err(|e| StoreError::ValidationFailed(e.to_string()))?;
+                let score = Score::new(score_vals.value(i))?;
                 let model_version = ModelVersion::from(model_versions.value(i));
                 scores.insert(image_id, (score, model_version));
             }
@@ -401,7 +380,7 @@ impl SkeetStore {
     #[instrument(skip(self))]
     pub async fn list_scores_for_ids(
         &self,
-        image_ids: &[&str],
+        image_ids: &[ImageId],
     ) -> Result<HashMap<ImageId, (Score, ModelVersion)>, StoreError> {
         if image_ids.is_empty() {
             return Ok(HashMap::new());
@@ -431,8 +410,7 @@ impl SkeetStore {
             let scores = typed_column::<Float32Array>(batch, "score")?;
             let model_versions = typed_column::<StringArray>(batch, "model_version")?;
             for i in 0..batch.num_rows() {
-                let score = Score::new(scores.value(i))
-                    .map_err(|e| StoreError::ValidationFailed(e.to_string()))?;
+                let score = Score::new(scores.value(i))?;
                 let image_id: ImageId = ids.value(i).parse()?;
                 let model_version = ModelVersion::from(model_versions.value(i));
                 score_map.insert(image_id, (score, model_version));

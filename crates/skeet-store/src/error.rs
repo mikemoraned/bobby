@@ -1,8 +1,5 @@
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
-    #[error("invalid store URI: {0}")]
-    InvalidUri(String),
-
     #[error("LanceDB error: {0}")]
     Lance(#[from] lancedb::Error),
 
@@ -22,13 +19,16 @@ pub enum StoreError {
     InvalidSkeetId(#[from] shared::skeet_id::SkeetIdError),
 
     #[error("invalid zone in store: {0}")]
-    InvalidZone(String),
+    InvalidZone(#[from] shared::ParseZoneError),
 
     #[error("invalid band in store: {0}")]
     InvalidBand(#[from] shared::ParseBandError),
 
     #[error("invalid appraiser in store: {0}")]
     InvalidAppraiser(#[from] shared::ParseAppraiserError),
+
+    #[error("invalid score in store: {0}")]
+    InvalidScore(#[from] shared::InvalidScore),
 
     #[error("storage validation failed: {0}")]
     ValidationFailed(String),

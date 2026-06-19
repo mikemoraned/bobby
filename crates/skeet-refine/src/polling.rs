@@ -60,7 +60,7 @@ impl PollingBatchSource {
         info!(count = unscored_ids.len(), "found unscored images");
 
         let originals = self.store.get_originals_by_ids(&unscored_ids).await?;
-        Ok(Batch::from(originals))
+        Ok(Batch::from(originals.into_values().collect::<Vec<_>>()))
     }
 
     /// Consume `batch` and advance the internal watermark using its completion

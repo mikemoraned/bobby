@@ -66,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let images = store.get_by_ids(chunk).await?;
         not_found += chunk.len() - images.len();
 
-        for stored in &images {
+        for stored in images.values() {
             let Some(&should_be_pruned) = ground_truth.get(&stored.summary.image_id) else {
                 continue;
             };

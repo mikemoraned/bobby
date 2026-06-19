@@ -808,9 +808,8 @@ async fn get_originals_by_ids_returns_images() {
     let ids = vec![record1.image_id.clone(), record2.image_id.clone()];
     let originals = store.get_originals_by_ids(&ids).await.unwrap();
     assert_eq!(originals.len(), 2);
-    let original_ids: Vec<_> = originals.iter().map(|o| &o.summary.image_id).collect();
-    assert!(original_ids.contains(&&record1.image_id));
-    assert!(original_ids.contains(&&record2.image_id));
+    assert!(originals.contains_key(&record1.image_id));
+    assert!(originals.contains_key(&record2.image_id));
 }
 
 #[tokio::test]
@@ -873,10 +872,8 @@ async fn list_scores_for_ids_returns_matching() {
     let s1 = Score::new(0.7).expect("valid");
     store.upsert_score(&r1.image_id, &s1, &mv).await.unwrap();
 
-    let id1_str = r1.image_id.to_string();
-    let id2_str = r2.image_id.to_string();
     let scores = store
-        .list_scores_for_ids(&[&id1_str, &id2_str])
+        .list_scores_for_ids(&[r1.image_id.clone(), r2.image_id.clone()])
         .await
         .unwrap();
     assert_eq!(scores.len(), 1);

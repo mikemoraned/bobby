@@ -99,8 +99,7 @@ pub async fn admin(
         .await
         .map_err(|e| cot::Error::internal(format!("failed to list summaries: {e}")))?;
 
-    let image_id_strings: Vec<String> = summaries.iter().map(|s| s.image_id.to_string()).collect();
-    let image_ids: Vec<&str> = image_id_strings.iter().map(|s| s.as_str()).collect();
+    let image_ids: Vec<ImageId> = summaries.iter().map(|s| s.image_id.clone()).collect();
     let score_map = store
         .list_scores_for_ids(&image_ids)
         .await
@@ -394,10 +393,8 @@ async fn render_updated_row(
         })
         .ok_or_else(|| cot::Error::internal(format!("item not found: {id_str}")))?;
 
-    let image_id_strings = [summary.image_id.to_string()];
-    let image_ids: Vec<&str> = image_id_strings.iter().map(|s| s.as_str()).collect();
     let score_map = store
-        .list_scores_for_ids(&image_ids)
+        .list_scores_for_ids(std::slice::from_ref(&summary.image_id))
         .await
         .map_err(|e| cot::Error::internal(format!("failed to read scores: {e}")))?;
 

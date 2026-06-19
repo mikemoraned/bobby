@@ -54,21 +54,17 @@ pub async fn load_labelled_images(
         })
         .collect::<Result<_, _>>()?;
 
-    let originals = store.get_originals_by_ids(ids).await?;
-    let mut originals_by_id: HashMap<ImageId, DynamicImage> = originals
-        .into_iter()
-        .map(|o| (o.summary.image_id, o.image))
-        .collect();
+    let mut originals_by_id = store.get_originals_by_ids(ids).await?;
 
     ids.iter()
         .zip(bands)
         .map(|(id, band)| {
-            let (id_original, image) = originals_by_id
+            let (id_original, original) = originals_by_id
                 .remove_entry(id)
                 .ok_or_else(|| LoaderError::ImageMissing(id.to_string()))?;
             Ok(LabelledImage {
                 id: id_original,
-                image,
+                image: original.image,
                 band,
             })
         })

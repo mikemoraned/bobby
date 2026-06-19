@@ -43,8 +43,12 @@ impl std::fmt::Display for Zone {
     }
 }
 
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("unknown zone: {0}")]
+pub struct ParseZoneError(String);
+
 impl std::str::FromStr for Zone {
-    type Err = String;
+    type Err = ParseZoneError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
@@ -57,7 +61,7 @@ impl std::str::FromStr for Zone {
             "BOTTOM_LEFT" => Ok(Self::BottomLeft),
             "BOTTOM_CENTER" => Ok(Self::BottomCenter),
             "BOTTOM_RIGHT" => Ok(Self::BottomRight),
-            other => Err(format!("unknown zone: {other}")),
+            other => Err(ParseZoneError(other.to_string())),
         }
     }
 }

@@ -38,6 +38,7 @@ pub use types::{DiscoveredAt, ImageRecord, OriginalAt, SkeetId, Zone};
 pub use version::Version;
 pub use versioned_cache::VersionedCache;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use lance_io::object_store::WrappingObjectStore;
@@ -70,7 +71,7 @@ pub struct SkeetStore {
     /// `SkeetStore::open` so adding or removing a table is a single edit.
     pub(crate) tables: Vec<(&'static str, lancedb::Table)>,
     pub(crate) scores_cache: RwLock<VersionedCache<u64, scores::ScoresMap>>,
-    pub(crate) store_wrapper: Option<Arc<dyn WrappingObjectStore>>,
+    pub(crate) store_wrapper: Arc<dyn WrappingObjectStore>,
 }
 
 impl SkeetStore {
@@ -104,10 +105,10 @@ impl SkeetStore {
     /// Build `WriteOptions` that include the R2 metrics wrapper, if configured.
     pub(crate) fn write_options(&self) -> WriteOptions {
         WriteOptions {
-            lance_write_params: self.store_wrapper.as_ref().map(|wrapper| WriteParams {
+            lance_write_params: Some(WriteParams {
                 mode: WriteMode::Append,
                 store_params: Some(ObjectStoreParams {
-                    object_store_wrapper: Some(wrapper.clone()),
+                    object_store_wrapper: Some(self.store_wrapper.clone()),
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -186,25 +187,31 @@ impl SkeetStore {
     }
 
     #[instrument(skip(self, image_ids), fields(count = image_ids.len()))]
-    pub async fn get_by_ids(&self, image_ids: &[ImageId]) -> Result<Vec<StoredImage>, StoreError> {
+    pub async fn get_by_ids(
+        &self,
+        image_ids: &[ImageId],
+    ) -> Result<HashMap<ImageId, StoredImage>, StoreError> {
         if image_ids.is_empty() {
-            return Ok(vec![]);
+            return Ok(HashMap::new());
         }
         let query = self
             .images_table
             .query()
             .only_if(id_in_list_filter(image_ids));
         let batches = execute_query(&query, "get_by_ids").await?;
-        batches_to_stored_images(&batches)
+        Ok(batches_to_stored_images(&batches)?
+            .into_iter()
+            .map(|s| (s.summary.image_id.clone(), s))
+            .collect())
     }
 
     #[instrument(skip(self, image_ids), fields(count = image_ids.len()))]
     pub async fn get_originals_by_ids(
         &self,
         image_ids: &[ImageId],
-    ) -> Result<Vec<StoredOriginal>, StoreError> {
+    ) -> Result<HashMap<ImageId, StoredOriginal>, StoreError> {
         if image_ids.is_empty() {
-            return Ok(vec![]);
+            return Ok(HashMap::new());
         }
         let query = self
             .images_table
@@ -221,7 +228,10 @@ impl SkeetStore {
                 "image",
             ]));
         let batches = execute_query(&query, "get_originals_by_ids").await?;
-        batches_to_original_images(&batches)
+        Ok(batches_to_original_images(&batches)?
+            .into_iter()
+            .map(|o| (o.summary.image_id.clone(), o))
+            .collect())
     }
 
     #[instrument(skip(self))]

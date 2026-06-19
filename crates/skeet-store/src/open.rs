@@ -190,7 +190,7 @@ impl SkeetStore {
             image_appraisal_table,
             tables,
             scores_cache: RwLock::new(VersionedCache::new()),
-            store_wrapper: Some(store_wrapper),
+            store_wrapper,
         })
     }
 }

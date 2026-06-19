@@ -107,10 +107,9 @@ impl FeedSnapshotSource {
             .ok_or(FeedSnapshotError::UnknownFeed(spec.0, spec.1))?;
         let (published, _refreshed_at) = feed.published().await?;
 
-        let image_id_strs: Vec<String> = published.iter().map(|p| p.image_id.to_string()).collect();
-        let id_refs: Vec<&str> = image_id_strs.iter().map(String::as_str).collect();
+        let image_ids: Vec<ImageId> = published.iter().map(|p| p.image_id.clone()).collect();
         let (scores, image_appraisals, skeet_appraisals) = tokio::try_join!(
-            self.store.list_scores_for_ids(&id_refs),
+            self.store.list_scores_for_ids(&image_ids),
             self.store.list_all_image_appraisals(),
             self.store.list_all_skeet_appraisals(),
         )?;
