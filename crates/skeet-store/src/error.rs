@@ -1,4 +1,3 @@
-
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
     #[error("invalid store URI: {0}")]

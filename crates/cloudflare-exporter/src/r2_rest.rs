@@ -86,7 +86,10 @@ async fn get<T: serde::de::DeserializeOwned>(
 ) -> Result<T, R2RestError> {
     let envelope: Envelope<T> = client
         .get(url)
-        .header(reqwest::header::AUTHORIZATION, format!("Bearer {}", api_token.as_str()))
+        .header(
+            reqwest::header::AUTHORIZATION,
+            format!("Bearer {}", api_token.as_str()),
+        )
         .send()
         .await?
         .json()
@@ -106,9 +109,7 @@ async fn get<T: serde::de::DeserializeOwned>(
         }));
     }
 
-    envelope
-        .result
-        .ok_or(R2RestError::MissingResult)
+    envelope.result.ok_or(R2RestError::MissingResult)
 }
 
 pub async fn list_buckets(
@@ -125,7 +126,11 @@ pub async fn list_buckets(
     result
         .buckets
         .into_iter()
-        .map(|b| Ok(Bucket { name: BucketName::new(b.name)? }))
+        .map(|b| {
+            Ok(Bucket {
+                name: BucketName::new(b.name)?,
+            })
+        })
         .collect()
 }
 

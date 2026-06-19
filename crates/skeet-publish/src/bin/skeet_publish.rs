@@ -4,10 +4,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use bluesky::CdnExistenceChecker;
 use chrono::Utc;
 use clap::Parser;
 use shared::RefineModels;
-use bluesky::CdnExistenceChecker;
 use skeet_publish::{
     CdnImageUrlResolver, FeedPublisher, Limit, Order, PublishMetrics, PublishOutcome,
     PublishedList, connect, parse_spec,

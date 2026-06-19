@@ -41,11 +41,7 @@ pub fn annotate_image(
 
     // Face bounding box
     if w > 0 && h > 0 {
-        draw_hollow_rect_mut(
-            &mut canvas,
-            Rect::at(x, y).of_size(w as u32, h as u32),
-            RED,
-        );
+        draw_hollow_rect_mut(&mut canvas, Rect::at(x, y).of_size(w as u32, h as u32), RED);
     }
 
     // Crosshairs centred on face bounding box centre
@@ -119,7 +115,9 @@ mod tests {
     fn annotate_skin_overlay_changes_pixels() {
         // White image with all-skin mask → overlay should tint pixels
         let img = DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
-            100, 100, image::Rgb([255, 255, 255]),
+            100,
+            100,
+            image::Rgb([255, 255, 255]),
         ));
         let mask = GrayImage::from_pixel(100, 100, Luma([255]));
         let result = annotate_image(&img, &test_face(), &mask, &[]);
@@ -134,7 +132,9 @@ mod tests {
     #[test]
     fn annotate_no_skin_leaves_pixels_untinted() {
         let img = DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
-            100, 100, image::Rgb([255, 255, 255]),
+            100,
+            100,
+            image::Rgb([255, 255, 255]),
         ));
         let mask = GrayImage::from_pixel(100, 100, Luma([0]));
         let result = annotate_image(&img, &test_face(), &mask, &[]);
@@ -156,7 +156,9 @@ mod tests {
     #[test]
     fn annotate_draws_bounding_box() {
         let img = DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
-            100, 100, image::Rgb([255, 255, 255]),
+            100,
+            100,
+            image::Rgb([255, 255, 255]),
         ));
         let mask = GrayImage::new(100, 100);
         let result = annotate_image(&img, &test_face(), &mask, &[]);

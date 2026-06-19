@@ -86,8 +86,7 @@ impl TickAccumulator {
     ) {
         for (id, score) in outcomes.successes {
             info!(image_id = %id, %score, "refined");
-            self.pending_scores
-                .push((id, score, model_version.clone()));
+            self.pending_scores.push((id, score, model_version.clone()));
         }
         for (id, e) in outcomes.failures {
             error!(image_id = %id, error = %e, "scoring did not produce a saveable score");
@@ -209,10 +208,8 @@ mod tests {
     fn scores_returns_one_f64_per_pending_score() {
         let mut acc = TickAccumulator::new();
         let v = version("model@v1");
-        acc.pending_scores
-            .push((id(1), score(0.25), v.clone()));
-        acc.pending_scores
-            .push((id(2), score(0.75), v));
+        acc.pending_scores.push((id(1), score(0.25), v.clone()));
+        acc.pending_scores.push((id(2), score(0.75), v));
         let scores = acc.scores();
         // Kills `vec![]`, `vec![0.0]`, `vec![1.0]`, `vec![-1.0]` mutants.
         assert_eq!(scores.len(), 2);

@@ -86,7 +86,10 @@ mod tests {
     async fn cold_start_always_fetches() {
         let dir = tempfile::tempdir().expect("temp dir");
         let store = Arc::new(open_temp_store(&dir).await);
-        store.add(&make_record("cold1", 10, 0, 0)).await.expect("add");
+        store
+            .add(&make_record("cold1", 10, 0, 0))
+            .await
+            .expect("add");
 
         let mut source = PollingBatchSource::new(store);
         let batch = source.fetch().await.expect("fetch");
@@ -122,25 +125,37 @@ mod tests {
     async fn unchanged_version_returns_empty_batch() {
         let dir = tempfile::tempdir().expect("temp dir");
         let store = Arc::new(open_temp_store(&dir).await);
-        store.add(&make_record("same1", 10, 0, 0)).await.expect("add");
+        store
+            .add(&make_record("same1", 10, 0, 0))
+            .await
+            .expect("add");
 
         let mut source = PollingBatchSource::new(store);
         let _ = source.fetch().await.expect("first fetch");
         let batch = source.fetch().await.expect("second fetch");
-        assert!(batch.is_empty(), "expected early-abort on unchanged version");
+        assert!(
+            batch.is_empty(),
+            "expected early-abort on unchanged version"
+        );
     }
 
     #[tokio::test]
     async fn changed_version_fetches_again() {
         let dir = tempfile::tempdir().expect("temp dir");
         let store = Arc::new(open_temp_store(&dir).await);
-        store.add(&make_record("chg1", 10, 0, 0)).await.expect("add");
+        store
+            .add(&make_record("chg1", 10, 0, 0))
+            .await
+            .expect("add");
 
         let mut source = PollingBatchSource::new(store.clone());
         let first = source.fetch().await.expect("first fetch");
         assert_eq!(first.len(), 1);
 
-        store.add(&make_record("chg2", 20, 0, 0)).await.expect("add");
+        store
+            .add(&make_record("chg2", 20, 0, 0))
+            .await
+            .expect("add");
 
         let second = source.fetch().await.expect("second fetch");
         assert_eq!(second.len(), 2, "both images should be unscored");

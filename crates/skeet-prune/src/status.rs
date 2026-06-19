@@ -159,7 +159,11 @@ impl Status {
                 if i > 0 {
                     write!(msg, ", ").expect("write to String");
                 }
-                write!(msg, "{cat}: {count} [{pct:.0}%] (sole: {sole} [{sole_pct:.0}%])").expect("write to String");
+                write!(
+                    msg,
+                    "{cat}: {count} [{pct:.0}%] (sole: {sole} [{sole_pct:.0}%])"
+                )
+                .expect("write to String");
             }
         }
 

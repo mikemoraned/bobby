@@ -47,12 +47,21 @@ mod tests {
 
     #[test]
     fn rejects_missing_separator() {
-        assert!(matches!(parse_spec("quality"), Err(InvalidSpec::Malformed(_))));
+        assert!(matches!(
+            parse_spec("quality"),
+            Err(InvalidSpec::Malformed(_))
+        ));
     }
 
     #[test]
     fn rejects_bad_order_or_limit() {
-        assert!(matches!(parse_spec("bogus-48h"), Err(InvalidSpec::Order(_))));
-        assert!(matches!(parse_spec("quality-99x"), Err(InvalidSpec::Limit(_))));
+        assert!(matches!(
+            parse_spec("bogus-48h"),
+            Err(InvalidSpec::Order(_))
+        ));
+        assert!(matches!(
+            parse_spec("quality-99x"),
+            Err(InvalidSpec::Limit(_))
+        ));
     }
 }

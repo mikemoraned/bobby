@@ -14,7 +14,10 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     shared::tracing::init("info");
-    info!(git_hash = env!("BUILD_GIT_HASH"), "validate-storage starting");
+    info!(
+        git_hash = env!("BUILD_GIT_HASH"),
+        "validate-storage starting"
+    );
 
     let args = Args::parse();
 

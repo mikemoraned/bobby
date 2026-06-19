@@ -43,7 +43,11 @@ pub fn summarise(info: &TraceInfo, trace: &Trace) -> String {
         .map(|(i, _)| i)
         .collect();
 
-    let trace_duration_ns = roots.iter().map(|&i| annotated[i].span.duration_ns).max().unwrap_or(0);
+    let trace_duration_ns = roots
+        .iter()
+        .map(|&i| annotated[i].span.duration_ns)
+        .max()
+        .unwrap_or(0);
 
     let mut out = format!(
         "=== Trace {} ({}) — {}/{}\n",
@@ -83,7 +87,10 @@ fn extract_slow_query(event: &SpanEvent) -> Option<SlowQuery> {
         num_fragments: event
             .attributes
             .get("plan.num_fragments")
-            .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+            .and_then(|v| {
+                v.as_i64()
+                    .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+            })
             .filter(|&n| n > 0)
             .map(|n| n as u64),
         full_filter: non_empty_str(event, "plan.full_filter"),
@@ -103,7 +110,11 @@ fn extract_slow_query(event: &SpanEvent) -> Option<SlowQuery> {
         index: non_empty_str(event, "plan.index"),
         unknown_keys: std::collections::BTreeSet::default(),
     };
-    Some(SlowQuery { label, elapsed, plan })
+    Some(SlowQuery {
+        label,
+        elapsed,
+        plan,
+    })
 }
 
 fn non_empty_str(event: &SpanEvent, key: &str) -> Option<String> {
@@ -241,9 +252,18 @@ mod tests {
 
     fn make_full_scan_event() -> SpanEvent {
         let mut attrs = HashMap::new();
-        attrs.insert("label".to_owned(), AttrValue::Str("list_unscored:scored_ids".to_owned()));
-        attrs.insert("elapsed".to_owned(), AttrValue::Str("1.510759087s".to_owned()));
-        attrs.insert("plan.table".to_owned(), AttrValue::Str("images_v6.lance".to_owned()));
+        attrs.insert(
+            "label".to_owned(),
+            AttrValue::Str("list_unscored:scored_ids".to_owned()),
+        );
+        attrs.insert(
+            "elapsed".to_owned(),
+            AttrValue::Str("1.510759087s".to_owned()),
+        );
+        attrs.insert(
+            "plan.table".to_owned(),
+            AttrValue::Str("images_v6.lance".to_owned()),
+        );
         attrs.insert(
             "plan.columns".to_owned(),
             AttrValue::Str("image_id, discovered_at".to_owned()),
@@ -252,7 +272,10 @@ mod tests {
         attrs.insert("plan.full_scan".to_owned(), AttrValue::Bool(true));
         attrs.insert("plan.full_filter".to_owned(), AttrValue::Str(String::new()));
         attrs.insert("plan.index".to_owned(), AttrValue::Str(String::new()));
-        SpanEvent { name: "slow query".to_owned(), attributes: attrs }
+        SpanEvent {
+            name: "slow query".to_owned(),
+            attributes: attrs,
+        }
     }
 
     #[test]
@@ -279,7 +302,10 @@ mod tests {
             .expect("fixture has a slow query event");
         let sq = extract_slow_query(event).expect("flat plan.* attrs present");
         assert!(sq.plan.table.is_some(), "plan.table populated");
-        assert!(sq.plan.num_fragments.is_some(), "plan.num_fragments populated");
+        assert!(
+            sq.plan.num_fragments.is_some(),
+            "plan.num_fragments populated"
+        );
     }
 
     #[test]
@@ -352,7 +378,11 @@ mod tests {
         let spans = vec![span];
         let ann = annotate(&spans);
         assert_eq!(ann.len(), 1);
-        assert_eq!(ann[0].slow_queries.len(), 1, "only the slow-query event should produce a SlowQuery");
+        assert_eq!(
+            ann[0].slow_queries.len(),
+            1,
+            "only the slow-query event should produce a SlowQuery"
+        );
     }
 
     #[test]
@@ -361,7 +391,10 @@ mod tests {
         attrs.insert("label".to_owned(), AttrValue::Str("L".to_owned()));
         attrs.insert("elapsed".to_owned(), AttrValue::Str("1s".to_owned()));
         attrs.insert("plan.num_fragments".to_owned(), AttrValue::Int(0));
-        let event = SpanEvent { name: "slow query".to_owned(), attributes: attrs };
+        let event = SpanEvent {
+            name: "slow query".to_owned(),
+            attributes: attrs,
+        };
         let sq = extract_slow_query(&event).expect("should extract");
         assert!(
             sq.plan.num_fragments.is_none(),
@@ -387,7 +420,10 @@ mod tests {
         // Header carries truncated trace id, formatted duration, service/trace name
         assert!(out.contains("abcdef01"), "first 8 chars of trace_id: {out}");
         assert!(out.contains("2.50s"), "fmt_ns of root duration: {out}");
-        assert!(out.contains("skeet-live-refine/tick"), "service/name header: {out}");
+        assert!(
+            out.contains("skeet-live-refine/tick"),
+            "service/name header: {out}"
+        );
         // Children render
         assert!(out.contains("fetch"), "child span name appears: {out}");
     }
@@ -406,7 +442,10 @@ mod tests {
             spans: vec![make_span("child", Some("missing"), "orphan", 100)],
         };
         let out = summarise(&info, &trace);
-        assert!(out.contains("orphan"), "orphan span should render as a root: {out}");
+        assert!(
+            out.contains("orphan"),
+            "orphan span should render as a root: {out}"
+        );
     }
 
     #[test]
@@ -494,8 +533,7 @@ mod tests {
             row_id: false,
             row_addr: false,
             index: Some(
-                "ScalarIndexQuery: query=[model_version = ea219ee0]@model_version_idx"
-                    .to_owned(),
+                "ScalarIndexQuery: query=[model_version = ea219ee0]@model_version_idx".to_owned(),
             ),
             unknown_keys: std::collections::BTreeSet::default(),
         };

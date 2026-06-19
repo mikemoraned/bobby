@@ -14,9 +14,15 @@ pub struct SkeetId {
 impl SkeetId {
     pub fn new(id: impl Into<String>) -> Result<Self, SkeetIdError> {
         let s = id.into();
-        let stripped = s.strip_prefix("at://").ok_or_else(|| SkeetIdError(s.clone()))?;
-        let (did, rest) = stripped.split_once('/').ok_or_else(|| SkeetIdError(s.clone()))?;
-        let (collection, rkey) = rest.split_once('/').ok_or_else(|| SkeetIdError(s.clone()))?;
+        let stripped = s
+            .strip_prefix("at://")
+            .ok_or_else(|| SkeetIdError(s.clone()))?;
+        let (did, rest) = stripped
+            .split_once('/')
+            .ok_or_else(|| SkeetIdError(s.clone()))?;
+        let (collection, rkey) = rest
+            .split_once('/')
+            .ok_or_else(|| SkeetIdError(s.clone()))?;
         Ok(Self {
             did: Did(did.to_string()),
             collection: Nsid(collection.to_string()),
@@ -54,9 +60,7 @@ impl SkeetId {
 
 impl PartialEq for SkeetId {
     fn eq(&self, other: &Self) -> bool {
-        self.did == other.did
-            && self.collection == other.collection
-            && self.rkey == other.rkey
+        self.did == other.did && self.collection == other.collection && self.rkey == other.rkey
     }
 }
 
@@ -72,7 +76,9 @@ impl std::hash::Hash for SkeetId {
 
 impl Ord for SkeetId {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.did.0.cmp(&other.did.0)
+        self.did
+            .0
+            .cmp(&other.did.0)
             .then(self.collection.0.cmp(&other.collection.0))
             .then(self.rkey.0.cmp(&other.rkey.0))
     }
@@ -173,7 +179,10 @@ mod tests {
     #[test]
     fn for_post_constructs_at_uri() {
         let id = SkeetId::for_post("did:plc:abc123", "xyz789");
-        assert_eq!(id.to_string(), "at://did:plc:abc123/app.bsky.feed.post/xyz789");
+        assert_eq!(
+            id.to_string(),
+            "at://did:plc:abc123/app.bsky.feed.post/xyz789"
+        );
     }
 
     #[test]
@@ -205,9 +214,24 @@ mod tests {
     #[test]
     fn unequal_skeet_ids_differ_by_component() {
         let base: SkeetId = "at://did:plc:abc/app.bsky.feed.post/xyz".parse().unwrap();
-        assert_ne!(base, "at://did:plc:zzz/app.bsky.feed.post/xyz".parse::<SkeetId>().unwrap());
-        assert_ne!(base, "at://did:plc:abc/app.bsky.feed.get/xyz".parse::<SkeetId>().unwrap());
-        assert_ne!(base, "at://did:plc:abc/app.bsky.feed.post/abc".parse::<SkeetId>().unwrap());
+        assert_ne!(
+            base,
+            "at://did:plc:zzz/app.bsky.feed.post/xyz"
+                .parse::<SkeetId>()
+                .unwrap()
+        );
+        assert_ne!(
+            base,
+            "at://did:plc:abc/app.bsky.feed.get/xyz"
+                .parse::<SkeetId>()
+                .unwrap()
+        );
+        assert_ne!(
+            base,
+            "at://did:plc:abc/app.bsky.feed.post/abc"
+                .parse::<SkeetId>()
+                .unwrap()
+        );
     }
 
     #[test]

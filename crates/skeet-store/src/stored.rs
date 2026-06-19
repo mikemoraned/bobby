@@ -3,9 +3,9 @@ use image::DynamicImage;
 use shared::{ImageId, ModelVersion};
 use tracing::instrument;
 
+use crate::StoreError;
 use crate::arrow_utils::{micros_to_datetime, typed_column};
 use crate::types::{DiscoveredAt, ImageRecord, OriginalAt, SkeetId, Zone};
-use crate::StoreError;
 
 pub struct StoredImage {
     pub summary: StoredImageSummary,
@@ -107,9 +107,7 @@ pub fn batches_to_summaries(
 }
 
 #[instrument(skip(batches))]
-pub fn batches_to_stored_images(
-    batches: &[RecordBatch],
-) -> Result<Vec<StoredImage>, StoreError> {
+pub fn batches_to_stored_images(batches: &[RecordBatch]) -> Result<Vec<StoredImage>, StoreError> {
     let mut results = Vec::new();
     for batch in batches {
         let cols = SummaryColumns::extract(batch)?;

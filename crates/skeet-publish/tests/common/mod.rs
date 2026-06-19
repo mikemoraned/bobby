@@ -56,7 +56,11 @@ pub async fn seed(store: &SkeetStore) {
         let record = scored_record(rkey, v3(cid_idx));
         store.add(&record).await.expect("add record");
         store
-            .upsert_score(&record.image_id, &Score::new(score).expect("valid score"), &mv)
+            .upsert_score(
+                &record.image_id,
+                &Score::new(score).expect("valid score"),
+                &mv,
+            )
             .await
             .expect("upsert score");
     }

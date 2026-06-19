@@ -27,14 +27,12 @@ impl SyncMetrics {
     }
 
     pub fn record_success(&self, datapoints: u64) {
-        self.run_total
-            .add(1, &[KeyValue::new("status", "success")]);
+        self.run_total.add(1, &[KeyValue::new("status", "success")]);
         self.datapoints_fetched.record(datapoints, &[]);
     }
 
     pub fn record_failure(&self) {
-        self.run_total
-            .add(1, &[KeyValue::new("status", "failure")]);
+        self.run_total.add(1, &[KeyValue::new("status", "failure")]);
     }
 }
 
@@ -59,7 +57,12 @@ mod tests {
         let (metrics, provider, exporter) = make_test_metrics();
         metrics.record_success(42);
         assert_eq!(
-            sum_counter(&provider, &exporter, "cloudflare_exporter_run_total", Some(("status", "success"))),
+            sum_counter(
+                &provider,
+                &exporter,
+                "cloudflare_exporter_run_total",
+                Some(("status", "success"))
+            ),
             1
         );
     }
@@ -69,7 +72,12 @@ mod tests {
         let (metrics, provider, exporter) = make_test_metrics();
         metrics.record_failure();
         assert_eq!(
-            sum_counter(&provider, &exporter, "cloudflare_exporter_run_total", Some(("status", "failure"))),
+            sum_counter(
+                &provider,
+                &exporter,
+                "cloudflare_exporter_run_total",
+                Some(("status", "failure"))
+            ),
             1
         );
     }
@@ -79,7 +87,12 @@ mod tests {
         let (metrics, provider, exporter) = make_test_metrics();
         metrics.record_success(7);
         assert_eq!(
-            last_gauge_u64(&provider, &exporter, "cloudflare_exporter_datapoints_fetched", None),
+            last_gauge_u64(
+                &provider,
+                &exporter,
+                "cloudflare_exporter_datapoints_fetched",
+                None
+            ),
             7
         );
     }

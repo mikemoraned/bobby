@@ -113,11 +113,17 @@ mod tests {
             not_modified_since(&head, at(9, 30, 0), Some("public, max-age=60")).expect("304");
         assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
         assert_eq!(
-            response.headers().get(LAST_MODIFIED).expect("last-modified"),
+            response
+                .headers()
+                .get(LAST_MODIFIED)
+                .expect("last-modified"),
             "Sat, 15 Jun 2024 09:30:00 GMT"
         );
         assert_eq!(
-            response.headers().get(CACHE_CONTROL).expect("cache-control"),
+            response
+                .headers()
+                .get(CACHE_CONTROL)
+                .expect("cache-control"),
             "public, max-age=60"
         );
     }

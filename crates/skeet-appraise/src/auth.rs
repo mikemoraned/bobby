@@ -51,8 +51,9 @@ pub async fn auth_login(
     OAuthConfigExtractor(config): OAuthConfigExtractor,
     UrlQuery(query): UrlQuery<LoginQuery>,
 ) -> cot::Result<Response> {
-    let config = config
-        .ok_or_else(|| cot::Error::internal("OAuth not configured — use --local-admin for local dev"))?;
+    let config = config.ok_or_else(|| {
+        cot::Error::internal("OAuth not configured — use --local-admin for local dev")
+    })?;
 
     let redirect_url = redirect_url_from_request(&head);
     let client = config.build_client(&redirect_url);
@@ -86,14 +87,15 @@ pub async fn auth_callback(
     OAuthConfigExtractor(config): OAuthConfigExtractor,
     UrlQuery(query): UrlQuery<CallbackQuery>,
 ) -> cot::Result<Response> {
-    let config = config
-        .ok_or_else(|| cot::Error::internal("OAuth not configured"))?;
+    let config = config.ok_or_else(|| cot::Error::internal("OAuth not configured"))?;
 
     // Verify CSRF state
     let stored_state: Option<String> = session.get("csrf_state").await.map_err(session_err)?;
     if stored_state.as_deref() != Some(&query.state) {
         warn!("CSRF state mismatch");
-        let mut response = Response::new(Body::fixed("CSRF state mismatch — please try logging in again"));
+        let mut response = Response::new(Body::fixed(
+            "CSRF state mismatch — please try logging in again",
+        ));
         *response.status_mut() = StatusCode::FORBIDDEN;
         return Ok(response);
     }
@@ -127,7 +129,10 @@ pub async fn auth_callback(
     let http_client = reqwest::Client::new();
     let user_response = http_client
         .get(format!("{}/user", config.github_api_base_url))
-        .header(reqwest::header::AUTHORIZATION, format!("Bearer {access_token}"))
+        .header(
+            reqwest::header::AUTHORIZATION,
+            format!("Bearer {access_token}"),
+        )
         .header(reqwest::header::USER_AGENT, "bobby-feed")
         .send()
         .await

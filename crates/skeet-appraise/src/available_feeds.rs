@@ -46,7 +46,12 @@ impl AvailableFeeds {
         let url: Arc<str> = redis_url.into();
         let readers = specs
             .iter()
-            .map(|&(order, limit)| ((order, limit), RedisFeedSource::new(url.as_ref(), order, limit)))
+            .map(|&(order, limit)| {
+                (
+                    (order, limit),
+                    RedisFeedSource::new(url.as_ref(), order, limit),
+                )
+            })
             .collect();
         Ok(Self { specs, readers })
     }
@@ -131,7 +136,10 @@ mod tests {
 
     #[test]
     fn absent_value_uses_the_default() {
-        assert_eq!(feeds().resolve(None).expect("default"), (Order::Quality, Limit::hours(48)));
+        assert_eq!(
+            feeds().resolve(None).expect("default"),
+            (Order::Quality, Limit::hours(48))
+        );
     }
 
     #[test]

@@ -106,7 +106,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(count = sampled_ids.len(), "sampled train images");
 
     let images = load_labelled_images(&store, &band_by_id, &sampled_ids).await?;
-    info!(count = images.len(), "loaded images from store, scoring each model");
+    info!(
+        count = images.len(),
+        "loaded images from store, scoring each model"
+    );
 
     let client = create_client(&args.openai_api_key);
 
@@ -149,7 +152,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (min, max, prices) = (
             *costs.iter().min().expect("non-empty"),
             *costs.iter().max().expect("non-empty"),
-            snapshot.prices.get(model_name).expect("model is in snapshot"),
+            snapshot
+                .prices
+                .get(model_name)
+                .expect("model is in snapshot"),
         );
         let total = costs.iter().copied().fold(Usd::zero(), |acc, c| acc + c);
         let avg = total / costs.len() as u64;

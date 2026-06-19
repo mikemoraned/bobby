@@ -8,10 +8,10 @@ mod common;
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use bluesky::StaticExistenceChecker;
 use chrono::Utc;
 use common::{CIDS, redis_url, scored_record, seed, v3, wait_ready};
 use deadpool_redis::redis;
-use bluesky::StaticExistenceChecker;
 use skeet_publish::{
     CdnImageUrlResolver, FeedPublisher, Limit, Order, PublishOutcome, PublishedList, connect,
 };
@@ -112,7 +112,10 @@ async fn publish_writes_existence_flags_from_checker_docker() {
         vec![spec],
     );
     let mut conn = connect(&url).await.expect("connect");
-    publisher.publish(&mut conn, Utc::now()).await.expect("publish");
+    publisher
+        .publish(&mut conn, Utc::now())
+        .await
+        .expect("publish");
 
     let pairs = list.read(&mut conn).await.expect("read");
     assert!(

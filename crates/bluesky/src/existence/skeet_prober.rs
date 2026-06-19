@@ -151,7 +151,9 @@ mod tests {
     #[test]
     fn rate_limit_and_server_errors_are_inconclusive() {
         assert!(!gone_on_error(&status_error(StatusCode::TOO_MANY_REQUESTS)));
-        assert!(!gone_on_error(&status_error(StatusCode::INTERNAL_SERVER_ERROR)));
+        assert!(!gone_on_error(&status_error(
+            StatusCode::INTERNAL_SERVER_ERROR
+        )));
         assert!(!gone_on_error(&status_error(StatusCode::BAD_GATEWAY)));
     }
 }

@@ -84,7 +84,9 @@ impl TextDetectionResult {
                         y: f64::from(line.y + line.height)
                     },
                 );
-                let clipped = text_rect.to_polygon().intersection(&image_rect.to_polygon());
+                let clipped = text_rect
+                    .to_polygon()
+                    .intersection(&image_rect.to_polygon());
                 if clipped.unsigned_area() > 0.0 {
                     Some(clipped)
                 } else {
@@ -194,14 +196,15 @@ mod tests {
     }
 
     fn arb_detected_text() -> impl Strategy<Value = DetectedText> {
-        (0..500i32, 0..500i32, 0..200i32, 0..200i32, "[a-z ]{0,20}")
-            .prop_map(|(x, y, w, h, text)| DetectedText {
+        (0..500i32, 0..500i32, 0..200i32, 0..200i32, "[a-z ]{0,20}").prop_map(
+            |(x, y, w, h, text)| DetectedText {
                 x,
                 y,
                 width: w,
                 height: h,
                 text,
-            })
+            },
+        )
     }
 
     fn arb_text_result() -> impl Strategy<Value = TextDetectionResult> {
@@ -221,8 +224,20 @@ mod tests {
     fn character_count_skips_whitespace() {
         let result = TextDetectionResult {
             lines: vec![
-                DetectedText { x: 0, y: 0, width: 10, height: 10, text: "a b c".into() },
-                DetectedText { x: 0, y: 0, width: 10, height: 10, text: " d ".into() },
+                DetectedText {
+                    x: 0,
+                    y: 0,
+                    width: 10,
+                    height: 10,
+                    text: "a b c".into(),
+                },
+                DetectedText {
+                    x: 0,
+                    y: 0,
+                    width: 10,
+                    height: 10,
+                    text: " d ".into(),
+                },
             ],
         };
         assert_eq!(result.character_count(), 4);
@@ -259,8 +274,20 @@ mod tests {
     fn full_text_joins_with_newlines() {
         let result = TextDetectionResult {
             lines: vec![
-                DetectedText { x: 0, y: 0, width: 10, height: 10, text: "hello".into() },
-                DetectedText { x: 0, y: 0, width: 10, height: 10, text: "world".into() },
+                DetectedText {
+                    x: 0,
+                    y: 0,
+                    width: 10,
+                    height: 10,
+                    text: "hello".into(),
+                },
+                DetectedText {
+                    x: 0,
+                    y: 0,
+                    width: 10,
+                    height: 10,
+                    text: "world".into(),
+                },
             ],
         };
         assert_eq!(result.full_text(), "hello\nworld");
@@ -292,7 +319,13 @@ mod tests {
     #[test]
     fn text_area_pct_zero_image_returns_zero() {
         let result = TextDetectionResult {
-            lines: vec![DetectedText { x: 0, y: 0, width: 10, height: 10, text: "A".into() }],
+            lines: vec![DetectedText {
+                x: 0,
+                y: 0,
+                width: 10,
+                height: 10,
+                text: "A".into(),
+            }],
         };
         assert_eq!(result.text_area_pct(0, 0), 0.0);
     }
@@ -306,7 +339,13 @@ mod tests {
     #[test]
     fn text_area_pct_full_coverage() {
         let result = TextDetectionResult {
-            lines: vec![DetectedText { x: 0, y: 0, width: 100, height: 100, text: "A".into() }],
+            lines: vec![DetectedText {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+                text: "A".into(),
+            }],
         };
         let pct = result.text_area_pct(100, 100);
         assert!((pct - 100.0).abs() < 0.01, "expected ~100.0, got {pct}");
@@ -315,7 +354,13 @@ mod tests {
     #[test]
     fn text_area_pct_partial_coverage() {
         let result = TextDetectionResult {
-            lines: vec![DetectedText { x: 0, y: 0, width: 50, height: 50, text: "A".into() }],
+            lines: vec![DetectedText {
+                x: 0,
+                y: 0,
+                width: 50,
+                height: 50,
+                text: "A".into(),
+            }],
         };
         let pct = result.text_area_pct(100, 100);
         assert!((pct - 25.0).abs() < 0.01, "expected ~25.0, got {pct}");
@@ -324,7 +369,13 @@ mod tests {
     #[test]
     fn text_area_pct_zero_size_line_ignored() {
         let result = TextDetectionResult {
-            lines: vec![DetectedText { x: 0, y: 0, width: 0, height: 10, text: "A".into() }],
+            lines: vec![DetectedText {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 10,
+                text: "A".into(),
+            }],
         };
         assert_eq!(result.text_area_pct(100, 100), 0.0);
     }
@@ -332,10 +383,19 @@ mod tests {
     #[test]
     fn text_area_pct_clipped_to_image_bounds() {
         let result = TextDetectionResult {
-            lines: vec![DetectedText { x: 50, y: 50, width: 200, height: 200, text: "A".into() }],
+            lines: vec![DetectedText {
+                x: 50,
+                y: 50,
+                width: 200,
+                height: 200,
+                text: "A".into(),
+            }],
         };
         let pct = result.text_area_pct(100, 100);
-        assert!((pct - 25.0).abs() < 0.01, "expected ~25.0 (clipped to 50x50), got {pct}");
+        assert!(
+            (pct - 25.0).abs() < 0.01,
+            "expected ~25.0 (clipped to 50x50), got {pct}"
+        );
     }
 
     proptest! {

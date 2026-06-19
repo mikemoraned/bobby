@@ -11,10 +11,10 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use bluesky::{Dimensions, ImageUrl};
 use chrono::{DateTime, TimeZone as _, Utc};
 use cot::test::Client;
 use shared::{BlueskyCid, ImageId};
-use bluesky::{Dimensions, ImageUrl};
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
 use skeet_feed::{FeedSourceLayer, PublishedImagesSourceLayer};

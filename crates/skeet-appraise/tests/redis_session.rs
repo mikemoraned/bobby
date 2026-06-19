@@ -23,9 +23,9 @@ use skeet_appraise::{
     AppraiserLayer, ModelsLayer, OAuthConfigLayer, PublishedFeedLayer, StartedAtLayer, StoreLayer,
 };
 use skeet_publish::{Limit, Order};
-use test_support::test_models;
 use skeet_store::test_utils::{make_record, open_temp_store};
 use skeet_store::{ModelVersion, Score, SkeetStore};
+use test_support::test_models;
 use testcontainers::core::{IntoContainerPort, WaitFor};
 use testcontainers::runners::AsyncRunner;
 use testcontainers::{ContainerAsync, CopyTargetOptions, GenericImage, ImageExt};
@@ -156,7 +156,9 @@ async fn start_redis_with_tls() -> (ContainerAsync<GenericImage>, String) {
             "--tls-auth-clients",
             "no",
         ])
-        .with_ready_conditions(vec![WaitFor::message_on_stdout("Ready to accept connections")])
+        .with_ready_conditions(vec![WaitFor::message_on_stdout(
+            "Ready to accept connections",
+        )])
         .start()
         .await
         .expect("start Redis TLS container");

@@ -47,10 +47,7 @@ async fn count_versions(
     let mut newest_ts: Option<chrono::DateTime<chrono::Utc>> = None;
 
     loop {
-        let mut req = client
-            .list_objects_v2()
-            .bucket(bucket)
-            .prefix(&prefix);
+        let mut req = client.list_objects_v2().bucket(bucket).prefix(&prefix);
         if let Some(token) = &continuation_token {
             req = req.continuation_token(token);
         }
@@ -62,9 +59,7 @@ async fn count_versions(
             if let Some(modified) = obj.last_modified() {
                 let secs = modified.secs();
                 let nanos = modified.subsec_nanos();
-                if let Some(ts) =
-                    chrono::DateTime::<chrono::Utc>::from_timestamp(secs, nanos)
-                {
+                if let Some(ts) = chrono::DateTime::<chrono::Utc>::from_timestamp(secs, nanos) {
                     if oldest_ts.map(|t| ts < t).unwrap_or(true) {
                         oldest_ts = Some(ts);
                     }
@@ -83,9 +78,7 @@ async fn count_versions(
     }
 
     let now = chrono::Utc::now();
-    let to_hours = |t: chrono::DateTime<chrono::Utc>| {
-        (now - t).num_seconds() as f64 / 3600.0
-    };
+    let to_hours = |t: chrono::DateTime<chrono::Utc>| (now - t).num_seconds() as f64 / 3600.0;
 
     Ok(VersionsReport {
         table,
@@ -122,8 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .as_ref()
         .ok_or("--s3-secret-access-key (or BOBBY_S3_SECRET_ACCESS_KEY) is required")?;
 
-    let credentials =
-        Credentials::new(access_key_id, secret_access_key, None, None, "bobby-env");
+    let credentials = Credentials::new(access_key_id, secret_access_key, None, None, "bobby-env");
     let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
         .region(Region::new(args.store.s3_region.clone()))
         .endpoint_url(endpoint)

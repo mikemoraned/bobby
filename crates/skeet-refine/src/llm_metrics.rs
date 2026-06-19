@@ -71,7 +71,8 @@ impl LlmMetrics {
                 KeyValue::new(GEN_AI_TOKEN_TYPE, "output"),
             ],
         );
-        self.operation_duration.record(duration.as_secs_f64(), &base);
+        self.operation_duration
+            .record(duration.as_secs_f64(), &base);
     }
 
     pub fn record_error(&self, duration: Duration, error_type: &str, model: &str) {

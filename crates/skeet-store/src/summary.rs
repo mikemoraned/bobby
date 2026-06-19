@@ -4,11 +4,11 @@ use arrow_array::StringArray;
 use lancedb::query::QueryBase;
 use tracing::instrument;
 
+use crate::SkeetStore;
 use crate::arrow_utils::{min_max_timestamp, typed_column};
 use crate::error::StoreError;
 use crate::lancedb_utils::execute_query;
 use crate::types::{DiscoveredAt, OriginalAt};
-use crate::SkeetStore;
 
 pub struct SkeetStoreSummary {
     pub image_count: usize,

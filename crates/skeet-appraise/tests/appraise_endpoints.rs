@@ -11,6 +11,7 @@ use common::{
 };
 use std::time::Duration;
 
+use bluesky::ImageUrl;
 use cot::test::Client;
 use deadpool_redis::redis::aio::MultiplexedConnection;
 use shared::{Appraiser, BlueskyCid, ImageId};
@@ -20,11 +21,12 @@ use skeet_appraise::project::AppraiseProject;
 use skeet_appraise::{
     AppraiserLayer, ModelsLayer, OAuthConfigLayer, PublishedFeedLayer, StartedAtLayer, StoreLayer,
 };
-use bluesky::ImageUrl;
 use skeet_publish::{Limit, Order, PublishedImage, PublishedList, connect};
-use test_support::test_models;
 use skeet_store::test_utils::{make_record, make_record_at, open_temp_store, test_image};
-use skeet_store::{DiscoveredAt, ImageRecord, ModelVersion, OriginalAt, Score, SkeetId, SkeetStore, Zone};
+use skeet_store::{
+    DiscoveredAt, ImageRecord, ModelVersion, OriginalAt, Score, SkeetId, SkeetStore, Zone,
+};
+use test_support::test_models;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::redis::{REDIS_PORT, Redis};
 use tokio::time::sleep;
@@ -301,7 +303,10 @@ async fn home_page_shows_published_entries_docker() {
         body.contains("bsky.app/profile/did:plc:abc/post/home1"),
         "home should link the published skeet"
     );
-    assert!(body.contains("0.85"), "home should show the joined-in score");
+    assert!(
+        body.contains("0.85"),
+        "home should show the joined-in score"
+    );
 }
 
 /// The home page reads the published list named by `?feed=`, defaulting to
@@ -342,8 +347,14 @@ async fn home_selects_feed_from_query_docker() {
     // default, and does not show the quality-7d item.
     let (status, body) = get_body(&mut client, "/").await;
     assert_eq!(status, 200);
-    assert!(body.contains("post/q48"), "default should show the quality-48h item");
-    assert!(!body.contains("post/q7d"), "default should not show the quality-7d item");
+    assert!(
+        body.contains("post/q48"),
+        "default should show the quality-48h item"
+    );
+    assert!(
+        !body.contains("post/q7d"),
+        "default should not show the quality-7d item"
+    );
     assert!(
         body.contains(r#"value="quality-48h" selected"#),
         "dropdown should default to quality-48h"
@@ -352,8 +363,14 @@ async fn home_selects_feed_from_query_docker() {
     // Selecting quality-7d shows that list's item instead.
     let (status, body) = get_body(&mut client, "/?feed=quality-7d").await;
     assert_eq!(status, 200);
-    assert!(body.contains("post/q7d"), "?feed=quality-7d should show the 7d item");
-    assert!(!body.contains("post/q48"), "?feed=quality-7d should not show the 48h item");
+    assert!(
+        body.contains("post/q7d"),
+        "?feed=quality-7d should show the 7d item"
+    );
+    assert!(
+        !body.contains("post/q48"),
+        "?feed=quality-7d should not show the 48h item"
+    );
     assert!(
         body.contains(r#"value="quality-7d" selected"#),
         "dropdown should mark quality-7d selected"

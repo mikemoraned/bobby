@@ -20,7 +20,9 @@ impl BlueskyCid {
     /// Validating constructor for untrusted input (e.g. a parsed image id).
     pub fn new(s: impl Into<String>) -> Result<Self, InvalidBlueskyCid> {
         let s = s.into();
-        Cid::from_str(&s).map(Self).map_err(|_| InvalidBlueskyCid(s))
+        Cid::from_str(&s)
+            .map(Self)
+            .map_err(|_| InvalidBlueskyCid(s))
     }
 }
 

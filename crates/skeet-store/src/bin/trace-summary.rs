@@ -55,7 +55,12 @@ async fn main() -> Result<(), Error> {
     );
 
     let traces = client
-        .search(&args.service, args.span.as_deref(), args.sample, lookback_secs)
+        .search(
+            &args.service,
+            args.span.as_deref(),
+            args.sample,
+            lookback_secs,
+        )
         .await?;
 
     if traces.is_empty() {

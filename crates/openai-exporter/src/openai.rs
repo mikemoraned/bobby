@@ -61,16 +61,13 @@ pub async fn fetch_costs(
     let mut next_page: Option<String> = None;
 
     loop {
-        let mut req = client
-            .get(COSTS_ENDPOINT)
-            .bearer_auth(api_key)
-            .query(&[
-                ("start_time", from.timestamp().to_string()),
-                ("end_time", to.timestamp().to_string()),
-                ("bucket_width", "1d".to_string()),
-                ("group_by[]", "line_item".to_string()),
-                ("group_by[]", "project_id".to_string()),
-            ]);
+        let mut req = client.get(COSTS_ENDPOINT).bearer_auth(api_key).query(&[
+            ("start_time", from.timestamp().to_string()),
+            ("end_time", to.timestamp().to_string()),
+            ("bucket_width", "1d".to_string()),
+            ("group_by[]", "line_item".to_string()),
+            ("group_by[]", "project_id".to_string()),
+        ]);
 
         if let Some(ref page) = next_page {
             req = req.query(&[("page", page.as_str())]);
@@ -86,10 +83,8 @@ pub async fn fetch_costs(
         let page: CostsPage = response.json().await?;
 
         for bucket in &page.data {
-            let start_time = DateTime::from_timestamp(bucket.start_time, 0)
-                .unwrap_or_default();
-            let end_time = DateTime::from_timestamp(bucket.end_time, 0)
-                .unwrap_or_default();
+            let start_time = DateTime::from_timestamp(bucket.start_time, 0).unwrap_or_default();
+            let end_time = DateTime::from_timestamp(bucket.end_time, 0).unwrap_or_default();
             for result in &bucket.results {
                 let amount_usd = result.amount.value.parse::<f64>().map_err(|e| {
                     OpenAIError::ParseAmount(result.amount.value.clone(), e.to_string())
@@ -120,8 +115,8 @@ mod tests {
 
     #[tokio::test]
     async fn fetch_costs_end_to_end() {
-        let api_key = std::env::var("BOBBY_OPENAI_ADMIN_KEY")
-            .expect("BOBBY_OPENAI_ADMIN_KEY must be set");
+        let api_key =
+            std::env::var("BOBBY_OPENAI_ADMIN_KEY").expect("BOBBY_OPENAI_ADMIN_KEY must be set");
 
         let to = Utc::now();
         let from = to - chrono::Duration::days(7);

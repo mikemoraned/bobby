@@ -56,13 +56,18 @@ mod tests {
     use super::*;
 
     fn entry(uri: &str) -> BlockedEntry {
-        BlockedEntry { skeet_id: uri.parse().expect("valid AT URI"), reason: "test".to_string() }
+        BlockedEntry {
+            skeet_id: uri.parse().expect("valid AT URI"),
+            reason: "test".to_string(),
+        }
     }
 
     #[test]
     fn empty_blocklist_contains_nothing() {
         let config = BlocklistConfig::default();
-        let id = "at://did:plc:abc/app.bsky.feed.post/xyz".parse().expect("valid");
+        let id = "at://did:plc:abc/app.bsky.feed.post/xyz"
+            .parse()
+            .expect("valid");
         assert!(!config.contains(&id));
     }
 
@@ -89,7 +94,11 @@ mod tests {
         let mut config = BlocklistConfig::default();
         config.add(entry("at://did:plc:zzz/app.bsky.feed.post/rkey"));
         config.add(entry("at://did:plc:aaa/app.bsky.feed.post/rkey"));
-        let ids: Vec<_> = config.blocked.iter().map(|e| e.skeet_id.to_string()).collect();
+        let ids: Vec<_> = config
+            .blocked
+            .iter()
+            .map(|e| e.skeet_id.to_string())
+            .collect();
         let mut sorted = ids.clone();
         sorted.sort();
         assert_eq!(ids, sorted);
