@@ -1,7 +1,7 @@
 #![warn(clippy::all, clippy::nursery)]
 
 use clap::Parser;
-use skeet_store::tempo::{TempoClient, TempoError};
+use observability::tempo::{TempoClient, TempoError};
 use tracing::info;
 
 #[derive(Parser)]
@@ -75,7 +75,7 @@ async fn main() -> Result<(), Error> {
 
     for trace_info in &traces {
         let trace = client.fetch_trace(trace_info).await?;
-        let summary = skeet_store::trace_analysis::summarise(trace_info, &trace);
+        let summary = observability::trace_analysis::summarise(trace_info, &trace);
         print!("{summary}");
     }
 

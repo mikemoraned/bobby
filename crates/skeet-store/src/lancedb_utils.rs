@@ -5,8 +5,9 @@ use futures::TryStreamExt;
 use lancedb::query::ExecutableQuery;
 use tracing::{debug, warn};
 
+use shared::query_plan::QueryPlan;
+
 use crate::StoreError;
-use crate::query_plan::QueryPlan;
 
 const SLOW_QUERY_THRESHOLD: Duration = Duration::from_millis(100);
 

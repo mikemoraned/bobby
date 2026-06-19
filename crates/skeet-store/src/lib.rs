@@ -8,17 +8,14 @@ mod lancedb_utils;
 mod open;
 mod optimise;
 mod paging;
-pub mod query_plan;
 mod r2_metrics;
 mod schema;
 mod scores;
 pub mod store_metrics;
 mod stored;
 mod summary;
-pub mod tempo;
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod test_utils;
-pub mod trace_analysis;
 mod types;
 mod version;
 pub mod versioned_cache;

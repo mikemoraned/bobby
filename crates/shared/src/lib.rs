@@ -11,6 +11,7 @@ mod bluesky_cid;
 mod image_id;
 pub mod labels;
 pub mod model_version;
+pub mod query_plan;
 pub mod refine_model;
 mod rejection;
 pub mod score;

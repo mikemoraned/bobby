@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use crate::query_plan::QueryPlan;
+use shared::query_plan::QueryPlan;
+
 use crate::tempo::{Span, SpanEvent, Trace, TraceInfo};
 
 // ── Domain types ──────────────────────────────────────────────────────────────
@@ -141,7 +142,6 @@ fn render_tree(
         let idx = indices[i];
         let name = &annotated[idx].span.name;
 
-        // Collapse a run of same-named siblings (e.g. many read_fragment spans)
         let run = indices[i..]
             .iter()
             .take_while(|&&j| &annotated[j].span.name == name)
@@ -350,13 +350,10 @@ mod tests {
 
     #[test]
     fn fmt_ns_picks_unit_at_each_threshold() {
-        // < 1ms → ns
         assert_eq!(fmt_ns(0), "0ns");
         assert_eq!(fmt_ns(999_999), "999999ns");
-        // 1ms exactly → ms
         assert_eq!(fmt_ns(1_000_000), "1ms");
         assert_eq!(fmt_ns(999_999_999), "1000ms");
-        // 1s exactly → s
         assert_eq!(fmt_ns(1_000_000_000), "1.00s");
         assert_eq!(fmt_ns(2_500_000_000), "2.50s");
     }
@@ -417,21 +414,17 @@ mod tests {
             ],
         };
         let out = summarise(&info, &trace);
-        // Header carries truncated trace id, formatted duration, service/trace name
         assert!(out.contains("abcdef01"), "first 8 chars of trace_id: {out}");
         assert!(out.contains("2.50s"), "fmt_ns of root duration: {out}");
         assert!(
             out.contains("skeet-live-refine/tick"),
             "service/name header: {out}"
         );
-        // Children render
         assert!(out.contains("fetch"), "child span name appears: {out}");
     }
 
     #[test]
     fn summarise_treats_orphans_as_roots() {
-        // Span "child" claims parent "missing" which is NOT in the trace —
-        // it should still appear in the rendered output as a root.
         let info = TraceInfo {
             trace_id: "x".to_owned(),
             root_service_name: "s".to_owned(),
@@ -450,7 +443,6 @@ mod tests {
 
     #[test]
     fn render_tree_collapses_runs_of_same_name_siblings() {
-        // Three sibling children with the same name should collapse to "3 ×".
         let spans = vec![
             make_span("p", None, "parent", 1_000_000),
             make_span("c1", Some("p"), "leaf", 100),
@@ -470,8 +462,6 @@ mod tests {
 
     #[test]
     fn render_tree_emits_each_singleton_sibling_once() {
-        // Differently-named siblings must each render exactly once and
-        // never get the "× ×" collapse prefix.
         let spans = vec![
             make_span("p", None, "parent", 1_000_000),
             make_span("c1", Some("p"), "alpha", 100),
@@ -492,7 +482,6 @@ mod tests {
 
     #[test]
     fn render_tree_indents_children_deeper_than_parents() {
-        // Verifies depth+1 recursion: child line must have more leading spaces than parent.
         let spans = vec![
             make_span("p", None, "outer", 1_000_000),
             make_span("c", Some("p"), "inner", 500),

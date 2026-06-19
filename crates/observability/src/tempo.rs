@@ -251,7 +251,6 @@ mod tests {
             serde_json::from_str(SEARCH_FIXTURE).expect("search fixture should parse");
         assert!(!resp.traces.is_empty(), "fixture has at least one trace");
         let first = &resp.traces[0];
-        // Catches traceID (capital D) vs traceId mismatches
         assert!(!first.trace_id.is_empty(), "trace_id is populated");
         assert!(
             !first.root_service_name.is_empty(),
@@ -287,7 +286,6 @@ mod tests {
 
     #[test]
     fn integer_attributes_parsed() {
-        // Real fixture has a span with busy_ns as an intValue
         let resp: TraceResponse =
             serde_json::from_str(TRACE_FIXTURE).expect("trace fixture should parse");
         let trace = flatten_trace(resp);

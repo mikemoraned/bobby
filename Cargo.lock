@@ -8258,6 +8258,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "observability"
+version = "0.1.0"
+dependencies = [
+ "build-support",
+ "chrono",
+ "clap",
+ "reqwest 0.13.2",
+ "serde",
+ "serde_json",
+ "shared",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "ocrs"
 version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10781,6 +10797,7 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry_sdk",
  "proptest",
+ "regex",
  "serde",
  "tempfile",
  "thiserror 2.0.18",
@@ -11061,10 +11078,6 @@ dependencies = [
  "opentelemetry_sdk",
  "proptest",
  "rand 0.9.2",
- "regex",
- "reqwest 0.13.2",
- "serde",
- "serde_json",
  "shared",
  "tempfile",
  "test-support",

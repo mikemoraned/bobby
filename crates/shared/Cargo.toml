@@ -9,6 +9,7 @@ cid = { workspace = true }
 hex = { workspace = true }
 image = { workspace = true }
 md5 = { workspace = true }
+regex = { workspace = true }
 serde = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry_sdk = { workspace = true }

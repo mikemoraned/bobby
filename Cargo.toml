@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/bluesky", "crates/build-support", "crates/eval", "crates/skeet-store", "crates/skeet-prune", "crates/skeet-feed", "crates/skeet-appraise", "crates/skeet-publish", "crates/skeet-refine", "crates/face-detection", "crates/shared", "crates/skin-detection", "crates/text-detection", "crates/cloudflare-exporter", "crates/openai-exporter", "crates/test-support", "crates/web-support"]
+members = ["crates/bluesky", "crates/build-support", "crates/eval", "crates/observability", "crates/skeet-store", "crates/skeet-prune", "crates/skeet-feed", "crates/skeet-appraise", "crates/skeet-publish", "crates/skeet-refine", "crates/face-detection", "crates/shared", "crates/skin-detection", "crates/text-detection", "crates/cloudflare-exporter", "crates/openai-exporter", "crates/test-support", "crates/web-support"]
 resolver = "2"
 
 [workspace.lints.clippy]
