@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use tracing::instrument;
+use async_trait::async_trait;
 
 use crate::SkeetStore;
 use crate::error::StoreError;
@@ -20,19 +20,74 @@ impl Version {
     }
 }
 
+/// Store-agnostic source of per-table version tokens.
+///
+/// Splits the *source* of a version token from the version-gated lazy-refresh
+/// *mechanism* in [`crate::VersionedCache`]: callers gate on opaque
+/// [`Version`] tags rather than a LanceDB version counter, so the freshness
+/// logic no longer depends on the storage backend.
+#[async_trait]
+pub trait TableVersions: Send + Sync {
+    /// The current version token for a single logical table. `Version.tag` is an
+    /// opaque string, so two tokens compare equal iff the table has not changed
+    /// between the calls — the comparable key a [`crate::VersionedCache`] gates on.
+    async fn table_version(&self, table: &str) -> Result<Version, StoreError>;
+
+    /// Snapshot the version token of every table at once.
+    async fn version_snapshot(&self) -> Result<HashSet<Version>, StoreError>;
+}
+
+#[async_trait]
+impl TableVersions for SkeetStore {
+    async fn table_version(&self, table: &str) -> Result<Version, StoreError> {
+        let (name, t) = self
+            .tables
+            .iter()
+            .find(|(name, _)| *name == table)
+            .ok_or_else(|| StoreError::UnknownTable(table.to_string()))?;
+        let v = t.version().await?;
+        Ok(Version::new(*name, v.to_string()))
+    }
+
+    async fn version_snapshot(&self) -> Result<HashSet<Version>, StoreError> {
+        let mut snapshot = HashSet::with_capacity(self.tables.len());
+        for (name, t) in &self.tables {
+            let v = t.version().await?;
+            snapshot.insert(Version::new(*name, v.to_string()));
+        }
+        Ok(snapshot)
+    }
+}
+
 impl SkeetStore {
-    /// Snapshot the current version of every table, returned as a `HashSet<Version>`.
-    ///
-    /// `Version.tag` is an opaque string derived from each table's lancedb version,
-    /// so callers can compare snapshots without coupling to the underlying
-    /// representation.
-    #[instrument(skip(self))]
-    pub async fn version_snapshot(&self) -> Result<HashSet<Version>, StoreError> {
-        let versions = self.table_versions().await?;
-        Ok(versions
-            .into_iter()
-            .map(|(name, v)| Version::new(name, v.to_string()))
-            .collect())
+    /// The numeric LanceDB version counter for each table — the gauge source for
+    /// version metrics. Store-agnostic callers should prefer the opaque
+    /// [`TableVersions`] port instead.
+    pub async fn table_versions(&self) -> Result<Vec<(&'static str, u64)>, StoreError> {
+        let mut versions = Vec::with_capacity(self.tables.len());
+        for (name, table) in &self.tables {
+            let v = table.version().await?;
+            versions.push((*name, v));
+        }
+        Ok(versions)
+    }
+
+    /// The fragment count for each table — a LanceDB storage-maintenance signal
+    /// (drives compaction scheduling and gauges). Lance-physical, so it stays off
+    /// the [`TableVersions`] port.
+    pub async fn fragment_counts(&self) -> Result<Vec<(&'static str, u64)>, StoreError> {
+        let mut counts = Vec::with_capacity(self.tables.len());
+        for (name, table) in &self.tables {
+            let native = table
+                .as_native()
+                .ok_or_else(|| StoreError::CannotGetFragmentCount {
+                    table: (*name).to_string(),
+                    reason: "table is not a native LanceDB table".to_string(),
+                })?;
+            let count = native.count_fragments().await?;
+            counts.push((*name, count as u64));
+        }
+        Ok(counts)
     }
 }
 

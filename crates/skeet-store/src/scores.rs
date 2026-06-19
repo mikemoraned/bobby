@@ -8,8 +8,9 @@ use tracing::{debug, info, instrument};
 
 use crate::arrow_utils::typed_column;
 use crate::lancedb_utils::execute_query;
-use crate::schema::images_score_v2_schema;
+use crate::schema::{SCORE_TABLE_NAME, images_score_v2_schema};
 use crate::stored::batches_to_summaries;
+use crate::version::TableVersions;
 use crate::{ModelVersion, Score, SkeetStore, StoreError, StoredImageSummary};
 
 /// The full scores table, keyed by image id — the value cached by
@@ -276,7 +277,7 @@ impl SkeetStore {
 
     #[instrument(skip(self))]
     async fn cached_scores(&self) -> Result<ScoresMap, StoreError> {
-        let current_version = self.scores_table.version().await?;
+        let current_version = self.table_version(SCORE_TABLE_NAME).await?;
 
         // Fast path: reuse the cache if it was built at this table version.
         if let Some(scores) = self
@@ -285,12 +286,12 @@ impl SkeetStore {
             .await
             .get_cached_if_current(&current_version)
         {
-            debug!(version = current_version, "scores cache hit");
+            debug!(version = %current_version.tag, "scores cache hit");
             return Ok(scores.clone());
         }
 
         // Slow path: full scan and cache update
-        debug!(version = current_version, "scores cache miss — full scan");
+        debug!(version = %current_version.tag, "scores cache miss — full scan");
         let scored_query = self
             .scores_table
             .query()
@@ -315,7 +316,7 @@ impl SkeetStore {
         }
         info!(
             score_rows = scores.len(),
-            version = current_version,
+            version = %current_version.tag,
             "scores cache refreshed"
         );
 

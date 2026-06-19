@@ -32,7 +32,7 @@ pub use store_metrics::StoreMetrics;
 pub use stored::{StoredImage, StoredImageSummary, StoredOriginal};
 pub use summary::SkeetStoreSummary;
 pub use types::{DiscoveredAt, ImageRecord, OriginalAt, SkeetId, Zone};
-pub use version::Version;
+pub use version::{TableVersions, Version};
 pub use versioned_cache::VersionedCache;
 
 use std::collections::HashMap;
@@ -67,38 +67,11 @@ pub struct SkeetStore {
     /// per-table iteration (fragment counts, version snapshots). Populated in
     /// `SkeetStore::open` so adding or removing a table is a single edit.
     pub(crate) tables: Vec<(&'static str, lancedb::Table)>,
-    pub(crate) scores_cache: RwLock<VersionedCache<u64, scores::ScoresMap>>,
+    pub(crate) scores_cache: RwLock<VersionedCache<Version, scores::ScoresMap>>,
     pub(crate) store_wrapper: Arc<dyn WrappingObjectStore>,
 }
 
 impl SkeetStore {
-    /// Return the current version counter for each table. Cheap: reads only the cached manifest.
-    pub async fn table_versions(&self) -> Result<Vec<(&'static str, u64)>, StoreError> {
-        let mut versions = Vec::with_capacity(self.tables.len());
-        for (name, table) in &self.tables {
-            let v = table.version().await?;
-            versions.push((*name, v));
-        }
-        Ok(versions)
-    }
-
-    /// Return the fragment count for each table.
-    /// Cheap: reads only the cached manifest, no per-fragment or per-column I/O.
-    pub async fn fragment_counts(&self) -> Result<Vec<(&'static str, u64)>, StoreError> {
-        let mut counts = Vec::with_capacity(self.tables.len());
-        for (name, table) in &self.tables {
-            let native = table
-                .as_native()
-                .ok_or_else(|| StoreError::CannotGetFragmentCount {
-                    table: (*name).to_string(),
-                    reason: "table is not a native LanceDB table".to_string(),
-                })?;
-            let count = native.count_fragments().await?;
-            counts.push((*name, count as u64));
-        }
-        Ok(counts)
-    }
-
     /// Build `WriteOptions` that include the R2 metrics wrapper, if configured.
     pub(crate) fn write_options(&self) -> WriteOptions {
         WriteOptions {

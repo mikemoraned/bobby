@@ -1,13 +1,15 @@
 use std::sync::Arc;
 
-use skeet_store::{DiscoveredAt, SkeetStore, StoreError, TABLE_NAME, VersionedCache};
+use skeet_store::{
+    DiscoveredAt, SkeetStore, StoreError, TABLE_NAME, TableVersions, Version, VersionedCache,
+};
 use tracing::info;
 
 use crate::batch::Batch;
 
 pub struct PollingBatchSource {
     store: Arc<SkeetStore>,
-    images_gate: VersionedCache<u64, ()>,
+    images_gate: VersionedCache<Version, ()>,
     last_discovered_at: Option<DiscoveredAt>,
 }
 
@@ -34,13 +36,9 @@ impl PollingBatchSource {
     /// underlying scan pushes down a `discovered_at >= last_discovered_at`
     /// filter so the oldest unscored straggler is always re-included.
     pub async fn fetch(&mut self) -> Result<Batch, StoreError> {
-        let versions = self.store.table_versions().await?;
-        let images_version = versions
-            .iter()
-            .find(|(name, _)| *name == TABLE_NAME)
-            .map(|(_, v)| *v);
+        let images_version = self.store.table_version(TABLE_NAME).await?;
 
-        if images_version.is_some_and(|v| self.images_gate.is_cached_current(&v)) {
+        if self.images_gate.is_cached_current(&images_version) {
             return Ok(Batch::default());
         }
 
@@ -49,9 +47,7 @@ impl PollingBatchSource {
             .list_unscored_image_ids(self.last_discovered_at.as_ref())
             .await?;
 
-        if let Some(v) = images_version {
-            self.images_gate.cache(v, ());
-        }
+        self.images_gate.cache(images_version, ());
 
         if unscored_ids.is_empty() {
             return Ok(Batch::default());

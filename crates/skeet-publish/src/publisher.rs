@@ -8,7 +8,7 @@ use deadpool_redis::redis;
 use shared::{Band, ImageId, NormalizedScore, RefineModels};
 use skeet_store::{
     Appraisal, ModelVersion, OriginalAt, Score, SkeetId, SkeetStore, StoreError,
-    StoredImageSummary, Version, VersionedCache,
+    StoredImageSummary, TableVersions, Version, VersionedCache,
 };
 use tokio::sync::RwLock;
 

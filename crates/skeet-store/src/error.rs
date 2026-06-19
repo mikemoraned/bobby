@@ -38,4 +38,7 @@ pub enum StoreError {
 
     #[error("cannot get fragment count for table '{table}': {reason}")]
     CannotGetFragmentCount { table: String, reason: String },
+
+    #[error("unknown table: {0}")]
+    UnknownTable(String),
 }
