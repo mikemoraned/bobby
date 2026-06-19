@@ -2,8 +2,8 @@ use chrono::Utc;
 
 use crate::test_utils::{make_record_at, open_temp_store, test_image, test_image_with_color};
 use crate::{
-    Appraisal, Appraiser, Band, DiscoveredAt, ImageId, ImageRecord, ModelVersion, OriginalAt,
-    Score, SkeetId, SkeetStore, Zone,
+    Appraisal, Appraisals, Appraiser, Band, DiscoveredAt, ImageId, ImageRecord, ModelVersion,
+    OriginalAt, Score, SkeetId, SkeetStore, Zone,
 };
 
 #[tokio::test]

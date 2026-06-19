@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use arrow_array::{RecordBatch, RecordBatchIterator, StringArray, TimestampMicrosecondArray};
+use async_trait::async_trait;
 use chrono::Utc;
 use lancedb::query::QueryBase;
 use shared::{Appraiser, Band, ImageId};
@@ -19,9 +20,36 @@ pub struct Appraisal {
     pub appraiser: Appraiser,
 }
 
-impl SkeetStore {
+/// Manual appraisals: the human-assigned [`Band`] for a skeet or an image.
+///
+/// The two key spaces (skeet vs image) are intentionally separate methods rather
+/// than one generic surface — callers act on one or the other, never both at once.
+#[async_trait]
+pub trait Appraisals: Send + Sync {
+    async fn set_skeet_band(
+        &self,
+        skeet_id: &SkeetId,
+        band: Band,
+        appraiser: &Appraiser,
+    ) -> Result<(), StoreError>;
+    async fn clear_skeet_band(&self, skeet_id: &SkeetId) -> Result<(), StoreError>;
+    async fn get_skeet_band(&self, skeet_id: &SkeetId) -> Result<Option<Appraisal>, StoreError>;
+    async fn list_all_skeet_appraisals(&self) -> Result<Vec<(SkeetId, Appraisal)>, StoreError>;
+    async fn set_image_band(
+        &self,
+        image_id: &ImageId,
+        band: Band,
+        appraiser: &Appraiser,
+    ) -> Result<(), StoreError>;
+    async fn clear_image_band(&self, image_id: &ImageId) -> Result<(), StoreError>;
+    async fn get_image_band(&self, image_id: &ImageId) -> Result<Option<Appraisal>, StoreError>;
+    async fn list_all_image_appraisals(&self) -> Result<Vec<(ImageId, Appraisal)>, StoreError>;
+}
+
+#[async_trait]
+impl Appraisals for SkeetStore {
     #[instrument(skip(self))]
-    pub async fn set_skeet_band(
+    async fn set_skeet_band(
         &self,
         skeet_id: &SkeetId,
         band: Band,
@@ -52,7 +80,7 @@ impl SkeetStore {
     }
 
     #[instrument(skip(self))]
-    pub async fn clear_skeet_band(&self, skeet_id: &SkeetId) -> Result<(), StoreError> {
+    async fn clear_skeet_band(&self, skeet_id: &SkeetId) -> Result<(), StoreError> {
         self.skeet_appraisal_table
             .delete(&format!("skeet_id = '{skeet_id}'"))
             .await?;
@@ -60,7 +88,7 @@ impl SkeetStore {
     }
 
     #[instrument(skip(self))]
-    pub async fn get_skeet_band(
+    async fn get_skeet_band(
         &self,
         skeet_id: &SkeetId,
     ) -> Result<Option<Appraisal>, StoreError> {
@@ -74,7 +102,7 @@ impl SkeetStore {
     }
 
     #[instrument(skip(self))]
-    pub async fn list_all_skeet_appraisals(&self) -> Result<Vec<(SkeetId, Appraisal)>, StoreError> {
+    async fn list_all_skeet_appraisals(&self) -> Result<Vec<(SkeetId, Appraisal)>, StoreError> {
         let batches = execute_query(
             &self.skeet_appraisal_table.query(),
             "list_all_skeet_appraisals",
@@ -86,7 +114,7 @@ impl SkeetStore {
     }
 
     #[instrument(skip(self))]
-    pub async fn set_image_band(
+    async fn set_image_band(
         &self,
         image_id: &ImageId,
         band: Band,
@@ -117,7 +145,7 @@ impl SkeetStore {
     }
 
     #[instrument(skip(self))]
-    pub async fn clear_image_band(&self, image_id: &ImageId) -> Result<(), StoreError> {
+    async fn clear_image_band(&self, image_id: &ImageId) -> Result<(), StoreError> {
         self.image_appraisal_table
             .delete(&format!("image_id = '{image_id}'"))
             .await?;
@@ -125,7 +153,7 @@ impl SkeetStore {
     }
 
     #[instrument(skip(self))]
-    pub async fn get_image_band(
+    async fn get_image_band(
         &self,
         image_id: &ImageId,
     ) -> Result<Option<Appraisal>, StoreError> {
@@ -139,7 +167,7 @@ impl SkeetStore {
     }
 
     #[instrument(skip(self))]
-    pub async fn list_all_image_appraisals(&self) -> Result<Vec<(ImageId, Appraisal)>, StoreError> {
+    async fn list_all_image_appraisals(&self) -> Result<Vec<(ImageId, Appraisal)>, StoreError> {
         let batches = execute_query(
             &self.image_appraisal_table.query(),
             "list_all_image_appraisals",

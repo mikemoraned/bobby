@@ -6,7 +6,7 @@ use cot::request::extractors::FromRequestHead;
 use shared::{Band, ImageId, RefineModels};
 use skeet_publish::effective_band::{image_effective_band, skeet_effective_band};
 use skeet_publish::{Limit, Order};
-use skeet_store::{Score, SkeetId, SkeetStore, StoreError};
+use skeet_store::{Appraisals, Score, SkeetId, SkeetStore, StoreError};
 
 use crate::available_feeds::{
     AvailableFeeds, DiscoverError, FeedOption, PublishedListCatalogReader, UnknownFeed,

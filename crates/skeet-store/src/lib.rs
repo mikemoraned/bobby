@@ -20,7 +20,7 @@ mod types;
 mod version;
 pub mod versioned_cache;
 
-pub use appraisals::Appraisal;
+pub use appraisals::{Appraisal, Appraisals};
 pub use args::StoreArgs;
 pub use error::StoreError;
 pub use schema::{
