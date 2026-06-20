@@ -1,9 +1,9 @@
 use std::io::Cursor;
 
+use crate::StoreError;
 use arrow_array::{Array, RecordBatch, TimestampMicrosecondArray};
 use chrono::{DateTime, TimeZone, Utc};
 use image::DynamicImage;
-use crate::StoreError;
 
 pub fn typed_column<'a, T: Array + 'static>(
     batch: &'a RecordBatch,

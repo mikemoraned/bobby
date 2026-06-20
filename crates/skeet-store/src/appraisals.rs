@@ -88,10 +88,7 @@ impl Appraisals for SkeetStore {
     }
 
     #[instrument(skip(self))]
-    async fn get_skeet_band(
-        &self,
-        skeet_id: &SkeetId,
-    ) -> Result<Option<Appraisal>, StoreError> {
+    async fn get_skeet_band(&self, skeet_id: &SkeetId) -> Result<Option<Appraisal>, StoreError> {
         let query = self
             .skeet_appraisal_table
             .query()
@@ -153,10 +150,7 @@ impl Appraisals for SkeetStore {
     }
 
     #[instrument(skip(self))]
-    async fn get_image_band(
-        &self,
-        image_id: &ImageId,
-    ) -> Result<Option<Appraisal>, StoreError> {
+    async fn get_image_band(&self, image_id: &ImageId) -> Result<Option<Appraisal>, StoreError> {
         let query = self
             .image_appraisal_table
             .query()

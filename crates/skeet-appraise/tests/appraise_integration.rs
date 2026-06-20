@@ -75,9 +75,12 @@ async fn spawn_server() -> TestServer {
     let mut conn = skeet_publish::connect(&redis_url)
         .await
         .expect("connect redis to seed catalog");
-    PublishedListCatalog::write(&mut conn, &[PublishedList::new(Order::Quality, Limit::hours(48))])
-        .await
-        .expect("seed feed catalog");
+    PublishedListCatalog::write(
+        &mut conn,
+        &[PublishedList::new(Order::Quality, Limit::hours(48))],
+    )
+    .await
+    .expect("seed feed catalog");
 
     let port = pick_free_port();
     let store = tempfile::tempdir().expect("create temp store");

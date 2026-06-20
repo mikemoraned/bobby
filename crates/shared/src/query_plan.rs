@@ -123,7 +123,8 @@ mod tests {
         // should surface it so we notice the format has grown.
         let raw = "LanceRead: uri=encrypted-store/images_v6.lance/data, projection=[image_id], num_fragments=1, mystery_key=foo, full_filter=--\n";
         let plan = QueryPlan::parse(raw);
-        let expected: BTreeSet<String> = std::iter::once("mystery_key").map(str::to_owned).collect();
+        let expected: BTreeSet<String> =
+            std::iter::once("mystery_key").map(str::to_owned).collect();
         assert_eq!(plan.unknown_keys, expected);
     }
 

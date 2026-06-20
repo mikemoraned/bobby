@@ -303,8 +303,8 @@ fn id_in_list_filter(image_ids: &[ImageId]) -> String {
 mod tests {
     use chrono::{Duration, Utc};
 
-    use crate::Images;
     use crate::DiscoveredAt;
+    use crate::Images;
     use crate::test_utils::{make_record_at, open_temp_store};
 
     fn at_minutes_ago(minutes: i64) -> DiscoveredAt {
