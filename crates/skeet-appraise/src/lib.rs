@@ -20,4 +20,4 @@ pub use models_middleware::{Models, ModelsLayer};
 pub use published_feed_middleware::PublishedFeedLayer;
 pub use started_at::{StartedAtExtractor, StartedAtLayer};
 pub use static_assets::web_static_files;
-pub use store_middleware::{Store, StoreLayer};
+pub use store_middleware::{AppraiseStore, Store, StoreLayer};

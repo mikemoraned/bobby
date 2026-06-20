@@ -12,7 +12,7 @@ use skeet_publish::{
     CdnImageUrlResolver, FeedPublisher, Limit, Order, PublishMetrics, PublishOutcome,
     PublishedList, PublishedListCatalog, connect, parse_spec,
 };
-use skeet_store::StoreArgs;
+use skeet_store::{SkeetStore, StoreArgs};
 use tracing::{info, warn};
 
 #[derive(Parser)]
@@ -128,7 +128,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// connection Upstash dropped while idle), publish only if something moved, and
 /// log/record what landed (the specs come from the publisher via the outcome).
 async fn publish(
-    publisher: &FeedPublisher,
+    publisher: &FeedPublisher<SkeetStore>,
     redis_url: &str,
     metrics: &PublishMetrics,
 ) -> Result<(), Box<dyn std::error::Error>> {

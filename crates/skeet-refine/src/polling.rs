@@ -1,21 +1,20 @@
 use std::sync::Arc;
 
 use skeet_store::{
-    DiscoveredAt, Images, ScoredView, SkeetStore, StoreError, TABLE_NAME, TableVersions, Version,
-    VersionedCache,
+    DiscoveredAt, Images, ScoredView, StoreError, TABLE_NAME, TableVersions, Version, VersionedCache,
 };
 use tracing::info;
 
 use crate::batch::Batch;
 
-pub struct PollingBatchSource {
-    store: Arc<SkeetStore>,
+pub struct PollingBatchSource<S> {
+    store: Arc<S>,
     images_gate: VersionedCache<Version, ()>,
     last_discovered_at: Option<DiscoveredAt>,
 }
 
-impl PollingBatchSource {
-    pub const fn new(store: Arc<SkeetStore>) -> Self {
+impl<S: Images + ScoredView + TableVersions> PollingBatchSource<S> {
+    pub const fn new(store: Arc<S>) -> Self {
         Self {
             store,
             images_gate: VersionedCache::new(),

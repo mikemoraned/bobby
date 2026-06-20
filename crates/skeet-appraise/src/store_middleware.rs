@@ -5,26 +5,35 @@ use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::FromRequestHead;
 use tower::{Layer, Service};
 
-use skeet_store::SkeetStore;
+use skeet_store::{Appraisals, Images, Scores, SkeetStore};
 
-/// Shared handle to a [`SkeetStore`], extracted from request extensions.
+/// The store capabilities the appraisals service needs.
+///
+/// Aggregates image reads/paging ([`Images`]), score reads ([`Scores`]), and
+/// appraisal reads/writes ([`Appraisals`]). Handlers depend on this narrowed
+/// surface rather than the whole `SkeetStore`; any type implementing the three
+/// ports satisfies it via the blanket impl.
+pub trait AppraiseStore: Images + Scores + Appraisals {}
+impl<T: Images + Scores + Appraisals> AppraiseStore for T {}
+
+/// Shared handle to the store, extracted from request extensions.
 #[derive(Clone)]
-pub struct Store(pub Arc<SkeetStore>);
+pub struct Store(pub Arc<dyn AppraiseStore>);
 
 impl FromRequestHead for Store {
     async fn from_request_head(head: &RequestHead) -> cot::Result<Self> {
         head.extensions
-            .get::<Arc<SkeetStore>>()
+            .get::<Arc<dyn AppraiseStore>>()
             .cloned()
             .map(Store)
-            .ok_or_else(|| cot::Error::internal("SkeetStore not found in request extensions"))
+            .ok_or_else(|| cot::Error::internal("store not found in request extensions"))
     }
 }
 
-/// Tower [`Layer`] that injects an `Arc<SkeetStore>` into every request's extensions.
+/// Tower [`Layer`] that injects the store into every request's extensions.
 #[derive(Clone)]
 pub struct StoreLayer {
-    store: Arc<SkeetStore>,
+    store: Arc<dyn AppraiseStore>,
 }
 
 impl StoreLayer {
@@ -34,7 +43,7 @@ impl StoreLayer {
         }
     }
 
-    pub const fn from_shared(store: Arc<SkeetStore>) -> Self {
+    pub fn from_shared(store: Arc<dyn AppraiseStore>) -> Self {
         Self { store }
     }
 }
@@ -50,11 +59,11 @@ impl<S> Layer<S> for StoreLayer {
     }
 }
 
-/// Tower [`Service`] that injects an `Arc<SkeetStore>` into every request's extensions.
+/// Tower [`Service`] that injects the store into every request's extensions.
 #[derive(Clone)]
 pub struct StoreService<S> {
     inner: S,
-    store: Arc<SkeetStore>,
+    store: Arc<dyn AppraiseStore>,
 }
 
 impl<S, ReqBody> Service<cot::http::Request<ReqBody>> for StoreService<S>

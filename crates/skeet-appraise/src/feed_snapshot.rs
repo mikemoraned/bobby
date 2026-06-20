@@ -6,8 +6,9 @@ use cot::request::extractors::FromRequestHead;
 use shared::{Band, ImageId, RefineModels};
 use skeet_publish::effective_band::{image_effective_band, skeet_effective_band};
 use skeet_publish::{Limit, Order};
-use skeet_store::{Appraisals, Score, Scores, SkeetId, SkeetStore, StoreError};
+use skeet_store::{Score, SkeetId, StoreError};
 
+use crate::AppraiseStore;
 use crate::available_feeds::{
     AvailableFeeds, DiscoverError, FeedOption, PublishedListCatalogReader, UnknownFeed,
 };
@@ -46,7 +47,7 @@ pub struct FeedSnapshot {
 /// the published list to read is chosen from them (see [`FeedSnapshotSource::load`]).
 pub struct FeedSnapshotSource {
     feeds: AvailableFeeds,
-    store: Arc<SkeetStore>,
+    store: Arc<dyn AppraiseStore>,
     models: Arc<RefineModels>,
 }
 
@@ -72,9 +73,9 @@ impl FromRequestHead for FeedSnapshotSource {
             feeds,
             store: head
                 .extensions
-                .get::<Arc<SkeetStore>>()
+                .get::<Arc<dyn AppraiseStore>>()
                 .cloned()
-                .ok_or_else(get("SkeetStore not found in request extensions"))?,
+                .ok_or_else(get("store not found in request extensions"))?,
             models: head
                 .extensions
                 .get::<Arc<RefineModels>>()

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use image::DynamicImage;
 use shared::{Band, ImageId};
-use skeet_store::{Appraisals, Images, SkeetStore, StoreError};
+use skeet_store::{Appraisals, Images, StoreError};
 
 /// An image fetched from the store paired with its appraised `Band`. The binary
 /// label for the refine classifier is `band.is_visible_in_feed()`.
@@ -42,7 +42,7 @@ pub async fn load_band_index(
 /// Resolve `ids` into in-memory `LabelledImage`s. Errors if any id is missing
 /// from the appraisal index, or absent from the images table.
 pub async fn load_labelled_images(
-    store: &SkeetStore,
+    store: &impl Images,
     band_by_id: &HashMap<ImageId, Band>,
     ids: &[ImageId],
 ) -> Result<Vec<LabelledImage>, LoaderError> {

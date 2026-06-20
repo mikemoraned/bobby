@@ -8,7 +8,7 @@ use deadpool_redis::redis;
 use shared::{Band, ImageId, NormalizedScore, RefineModels};
 use skeet_store::{
     Appraisal, Appraisals, ModelVersion, OriginalAt, Score, ScoredView, Scores, SkeetId,
-    SkeetStore, StoreError, StoredImageSummary, TableVersions, Version, VersionedCache,
+    StoreError, StoredImageSummary, TableVersions, Version, VersionedCache,
 };
 use tokio::sync::RwLock;
 
@@ -211,8 +211,8 @@ pub enum PublishOutcome {
 /// On each cycle it queries the scored skeets published within the widest spec
 /// window, runs the visibility policy, and writes each spec's ordered,
 /// windowed pairs to its `{order}-{limit}` list.
-pub struct FeedPublisher {
-    store: Arc<SkeetStore>,
+pub struct FeedPublisher<S> {
+    store: Arc<S>,
     models: Arc<RefineModels>,
     resolver: Arc<dyn ImageUrlResolver>,
     checker: Arc<dyn ExistenceChecker>,
@@ -221,9 +221,9 @@ pub struct FeedPublisher {
     last_relevant: RwLock<VersionedCache<HashSet<Version>, ()>>,
 }
 
-impl FeedPublisher {
+impl<S: ScoredView + Appraisals + Scores + TableVersions> FeedPublisher<S> {
     pub fn new(
-        store: Arc<SkeetStore>,
+        store: Arc<S>,
         models: Arc<RefineModels>,
         resolver: Arc<dyn ImageUrlResolver>,
         checker: Arc<dyn ExistenceChecker>,

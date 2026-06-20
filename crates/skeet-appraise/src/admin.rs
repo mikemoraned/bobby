@@ -10,12 +10,10 @@ use cot::{Body, Template};
 use serde::Deserialize;
 use std::sync::Arc;
 
-use crate::Store;
+use crate::{AppraiseStore, Store};
 use shared::{Appraiser, Band, ImageId, ModelVersion, RefineModels};
 use skeet_publish::effective_band::{image_effective_band, skeet_effective_band};
-use skeet_store::{
-    Appraisal, Appraisals, DiscoveredAt, Images, Score, Scores, SkeetId, StoredImageSummary,
-};
+use skeet_store::{Appraisal, DiscoveredAt, Score, SkeetId, StoredImageSummary};
 use tracing::{info, instrument};
 
 use crate::AppraiserExtractor;
@@ -270,13 +268,13 @@ pub async fn appraise_skeet(
         .parse()
         .map_err(|e| cot::Error::internal(format!("invalid skeet_id: {e}")))?;
     apply_appraisal(
-        &store,
+        &*store,
         appraiser,
         &query.band,
         AppraiseTarget::Skeet(&skeet_id),
     )
     .await?;
-    render_updated_row(&store, &models, &skeet_id.to_string(), "skeet").await
+    render_updated_row(&*store, &models, &skeet_id.to_string(), "skeet").await
 }
 
 #[instrument(skip_all)]
@@ -291,13 +289,13 @@ pub async fn appraise_image(
         .parse()
         .map_err(|e| cot::Error::internal(format!("invalid image_id: {e}")))?;
     apply_appraisal(
-        &store,
+        &*store,
         appraiser,
         &query.band,
         AppraiseTarget::Image(&image_id),
     )
     .await?;
-    render_updated_row(&store, &models, &image_id.to_string(), "image").await
+    render_updated_row(&*store, &models, &image_id.to_string(), "image").await
 }
 
 enum AppraiseTarget<'a> {
@@ -306,7 +304,7 @@ enum AppraiseTarget<'a> {
 }
 
 async fn apply_appraisal(
-    store: &skeet_store::SkeetStore,
+    store: &dyn AppraiseStore,
     appraiser: Option<Arc<Appraiser>>,
     band_str: &str,
     target: AppraiseTarget<'_>,
@@ -357,7 +355,7 @@ async fn apply_appraisal(
 }
 
 async fn render_updated_row(
-    store: &skeet_store::SkeetStore,
+    store: &dyn AppraiseStore,
     models: &RefineModels,
     id_str: &str,
     view: &str,

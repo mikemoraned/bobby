@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use skeet_store::SkeetStore;
+use skeet_store::Images;
 use tokio::sync::mpsc;
 use tracing::warn;
 
@@ -9,7 +9,7 @@ use crate::{persistence, status};
 
 pub async fn run(
     rx: &mut mpsc::Receiver<ImageResult>,
-    store: &SkeetStore,
+    store: &impl Images,
     counters: Arc<PipelineCounters>,
     channels: ChannelMonitors,
     log_interval: std::time::Duration,
