@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use shared::ImageId;
-use skeet_store::StoreArgs;
+use skeet_store::{Images, StoreArgs};
 use tracing::info;
 
 #[derive(Parser)]

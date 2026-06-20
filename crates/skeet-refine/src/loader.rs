@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use image::DynamicImage;
 use shared::{Band, ImageId};
-use skeet_store::{Appraisals, SkeetStore, StoreError};
+use skeet_store::{Appraisals, Images, SkeetStore, StoreError};
 
 /// An image fetched from the store paired with its appraised `Band`. The binary
 /// label for the refine classifier is `band.is_visible_in_feed()`.

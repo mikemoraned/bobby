@@ -8,7 +8,7 @@ use eval::{ConfusionMatrix, F1, Precision, Recall};
 use face_detection::FaceDetector;
 use serde::Serialize;
 use shared::{Classification, ImageId, PruneConfig, RejectionCategories, RejectionCategory};
-use skeet_store::{Appraisals, Band, StoreArgs};
+use skeet_store::{Appraisals, Band, Images, StoreArgs};
 use tracing::info;
 
 const BATCH_SIZE: usize = 10;

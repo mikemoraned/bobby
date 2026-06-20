@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use skeet_store::{
-    DiscoveredAt, SkeetStore, StoreError, TABLE_NAME, TableVersions, Version, VersionedCache,
+    DiscoveredAt, Images, SkeetStore, StoreError, TABLE_NAME, TableVersions, Version, VersionedCache,
 };
 use tracing::info;
 

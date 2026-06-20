@@ -53,7 +53,8 @@ Each crate gets at least one full human pass: read all code, delete dead code, r
             * **Sub-divided per-port; each port is a `#[async_trait]` trait (like `FeedSource`/`Appraisals`) impl'd by `SkeetStore`, methods moved out of inherent `impl` into `impl Port for SkeetStore`.** Ordering note: multi-port consumers (`FeedPublisher`, `PollingBatchSource`, the appraise DI handle) can't be type-narrowed to generics/`dyn` until *all* their ports exist — per chunk they keep the concrete `Arc<SkeetStore>` + add the trait import; single-port free fns get narrowed to `&impl Port` immediately. A final pass narrows the held types once all four ports land.
                 * [x] **Appraisals port done.** `Appraisals` trait in `appraisals.rs` (8 methods), impl'd by `SkeetStore`; exported from `lib.rs`. Narrowed `skeet-refine/loader.rs::load_band_index` → `&impl Appraisals`. Other consumers (publish, appraise admin/feed_snapshot, prune/refine bins, store_tests) kept concrete + import the trait. Deferred the optional `AppraisalTable<K>` §D dedupe (orthogonal to the port boundary).
                 * [x] **Scores port done.** `Scores` trait in `scores.rs` (`batch_upsert_scores`, `get_score`, `list_scores_for_ids`, `count_scored_images`, `count_scores_by_model_version`), impl'd by `SkeetStore`; exported from `lib.rs`. `upsert_score` is a **provided/default trait method** over `batch_upsert_scores`, so implementors supply only the batch form. `scores.rs` split into `impl SkeetStore` (scored-view methods + private helpers — the scored-view port comes later) and a single `impl Scores for SkeetStore` block (a trait impl can't be split, so the two scattered score groups were consolidated). No single-port free-fn consumer to narrow this round; all consumers (refine live_refine/polling, publish, appraise admin/feed_snapshot, model-versions bin, tests across 4 crates) kept concrete + import the trait. (Drive-by: fixed a trivial pre-existing `--all-targets`-only clippy nit in the Stage-A-relocated `shared/query_plan.rs` test.)
-                * [ ] Images port · [ ] Scored-view port · [ ] final consumer type-narrowing pass.
+                * [x] **Images port done.** `Images` trait (11 methods) extracted into a **new `images.rs` module** (trait + single `impl Images for SkeetStore`), folding in `list_summaries_page` + the paging tests from the now-deleted `paging.rs` (a trait impl must be one block). `lib.rs` shrank 356→141 lines (now just the struct, `write_options`, `validate`) — comfortably under the 300-line rule. `ImageId` is now `pub use`d from the crate root (it had been a private `use` only reachable via `crate::ImageId` in tests; non-test `lib.rs` no longer references it, so the façade re-export is the clean fix). Consumers (prune persistence/eval/image_metadata_dump, refine loader/polling, appraise handlers/admin, store bins, tests across 4 crates) import the trait + keep concrete handles.
+                * [ ] Scored-view port · [ ] final consumer type-narrowing pass.
         * **Deferred (not this slice, no concrete driver yet):** Stage C — decompose the Lance/R2 adapter into a small number of composable sub-impls (e.g. a swappable image-encryption codec) for a future "plaintext R2 + encrypted image blobs" migration; this is orthogonal to A/B (the codec lives *below* the ports) and demand-driven. Also deferred: splitting `SkeetStore` into per-table sub-structs, and the read/write capability split (review §B.3).
 * [ ] **Processing-pipeline binaries — `skeet-prune`, `skeet-refine`, `skeet-publish`.** The firehose → classify → score → publish chain.
 * [ ] **Web services — `skeet-feed`, `skeet-appraise`.** The two HTTP-facing crates (banner/feed + auth-gated appraisals).
@@ -82,3 +83,29 @@ Each crate gets at least one full human pass: read all code, delete dead code, r
 * [x] Change default choices for `skeet-feed` to be:
     * `quality-48h` for bluesky feed (skeleton)
     * `quality-4w` for main homepage
+
+#### Make statistics more visible / understandable
+
+As of 20th June we say "(22,223,000 images checked so far)" on https://bobby.houseofmoran.io but this doesn't make it clear how few of these actually match the archetype.
+
+We'd like to change this to say something like "(400,000 images checked over past 2 days, of which 46 (0.01%) match what we are looking for)". This should show human-readable numbers and days e.g. time rounded to nearest hour/day/week/month/year multiple, and percentages shown to a round two decimal places.
+
+We'll get there in gradual steps:
+* within `skeet-store`:
+    * [ ] Record prune statistics:
+        * [ ] create new `Statistics` trait (impl'd by SkeetStore) which can store prune statistics i.e. something similar to what we are currently saving in otel metrics:
+            * Count of Skeets seen on firehose
+            * Count of Images examined i.e. how many were looked at even before they were saved
+            * Count of Images saved as candidates
+            * These are counts within a particular interval (see below), which should also be recorded with a start and end timestamp
+        * [ ] Update pruner so that it saves these stats to `Statistics` every time it updates the logged output. It should save a new record of stats for each interval e.g. from timestamp T1 to T2, 20 skeets seen, etc
+    * [ ] Add ability of `Statistics` trait to calculate:
+        * a sum of prune counts seen over a particular interval (based on saved prune records above), which is the number of images examined
+* witnin `skeet-publish`:
+    * [ ] In publisher, instead of publishing `v3-examined-count`, publish the following for each `PublishedList` at, for example, `v3-quality-7d:statistics` as a json object:
+        * start/end of interval covered (so, absolute start/end of the 7d period in this example)
+        * count of examined images
+        * count of images we eventually show (this is just the length of the list)
+* within `skeet-feed`:
+    * [ ] Get the counts of images examined and shown, and the interval given, and use these to create the "(400,000 images checked over past 2 days, of which 46 (0.01%) match what we are looking for)" text.
+* [ ] refactor any existing `count` methods in other `skeet-store` traits to live in the `Statistics` trait

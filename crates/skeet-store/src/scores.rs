@@ -8,6 +8,7 @@ use shared::ImageId;
 use tracing::{debug, info, instrument};
 
 use crate::arrow_utils::typed_column;
+use crate::images::Images;
 use crate::lancedb_utils::execute_query;
 use crate::schema::{SCORE_TABLE_NAME, images_score_v2_schema};
 use crate::stored::batches_to_summaries;

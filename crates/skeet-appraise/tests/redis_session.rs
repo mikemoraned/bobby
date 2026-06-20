@@ -23,7 +23,7 @@ use skeet_appraise::{
     AppraiserLayer, ModelsLayer, OAuthConfigLayer, PublishedFeedLayer, StartedAtLayer, StoreLayer,
 };
 use skeet_store::test_utils::{make_record, open_temp_store};
-use skeet_store::{ModelVersion, Score, Scores, SkeetStore};
+use skeet_store::{Images, ModelVersion, Score, Scores, SkeetStore};
 use test_support::test_models;
 use testcontainers::core::{IntoContainerPort, WaitFor};
 use testcontainers::runners::AsyncRunner;

@@ -8,6 +8,7 @@ use cot::response::Response;
 use cot::{Body, StatusCode, Template};
 use serde::Deserialize;
 use shared::{Band, ImageId};
+use skeet_store::Images;
 use tracing::{info, instrument, warn};
 
 use crate::AppraiserExtractor;

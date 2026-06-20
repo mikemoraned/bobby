@@ -1,5 +1,5 @@
 use crate::status::Status;
-use skeet_store::{ImageRecord, SkeetStore};
+use skeet_store::{ImageRecord, Images, SkeetStore};
 use tracing::{info, instrument, warn};
 
 /// Returns `true` if the image already exists (caller should skip saving).

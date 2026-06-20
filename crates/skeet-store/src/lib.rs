@@ -4,10 +4,10 @@ mod args;
 mod arrow_utils;
 mod error;
 pub mod health;
+mod images;
 mod lancedb_utils;
 mod open;
 mod optimise;
-mod paging;
 mod r2_metrics;
 mod schema;
 mod scores;
@@ -23,12 +23,13 @@ pub mod versioned_cache;
 pub use appraisals::{Appraisal, Appraisals};
 pub use args::StoreArgs;
 pub use error::StoreError;
+pub use images::Images;
 pub use schema::{
     IMAGE_APPRAISAL_TABLE_NAME, SCORE_TABLE_NAME, SKEET_APPRAISAL_TABLE_NAME, TABLE_NAME,
     VALIDATE_TABLE_NAME,
 };
 pub use scores::Scores;
-pub use shared::{Appraiser, Band, ModelVersion, Score};
+pub use shared::{Appraiser, Band, ImageId, ModelVersion, Score};
 pub use store_metrics::StoreMetrics;
 pub use stored::{StoredImage, StoredImageSummary, StoredOriginal};
 pub use summary::SkeetStoreSummary;
@@ -36,27 +37,22 @@ pub use types::{DiscoveredAt, ImageRecord, OriginalAt, SkeetId, Zone};
 pub use version::{TableVersions, Version};
 pub use versioned_cache::VersionedCache;
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use lance_io::object_store::WrappingObjectStore;
 use tokio::sync::RwLock;
 
-use arrow_array::{
-    Int64Array, LargeBinaryArray, RecordBatch, StringArray, TimestampMicrosecondArray,
-};
+use arrow_array::{Int64Array, RecordBatch, TimestampMicrosecondArray};
 use chrono::Utc;
 use lancedb::query::QueryBase;
 use tracing::instrument;
 
-use arrow_utils::{encode_image_as_png, typed_column};
+use arrow_utils::typed_column;
 use lance::dataset::{WriteMode, WriteParams};
 use lance_io::object_store::ObjectStoreParams;
 use lancedb::table::WriteOptions;
 use lancedb_utils::execute_query;
-use schema::{images_v6_schema, validate_v1_schema};
-use shared::ImageId;
-use stored::{batches_to_original_images, batches_to_stored_images, batches_to_summaries};
+use schema::validate_v1_schema;
 
 pub struct SkeetStore {
     pub(crate) images_table: lancedb::Table,
@@ -85,149 +81,6 @@ impl SkeetStore {
                 ..Default::default()
             }),
         }
-    }
-
-    #[instrument(skip(self, record), fields(image_id = %record.image_id, skeet_id = %record.skeet_id))]
-    pub async fn add(&self, record: &ImageRecord) -> Result<(), StoreError> {
-        let schema = images_v6_schema();
-
-        let image_bytes = encode_image_as_png(&record.image)?;
-        let annotated_bytes = encode_image_as_png(&record.annotated_image)?;
-        let image_id_str = record.image_id.to_string();
-        let skeet_id_str = record.skeet_id.to_string();
-
-        let batch = RecordBatch::try_new(
-            schema.clone(),
-            vec![
-                Arc::new(StringArray::from(vec![image_id_str.as_str()])),
-                Arc::new(StringArray::from(vec![skeet_id_str.as_str()])),
-                Arc::new(LargeBinaryArray::from_vec(vec![&image_bytes])),
-                Arc::new(
-                    TimestampMicrosecondArray::from(vec![record.discovered_at.timestamp_micros()])
-                        .with_timezone("UTC"),
-                ),
-                Arc::new(
-                    TimestampMicrosecondArray::from(vec![record.original_at.timestamp_micros()])
-                        .with_timezone("UTC"),
-                ),
-                Arc::new(StringArray::from(vec![record.zone.to_string().as_str()])),
-                Arc::new(LargeBinaryArray::from_vec(vec![&annotated_bytes])),
-                Arc::new(StringArray::from(vec![
-                    record.config_version.to_string().as_str(),
-                ])),
-                Arc::new(StringArray::from(vec![record.detected_text.as_str()])),
-            ],
-        )?;
-
-        self.images_table
-            .add(vec![batch])
-            .write_options(self.write_options())
-            .execute()
-            .await?;
-
-        Ok(())
-    }
-
-    #[instrument(skip(self))]
-    pub async fn list_all_summaries(&self) -> Result<Vec<StoredImageSummary>, StoreError> {
-        let query = self
-            .images_table
-            .query()
-            .select(lancedb::query::Select::columns(&[
-                "image_id",
-                "skeet_id",
-                "discovered_at",
-                "original_at",
-                "archetype",
-                "config_version",
-                "detected_text",
-            ]));
-        let batches = execute_query(&query, "list_all_summaries").await?;
-        batches_to_summaries(&batches)
-    }
-
-    #[instrument(skip(self))]
-    pub async fn get_by_id(&self, image_id: &ImageId) -> Result<Option<StoredImage>, StoreError> {
-        let query = self
-            .images_table
-            .query()
-            .only_if(format!("image_id = '{image_id}'"))
-            .limit(1);
-        let batches = execute_query(&query, "get_by_id").await?;
-        Ok(batches_to_stored_images(&batches)?.into_iter().next())
-    }
-
-    #[instrument(skip(self, image_ids), fields(count = image_ids.len()))]
-    pub async fn get_by_ids(
-        &self,
-        image_ids: &[ImageId],
-    ) -> Result<HashMap<ImageId, StoredImage>, StoreError> {
-        if image_ids.is_empty() {
-            return Ok(HashMap::new());
-        }
-        let query = self
-            .images_table
-            .query()
-            .only_if(id_in_list_filter(image_ids));
-        let batches = execute_query(&query, "get_by_ids").await?;
-        Ok(batches_to_stored_images(&batches)?
-            .into_iter()
-            .map(|s| (s.summary.image_id.clone(), s))
-            .collect())
-    }
-
-    #[instrument(skip(self, image_ids), fields(count = image_ids.len()))]
-    pub async fn get_originals_by_ids(
-        &self,
-        image_ids: &[ImageId],
-    ) -> Result<HashMap<ImageId, StoredOriginal>, StoreError> {
-        if image_ids.is_empty() {
-            return Ok(HashMap::new());
-        }
-        let query = self
-            .images_table
-            .query()
-            .only_if(id_in_list_filter(image_ids))
-            .select(lancedb::query::Select::columns(&[
-                "image_id",
-                "skeet_id",
-                "discovered_at",
-                "original_at",
-                "archetype",
-                "config_version",
-                "detected_text",
-                "image",
-            ]));
-        let batches = execute_query(&query, "get_originals_by_ids").await?;
-        Ok(batches_to_original_images(&batches)?
-            .into_iter()
-            .map(|o| (o.summary.image_id.clone(), o))
-            .collect())
-    }
-
-    #[instrument(skip(self))]
-    pub async fn exists(&self, image_id: &ImageId) -> Result<bool, StoreError> {
-        let query = self
-            .images_table
-            .query()
-            .only_if(format!("image_id = '{image_id}'"))
-            .select(lancedb::query::Select::columns(&["image_id"]))
-            .limit(1);
-        let batches = execute_query(&query, "exists").await?;
-        Ok(batches.iter().any(|b| b.num_rows() > 0))
-    }
-
-    #[instrument(skip(self))]
-    pub async fn delete_by_id(&self, image_id: &ImageId) -> Result<(), StoreError> {
-        self.images_table
-            .delete(&format!("image_id = '{image_id}'"))
-            .await?;
-        Ok(())
-    }
-
-    #[instrument(skip(self))]
-    pub async fn count(&self) -> Result<usize, StoreError> {
-        Ok(self.images_table.count_rows(None).await?)
     }
 
     #[instrument(skip(self))]
@@ -282,73 +135,6 @@ impl SkeetStore {
 
         Ok(())
     }
-
-    #[instrument(skip(self))]
-    pub async fn unique_skeet_ids(&self) -> Result<Vec<SkeetId>, StoreError> {
-        let query = self
-            .images_table
-            .query()
-            .select(lancedb::query::Select::columns(&["skeet_id"]));
-        let batches = execute_query(&query, "unique_skeet_ids").await?;
-
-        let mut seen = std::collections::HashSet::new();
-        let mut ids = Vec::new();
-        for batch in &batches {
-            let skeet_ids = typed_column::<StringArray>(batch, "skeet_id")?;
-            for i in 0..batch.num_rows() {
-                let id = skeet_ids.value(i).to_string();
-                if seen.insert(id.clone()) {
-                    ids.push(SkeetId::new(id)?);
-                }
-            }
-        }
-
-        Ok(ids)
-    }
-
-    #[instrument(skip(self))]
-    pub async fn list_all_image_ids_by_most_recent(
-        &self,
-        since: Option<&DiscoveredAt>,
-    ) -> Result<Vec<ImageId>, StoreError> {
-        let mut query = self
-            .images_table
-            .query()
-            .select(lancedb::query::Select::columns(&[
-                "image_id",
-                "discovered_at",
-            ]));
-        if let Some(ts) = since {
-            let cutoff_us = ts.timestamp_micros();
-            query = query.only_if(format!(
-                "discovered_at >= arrow_cast({cutoff_us}, 'Timestamp(Microsecond, Some(\"UTC\"))')"
-            ));
-        }
-        let batches = execute_query(&query, "list_all_image_ids_by_most_recent").await?;
-
-        let mut id_times = Vec::new();
-        for batch in &batches {
-            let image_ids = typed_column::<StringArray>(batch, "image_id")?;
-            let discovered_ats = typed_column::<TimestampMicrosecondArray>(batch, "discovered_at")?;
-            for i in 0..batch.num_rows() {
-                id_times.push((
-                    image_ids.value(i).parse::<ImageId>()?,
-                    discovered_ats.value(i),
-                ));
-            }
-        }
-        id_times.sort_by(|a, b| b.1.cmp(&a.1));
-        Ok(id_times.into_iter().map(|(id, _)| id).collect())
-    }
-}
-
-fn id_in_list_filter(image_ids: &[ImageId]) -> String {
-    let id_list = image_ids
-        .iter()
-        .map(|id| format!("'{id}'"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!("image_id IN ({id_list})")
 }
 
 #[cfg(test)]

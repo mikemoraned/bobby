@@ -99,7 +99,7 @@ mod tests {
         VALIDATE_TABLE_NAME,
     };
     use crate::test_utils::{make_record, open_temp_store};
-    use crate::{ModelVersion, Score, Scores};
+    use crate::{Images, ModelVersion, Score, Scores};
 
     fn names(snapshot: &HashSet<Version>) -> HashSet<String> {
         snapshot.iter().map(|v| v.name.clone()).collect()

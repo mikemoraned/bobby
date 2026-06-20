@@ -17,7 +17,7 @@ use skeet_publish::{
 };
 use skeet_store::test_utils::{open_temp_store, test_image};
 use skeet_store::{
-    DiscoveredAt, ImageRecord, ModelVersion, OriginalAt, Score, Scores, SkeetStore, Zone,
+    DiscoveredAt, ImageRecord, Images, ModelVersion, OriginalAt, Score, Scores, SkeetStore, Zone,
 };
 use testcontainers::ContainerAsync;
 use testcontainers::runners::AsyncRunner;
