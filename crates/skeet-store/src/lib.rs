@@ -10,6 +10,7 @@ mod open;
 mod optimise;
 mod r2_metrics;
 mod schema;
+mod scored_view;
 mod scores;
 pub mod store_metrics;
 mod stored;
@@ -28,6 +29,7 @@ pub use schema::{
     IMAGE_APPRAISAL_TABLE_NAME, SCORE_TABLE_NAME, SKEET_APPRAISAL_TABLE_NAME, TABLE_NAME,
     VALIDATE_TABLE_NAME,
 };
+pub use scored_view::ScoredView;
 pub use scores::Scores;
 pub use shared::{Appraiser, Band, ImageId, ModelVersion, Score};
 pub use store_metrics::StoreMetrics;
@@ -64,7 +66,7 @@ pub struct SkeetStore {
     /// per-table iteration (fragment counts, version snapshots). Populated in
     /// `SkeetStore::open` so adding or removing a table is a single edit.
     pub(crate) tables: Vec<(&'static str, lancedb::Table)>,
-    pub(crate) scores_cache: RwLock<VersionedCache<Version, scores::ScoresMap>>,
+    pub(crate) scores_cache: RwLock<VersionedCache<Version, scored_view::ScoresMap>>,
     pub(crate) store_wrapper: Arc<dyn WrappingObjectStore>,
 }
 

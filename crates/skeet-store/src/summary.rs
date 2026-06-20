@@ -1,13 +1,5 @@
 use std::fmt;
 
-use arrow_array::StringArray;
-use lancedb::query::QueryBase;
-use tracing::instrument;
-
-use crate::SkeetStore;
-use crate::arrow_utils::{min_max_timestamp, typed_column};
-use crate::error::StoreError;
-use crate::lancedb_utils::execute_query;
 use crate::types::{DiscoveredAt, OriginalAt};
 
 pub struct SkeetStoreSummary {
@@ -54,49 +46,5 @@ mod tests {
         assert!(s.contains("42"));
         assert!(s.contains("7"));
         assert!(s.contains("3"));
-    }
-}
-
-impl SkeetStore {
-    #[instrument(skip(self))]
-    pub async fn summarise(&self) -> Result<SkeetStoreSummary, StoreError> {
-        let image_count = self.images_table.count_rows(None).await?;
-        let score_count = self.scores_table.count_rows(None).await?;
-
-        let timestamps_query = self
-            .images_table
-            .query()
-            .select(lancedb::query::Select::columns(&[
-                "discovered_at",
-                "original_at",
-            ]));
-        let batches = execute_query(&timestamps_query, "summarise:timestamps").await?;
-
-        let discovered_at_range = min_max_timestamp(&batches, "discovered_at")?
-            .map(|(min, max)| (DiscoveredAt::new(min), DiscoveredAt::new(max)));
-        let original_at_range = min_max_timestamp(&batches, "original_at")?
-            .map(|(min, max)| (OriginalAt::new(min), OriginalAt::new(max)));
-
-        let scored_query = self
-            .scores_table
-            .query()
-            .select(lancedb::query::Select::columns(&["image_id"]));
-        let scored_batches = execute_query(&scored_query, "summarise:scored_ids").await?;
-
-        let mut scored_ids = std::collections::HashSet::new();
-        for batch in &scored_batches {
-            let image_ids = typed_column::<StringArray>(batch, "image_id")?;
-            for i in 0..batch.num_rows() {
-                scored_ids.insert(image_ids.value(i).to_string());
-            }
-        }
-
-        Ok(SkeetStoreSummary {
-            image_count,
-            score_count,
-            scored_image_count: scored_ids.len(),
-            discovered_at_range,
-            original_at_range,
-        })
     }
 }

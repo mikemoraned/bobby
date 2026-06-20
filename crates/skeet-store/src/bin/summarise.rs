@@ -1,7 +1,7 @@
 #![warn(clippy::all, clippy::nursery)]
 
 use clap::Parser;
-use skeet_store::StoreArgs;
+use skeet_store::{ScoredView, StoreArgs};
 use tracing::info;
 
 #[derive(Parser)]
