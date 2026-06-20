@@ -228,6 +228,42 @@ impl TempoClient {
     }
 }
 
+fn flatten_trace(resp: TraceResponse) -> Trace {
+    let spans = resp
+        .batches
+        .into_iter()
+        .flat_map(|batch| batch.scope_spans)
+        .flat_map(|scope| scope.spans)
+        .map(|s| {
+            let start = s.start_time_unix_nano.parse::<u64>().unwrap_or(0);
+            let end = s.end_time_unix_nano.parse::<u64>().unwrap_or(0);
+            let events = s
+                .events
+                .into_iter()
+                .map(|e| SpanEvent {
+                    name: e.name,
+                    attributes: to_attr_map(e.attributes),
+                })
+                .collect();
+
+            Span {
+                span_id: s.span_id,
+                parent_span_id: if s.parent_span_id.is_empty() {
+                    None
+                } else {
+                    Some(s.parent_span_id)
+                },
+                name: s.name,
+                duration_ns: end.saturating_sub(start),
+                attributes: to_attr_map(s.attributes),
+                events,
+            }
+        })
+        .collect();
+
+    Trace { spans }
+}
+
 #[cfg(test)]
 const TRACE_FIXTURE_FOR_TESTS: &str = include_str!("../tests/fixtures/tempo_trace_response.json");
 
@@ -318,40 +354,4 @@ mod tests {
             .expect("parent span present in trace");
         assert_eq!(parent.name, "list_unscored_image_ids_for_version");
     }
-}
-
-fn flatten_trace(resp: TraceResponse) -> Trace {
-    let spans = resp
-        .batches
-        .into_iter()
-        .flat_map(|batch| batch.scope_spans)
-        .flat_map(|scope| scope.spans)
-        .map(|s| {
-            let start = s.start_time_unix_nano.parse::<u64>().unwrap_or(0);
-            let end = s.end_time_unix_nano.parse::<u64>().unwrap_or(0);
-            let events = s
-                .events
-                .into_iter()
-                .map(|e| SpanEvent {
-                    name: e.name,
-                    attributes: to_attr_map(e.attributes),
-                })
-                .collect();
-
-            Span {
-                span_id: s.span_id,
-                parent_span_id: if s.parent_span_id.is_empty() {
-                    None
-                } else {
-                    Some(s.parent_span_id)
-                },
-                name: s.name,
-                duration_ns: end.saturating_sub(start),
-                attributes: to_attr_map(s.attributes),
-                events,
-            }
-        })
-        .collect();
-
-    Trace { spans }
 }
