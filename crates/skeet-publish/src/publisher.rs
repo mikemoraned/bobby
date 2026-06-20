@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use deadpool_redis::redis;
 use shared::{Band, ImageId, NormalizedScore, RefineModels};
 use skeet_store::{
-    Appraisal, Appraisals, ModelVersion, OriginalAt, Score, SkeetId, SkeetStore, StoreError,
+    Appraisal, Appraisals, ModelVersion, OriginalAt, Score, Scores, SkeetId, SkeetStore, StoreError,
     StoredImageSummary, TableVersions, Version, VersionedCache,
 };
 use tokio::sync::RwLock;

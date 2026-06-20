@@ -94,7 +94,7 @@ mod tests {
 
     #[tokio::test]
     async fn image_scored_under_any_model_version_is_not_refetched() {
-        use skeet_store::{ModelVersion, Score};
+        use skeet_store::{ModelVersion, Score, Scores};
 
         let dir = tempfile::tempdir().expect("temp dir");
         let store = Arc::new(open_temp_store(&dir).await);

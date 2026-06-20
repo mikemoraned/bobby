@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use arrow_array::{Float32Array, RecordBatch, RecordBatchIterator, StringArray};
+use async_trait::async_trait;
 use lancedb::query::QueryBase;
 use shared::ImageId;
 use tracing::{debug, info, instrument};
@@ -17,11 +18,18 @@ use crate::{ModelVersion, Score, SkeetStore, StoreError, StoredImageSummary};
 /// `cached_scores`, gated on the scores table version.
 pub type ScoresMap = HashMap<ImageId, (Score, ModelVersion)>;
 
-impl SkeetStore {
-    const MAX_SCORED_SUMMARIES: usize = 100;
+/// Refine scores: the per-image model score paired with the `ModelVersion` that
+/// produced it, plus aggregate counts over the scores table.
+#[async_trait]
+pub trait Scores: Send + Sync {
+    async fn batch_upsert_scores(
+        &self,
+        scores: &[(ImageId, Score, ModelVersion)],
+    ) -> Result<(), StoreError>;
 
-    #[instrument(skip(self))]
-    pub async fn upsert_score(
+    /// Upsert a single score — a one-row convenience over
+    /// [`Scores::batch_upsert_scores`]; implementors need only provide the batch form.
+    async fn upsert_score(
         &self,
         image_id: &ImageId,
         score: &Score,
@@ -31,67 +39,23 @@ impl SkeetStore {
             .await
     }
 
-    #[instrument(skip(self))]
-    pub async fn batch_upsert_scores(
-        &self,
-        scores: &[(ImageId, Score, ModelVersion)],
-    ) -> Result<(), StoreError> {
-        if scores.is_empty() {
-            return Ok(());
-        }
-
-        let schema = images_score_v2_schema();
-        let image_ids: Vec<String> = scores.iter().map(|(id, _, _)| id.to_string()).collect();
-        let score_vals: Vec<f32> = scores.iter().map(|(_, s, _)| f32::from(*s)).collect();
-        let model_versions: Vec<String> = scores.iter().map(|(_, _, mv)| mv.to_string()).collect();
-
-        let batch = RecordBatch::try_new(
-            schema.clone(),
-            vec![
-                Arc::new(StringArray::from(
-                    image_ids.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-                )),
-                Arc::new(Float32Array::from(score_vals)),
-                Arc::new(StringArray::from(
-                    model_versions
-                        .iter()
-                        .map(|s| s.as_str())
-                        .collect::<Vec<_>>(),
-                )),
-            ],
-        )?;
-
-        let reader = RecordBatchIterator::new(vec![Ok(batch)], schema);
-        let mut builder = self.scores_table.merge_insert(&["image_id"]);
-        builder.when_matched_update_all(None);
-        builder.when_not_matched_insert_all();
-        builder.execute(Box::new(reader)).await?;
-        Ok(())
-    }
-
-    #[instrument(skip(self))]
-    pub async fn get_score(
+    async fn get_score(
         &self,
         image_id: &ImageId,
-    ) -> Result<Option<(Score, ModelVersion)>, StoreError> {
-        let query = self
-            .scores_table
-            .query()
-            .only_if(format!("image_id = '{image_id}'"))
-            .limit(1);
-        let batches = execute_query(&query, "get_score").await?;
+    ) -> Result<Option<(Score, ModelVersion)>, StoreError>;
+    async fn list_scores_for_ids(
+        &self,
+        image_ids: &[ImageId],
+    ) -> Result<HashMap<ImageId, (Score, ModelVersion)>, StoreError>;
+    async fn count_scored_images(
+        &self,
+        known_versions: &HashSet<ModelVersion>,
+    ) -> Result<usize, StoreError>;
+    async fn count_scores_by_model_version(&self) -> Result<HashMap<String, usize>, StoreError>;
+}
 
-        if batches.is_empty() || batches[0].num_rows() == 0 {
-            return Ok(None);
-        }
-
-        let scores = typed_column::<Float32Array>(&batches[0], "score")?;
-        let model_versions = typed_column::<StringArray>(&batches[0], "model_version")?;
-        let score =
-            Score::new(scores.value(0))?;
-        let model_version = ModelVersion::from(model_versions.value(0));
-        Ok(Some((score, model_version)))
-    }
+impl SkeetStore {
+    const MAX_SCORED_SUMMARIES: usize = 100;
 
     /// Image IDs that have no score — regardless of which
     /// `model_version` produced any existing score.
@@ -377,9 +341,73 @@ impl SkeetStore {
         scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         Ok(scored)
     }
+}
+
+#[async_trait]
+impl Scores for SkeetStore {
+    #[instrument(skip(self))]
+    async fn batch_upsert_scores(
+        &self,
+        scores: &[(ImageId, Score, ModelVersion)],
+    ) -> Result<(), StoreError> {
+        if scores.is_empty() {
+            return Ok(());
+        }
+
+        let schema = images_score_v2_schema();
+        let image_ids: Vec<String> = scores.iter().map(|(id, _, _)| id.to_string()).collect();
+        let score_vals: Vec<f32> = scores.iter().map(|(_, s, _)| f32::from(*s)).collect();
+        let model_versions: Vec<String> = scores.iter().map(|(_, _, mv)| mv.to_string()).collect();
+
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(StringArray::from(
+                    image_ids.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                )),
+                Arc::new(Float32Array::from(score_vals)),
+                Arc::new(StringArray::from(
+                    model_versions
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>(),
+                )),
+            ],
+        )?;
+
+        let reader = RecordBatchIterator::new(vec![Ok(batch)], schema);
+        let mut builder = self.scores_table.merge_insert(&["image_id"]);
+        builder.when_matched_update_all(None);
+        builder.when_not_matched_insert_all();
+        builder.execute(Box::new(reader)).await?;
+        Ok(())
+    }
 
     #[instrument(skip(self))]
-    pub async fn list_scores_for_ids(
+    async fn get_score(
+        &self,
+        image_id: &ImageId,
+    ) -> Result<Option<(Score, ModelVersion)>, StoreError> {
+        let query = self
+            .scores_table
+            .query()
+            .only_if(format!("image_id = '{image_id}'"))
+            .limit(1);
+        let batches = execute_query(&query, "get_score").await?;
+
+        if batches.is_empty() || batches[0].num_rows() == 0 {
+            return Ok(None);
+        }
+
+        let scores = typed_column::<Float32Array>(&batches[0], "score")?;
+        let model_versions = typed_column::<StringArray>(&batches[0], "model_version")?;
+        let score = Score::new(scores.value(0))?;
+        let model_version = ModelVersion::from(model_versions.value(0));
+        Ok(Some((score, model_version)))
+    }
+
+    #[instrument(skip(self))]
+    async fn list_scores_for_ids(
         &self,
         image_ids: &[ImageId],
     ) -> Result<HashMap<ImageId, (Score, ModelVersion)>, StoreError> {
@@ -429,7 +457,7 @@ impl SkeetStore {
     /// Scans the scores table fresh rather than reading the scores cache: callers
     /// want the current total, and the cache may lag the live table.
     #[instrument(skip(self, known_versions))]
-    pub async fn count_scored_images(
+    async fn count_scored_images(
         &self,
         known_versions: &HashSet<ModelVersion>,
     ) -> Result<usize, StoreError> {
@@ -462,16 +490,14 @@ impl SkeetStore {
 
     /// Scan all scores and return a count per distinct `model_version`.
     #[instrument(skip(self))]
-    pub async fn count_scores_by_model_version(
-        &self,
-    ) -> Result<std::collections::HashMap<String, usize>, StoreError> {
+    async fn count_scores_by_model_version(&self) -> Result<HashMap<String, usize>, StoreError> {
         let query = self
             .scores_table
             .query()
             .select(lancedb::query::Select::columns(&["model_version"]));
         let batches = execute_query(&query, "count_scores_by_model_version").await?;
 
-        let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut counts: HashMap<String, usize> = HashMap::new();
         for batch in &batches {
             let model_versions = typed_column::<StringArray>(batch, "model_version")?;
             for i in 0..batch.num_rows() {

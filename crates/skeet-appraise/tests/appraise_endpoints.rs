@@ -24,7 +24,7 @@ use skeet_appraise::{
 use skeet_publish::{Limit, Order, PublishedImage, PublishedList, PublishedListCatalog, connect};
 use skeet_store::test_utils::{make_record, make_record_at, open_temp_store, test_image};
 use skeet_store::{
-    DiscoveredAt, ImageRecord, ModelVersion, OriginalAt, Score, SkeetId, SkeetStore, Zone,
+    DiscoveredAt, ImageRecord, ModelVersion, OriginalAt, Score, Scores, SkeetId, SkeetStore, Zone,
 };
 use test_support::test_models;
 use testcontainers::runners::AsyncRunner;

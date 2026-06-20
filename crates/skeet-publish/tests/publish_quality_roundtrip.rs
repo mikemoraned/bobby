@@ -16,7 +16,9 @@ use skeet_publish::{
     RedisFeedSource, connect,
 };
 use skeet_store::test_utils::{open_temp_store, test_image};
-use skeet_store::{DiscoveredAt, ImageRecord, ModelVersion, OriginalAt, Score, SkeetStore, Zone};
+use skeet_store::{
+    DiscoveredAt, ImageRecord, ModelVersion, OriginalAt, Score, Scores, SkeetStore, Zone,
+};
 use testcontainers::ContainerAsync;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::redis::{REDIS_PORT, Redis};

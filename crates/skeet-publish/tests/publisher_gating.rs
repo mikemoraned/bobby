@@ -16,7 +16,7 @@ use skeet_publish::{
     CdnImageUrlResolver, FeedPublisher, Limit, Order, PublishOutcome, PublishedList, connect,
 };
 use skeet_store::test_utils::open_temp_store;
-use skeet_store::{ModelVersion, Score, SkeetId};
+use skeet_store::{ModelVersion, Score, Scores, SkeetId};
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::redis::Redis;
 

@@ -9,7 +9,7 @@ use skeet_refine::refining::{
     RefineAgent, ScoringOutcome, build_agent, create_client, refine_image_resilient,
 };
 use skeet_refine::tick::{RunningTotals, ScoringFailure, TickAccumulator};
-use skeet_store::{StoreArgs, StoreMetrics};
+use skeet_store::{Scores, StoreArgs, StoreMetrics};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::info;

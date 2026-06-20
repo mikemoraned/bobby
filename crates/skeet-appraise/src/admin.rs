@@ -13,7 +13,7 @@ use std::sync::Arc;
 use crate::Store;
 use shared::{Appraiser, Band, ImageId, ModelVersion, RefineModels};
 use skeet_publish::effective_band::{image_effective_band, skeet_effective_band};
-use skeet_store::{Appraisal, Appraisals, DiscoveredAt, Score, SkeetId, StoredImageSummary};
+use skeet_store::{Appraisal, Appraisals, DiscoveredAt, Score, Scores, SkeetId, StoredImageSummary};
 use tracing::{info, instrument};
 
 use crate::AppraiserExtractor;

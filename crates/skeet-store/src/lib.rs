@@ -27,6 +27,7 @@ pub use schema::{
     IMAGE_APPRAISAL_TABLE_NAME, SCORE_TABLE_NAME, SKEET_APPRAISAL_TABLE_NAME, TABLE_NAME,
     VALIDATE_TABLE_NAME,
 };
+pub use scores::Scores;
 pub use shared::{Appraiser, Band, ModelVersion, Score};
 pub use store_metrics::StoreMetrics;
 pub use stored::{StoredImage, StoredImageSummary, StoredOriginal};
