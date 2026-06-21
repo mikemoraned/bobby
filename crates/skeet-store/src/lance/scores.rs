@@ -7,46 +7,10 @@ use lancedb::query::QueryBase;
 use shared::ImageId;
 use tracing::instrument;
 
-use crate::arrow_utils::typed_column;
-use crate::lancedb_utils::execute_query;
-use crate::schema::images_score_v2_schema;
-use crate::{ModelVersion, Score, SkeetStore, StoreError};
-
-/// Refine scores: the per-image model score paired with the `ModelVersion` that
-/// produced it, plus aggregate counts over the scores table.
-#[async_trait]
-pub trait Scores: Send + Sync {
-    async fn batch_upsert_scores(
-        &self,
-        scores: &[(ImageId, Score, ModelVersion)],
-    ) -> Result<(), StoreError>;
-
-    /// Upsert a single score — a one-row convenience over
-    /// [`Scores::batch_upsert_scores`]; implementors need only provide the batch form.
-    async fn upsert_score(
-        &self,
-        image_id: &ImageId,
-        score: &Score,
-        model_version: &ModelVersion,
-    ) -> Result<(), StoreError> {
-        self.batch_upsert_scores(&[(image_id.clone(), *score, model_version.clone())])
-            .await
-    }
-
-    async fn get_score(
-        &self,
-        image_id: &ImageId,
-    ) -> Result<Option<(Score, ModelVersion)>, StoreError>;
-    async fn list_scores_for_ids(
-        &self,
-        image_ids: &[ImageId],
-    ) -> Result<HashMap<ImageId, (Score, ModelVersion)>, StoreError>;
-    async fn count_scored_images(
-        &self,
-        known_versions: &HashSet<ModelVersion>,
-    ) -> Result<usize, StoreError>;
-    async fn count_scores_by_model_version(&self) -> Result<HashMap<String, usize>, StoreError>;
-}
+use super::arrow::typed_column;
+use super::query::execute_query;
+use super::schema::images_score_v2_schema;
+use crate::{ModelVersion, Score, Scores, SkeetStore, StoreError};
 
 #[async_trait]
 impl Scores for SkeetStore {

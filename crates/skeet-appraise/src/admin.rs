@@ -11,9 +11,11 @@ use serde::Deserialize;
 use std::sync::Arc;
 
 use crate::{AppraiseStore, Store};
-use shared::{Appraiser, Band, ImageId, ModelVersion, RefineModels};
+use shared::{
+    Appraisal, Appraiser, Band, DiscoveredAt, ImageId, ModelVersion, RefineModels, SkeetId,
+};
 use skeet_publish::effective_band::{image_effective_band, skeet_effective_band};
-use skeet_store::{Appraisal, DiscoveredAt, Score, SkeetId, StoredImageSummary};
+use skeet_store::{Score, StoredImageSummary};
 use tracing::{info, instrument};
 
 use crate::AppraiserExtractor;
@@ -106,14 +108,16 @@ pub async fn admin(
         .map_err(|e| cot::Error::internal(format!("failed to read scores: {e}")))?;
 
     let skeet_appraisals: HashMap<SkeetId, Appraisal> = store
-        .skeet_appraisals().list_all()
+        .skeet_appraisals()
+        .list_all()
         .await
         .map_err(|e| cot::Error::internal(format!("failed to read skeet appraisals: {e}")))?
         .into_iter()
         .collect();
 
     let image_appraisals: HashMap<ImageId, Appraisal> = store
-        .image_appraisals().list_all()
+        .image_appraisals()
+        .list_all()
         .await
         .map_err(|e| cot::Error::internal(format!("failed to read image appraisals: {e}")))?
         .into_iter()
@@ -317,14 +321,16 @@ async fn apply_appraisal(
         match &target {
             AppraiseTarget::Skeet(id) => {
                 store
-                    .skeet_appraisals().clear(id)
+                    .skeet_appraisals()
+                    .clear(id)
                     .await
                     .map_err(|e| cot::Error::internal(format!("failed to clear band: {e}")))?;
                 info!(%id, "cleared skeet band");
             }
             AppraiseTarget::Image(id) => {
                 store
-                    .image_appraisals().clear(id)
+                    .image_appraisals()
+                    .clear(id)
                     .await
                     .map_err(|e| cot::Error::internal(format!("failed to clear band: {e}")))?;
                 info!(%id, "cleared image band");
@@ -337,14 +343,16 @@ async fn apply_appraisal(
         match &target {
             AppraiseTarget::Skeet(id) => {
                 store
-                    .skeet_appraisals().set(id, band, &appraiser)
+                    .skeet_appraisals()
+                    .set(id, band, &appraiser)
                     .await
                     .map_err(|e| cot::Error::internal(format!("failed to set band: {e}")))?;
                 info!(%id, %band, "set skeet band");
             }
             AppraiseTarget::Image(id) => {
                 store
-                    .image_appraisals().set(id, band, &appraiser)
+                    .image_appraisals()
+                    .set(id, band, &appraiser)
                     .await
                     .map_err(|e| cot::Error::internal(format!("failed to set band: {e}")))?;
                 info!(%id, %band, "set image band");
@@ -363,14 +371,16 @@ async fn render_updated_row(
     // Re-fetch data to render the updated row.
     // For simplicity, fetch all appraisals (they're tiny tables).
     let skeet_appraisals: HashMap<SkeetId, Appraisal> = store
-        .skeet_appraisals().list_all()
+        .skeet_appraisals()
+        .list_all()
         .await
         .map_err(|e| cot::Error::internal(format!("failed to read appraisals: {e}")))?
         .into_iter()
         .collect();
 
     let image_appraisals: HashMap<ImageId, Appraisal> = store
-        .image_appraisals().list_all()
+        .image_appraisals()
+        .list_all()
         .await
         .map_err(|e| cot::Error::internal(format!("failed to read appraisals: {e}")))?
         .into_iter()

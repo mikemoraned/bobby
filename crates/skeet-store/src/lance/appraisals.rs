@@ -6,21 +6,13 @@ use std::sync::Arc;
 use arrow_array::{RecordBatch, RecordBatchIterator, StringArray, TimestampMicrosecondArray};
 use chrono::Utc;
 use lancedb::query::QueryBase;
-use shared::{Appraiser, Band, ImageId};
+use shared::{Appraisal, Appraiser, Band, ImageId, SkeetId};
 use tracing::instrument;
 
-use crate::arrow_utils::typed_column;
-use crate::lancedb_utils::execute_query;
-use crate::schema::appraisal_schema;
-use crate::types::SkeetId;
-use crate::{SkeetStore, StoreError};
-
-/// A stored manual appraisal: the band assigned and who assigned it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Appraisal {
-    pub band: Band,
-    pub appraiser: Appraiser,
-}
+use super::arrow::typed_column;
+use super::query::execute_query;
+use super::schema::appraisal_schema;
+use crate::{AppraisalSource, SkeetStore, StoreError};
 
 /// A handle to one manual-appraisal table, keyed by `K` (`SkeetId` or `ImageId`).
 ///
@@ -102,13 +94,6 @@ where
             s.parse().map_err(StoreError::from)
         })
     }
-}
-
-/// Access to the per-key appraisal tables. The seam generic and `dyn` consumers
-/// use to reach appraisals without naming the concrete `SkeetStore`.
-pub trait AppraisalSource: Send + Sync {
-    fn skeet_appraisals(&self) -> Appraisals<SkeetId>;
-    fn image_appraisals(&self) -> Appraisals<ImageId>;
 }
 
 impl AppraisalSource for SkeetStore {

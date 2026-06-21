@@ -4,6 +4,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 
 use chrono::{DateTime, Utc};
 use image::DynamicImage;
+mod appraisal;
 pub mod appraiser;
 pub mod band;
 mod blocklist;
@@ -16,9 +17,11 @@ pub mod refine_model;
 mod rejection;
 pub mod score;
 pub mod skeet_id;
+mod timestamps;
 pub mod tracing;
 mod zone;
 
+pub use appraisal::Appraisal;
 pub use appraiser::{Appraiser, ParseAppraiserError};
 pub use band::{Band, ParseBandError};
 pub use blocklist::{BlockedEntry, BlocklistConfig};
@@ -33,7 +36,8 @@ pub use score::{
     InvalidNormalizedScore, InvalidScore, InvalidThreshold, NormalizedScore, Score, Threshold,
 };
 use serde::Deserialize;
-use skeet_id::SkeetId;
+pub use skeet_id::SkeetId;
+pub use timestamps::{DiscoveredAt, OriginalAt};
 pub use zone::{ParseZoneError, Zone};
 
 /// A percentage value in the range 0.0–100.0.

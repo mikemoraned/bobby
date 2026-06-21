@@ -12,11 +12,12 @@ use bluesky::StaticExistenceChecker;
 use chrono::Utc;
 use common::{CIDS, redis_url, scored_record, seed, v3, wait_ready};
 use deadpool_redis::redis;
+use shared::SkeetId;
 use skeet_publish::{
     CdnImageUrlResolver, FeedPublisher, Limit, Order, PublishOutcome, PublishedList, connect,
 };
 use skeet_store::test_utils::open_temp_store;
-use skeet_store::{Images, ModelVersion, Score, Scores, SkeetId};
+use skeet_store::{Images, ModelVersion, Score, Scores};
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::redis::Redis;
 

@@ -10,15 +10,13 @@ use std::time::Duration;
 
 use bluesky::StaticExistenceChecker;
 use chrono::Utc;
-use shared::{BlueskyCid, ImageId};
+use shared::{BlueskyCid, DiscoveredAt, ImageId, OriginalAt, Zone};
 use skeet_publish::{
     CdnImageUrlResolver, FeedPublisher, FeedSource, Limit, Order, PublishedImagesSource,
     RedisFeedSource, connect,
 };
 use skeet_store::test_utils::{open_temp_store, test_image};
-use skeet_store::{
-    DiscoveredAt, ImageRecord, Images, ModelVersion, OriginalAt, Score, Scores, SkeetStore, Zone,
-};
+use skeet_store::{ImageRecord, Images, ModelVersion, Score, Scores, SkeetStore};
 use testcontainers::ContainerAsync;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::redis::{REDIS_PORT, Redis};

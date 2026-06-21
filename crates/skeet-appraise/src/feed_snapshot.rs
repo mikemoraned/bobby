@@ -3,10 +3,10 @@ use std::sync::Arc;
 
 use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::FromRequestHead;
-use shared::{Band, ImageId, RefineModels};
+use shared::{Band, ImageId, RefineModels, SkeetId};
 use skeet_publish::effective_band::{image_effective_band, skeet_effective_band};
 use skeet_publish::{Limit, Order};
-use skeet_store::{Score, SkeetId, StoreError};
+use skeet_store::{Score, StoreError};
 
 use crate::AppraiseStore;
 use crate::available_feeds::{

@@ -1,9 +1,9 @@
 use lancedb::table::{CompactionOptions, OptimizeAction};
 use tracing::{info, instrument};
 
+use super::schema::TABLE_NAME;
 use crate::StoreError;
 use crate::health;
-use crate::schema::TABLE_NAME;
 
 // images_table stores ~2MB PNG blobs per row. Lance's compaction planner
 // treats any fragment with physical_rows < target_rows_per_fragment as a

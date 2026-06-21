@@ -1,26 +1,15 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use arrow_array::RecordBatch;
-use futures::TryStreamExt;
-use lancedb::query::ExecutableQuery;
 use tracing::{debug, warn};
 
 use shared::query_plan::QueryPlan;
 
-use crate::StoreError;
-
 const SLOW_QUERY_THRESHOLD: Duration = Duration::from_millis(100);
 
-pub async fn execute_query(
-    query: &(impl ExecutableQuery + Sync),
-    label: &str,
-) -> Result<Vec<RecordBatch>, StoreError> {
-    let start = Instant::now();
-    let raw_plan = query.explain_plan(true).await?;
-    let batches: Vec<RecordBatch> = query.execute().await?.try_collect().await?;
-    let elapsed = start.elapsed();
-
-    let plan = QueryPlan::parse(&raw_plan);
+/// Parse a LanceDB plan and emit it as a structured `tracing` event — at `warn`
+/// if the query ran slower than [`SLOW_QUERY_THRESHOLD`], otherwise at `debug`.
+pub fn log_query_plan(label: &str, elapsed: Duration, raw_plan: &str) {
+    let plan = QueryPlan::parse(raw_plan);
     let table = plan.table.as_deref().unwrap_or("");
     let columns = plan.columns.as_deref().unwrap_or("");
     let num_fragments = plan.num_fragments.unwrap_or(0);
@@ -75,6 +64,4 @@ pub async fn execute_query(
             "query"
         );
     }
-
-    Ok(batches)
 }

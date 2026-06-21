@@ -14,7 +14,7 @@ use std::time::Duration;
 use bluesky::ImageUrl;
 use cot::test::Client;
 use deadpool_redis::redis::aio::MultiplexedConnection;
-use shared::{Appraiser, BlueskyCid, ImageId};
+use shared::{Appraiser, BlueskyCid, DiscoveredAt, ImageId, OriginalAt, SkeetId, Zone};
 use skeet_appraise::auth_config::OAuthConfig;
 use skeet_appraise::available_feeds::PublishedListCatalogReader;
 use skeet_appraise::project::AppraiseProject;
@@ -23,10 +23,7 @@ use skeet_appraise::{
 };
 use skeet_publish::{Limit, Order, PublishedImage, PublishedList, PublishedListCatalog, connect};
 use skeet_store::test_utils::{make_record, make_record_at, open_temp_store, test_image};
-use skeet_store::{
-    DiscoveredAt, ImageRecord, Images, ModelVersion, OriginalAt, Score, Scores, SkeetId,
-    SkeetStore, Zone,
-};
+use skeet_store::{ImageRecord, Images, ModelVersion, Score, Scores, SkeetStore};
 use test_support::test_models;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::redis::{REDIS_PORT, Redis};

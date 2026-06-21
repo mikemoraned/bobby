@@ -14,6 +14,7 @@ use async_trait::async_trait;
 use bluesky::{Dimensions, ImageUrl};
 use chrono::{DateTime, TimeZone as _, Utc};
 use cot::test::Client;
+use shared::SkeetId;
 use shared::{BlueskyCid, ImageId};
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
@@ -22,7 +23,6 @@ use skeet_publish::{
     FeedSkeleton, FeedSource, FeedSourceError, PublishedImage, PublishedImages,
     PublishedImagesSource,
 };
-use skeet_store::SkeetId;
 
 /// A `FeedSource` that returns a fixed skeleton — stands in for the redis-backed
 /// `RedisFeedSource` so the handler tests need no redis.

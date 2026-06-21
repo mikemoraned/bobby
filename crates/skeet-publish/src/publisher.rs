@@ -5,10 +5,10 @@ use std::sync::Arc;
 use bluesky::{ExistenceChecker, ExistenceResults, ImageUrl};
 use chrono::{DateTime, Utc};
 use deadpool_redis::redis;
-use shared::{Band, ImageId, NormalizedScore, RefineModels};
+use shared::{Appraisal, Band, ImageId, NormalizedScore, OriginalAt, RefineModels, SkeetId};
 use skeet_store::{
-    Appraisal, AppraisalSource, ModelVersion, OriginalAt, Score, ScoredView, Scores, SkeetId,
-    StoreError, StoredImageSummary, TableVersions, Version, VersionedCache,
+    AppraisalSource, ModelVersion, Score, ScoredView, Scores, StoreError, StoredImageSummary,
+    TableVersions, Version, VersionedCache,
 };
 use tokio::sync::RwLock;
 
@@ -256,13 +256,15 @@ impl<S: ScoredView + AppraisalSource + Scores + TableVersions> FeedPublisher<S> 
             .await?;
         let skeet_appraisals = self
             .store
-            .skeet_appraisals().list_all()
+            .skeet_appraisals()
+            .list_all()
             .await?
             .into_iter()
             .collect();
         let image_appraisals = self
             .store
-            .image_appraisals().list_all()
+            .image_appraisals()
+            .list_all()
             .await?
             .into_iter()
             .collect();
@@ -364,8 +366,9 @@ mod tests {
     use super::*;
 
     use shared::refine_model::{ModelName, ModelProvider, RefinePrompt};
-    use shared::{Appraiser, Band, BlueskyCid, RefineModel, Threshold};
-    use skeet_store::{DiscoveredAt, OriginalAt, Zone};
+    use shared::{
+        Appraiser, Band, BlueskyCid, DiscoveredAt, OriginalAt, RefineModel, Threshold, Zone,
+    };
     use test_support::test_models;
 
     use crate::image_url_resolver::CdnImageUrlResolver;

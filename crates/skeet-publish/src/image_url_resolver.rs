@@ -1,6 +1,5 @@
 use bluesky::{ImageUrl, bsky_cdn_thumbnail_url};
-use shared::ImageId;
-use skeet_store::SkeetId;
+use shared::{ImageId, SkeetId};
 
 /// Resolves a published image to its public image URL.
 ///

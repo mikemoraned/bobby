@@ -1,19 +1,19 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use lance::dataset::ReadParams;
+use ::lance::dataset::ReadParams;
 use lance_io::object_store::ObjectStoreParams;
 use lancedb::index::Index;
 use tokio::sync::RwLock;
 use tracing::{info, instrument};
 
-use crate::error::StoreError;
-use crate::r2_metrics::R2MetricsWrapper;
-use crate::schema::{
+use super::schema::{
     IMAGE_APPRAISAL_TABLE_NAME, SCORE_TABLE_NAME, SKEET_APPRAISAL_TABLE_NAME, TABLE_NAME,
     VALIDATE_TABLE_NAME, images_score_v2_schema, images_v6_schema,
     manual_image_appraisal_v1_schema, manual_skeet_appraisal_v1_schema, validate_v1_schema,
 };
+use crate::error::StoreError;
+use crate::object_store::R2MetricsWrapper;
 use crate::{SkeetStore, VersionedCache};
 
 impl SkeetStore {

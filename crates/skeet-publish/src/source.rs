@@ -4,7 +4,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use backon::{ExponentialBuilder, Retryable};
 use chrono::{DateTime, Utc};
-use skeet_store::{SkeetId, StoreError};
+use shared::SkeetId;
+use skeet_store::StoreError;
 use tracing::warn;
 
 use crate::examined_count::ExaminedCount;

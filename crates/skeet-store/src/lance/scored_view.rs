@@ -3,54 +3,18 @@ use std::collections::{HashMap, HashSet};
 use arrow_array::{Float32Array, StringArray};
 use async_trait::async_trait;
 use lancedb::query::QueryBase;
-use shared::ImageId;
+use shared::{DiscoveredAt, ImageId};
 use tracing::{debug, info, instrument};
 
-use crate::arrow_utils::typed_column;
-use crate::images::Images;
-use crate::lancedb_utils::execute_query;
-use crate::schema::SCORE_TABLE_NAME;
-use crate::stored::batches_to_summaries;
-use crate::types::DiscoveredAt;
-use crate::version::TableVersions;
-use crate::{ModelVersion, Score, SkeetStore, StoreError, StoredImageSummary};
-
-/// The full scores table, keyed by image id — the value cached by
-/// `cached_scores`, gated on the scores table version.
-pub type ScoresMap = HashMap<ImageId, (Score, ModelVersion)>;
-
-/// Cross-table read-models that join the images and scores tables.
-///
-/// These — the scored feed views and the unscored backlog — belong to neither
-/// the [`crate::Images`] nor [`crate::Scores`] port because each one reads both
-/// tables.
-#[async_trait]
-pub trait ScoredView: Send + Sync {
-    /// Image IDs that have no score — regardless of which `model_version`
-    /// produced any existing score.
-    async fn list_unscored_image_ids(
-        &self,
-        since: Option<&DiscoveredAt>,
-    ) -> Result<Vec<ImageId>, StoreError>;
-    /// Top scored summaries, considering only scores whose `model_version` is in
-    /// `known_versions`. Unknown versions are discarded at read time — see
-    /// `docs/versioning.md`.
-    async fn list_scored_summaries_by_score(
-        &self,
-        limit: usize,
-        max_age_hours: Option<u64>,
-        known_versions: &HashSet<ModelVersion>,
-    ) -> Result<Vec<(StoredImageSummary, Score, ModelVersion)>, StoreError>;
-    /// All scored summaries published (`original_at`) at or after `cutoff` whose
-    /// `model_version` is in `known_versions`, **uncapped** and unordered (the
-    /// caller orders). Unlike [`ScoredView::list_scored_summaries_by_score`] there
-    /// is no top-N truncation, so a recent low-score image is never dropped.
-    async fn list_scored_summaries_published_since(
-        &self,
-        cutoff: chrono::DateTime<chrono::Utc>,
-        known_versions: &HashSet<ModelVersion>,
-    ) -> Result<Vec<(StoredImageSummary, Score, ModelVersion)>, StoreError>;
-}
+use super::arrow::typed_column;
+use super::decode::batches_to_summaries;
+use super::query::execute_query;
+use super::schema::SCORE_TABLE_NAME;
+use crate::model::ScoresMap;
+use crate::{
+    Images, ModelVersion, Score, ScoredView, SkeetStore, StoreError, StoredImageSummary,
+    TableVersions,
+};
 
 #[async_trait]
 impl ScoredView for SkeetStore {

@@ -1,9 +1,10 @@
 use face_detection::{Face, FaceDetector, TextRegion, annotate_image};
 use image::{DynamicImage, GrayImage};
 use shared::{
-    Classification, ImageId, ModelVersion, Percentage, PruneConfig, Rejection, SkeetImage, Zone,
+    Classification, DiscoveredAt, ImageId, ModelVersion, OriginalAt, Percentage, PruneConfig,
+    Rejection, SkeetImage, Zone,
 };
-use skeet_store::{DiscoveredAt, ImageRecord, OriginalAt};
+use skeet_store::ImageRecord;
 
 /// Classify an image: given pre-detected faces, check area, skin, and
 /// optionally text thresholds, return quadrant or rejection.

@@ -9,9 +9,10 @@ use std::collections::{HashMap, HashSet};
 
 use futures::stream::{self, StreamExt};
 use image::DynamicImage;
+use shared::DiscoveredAt;
 use shared::ImageId;
 use shared::Score;
-use skeet_store::{DiscoveredAt, StoredOriginal};
+use skeet_store::StoredOriginal;
 
 #[derive(Default)]
 pub struct Batch {

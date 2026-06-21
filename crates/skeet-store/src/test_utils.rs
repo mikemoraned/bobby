@@ -7,9 +7,9 @@
 use chrono::Utc;
 use image::{DynamicImage, ImageBuffer, Rgba};
 
-use shared::ImageId;
+use shared::{DiscoveredAt, ImageId, OriginalAt, Zone};
 
-use crate::{DiscoveredAt, ImageRecord, ModelVersion, OriginalAt, SkeetStore, Zone};
+use crate::{ImageRecord, ModelVersion, SkeetStore};
 
 pub fn test_image() -> DynamicImage {
     test_image_with_color(255, 0, 0)

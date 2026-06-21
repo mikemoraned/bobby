@@ -12,12 +12,12 @@ use std::time::Duration;
 use bluesky::ImageUrl;
 use chrono::Utc;
 use deadpool_redis::redis::{self, AsyncCommands};
+use shared::SkeetId;
 use shared::{BlueskyCid, ImageId};
 use skeet_publish::{
     ExaminedCount, FeedSource, Limit, Order, PublishedImage, PublishedImagesSource, PublishedList,
     PublishedListCatalog, RedisFeedSource,
 };
-use skeet_store::SkeetId;
 use testcontainers::ContainerAsync;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::redis::{REDIS_PORT, Redis};

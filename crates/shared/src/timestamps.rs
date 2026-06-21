@@ -1,11 +1,8 @@
 use std::fmt;
 
 use chrono::{DateTime, Utc};
-use image::DynamicImage;
-pub use shared::Zone;
-pub use shared::skeet_id::SkeetId;
-use shared::{ImageId, ModelVersion};
 
+/// When an image was discovered on the firehose.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DiscoveredAt(DateTime<Utc>);
 
@@ -38,6 +35,7 @@ impl fmt::Display for DiscoveredAt {
     }
 }
 
+/// When an image was originally published (the source post's timestamp).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct OriginalAt(DateTime<Utc>);
 
@@ -59,19 +57,6 @@ impl fmt::Display for OriginalAt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct ImageRecord {
-    pub image_id: ImageId,
-    pub skeet_id: SkeetId,
-    pub image: DynamicImage,
-    pub discovered_at: DiscoveredAt,
-    pub original_at: OriginalAt,
-    pub zone: Zone,
-    pub annotated_image: DynamicImage,
-    pub config_version: ModelVersion,
-    pub detected_text: String,
 }
 
 #[cfg(test)]

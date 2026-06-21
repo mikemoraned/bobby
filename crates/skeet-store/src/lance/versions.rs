@@ -2,40 +2,8 @@ use std::collections::HashSet;
 
 use async_trait::async_trait;
 
-use crate::SkeetStore;
 use crate::error::StoreError;
-
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct Version {
-    pub name: String,
-    pub tag: String,
-}
-
-impl Version {
-    pub fn new(name: impl Into<String>, tag: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            tag: tag.into(),
-        }
-    }
-}
-
-/// Store-agnostic source of per-table version tokens.
-///
-/// Splits the *source* of a version token from the version-gated lazy-refresh
-/// *mechanism* in [`crate::VersionedCache`]: callers gate on opaque
-/// [`Version`] tags rather than a LanceDB version counter, so the freshness
-/// logic no longer depends on the storage backend.
-#[async_trait]
-pub trait TableVersions: Send + Sync {
-    /// The current version token for a single logical table. `Version.tag` is an
-    /// opaque string, so two tokens compare equal iff the table has not changed
-    /// between the calls — the comparable key a [`crate::VersionedCache`] gates on.
-    async fn table_version(&self, table: &str) -> Result<Version, StoreError>;
-
-    /// Snapshot the version token of every table at once.
-    async fn version_snapshot(&self) -> Result<HashSet<Version>, StoreError>;
-}
+use crate::{SkeetStore, TableVersions, Version};
 
 #[async_trait]
 impl TableVersions for SkeetStore {
@@ -94,12 +62,11 @@ impl SkeetStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::{
-        IMAGE_APPRAISAL_TABLE_NAME, SCORE_TABLE_NAME, SKEET_APPRAISAL_TABLE_NAME, TABLE_NAME,
-        VALIDATE_TABLE_NAME,
-    };
     use crate::test_utils::{make_record, open_temp_store};
-    use crate::{Images, ModelVersion, Score, Scores};
+    use crate::{
+        IMAGE_APPRAISAL_TABLE_NAME, Images, ModelVersion, SCORE_TABLE_NAME,
+        SKEET_APPRAISAL_TABLE_NAME, Score, Scores, TABLE_NAME, VALIDATE_TABLE_NAME,
+    };
 
     fn names(snapshot: &HashSet<Version>) -> HashSet<String> {
         snapshot.iter().map(|v| v.name.clone()).collect()

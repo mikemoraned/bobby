@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
+use shared::DiscoveredAt;
 use skeet_store::{
-    DiscoveredAt, Images, ScoredView, StoreError, TABLE_NAME, TableVersions, Version,
-    VersionedCache,
+    Images, ScoredView, StoreError, TABLE_NAME, TableVersions, Version, VersionedCache,
 };
 use tracing::info;
 

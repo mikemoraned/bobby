@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
-use shared::{Band, ImageId, RefineModels};
-use skeet_store::{ModelVersion, Score, SkeetId, StoredImageSummary};
+use shared::{Band, ImageId, RefineModels, SkeetId};
+use skeet_store::{ModelVersion, Score, StoredImageSummary};
 
 use crate::effective_band::{image_effective_band, skeet_visible_in_feed};
 

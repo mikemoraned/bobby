@@ -1,7 +1,6 @@
 use bluesky::{Dimensions, ImageUrl};
 use serde::{Deserialize, Serialize};
-use shared::ImageId;
-use skeet_store::SkeetId;
+use shared::{ImageId, SkeetId};
 
 /// Version of the on-the-wire `PublishedImage` JSON, prefixed onto every redis list name.
 ///
