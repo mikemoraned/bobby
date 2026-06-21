@@ -14,7 +14,6 @@ mod scored_view;
 mod scores;
 pub mod store_metrics;
 mod stored;
-mod summary;
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod test_utils;
 mod types;
@@ -34,7 +33,6 @@ pub use scores::Scores;
 pub use shared::{Appraiser, Band, ImageId, ModelVersion, Score};
 pub use store_metrics::StoreMetrics;
 pub use stored::{StoredImage, StoredImageSummary, StoredOriginal};
-pub use summary::SkeetStoreSummary;
 pub use types::{DiscoveredAt, ImageRecord, OriginalAt, SkeetId, Zone};
 pub use version::{TableVersions, Version};
 pub use versioned_cache::VersionedCache;

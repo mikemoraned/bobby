@@ -11057,7 +11057,6 @@ dependencies = [
 name = "skeet-store"
 version = "0.1.0"
 dependencies = [
- "arrow-arith",
  "arrow-array",
  "arrow-schema",
  "async-trait",

@@ -1180,24 +1180,3 @@ async fn prune_old_versions_walks_all_tables() {
         .expect("image appraisal preserved");
     assert_eq!(image_appraisal.band, Band::MediumLow);
 }
-
-#[tokio::test]
-async fn summarise_returns_counts() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = open_temp_store(&dir).await;
-    let record = make_record("summ1");
-    store.add(&record).await.unwrap();
-
-    let mv = test_model_version();
-    store
-        .upsert_score(&record.image_id, &Score::new(0.7).expect("valid"), &mv)
-        .await
-        .unwrap();
-
-    let summary = store.summarise().await.unwrap();
-    assert_eq!(summary.image_count, 1);
-    assert_eq!(summary.score_count, 1);
-    assert_eq!(summary.scored_image_count, 1);
-    assert!(summary.discovered_at_range.is_some());
-    assert!(summary.original_at_range.is_some());
-}

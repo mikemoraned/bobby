@@ -35,9 +35,6 @@ image-metadata-dump-r2 image_id:
 at-metadata-dump at_uri:
     cargo run --quiet --release --bin at-metadata-dump -- --at-uri {{ at_uri }}
 
-count-versions:
-    {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file deploy/bobby-local.env -- cargo run --quiet --release --bin count-versions -- --store-path {{ R2_STORE }}
-
 model-versions:
     {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file deploy/bobby-local.env -- cargo run --quiet --release --bin model-versions -- --store-path {{ R2_STORE }}
 
@@ -46,12 +43,6 @@ abort-multipart-uploads:
 
 abort-multipart-uploads-confirm:
     {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file deploy/bobby-local.env -- cargo run --quiet --release --bin abort-multipart-uploads -- --store-path {{ R2_STORE }} --abort
-
-summarise:
-    cargo run --quiet --release --bin summarise -- --store-path {{ STORE }}
-
-summarise-r2:
-    {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file deploy/bobby-local.env -- cargo run --quiet --release --bin summarise -- --store-path {{ R2_STORE }}
 
 optimise:
     cargo run --quiet --release --bin optimise -- --store-path {{ STORE }}
@@ -103,9 +94,6 @@ eval-r2:
 
 eval-r2-text:
     {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file deploy/bobby-local.env -- cargo run --quiet --release --bin eval -- --config-path config/prune.toml --store-path {{ R2_STORE }} --categories Face,Metadata,Text
-
-otel-test:
-    OTEL_SERVICE_NAME=otel-test op run --env-file deploy/bobby-grafana-otel.env -- cargo run --quiet --release --bin otel-test
 
 trace-summary service="skeet-live-refine" span="list_unscored_image_ids_for_version" sample="10" lookback="60":
     op run --env-file deploy/bobby-grafana-otel.env -- cargo run --quiet --release --bin trace-summary -- \

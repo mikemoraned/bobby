@@ -6,14 +6,14 @@ use lancedb::query::QueryBase;
 use shared::ImageId;
 use tracing::{debug, info, instrument};
 
-use crate::arrow_utils::{min_max_timestamp, typed_column};
+use crate::arrow_utils::typed_column;
 use crate::images::Images;
 use crate::lancedb_utils::execute_query;
 use crate::schema::SCORE_TABLE_NAME;
 use crate::stored::batches_to_summaries;
-use crate::types::{DiscoveredAt, OriginalAt};
+use crate::types::DiscoveredAt;
 use crate::version::TableVersions;
-use crate::{ModelVersion, Score, SkeetStore, SkeetStoreSummary, StoreError, StoredImageSummary};
+use crate::{ModelVersion, Score, SkeetStore, StoreError, StoredImageSummary};
 
 /// The full scores table, keyed by image id — the value cached by
 /// `cached_scores`, gated on the scores table version.
@@ -21,9 +21,9 @@ pub type ScoresMap = HashMap<ImageId, (Score, ModelVersion)>;
 
 /// Cross-table read-models that join the images and scores tables.
 ///
-/// These — the scored feed views, the unscored backlog, and the store summary —
-/// belong to neither the [`crate::Images`] nor [`crate::Scores`] port because
-/// each one reads both tables.
+/// These — the scored feed views and the unscored backlog — belong to neither
+/// the [`crate::Images`] nor [`crate::Scores`] port because each one reads both
+/// tables.
 #[async_trait]
 pub trait ScoredView: Send + Sync {
     /// Image IDs that have no score — regardless of which `model_version`
@@ -50,7 +50,6 @@ pub trait ScoredView: Send + Sync {
         cutoff: chrono::DateTime<chrono::Utc>,
         known_versions: &HashSet<ModelVersion>,
     ) -> Result<Vec<(StoredImageSummary, Score, ModelVersion)>, StoreError>;
-    async fn summarise(&self) -> Result<SkeetStoreSummary, StoreError>;
 }
 
 #[async_trait]
@@ -134,48 +133,6 @@ impl ScoredView for SkeetStore {
         }
 
         self.fetch_summaries_for_scores(&scored).await
-    }
-
-    #[instrument(skip(self))]
-    async fn summarise(&self) -> Result<SkeetStoreSummary, StoreError> {
-        let image_count = self.images_table.count_rows(None).await?;
-        let score_count = self.scores_table.count_rows(None).await?;
-
-        let timestamps_query = self
-            .images_table
-            .query()
-            .select(lancedb::query::Select::columns(&[
-                "discovered_at",
-                "original_at",
-            ]));
-        let batches = execute_query(&timestamps_query, "summarise:timestamps").await?;
-
-        let discovered_at_range = min_max_timestamp(&batches, "discovered_at")?
-            .map(|(min, max)| (DiscoveredAt::new(min), DiscoveredAt::new(max)));
-        let original_at_range = min_max_timestamp(&batches, "original_at")?
-            .map(|(min, max)| (OriginalAt::new(min), OriginalAt::new(max)));
-
-        let scored_query = self
-            .scores_table
-            .query()
-            .select(lancedb::query::Select::columns(&["image_id"]));
-        let scored_batches = execute_query(&scored_query, "summarise:scored_ids").await?;
-
-        let mut scored_ids = std::collections::HashSet::new();
-        for batch in &scored_batches {
-            let image_ids = typed_column::<StringArray>(batch, "image_id")?;
-            for i in 0..batch.num_rows() {
-                scored_ids.insert(image_ids.value(i).to_string());
-            }
-        }
-
-        Ok(SkeetStoreSummary {
-            image_count,
-            score_count,
-            scored_image_count: scored_ids.len(),
-            discovered_at_range,
-            original_at_range,
-        })
     }
 }
 
