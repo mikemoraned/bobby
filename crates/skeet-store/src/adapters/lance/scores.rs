@@ -8,6 +8,7 @@ use shared::ImageId;
 use tracing::instrument;
 
 use super::arrow::typed_column;
+use super::decode::{decode_rows, decode_score_row, score_columns};
 use super::query::execute_query;
 use super::schema::images_score_v2_schema;
 use crate::{ModelVersion, Score, Scores, SkeetStore, StoreError};
@@ -102,19 +103,9 @@ impl Scores for SkeetStore {
             .only_if(filter);
         let batches = execute_query(&query, "list_scores_for_ids").await?;
 
-        let mut score_map = HashMap::new();
-        for batch in &batches {
-            let ids = typed_column::<StringArray>(batch, "image_id")?;
-            let scores = typed_column::<Float32Array>(batch, "score")?;
-            let model_versions = typed_column::<StringArray>(batch, "model_version")?;
-            for i in 0..batch.num_rows() {
-                let score = Score::new(scores.value(i))?;
-                let image_id: ImageId = ids.value(i).parse()?;
-                let model_version = ModelVersion::from(model_versions.value(i));
-                score_map.insert(image_id, (score, model_version));
-            }
-        }
-        Ok(score_map)
+        Ok(decode_rows(&batches, score_columns, decode_score_row)?
+            .into_iter()
+            .collect())
     }
 
     /// Count the distinct images that have a score from a *known* model version —
@@ -141,15 +132,23 @@ impl Scores for SkeetStore {
 
         // Dedupe by image id (last row wins) so an image scored more than once is
         // counted once, with its latest model version deciding known-ness.
-        let mut latest_version: HashMap<ImageId, ModelVersion> = HashMap::new();
-        for batch in &batches {
-            let image_ids = typed_column::<StringArray>(batch, "image_id")?;
-            let model_versions = typed_column::<StringArray>(batch, "model_version")?;
-            for i in 0..batch.num_rows() {
-                let image_id: ImageId = image_ids.value(i).parse()?;
-                latest_version.insert(image_id, ModelVersion::from(model_versions.value(i)));
-            }
-        }
+        let latest_version: HashMap<ImageId, ModelVersion> = decode_rows(
+            &batches,
+            |batch| {
+                Ok((
+                    typed_column::<StringArray>(batch, "image_id")?,
+                    typed_column::<StringArray>(batch, "model_version")?,
+                ))
+            },
+            |(image_ids, model_versions), i| {
+                Ok((
+                    image_ids.value(i).parse::<ImageId>()?,
+                    ModelVersion::from(model_versions.value(i)),
+                ))
+            },
+        )?
+        .into_iter()
+        .collect();
 
         Ok(latest_version
             .values()
@@ -167,13 +166,12 @@ impl Scores for SkeetStore {
         let batches = execute_query(&query, "count_scores_by_model_version").await?;
 
         let mut counts: HashMap<String, usize> = HashMap::new();
-        for batch in &batches {
-            let model_versions = typed_column::<StringArray>(batch, "model_version")?;
-            for i in 0..batch.num_rows() {
-                *counts
-                    .entry(model_versions.value(i).to_string())
-                    .or_insert(0) += 1;
-            }
+        for model_version in decode_rows(
+            &batches,
+            |batch| typed_column::<StringArray>(batch, "model_version"),
+            |col, i| Ok(col.value(i).to_string()),
+        )? {
+            *counts.entry(model_version).or_insert(0) += 1;
         }
         Ok(counts)
     }

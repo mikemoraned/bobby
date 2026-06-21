@@ -8,7 +8,9 @@ use shared::{DiscoveredAt, ImageId, SkeetId};
 use tracing::instrument;
 
 use super::arrow::{encode_image_as_png, typed_column};
-use super::decode::{batches_to_original_images, batches_to_stored_images, batches_to_summaries};
+use super::decode::{
+    batches_to_original_images, batches_to_stored_images, batches_to_summaries, decode_rows,
+};
 use super::query::execute_query;
 use super::schema::images_v6_schema;
 use crate::{
@@ -207,13 +209,13 @@ impl Images for SkeetStore {
 
         let mut seen = std::collections::HashSet::new();
         let mut ids = Vec::new();
-        for batch in &batches {
-            let skeet_ids = typed_column::<StringArray>(batch, "skeet_id")?;
-            for i in 0..batch.num_rows() {
-                let id = skeet_ids.value(i).to_string();
-                if seen.insert(id.clone()) {
-                    ids.push(SkeetId::new(id)?);
-                }
+        for id in decode_rows(
+            &batches,
+            |batch| typed_column::<StringArray>(batch, "skeet_id"),
+            |col, i| Ok(col.value(i).to_string()),
+        )? {
+            if seen.insert(id.clone()) {
+                ids.push(SkeetId::new(id)?);
             }
         }
 
@@ -240,17 +242,18 @@ impl Images for SkeetStore {
         }
         let batches = execute_query(&query, "list_all_image_ids_by_most_recent").await?;
 
-        let mut id_times = Vec::new();
-        for batch in &batches {
-            let image_ids = typed_column::<StringArray>(batch, "image_id")?;
-            let discovered_ats = typed_column::<TimestampMicrosecondArray>(batch, "discovered_at")?;
-            for i in 0..batch.num_rows() {
-                id_times.push((
-                    image_ids.value(i).parse::<ImageId>()?,
-                    discovered_ats.value(i),
-                ));
-            }
-        }
+        let mut id_times = decode_rows(
+            &batches,
+            |batch| {
+                Ok((
+                    typed_column::<StringArray>(batch, "image_id")?,
+                    typed_column::<TimestampMicrosecondArray>(batch, "discovered_at")?,
+                ))
+            },
+            |(image_ids, discovered_ats), i| {
+                Ok((image_ids.value(i).parse::<ImageId>()?, discovered_ats.value(i)))
+            },
+        )?;
         id_times.sort_by(|a, b| b.1.cmp(&a.1));
         Ok(id_times.into_iter().map(|(id, _)| id).collect())
     }

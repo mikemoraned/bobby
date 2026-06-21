@@ -1,13 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
-use arrow_array::{Float32Array, StringArray};
+use arrow_array::StringArray;
 use async_trait::async_trait;
 use lancedb::query::QueryBase;
 use shared::{DiscoveredAt, ImageId};
 use tracing::{debug, info, instrument};
 
 use super::arrow::typed_column;
-use super::decode::batches_to_summaries;
+use super::decode::{batches_to_summaries, decode_rows, decode_score_row, score_columns};
 use super::query::execute_query;
 use super::schema::SCORE_TABLE_NAME;
 use crate::model::ScoresMap;
@@ -31,13 +31,13 @@ impl ScoredView for SkeetStore {
             .select(lancedb::query::Select::columns(&["image_id"]));
         let scored_batches = execute_query(&scored_query, "list_unscored:scored_ids").await?;
 
-        let mut scored = std::collections::HashSet::new();
-        for batch in &scored_batches {
-            let image_ids = typed_column::<StringArray>(batch, "image_id")?;
-            for i in 0..batch.num_rows() {
-                scored.insert(image_ids.value(i).to_string());
-            }
-        }
+        let scored: std::collections::HashSet<String> = decode_rows(
+            &scored_batches,
+            |batch| typed_column::<StringArray>(batch, "image_id"),
+            |col, i| Ok(col.value(i).to_string()),
+        )?
+        .into_iter()
+        .collect();
 
         Ok(all_ids
             .into_iter()
@@ -119,14 +119,13 @@ impl SkeetStore {
             .select(lancedb::query::Select::columns(&["image_id"]))
             .only_if(filter);
         let batches = execute_query(&query, "find_image_ids_published_since").await?;
-        let mut ids = HashSet::new();
-        for batch in &batches {
-            let image_ids = typed_column::<StringArray>(batch, "image_id")?;
-            for i in 0..batch.num_rows() {
-                let image_id: ImageId = image_ids.value(i).parse()?;
-                ids.insert(image_id);
-            }
-        }
+        let ids: HashSet<ImageId> = decode_rows(
+            &batches,
+            |batch| typed_column::<StringArray>(batch, "image_id"),
+            |col, i| Ok(col.value(i).parse()?),
+        )?
+        .into_iter()
+        .collect();
         info!(
             windowed_image_ids = ids.len(),
             "filtered images by publish time"
@@ -153,14 +152,13 @@ impl SkeetStore {
             .select(lancedb::query::Select::columns(&["image_id"]))
             .only_if(filter);
         let batches = execute_query(&query, "find_recent_image_ids").await?;
-        let mut ids = std::collections::HashSet::new();
-        for batch in &batches {
-            let image_ids = typed_column::<StringArray>(batch, "image_id")?;
-            for i in 0..batch.num_rows() {
-                let image_id: ImageId = image_ids.value(i).parse()?;
-                ids.insert(image_id);
-            }
-        }
+        let ids: std::collections::HashSet<ImageId> = decode_rows(
+            &batches,
+            |batch| typed_column::<StringArray>(batch, "image_id"),
+            |col, i| Ok(col.value(i).parse()?),
+        )?
+        .into_iter()
+        .collect();
         info!(recent_image_ids = ids.len(), "filtered images by age");
         Ok(Some(ids))
     }
@@ -217,18 +215,9 @@ impl SkeetStore {
             ]));
         let scored_batches = execute_query(&scored_query, "cached_scores:full_scan").await?;
 
-        let mut scores = HashMap::new();
-        for batch in &scored_batches {
-            let image_ids = typed_column::<StringArray>(batch, "image_id")?;
-            let score_vals = typed_column::<Float32Array>(batch, "score")?;
-            let model_versions = typed_column::<StringArray>(batch, "model_version")?;
-            for i in 0..batch.num_rows() {
-                let image_id: ImageId = image_ids.value(i).parse()?;
-                let score = Score::new(score_vals.value(i))?;
-                let model_version = ModelVersion::from(model_versions.value(i));
-                scores.insert(image_id, (score, model_version));
-            }
-        }
+        let scores: ScoresMap = decode_rows(&scored_batches, score_columns, decode_score_row)?
+            .into_iter()
+            .collect();
         info!(
             score_rows = scores.len(),
             version = %current_version.tag,

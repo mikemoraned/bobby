@@ -11,6 +11,7 @@ use shared::{Appraisal, Appraiser, Band, ImageId, SkeetId};
 use tracing::instrument;
 
 use super::arrow::typed_column;
+use super::decode::decode_rows;
 use super::query::execute_query;
 use super::schema::appraisal_schema;
 use crate::{Appraisals, AppraisalsSource, SkeetStore, StoreError};
@@ -130,17 +131,20 @@ fn parse_keyed_appraisals<K>(
     id_column: &str,
     parse_id: impl Fn(&str) -> Result<K, StoreError>,
 ) -> Result<Vec<(K, Appraisal)>, StoreError> {
-    let mut results = Vec::new();
-    for batch in batches {
-        let ids = typed_column::<StringArray>(batch, id_column)?;
-        let bands = typed_column::<StringArray>(batch, "band")?;
-        let appraisers = typed_column::<StringArray>(batch, "appraiser")?;
-        for i in 0..batch.num_rows() {
+    decode_rows(
+        batches,
+        |batch| {
+            Ok((
+                typed_column::<StringArray>(batch, id_column)?,
+                typed_column::<StringArray>(batch, "band")?,
+                typed_column::<StringArray>(batch, "appraiser")?,
+            ))
+        },
+        |(ids, bands, appraisers), i| {
             let id = parse_id(ids.value(i))?;
             let band: Band = bands.value(i).parse()?;
             let appraiser: Appraiser = appraisers.value(i).parse()?;
-            results.push((id, Appraisal { band, appraiser }));
-        }
-    }
-    Ok(results)
+            Ok((id, Appraisal { band, appraiser }))
+        },
+    )
 }
