@@ -110,10 +110,11 @@ We'll get there in gradual steps:
     * [ ] Add ability of `Statistics` trait to calculate:
         * a sum of prune counts seen over a particular interval (based on saved prune records above), which is the number of images examined
 * witnin `skeet-publish`:
-    * [ ] In publisher, instead of publishing `v3-examined-count`, publish the following for each `PublishedList` at, for example, `v3-quality-7d:statistics` as a json object:
+    * [ ] In publisher, publish the following for each `PublishedList` at, for example, `v3-quality-7d:statistics` as a json object:
         * start/end of interval covered (so, absolute start/end of the 7d period in this example)
         * count of examined images
         * count of images we eventually show (this is just the length of the list)
 * within `skeet-feed`:
     * [ ] Get the counts of images examined and shown, and the interval given, and use these to create the "(400,000 images checked over past 2 days, of which 46 (0.01%) match what we are looking for)" text.
 * [ ] refactor any existing `count` methods in other `skeet-store` traits to live in the `Statistics` trait
+* [ ] once `skeet-feed` deployed and not using it anymore stop creating/publishing `v3-examined-count` 
