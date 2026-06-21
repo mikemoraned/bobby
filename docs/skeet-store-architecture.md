@@ -42,10 +42,12 @@ reverse.
 
 ## Why
 
-The carve lets each consumer depend only on the capability it needs, and keeps
-the storage backend swappable: because nothing outside `lance/` can name a
-LanceDB or Arrow type, an alternative adapter can be slotted in behind the same
-ports without touching consumers.
+**capability narrowing** (each consumer depends only on the
+port(s) it needs, not a wide god-type; a reader can't reach the write methods)
+and **information hiding** (nothing outside `adapters/lance/` can name a LanceDB
+or Arrow type, so storage details can't leak into consumers or into
+`ports`/`model`, and the Arrow/LanceDB surface stays free to change).
+
 
 ## References
 
