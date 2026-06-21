@@ -16,7 +16,6 @@ mod scored_view;
 mod scores;
 mod versions;
 
-pub use appraisals::Appraisals;
 pub use schema::{
     IMAGE_APPRAISAL_TABLE_NAME, SCORE_TABLE_NAME, SKEET_APPRAISAL_TABLE_NAME, TABLE_NAME,
     VALIDATE_TABLE_NAME,

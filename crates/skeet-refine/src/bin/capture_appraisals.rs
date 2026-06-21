@@ -5,7 +5,7 @@ use clap::Parser;
 use eval::{EvalSplit, EvalSplits, stratified_split};
 use shared::refine_model::Label;
 use shared::{Band, ImageId};
-use skeet_store::{AppraisalSource, StoreArgs};
+use skeet_store::{AppraisalsSource, StoreArgs};
 use tracing::info;
 
 #[derive(Parser)]

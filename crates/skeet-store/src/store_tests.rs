@@ -4,8 +4,8 @@ use shared::{Appraisal, DiscoveredAt, OriginalAt, SkeetId, Zone};
 
 use crate::test_utils::{make_record_at, open_temp_store, test_image, test_image_with_color};
 use crate::{
-    AppraisalSource, Appraiser, Band, ImageId, ImageRecord, Images, ModelVersion, SCORE_TABLE_NAME,
-    Score, ScoredView, Scores, SkeetStore,
+    AppraisalsSource, Appraiser, Band, ImageId, ImageRecord, Images, ModelVersion,
+    SCORE_TABLE_NAME, Score, ScoredView, Scores, SkeetStore,
 };
 
 /// The scores table's numeric LanceDB version counter, via the public

@@ -19,13 +19,13 @@ pub mod versioned_cache;
 
 pub use error::StoreError;
 pub use lance::{
-    Appraisals, IMAGE_APPRAISAL_TABLE_NAME, SCORE_TABLE_NAME, SKEET_APPRAISAL_TABLE_NAME,
-    SkeetStore, TABLE_NAME, VALIDATE_TABLE_NAME,
+    IMAGE_APPRAISAL_TABLE_NAME, SCORE_TABLE_NAME, SKEET_APPRAISAL_TABLE_NAME, SkeetStore,
+    TABLE_NAME, VALIDATE_TABLE_NAME,
 };
 pub use model::{ImageRecord, StoredImage, StoredImageSummary, StoredOriginal, Version};
 pub use object_store::StoreArgs;
 pub use observability::StoreMetrics;
-pub use ports::{AppraisalSource, Images, ScoredView, Scores, TableVersions};
+pub use ports::{Appraisals, AppraisalsSource, Images, ScoredView, Scores, TableVersions};
 pub use shared::{Appraiser, Band, ImageId, ModelVersion, Score};
 pub use versioned_cache::VersionedCache;
 

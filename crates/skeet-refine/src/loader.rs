@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use image::DynamicImage;
 use shared::{Band, ImageId};
-use skeet_store::{AppraisalSource, Images, StoreError};
+use skeet_store::{AppraisalsSource, Images, StoreError};
 
 /// An image fetched from the store paired with its appraised `Band`. The binary
 /// label for the refine classifier is `band.is_visible_in_feed()`.
@@ -33,7 +33,7 @@ pub enum LoaderError {
 /// single index can then be used to label any subset of images for downstream
 /// scoring runs.
 pub async fn load_band_index(
-    store: &impl AppraisalSource,
+    store: &impl AppraisalsSource,
 ) -> Result<HashMap<ImageId, Band>, LoaderError> {
     let appraisals = store.image_appraisals().list_all().await?;
     Ok(appraisals.into_iter().map(|(id, a)| (id, a.band)).collect())

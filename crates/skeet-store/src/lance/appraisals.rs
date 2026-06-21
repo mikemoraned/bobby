@@ -4,6 +4,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use arrow_array::{RecordBatch, RecordBatchIterator, StringArray, TimestampMicrosecondArray};
+use async_trait::async_trait;
 use chrono::Utc;
 use lancedb::query::QueryBase;
 use shared::{Appraisal, Appraiser, Band, ImageId, SkeetId};
@@ -12,20 +13,21 @@ use tracing::instrument;
 use super::arrow::typed_column;
 use super::query::execute_query;
 use super::schema::appraisal_schema;
-use crate::{AppraisalSource, SkeetStore, StoreError};
+use crate::{Appraisals, AppraisalsSource, SkeetStore, StoreError};
 
-/// A handle to one manual-appraisal table, keyed by `K` (`SkeetId` or `ImageId`).
+/// The LanceDB-backed handle to one manual-appraisal table, keyed by `K`
+/// (`SkeetId` or `ImageId`).
 ///
 /// The CRUD is written once over both key spaces, which differ only in key type,
-/// table, and id-column. Obtain one via [`AppraisalSource`] (e.g.
-/// `store.skeet_appraisals()`).
-pub struct Appraisals<K> {
+/// table, and id-column. The [`Appraisals`] port is the public face; this
+/// concrete type stays private to the adapter. Obtain one via [`AppraisalsSource`].
+struct AppraisalTable<K> {
     table: lancedb::Table,
     id_column: &'static str,
     _key: PhantomData<K>,
 }
 
-impl<K> Appraisals<K> {
+impl<K> AppraisalTable<K> {
     const fn new(table: lancedb::Table, id_column: &'static str) -> Self {
         Self {
             table,
@@ -35,9 +37,14 @@ impl<K> Appraisals<K> {
     }
 }
 
-impl<K: Display + Send + Sync> Appraisals<K> {
+#[async_trait]
+impl<K> Appraisals<K> for AppraisalTable<K>
+where
+    K: Display + FromStr + Send + Sync,
+    StoreError: From<K::Err>,
+{
     #[instrument(skip_all, fields(table = self.id_column))]
-    pub async fn set(&self, id: &K, band: Band, appraiser: &Appraiser) -> Result<(), StoreError> {
+    async fn set(&self, id: &K, band: Band, appraiser: &Appraiser) -> Result<(), StoreError> {
         let schema = appraisal_schema(self.id_column);
         let id_str = id.to_string();
         let band_str = band.to_string();
@@ -63,7 +70,7 @@ impl<K: Display + Send + Sync> Appraisals<K> {
     }
 
     #[instrument(skip_all, fields(table = self.id_column))]
-    pub async fn clear(&self, id: &K) -> Result<(), StoreError> {
+    async fn clear(&self, id: &K) -> Result<(), StoreError> {
         self.table
             .delete(&format!("{} = '{id}'", self.id_column))
             .await?;
@@ -71,7 +78,7 @@ impl<K: Display + Send + Sync> Appraisals<K> {
     }
 
     #[instrument(skip_all, fields(table = self.id_column))]
-    pub async fn get(&self, id: &K) -> Result<Option<Appraisal>, StoreError> {
+    async fn get(&self, id: &K) -> Result<Option<Appraisal>, StoreError> {
         let query = self
             .table
             .query()
@@ -80,14 +87,9 @@ impl<K: Display + Send + Sync> Appraisals<K> {
         let batches = execute_query(&query, &format!("appraisal_get:{}", self.id_column)).await?;
         parse_single_appraisal(&batches)
     }
-}
 
-impl<K: FromStr + Send + Sync> Appraisals<K>
-where
-    StoreError: From<K::Err>,
-{
     #[instrument(skip_all, fields(table = self.id_column))]
-    pub async fn list_all(&self) -> Result<Vec<(K, Appraisal)>, StoreError> {
+    async fn list_all(&self) -> Result<Vec<(K, Appraisal)>, StoreError> {
         let label = format!("appraisal_list_all:{}", self.id_column);
         let batches = execute_query(&self.table.query(), &label).await?;
         parse_keyed_appraisals(&batches, self.id_column, |s| {
@@ -96,13 +98,19 @@ where
     }
 }
 
-impl AppraisalSource for SkeetStore {
-    fn skeet_appraisals(&self) -> Appraisals<SkeetId> {
-        Appraisals::new(self.skeet_appraisal_table.clone(), "skeet_id")
+impl AppraisalsSource for SkeetStore {
+    fn skeet_appraisals(&self) -> Box<dyn Appraisals<SkeetId>> {
+        Box::new(AppraisalTable::new(
+            self.skeet_appraisal_table.clone(),
+            "skeet_id",
+        ))
     }
 
-    fn image_appraisals(&self) -> Appraisals<ImageId> {
-        Appraisals::new(self.image_appraisal_table.clone(), "image_id")
+    fn image_appraisals(&self) -> Box<dyn Appraisals<ImageId>> {
+        Box::new(AppraisalTable::new(
+            self.image_appraisal_table.clone(),
+            "image_id",
+        ))
     }
 }
 

@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use deadpool_redis::redis;
 use shared::{Appraisal, Band, ImageId, NormalizedScore, OriginalAt, RefineModels, SkeetId};
 use skeet_store::{
-    AppraisalSource, ModelVersion, Score, ScoredView, Scores, StoreError, StoredImageSummary,
+    AppraisalsSource, ModelVersion, Score, ScoredView, Scores, StoreError, StoredImageSummary,
     TableVersions, Version, VersionedCache,
 };
 use tokio::sync::RwLock;
@@ -221,7 +221,7 @@ pub struct FeedPublisher<S> {
     last_relevant: RwLock<VersionedCache<HashSet<Version>, ()>>,
 }
 
-impl<S: ScoredView + AppraisalSource + Scores + TableVersions> FeedPublisher<S> {
+impl<S: ScoredView + AppraisalsSource + Scores + TableVersions> FeedPublisher<S> {
     pub fn new(
         store: Arc<S>,
         models: Arc<RefineModels>,

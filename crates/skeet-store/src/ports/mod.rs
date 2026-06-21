@@ -8,7 +8,7 @@ mod scored_view;
 mod scores;
 mod versions;
 
-pub use appraisals::AppraisalSource;
+pub use appraisals::{Appraisals, AppraisalsSource};
 pub use images::Images;
 pub use scored_view::ScoredView;
 pub use scores::Scores;
