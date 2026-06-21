@@ -1,5 +1,32 @@
 # Next Slices
 
+## Slice: robust, low-impact firehose consumption
+
+### Target
+
+`skeet-prune` already consumes the firehose the efficient way — Jetstream (not the raw `com.atproto.sync.subscribeRepos` CBOR firehose) via `jetstream-oxide`, with `JetstreamCompression::Zstd`, a server-side `wantedCollections=app.bsky.feed.post` filter, and a shuffled four-endpoint list for connect-time failover. The transport is already lean; the gap is *consumption robustness*, not mechanism. Two failure-mode defects remain, both in `firehose.rs` / `firehose_stage.rs`:
+
+- **Reconnects silently lose data.** `JetstreamConfig.cursor` is never set (we build the config with `..Default::default()`), so every reconnection starts in live-tail. A silent connection takes up to `recv_timeout` (30s) to notice, then up to ~5s × endpoints to re-establish — and every post in that whole window is gone, unobserved. On a redeploy or a flaky network this quietly punches holes in the stream we never see.
+- **The reconnect loop has no backoff.** On connect failure `firehose_stage::run` does `warn; continue` with zero delay, and `max_retries: 0` disables the library's own retry — so during a real outage the DIY loop retry-storms all four public Jetstream instances as fast as it can. That's exactly the "unnecessary load on the central servers" we don't want to be a source of.
+
+Goal: survive disconnects without losing observed posts, and stay a polite client even when things are on fire — without touching the (already-good) transport. The pipeline is already idempotent — the store is keyed by content hash / `SkeetId` — so replaying a few seconds of duplicate events on reconnect is safe and collapses to the same rows. That idempotency is the precondition that makes cursor-based resumption viable here.
+
+Apply the cursor change first, then the backoff: backoff deliberately lengthens the disconnect gap, so the cursor (which makes gaps lossless) needs to be in place *before* we make gaps longer on purpose.
+
+### Tasks
+
+#### Group 1: cursor-based resumption (do first)
+
+- Track `info.time_us` of the last processed event; set `JetstreamConfig.cursor` (a `DateTime<Utc>`) on reconnect, rewound ~5s for gapless playback. Currently `None` ⇒ every reconnect live-tails and drops the gap.
+- Safe to replay because the store is idempotent (keyed by content hash / `SkeetId`).
+- In-memory across reconnects is the 80%; persisting the cursor (closes the restart gap) is optional.
+
+#### Group 2: reconnect backoff (do second)
+
+- Add exponential backoff with jitter between reconnect *cycles* (one cycle = one pass over all shuffled endpoints), capped ~30–60s; reset after a connection stays up.
+- Currently `warn; continue` with no delay, and `max_retries: 0` disables the library's retry — so an outage retry-storms all four instances.
+- Keep the DIY loop (it gives endpoint rotation, which `max_retries` doesn't); just add the delay.
+
 ## Slice: try using embeddings for classification/scoring in refine
 
 ### Target
