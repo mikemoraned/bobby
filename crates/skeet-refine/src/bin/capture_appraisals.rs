@@ -5,7 +5,7 @@ use clap::Parser;
 use eval::{EvalSplit, EvalSplits, stratified_split};
 use shared::refine_model::Label;
 use shared::{Band, ImageId};
-use skeet_store::{Appraisals, StoreArgs};
+use skeet_store::{AppraisalSource, StoreArgs};
 use tracing::info;
 
 #[derive(Parser)]
@@ -44,7 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let store = args.store.open_store("capture-appraisals").await?;
 
-    let appraisals = store.list_all_image_appraisals().await?;
+    let appraisals = store.image_appraisals().list_all().await?;
     info!(count = appraisals.len(), "loaded image appraisals");
 
     let items: Vec<(ImageId, Band)> = appraisals

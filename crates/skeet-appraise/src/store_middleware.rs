@@ -5,7 +5,7 @@ use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::FromRequestHead;
 use tower::{Layer, Service};
 
-use skeet_store::{Appraisals, Images, Scores, SkeetStore};
+use skeet_store::{AppraisalSource, Images, Scores, SkeetStore};
 
 /// The store capabilities the appraisals service needs.
 ///
@@ -13,8 +13,8 @@ use skeet_store::{Appraisals, Images, Scores, SkeetStore};
 /// appraisal reads/writes ([`Appraisals`]). Handlers depend on this narrowed
 /// surface rather than the whole `SkeetStore`; any type implementing the three
 /// ports satisfies it via the blanket impl.
-pub trait AppraiseStore: Images + Scores + Appraisals {}
-impl<T: Images + Scores + Appraisals> AppraiseStore for T {}
+pub trait AppraiseStore: Images + Scores + AppraisalSource {}
+impl<T: Images + Scores + AppraisalSource> AppraiseStore for T {}
 
 /// Shared handle to the store, extracted from request extensions.
 #[derive(Clone)]

@@ -109,10 +109,12 @@ impl FeedSnapshotSource {
         let (published, _refreshed_at) = feed.published().await?;
 
         let image_ids: Vec<ImageId> = published.iter().map(|p| p.image_id.clone()).collect();
+        let image_table = self.store.image_appraisals();
+        let skeet_table = self.store.skeet_appraisals();
         let (scores, image_appraisals, skeet_appraisals) = tokio::try_join!(
             self.store.list_scores_for_ids(&image_ids),
-            self.store.list_all_image_appraisals(),
-            self.store.list_all_skeet_appraisals(),
+            image_table.list_all(),
+            skeet_table.list_all(),
         )?;
         let image_bands: HashMap<ImageId, Band> = image_appraisals
             .into_iter()

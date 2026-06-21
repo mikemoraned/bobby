@@ -27,7 +27,7 @@ pub fn images_score_v2_schema() -> Arc<Schema> {
     ]))
 }
 
-fn appraisal_schema(id_column: &str) -> Arc<Schema> {
+pub fn appraisal_schema(id_column: &str) -> Arc<Schema> {
     Arc::new(Schema::new(vec![
         Field::new(id_column, DataType::Utf8, false),
         Field::new("band", DataType::Utf8, false),

@@ -106,14 +106,14 @@ pub async fn admin(
         .map_err(|e| cot::Error::internal(format!("failed to read scores: {e}")))?;
 
     let skeet_appraisals: HashMap<SkeetId, Appraisal> = store
-        .list_all_skeet_appraisals()
+        .skeet_appraisals().list_all()
         .await
         .map_err(|e| cot::Error::internal(format!("failed to read skeet appraisals: {e}")))?
         .into_iter()
         .collect();
 
     let image_appraisals: HashMap<ImageId, Appraisal> = store
-        .list_all_image_appraisals()
+        .image_appraisals().list_all()
         .await
         .map_err(|e| cot::Error::internal(format!("failed to read image appraisals: {e}")))?
         .into_iter()
@@ -317,14 +317,14 @@ async fn apply_appraisal(
         match &target {
             AppraiseTarget::Skeet(id) => {
                 store
-                    .clear_skeet_band(id)
+                    .skeet_appraisals().clear(id)
                     .await
                     .map_err(|e| cot::Error::internal(format!("failed to clear band: {e}")))?;
                 info!(%id, "cleared skeet band");
             }
             AppraiseTarget::Image(id) => {
                 store
-                    .clear_image_band(id)
+                    .image_appraisals().clear(id)
                     .await
                     .map_err(|e| cot::Error::internal(format!("failed to clear band: {e}")))?;
                 info!(%id, "cleared image band");
@@ -337,14 +337,14 @@ async fn apply_appraisal(
         match &target {
             AppraiseTarget::Skeet(id) => {
                 store
-                    .set_skeet_band(id, band, &appraiser)
+                    .skeet_appraisals().set(id, band, &appraiser)
                     .await
                     .map_err(|e| cot::Error::internal(format!("failed to set band: {e}")))?;
                 info!(%id, %band, "set skeet band");
             }
             AppraiseTarget::Image(id) => {
                 store
-                    .set_image_band(id, band, &appraiser)
+                    .image_appraisals().set(id, band, &appraiser)
                     .await
                     .map_err(|e| cot::Error::internal(format!("failed to set band: {e}")))?;
                 info!(%id, %band, "set image band");
@@ -363,14 +363,14 @@ async fn render_updated_row(
     // Re-fetch data to render the updated row.
     // For simplicity, fetch all appraisals (they're tiny tables).
     let skeet_appraisals: HashMap<SkeetId, Appraisal> = store
-        .list_all_skeet_appraisals()
+        .skeet_appraisals().list_all()
         .await
         .map_err(|e| cot::Error::internal(format!("failed to read appraisals: {e}")))?
         .into_iter()
         .collect();
 
     let image_appraisals: HashMap<ImageId, Appraisal> = store
-        .list_all_image_appraisals()
+        .image_appraisals().list_all()
         .await
         .map_err(|e| cot::Error::internal(format!("failed to read appraisals: {e}")))?
         .into_iter()

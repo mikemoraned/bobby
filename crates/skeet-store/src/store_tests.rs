@@ -2,7 +2,7 @@ use chrono::Utc;
 
 use crate::test_utils::{make_record_at, open_temp_store, test_image, test_image_with_color};
 use crate::{
-    Appraisal, Appraisals, Appraiser, Band, DiscoveredAt, ImageId, ImageRecord, Images,
+    Appraisal, AppraisalSource, Appraiser, Band, DiscoveredAt, ImageId, ImageRecord, Images,
     ModelVersion, OriginalAt, Score, ScoredView, Scores, SkeetId, SkeetStore, Zone,
 };
 
@@ -553,15 +553,15 @@ async fn skeet_band_set_get_roundtrip() {
         .parse()
         .expect("valid");
 
-    assert_eq!(store.get_skeet_band(&skeet_id).await.unwrap(), None);
+    assert_eq!(store.skeet_appraisals().get(&skeet_id).await.unwrap(), None);
 
     store
-        .set_skeet_band(&skeet_id, Band::HighQuality, &test_appraiser())
+        .skeet_appraisals().set(&skeet_id, Band::HighQuality, &test_appraiser())
         .await
         .unwrap();
 
     let appraisal = store
-        .get_skeet_band(&skeet_id)
+        .skeet_appraisals().get(&skeet_id)
         .await
         .unwrap()
         .expect("should exist");
@@ -579,16 +579,16 @@ async fn skeet_band_set_overwrites_previous() {
         .expect("valid");
 
     store
-        .set_skeet_band(&skeet_id, Band::Low, &test_appraiser())
+        .skeet_appraisals().set(&skeet_id, Band::Low, &test_appraiser())
         .await
         .unwrap();
     store
-        .set_skeet_band(&skeet_id, Band::MediumHigh, &other_appraiser())
+        .skeet_appraisals().set(&skeet_id, Band::MediumHigh, &other_appraiser())
         .await
         .unwrap();
 
     let appraisal = store
-        .get_skeet_band(&skeet_id)
+        .skeet_appraisals().get(&skeet_id)
         .await
         .unwrap()
         .expect("should exist");
@@ -606,12 +606,12 @@ async fn skeet_band_clear_removes_appraisal() {
         .expect("valid");
 
     store
-        .set_skeet_band(&skeet_id, Band::Low, &test_appraiser())
+        .skeet_appraisals().set(&skeet_id, Band::Low, &test_appraiser())
         .await
         .unwrap();
-    store.clear_skeet_band(&skeet_id).await.unwrap();
+    store.skeet_appraisals().clear(&skeet_id).await.unwrap();
 
-    assert_eq!(store.get_skeet_band(&skeet_id).await.unwrap(), None);
+    assert_eq!(store.skeet_appraisals().get(&skeet_id).await.unwrap(), None);
 }
 
 #[tokio::test]
@@ -627,15 +627,15 @@ async fn list_all_skeet_appraisals_returns_all() {
         .expect("valid");
 
     store
-        .set_skeet_band(&id1, Band::Low, &test_appraiser())
+        .skeet_appraisals().set(&id1, Band::Low, &test_appraiser())
         .await
         .unwrap();
     store
-        .set_skeet_band(&id2, Band::HighQuality, &other_appraiser())
+        .skeet_appraisals().set(&id2, Band::HighQuality, &other_appraiser())
         .await
         .unwrap();
 
-    let all = store.list_all_skeet_appraisals().await.unwrap();
+    let all = store.skeet_appraisals().list_all().await.unwrap();
     assert_eq!(all.len(), 2);
 
     let by_id: std::collections::HashMap<_, _> = all.into_iter().collect();
@@ -663,15 +663,15 @@ async fn image_band_set_get_roundtrip() {
     let record = make_record("img_appr1");
     store.add(&record).await.unwrap();
 
-    assert_eq!(store.get_image_band(&record.image_id).await.unwrap(), None);
+    assert_eq!(store.image_appraisals().get(&record.image_id).await.unwrap(), None);
 
     store
-        .set_image_band(&record.image_id, Band::MediumLow, &test_appraiser())
+        .image_appraisals().set(&record.image_id, Band::MediumLow, &test_appraiser())
         .await
         .unwrap();
 
     let appraisal = store
-        .get_image_band(&record.image_id)
+        .image_appraisals().get(&record.image_id)
         .await
         .unwrap()
         .expect("should exist");
@@ -688,16 +688,16 @@ async fn image_band_set_overwrites_previous() {
     store.add(&record).await.unwrap();
 
     store
-        .set_image_band(&record.image_id, Band::Low, &test_appraiser())
+        .image_appraisals().set(&record.image_id, Band::Low, &test_appraiser())
         .await
         .unwrap();
     store
-        .set_image_band(&record.image_id, Band::HighQuality, &other_appraiser())
+        .image_appraisals().set(&record.image_id, Band::HighQuality, &other_appraiser())
         .await
         .unwrap();
 
     let appraisal = store
-        .get_image_band(&record.image_id)
+        .image_appraisals().get(&record.image_id)
         .await
         .unwrap()
         .expect("should exist");
@@ -714,12 +714,12 @@ async fn image_band_clear_removes_appraisal() {
     store.add(&record).await.unwrap();
 
     store
-        .set_image_band(&record.image_id, Band::MediumHigh, &test_appraiser())
+        .image_appraisals().set(&record.image_id, Band::MediumHigh, &test_appraiser())
         .await
         .unwrap();
-    store.clear_image_band(&record.image_id).await.unwrap();
+    store.image_appraisals().clear(&record.image_id).await.unwrap();
 
-    assert_eq!(store.get_image_band(&record.image_id).await.unwrap(), None);
+    assert_eq!(store.image_appraisals().get(&record.image_id).await.unwrap(), None);
 }
 
 #[tokio::test]
@@ -733,15 +733,15 @@ async fn list_all_image_appraisals_returns_all() {
     store.add(&r2).await.unwrap();
 
     store
-        .set_image_band(&r1.image_id, Band::MediumLow, &test_appraiser())
+        .image_appraisals().set(&r1.image_id, Band::MediumLow, &test_appraiser())
         .await
         .unwrap();
     store
-        .set_image_band(&r2.image_id, Band::HighQuality, &other_appraiser())
+        .image_appraisals().set(&r2.image_id, Band::HighQuality, &other_appraiser())
         .await
         .unwrap();
 
-    let all = store.list_all_image_appraisals().await.unwrap();
+    let all = store.image_appraisals().list_all().await.unwrap();
     assert_eq!(all.len(), 2);
 
     let by_id: std::collections::HashMap<_, _> = all.into_iter().collect();
@@ -769,11 +769,11 @@ async fn clear_nonexistent_appraisal_is_ok() {
     let skeet_id: SkeetId = "at://did:plc:abc/app.bsky.feed.post/noop"
         .parse()
         .expect("valid");
-    store.clear_skeet_band(&skeet_id).await.unwrap();
+    store.skeet_appraisals().clear(&skeet_id).await.unwrap();
 
     let record = make_record("noop_img");
     store.add(&record).await.unwrap();
-    store.clear_image_band(&record.image_id).await.unwrap();
+    store.image_appraisals().clear(&record.image_id).await.unwrap();
 }
 
 #[tokio::test]
@@ -1147,11 +1147,11 @@ async fn prune_old_versions_walks_all_tables() {
         .unwrap();
     store.validate().await.unwrap();
     store
-        .set_skeet_band(&record.skeet_id, Band::HighQuality, &test_appraiser())
+        .skeet_appraisals().set(&record.skeet_id, Band::HighQuality, &test_appraiser())
         .await
         .unwrap();
     store
-        .set_image_band(&record.image_id, Band::MediumLow, &test_appraiser())
+        .image_appraisals().set(&record.image_id, Band::MediumLow, &test_appraiser())
         .await
         .unwrap();
 
@@ -1168,13 +1168,13 @@ async fn prune_old_versions_walks_all_tables() {
         Some((Score::new(0.6).expect("valid"), mv))
     );
     let skeet_appraisal = store
-        .get_skeet_band(&record.skeet_id)
+        .skeet_appraisals().get(&record.skeet_id)
         .await
         .unwrap()
         .expect("skeet appraisal preserved");
     assert_eq!(skeet_appraisal.band, Band::HighQuality);
     let image_appraisal = store
-        .get_image_band(&record.image_id)
+        .image_appraisals().get(&record.image_id)
         .await
         .unwrap()
         .expect("image appraisal preserved");

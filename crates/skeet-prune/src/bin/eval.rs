@@ -8,7 +8,7 @@ use eval::{ConfusionMatrix, F1, Precision, Recall};
 use face_detection::FaceDetector;
 use serde::Serialize;
 use shared::{Classification, ImageId, PruneConfig, RejectionCategories, RejectionCategory};
-use skeet_store::{Appraisals, Band, Images, StoreArgs};
+use skeet_store::{AppraisalSource, Band, Images, StoreArgs};
 use tracing::info;
 
 const BATCH_SIZE: usize = 10;
@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
 
-    let appraisals = store.list_all_image_appraisals().await?;
+    let appraisals = store.image_appraisals().list_all().await?;
     info!(count = appraisals.len(), "loaded image appraisals");
 
     let ground_truth: HashMap<ImageId, bool> = appraisals

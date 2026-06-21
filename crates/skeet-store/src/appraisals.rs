@@ -1,7 +1,9 @@
+use std::fmt::Display;
+use std::marker::PhantomData;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use arrow_array::{RecordBatch, RecordBatchIterator, StringArray, TimestampMicrosecondArray};
-use async_trait::async_trait;
 use chrono::Utc;
 use lancedb::query::QueryBase;
 use shared::{Appraiser, Band, ImageId};
@@ -9,7 +11,7 @@ use tracing::instrument;
 
 use crate::arrow_utils::typed_column;
 use crate::lancedb_utils::execute_query;
-use crate::schema::{manual_image_appraisal_v1_schema, manual_skeet_appraisal_v1_schema};
+use crate::schema::appraisal_schema;
 use crate::types::SkeetId;
 use crate::{SkeetStore, StoreError};
 
@@ -20,43 +22,32 @@ pub struct Appraisal {
     pub appraiser: Appraiser,
 }
 
-/// Manual appraisals: the human-assigned [`Band`] for a skeet or an image.
+/// A handle to one manual-appraisal table, keyed by `K` (`SkeetId` or `ImageId`).
 ///
-/// The two key spaces (skeet vs image) are intentionally separate methods rather
-/// than one generic surface — callers act on one or the other, never both at once.
-#[async_trait]
-pub trait Appraisals: Send + Sync {
-    async fn set_skeet_band(
-        &self,
-        skeet_id: &SkeetId,
-        band: Band,
-        appraiser: &Appraiser,
-    ) -> Result<(), StoreError>;
-    async fn clear_skeet_band(&self, skeet_id: &SkeetId) -> Result<(), StoreError>;
-    async fn get_skeet_band(&self, skeet_id: &SkeetId) -> Result<Option<Appraisal>, StoreError>;
-    async fn list_all_skeet_appraisals(&self) -> Result<Vec<(SkeetId, Appraisal)>, StoreError>;
-    async fn set_image_band(
-        &self,
-        image_id: &ImageId,
-        band: Band,
-        appraiser: &Appraiser,
-    ) -> Result<(), StoreError>;
-    async fn clear_image_band(&self, image_id: &ImageId) -> Result<(), StoreError>;
-    async fn get_image_band(&self, image_id: &ImageId) -> Result<Option<Appraisal>, StoreError>;
-    async fn list_all_image_appraisals(&self) -> Result<Vec<(ImageId, Appraisal)>, StoreError>;
+/// The CRUD is written once over both key spaces, which differ only in key type,
+/// table, and id-column. Obtain one via [`AppraisalSource`] (e.g.
+/// `store.skeet_appraisals()`).
+pub struct Appraisals<K> {
+    table: lancedb::Table,
+    id_column: &'static str,
+    _key: PhantomData<K>,
 }
 
-#[async_trait]
-impl Appraisals for SkeetStore {
-    #[instrument(skip(self))]
-    async fn set_skeet_band(
-        &self,
-        skeet_id: &SkeetId,
-        band: Band,
-        appraiser: &Appraiser,
-    ) -> Result<(), StoreError> {
-        let schema = manual_skeet_appraisal_v1_schema();
-        let skeet_id_str = skeet_id.to_string();
+impl<K> Appraisals<K> {
+    const fn new(table: lancedb::Table, id_column: &'static str) -> Self {
+        Self {
+            table,
+            id_column,
+            _key: PhantomData,
+        }
+    }
+}
+
+impl<K: Display + Send + Sync> Appraisals<K> {
+    #[instrument(skip_all, fields(table = self.id_column))]
+    pub async fn set(&self, id: &K, band: Band, appraiser: &Appraiser) -> Result<(), StoreError> {
+        let schema = appraisal_schema(self.id_column);
+        let id_str = id.to_string();
         let band_str = band.to_string();
         let appraiser_str = appraiser.to_string();
         let now_us = Utc::now().timestamp_micros();
@@ -64,7 +55,7 @@ impl Appraisals for SkeetStore {
         let batch = RecordBatch::try_new(
             schema.clone(),
             vec![
-                Arc::new(StringArray::from(vec![skeet_id_str.as_str()])),
+                Arc::new(StringArray::from(vec![id_str.as_str()])),
                 Arc::new(StringArray::from(vec![band_str.as_str()])),
                 Arc::new(StringArray::from(vec![appraiser_str.as_str()])),
                 Arc::new(TimestampMicrosecondArray::from(vec![now_us]).with_timezone("UTC")),
@@ -72,104 +63,61 @@ impl Appraisals for SkeetStore {
         )?;
 
         let reader = RecordBatchIterator::new(vec![Ok(batch)], schema);
-        let mut builder = self.skeet_appraisal_table.merge_insert(&["skeet_id"]);
+        let mut builder = self.table.merge_insert(&[self.id_column]);
         builder.when_matched_update_all(None);
         builder.when_not_matched_insert_all();
         builder.execute(Box::new(reader)).await?;
         Ok(())
     }
 
-    #[instrument(skip(self))]
-    async fn clear_skeet_band(&self, skeet_id: &SkeetId) -> Result<(), StoreError> {
-        self.skeet_appraisal_table
-            .delete(&format!("skeet_id = '{skeet_id}'"))
+    #[instrument(skip_all, fields(table = self.id_column))]
+    pub async fn clear(&self, id: &K) -> Result<(), StoreError> {
+        self.table
+            .delete(&format!("{} = '{id}'", self.id_column))
             .await?;
         Ok(())
     }
 
-    #[instrument(skip(self))]
-    async fn get_skeet_band(&self, skeet_id: &SkeetId) -> Result<Option<Appraisal>, StoreError> {
+    #[instrument(skip_all, fields(table = self.id_column))]
+    pub async fn get(&self, id: &K) -> Result<Option<Appraisal>, StoreError> {
         let query = self
-            .skeet_appraisal_table
+            .table
             .query()
-            .only_if(format!("skeet_id = '{skeet_id}'"))
+            .only_if(format!("{} = '{id}'", self.id_column))
             .limit(1);
-        let batches = execute_query(&query, "get_skeet_band").await?;
+        let batches = execute_query(&query, &format!("appraisal_get:{}", self.id_column)).await?;
         parse_single_appraisal(&batches)
     }
+}
 
-    #[instrument(skip(self))]
-    async fn list_all_skeet_appraisals(&self) -> Result<Vec<(SkeetId, Appraisal)>, StoreError> {
-        let batches = execute_query(
-            &self.skeet_appraisal_table.query(),
-            "list_all_skeet_appraisals",
-        )
-        .await?;
-        parse_keyed_appraisals(&batches, "skeet_id", |s| {
+impl<K: FromStr + Send + Sync> Appraisals<K>
+where
+    StoreError: From<K::Err>,
+{
+    #[instrument(skip_all, fields(table = self.id_column))]
+    pub async fn list_all(&self) -> Result<Vec<(K, Appraisal)>, StoreError> {
+        let label = format!("appraisal_list_all:{}", self.id_column);
+        let batches = execute_query(&self.table.query(), &label).await?;
+        parse_keyed_appraisals(&batches, self.id_column, |s| {
             s.parse().map_err(StoreError::from)
         })
     }
+}
 
-    #[instrument(skip(self))]
-    async fn set_image_band(
-        &self,
-        image_id: &ImageId,
-        band: Band,
-        appraiser: &Appraiser,
-    ) -> Result<(), StoreError> {
-        let schema = manual_image_appraisal_v1_schema();
-        let image_id_str = image_id.to_string();
-        let band_str = band.to_string();
-        let appraiser_str = appraiser.to_string();
-        let now_us = Utc::now().timestamp_micros();
+/// Access to the per-key appraisal tables. The seam generic and `dyn` consumers
+/// use to reach appraisals without naming the concrete `SkeetStore`.
+pub trait AppraisalSource: Send + Sync {
+    fn skeet_appraisals(&self) -> Appraisals<SkeetId>;
+    fn image_appraisals(&self) -> Appraisals<ImageId>;
+}
 
-        let batch = RecordBatch::try_new(
-            schema.clone(),
-            vec![
-                Arc::new(StringArray::from(vec![image_id_str.as_str()])),
-                Arc::new(StringArray::from(vec![band_str.as_str()])),
-                Arc::new(StringArray::from(vec![appraiser_str.as_str()])),
-                Arc::new(TimestampMicrosecondArray::from(vec![now_us]).with_timezone("UTC")),
-            ],
-        )?;
-
-        let reader = RecordBatchIterator::new(vec![Ok(batch)], schema);
-        let mut builder = self.image_appraisal_table.merge_insert(&["image_id"]);
-        builder.when_matched_update_all(None);
-        builder.when_not_matched_insert_all();
-        builder.execute(Box::new(reader)).await?;
-        Ok(())
+impl AppraisalSource for SkeetStore {
+    fn skeet_appraisals(&self) -> Appraisals<SkeetId> {
+        Appraisals::new(self.skeet_appraisal_table.clone(), "skeet_id")
     }
 
-    #[instrument(skip(self))]
-    async fn clear_image_band(&self, image_id: &ImageId) -> Result<(), StoreError> {
-        self.image_appraisal_table
-            .delete(&format!("image_id = '{image_id}'"))
-            .await?;
-        Ok(())
-    }
-
-    #[instrument(skip(self))]
-    async fn get_image_band(&self, image_id: &ImageId) -> Result<Option<Appraisal>, StoreError> {
-        let query = self
-            .image_appraisal_table
-            .query()
-            .only_if(format!("image_id = '{image_id}'"))
-            .limit(1);
-        let batches = execute_query(&query, "get_image_band").await?;
-        parse_single_appraisal(&batches)
-    }
-
-    #[instrument(skip(self))]
-    async fn list_all_image_appraisals(&self) -> Result<Vec<(ImageId, Appraisal)>, StoreError> {
-        let batches = execute_query(
-            &self.image_appraisal_table.query(),
-            "list_all_image_appraisals",
-        )
-        .await?;
-        parse_keyed_appraisals(&batches, "image_id", |s| {
-            s.parse().map_err(StoreError::from)
-        })
+    fn image_appraisals(&self) -> Appraisals<ImageId> {
+        Appraisals::new(self.image_appraisal_table.clone(), "image_id")
     }
 }
 
