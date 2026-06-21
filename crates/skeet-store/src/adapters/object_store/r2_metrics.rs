@@ -2,15 +2,15 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::time::Instant;
 
-use ::object_store::path::Path;
-use ::object_store::{
-    GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, PutMultipartOptions,
-    PutOptions, PutPayload, PutResult, Result as OSResult,
-};
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
 use lance_io::object_store::WrappingObjectStore;
+use object_store::path::Path;
+use object_store::{
+    GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, PutMultipartOptions,
+    PutOptions, PutPayload, PutResult, Result as OSResult,
+};
 use opentelemetry::{
     KeyValue,
     metrics::{Counter, Histogram},
@@ -60,8 +60,8 @@ impl WrappingObjectStore for R2MetricsWrapper {
     fn wrap(
         &self,
         store_prefix: &str,
-        original: Arc<dyn ::object_store::ObjectStore>,
-    ) -> Arc<dyn ::object_store::ObjectStore> {
+        original: Arc<dyn object_store::ObjectStore>,
+    ) -> Arc<dyn object_store::ObjectStore> {
         Arc::new(CountingObjectStore {
             inner: original,
             counter: self.counter.clone(),
@@ -75,7 +75,7 @@ impl WrappingObjectStore for R2MetricsWrapper {
 
 #[derive(Debug)]
 struct CountingObjectStore {
-    inner: Arc<dyn ::object_store::ObjectStore>,
+    inner: Arc<dyn object_store::ObjectStore>,
     counter: Counter<u64>,
     bytes_counter: Counter<u64>,
     duration_histogram: Histogram<f64>,
@@ -154,7 +154,7 @@ impl<'a> MetricsRecorder<'a> {
 }
 
 #[async_trait]
-impl ::object_store::ObjectStore for CountingObjectStore {
+impl object_store::ObjectStore for CountingObjectStore {
     async fn put(&self, location: &Path, payload: PutPayload) -> OSResult<PutResult> {
         let recorder = self
             .recorder(location, "put", "A")
@@ -346,9 +346,9 @@ fn kind_from_path(location: &Path) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ::object_store::ObjectStore;
-    use ::object_store::memory::InMemory;
     use bytes::Bytes;
+    use object_store::ObjectStore;
+    use object_store::memory::InMemory;
     use opentelemetry::metrics::MeterProvider;
     use opentelemetry_sdk::metrics::{InMemoryMetricExporter, SdkMeterProvider};
     use test_support::{histogram_observation_count, sum_counter};

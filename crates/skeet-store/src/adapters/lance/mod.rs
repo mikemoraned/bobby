@@ -23,9 +23,9 @@ pub use schema::{
 
 use std::sync::Arc;
 
-use ::lance::dataset::{WriteMode, WriteParams};
 use arrow_array::{Int64Array, RecordBatch, TimestampMicrosecondArray};
 use chrono::Utc;
+use lance::dataset::{WriteMode, WriteParams};
 use lance_io::object_store::{ObjectStoreParams, WrappingObjectStore};
 use lancedb::query::QueryBase;
 use lancedb::table::WriteOptions;
@@ -38,22 +38,22 @@ use self::schema::validate_v1_schema;
 use crate::{StoreError, Version, VersionedCache, model};
 
 pub struct SkeetStore {
-    pub(in crate::lance) images_table: lancedb::Table,
-    pub(in crate::lance) scores_table: lancedb::Table,
-    pub(in crate::lance) validate_table: lancedb::Table,
-    pub(in crate::lance) skeet_appraisal_table: lancedb::Table,
-    pub(in crate::lance) image_appraisal_table: lancedb::Table,
+    pub(in crate::adapters::lance) images_table: lancedb::Table,
+    pub(in crate::adapters::lance) scores_table: lancedb::Table,
+    pub(in crate::adapters::lance) validate_table: lancedb::Table,
+    pub(in crate::adapters::lance) skeet_appraisal_table: lancedb::Table,
+    pub(in crate::adapters::lance) image_appraisal_table: lancedb::Table,
     /// All tables, paired with their canonical name. Source of truth for
     /// per-table iteration (fragment counts, version snapshots). Populated in
     /// `SkeetStore::open` so adding or removing a table is a single edit.
-    pub(in crate::lance) tables: Vec<(&'static str, lancedb::Table)>,
-    pub(in crate::lance) scores_cache: RwLock<VersionedCache<Version, model::ScoresMap>>,
-    pub(in crate::lance) store_wrapper: Arc<dyn WrappingObjectStore>,
+    pub(in crate::adapters::lance) tables: Vec<(&'static str, lancedb::Table)>,
+    pub(in crate::adapters::lance) scores_cache: RwLock<VersionedCache<Version, model::ScoresMap>>,
+    pub(in crate::adapters::lance) store_wrapper: Arc<dyn WrappingObjectStore>,
 }
 
 impl SkeetStore {
     /// Build `WriteOptions` that include the R2 metrics wrapper, if configured.
-    pub(in crate::lance) fn write_options(&self) -> WriteOptions {
+    pub(in crate::adapters::lance) fn write_options(&self) -> WriteOptions {
         WriteOptions {
             lance_write_params: Some(WriteParams {
                 mode: WriteMode::Append,

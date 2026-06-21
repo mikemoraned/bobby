@@ -1,4 +1,4 @@
-# `skeet-store` architecture: ports & adapter
+# `skeet-store` architecture: ports & adapters
 
 `skeet-store` is laid out as a single-crate [hexagonal / ports-and-adapters]
 design. The file tree *is* the architecture: which module a thing lives in is
@@ -7,7 +7,7 @@ decided by which way its dependencies point.
 ## Dependency direction
 
 ```
-model  ←  ports  ←  lance  →  object_store
+model  ←  ports  ←  adapters/lance  →  adapters/object_store
 ```
 
 Dependencies point inward. Outer modules know about inner ones; never the
@@ -22,15 +22,18 @@ reverse.
   (e.g. `Images`, `Scores`). Public traits only; they exclusively use `model` types.
   A consumer should depend on the narrowest port(s) it actually uses, not on the 
   whole store.
-- **`lance/`** — the LanceDB/R2 **adapter**: the concrete type
-  (`SkeetStore`) implementing every port, plus specifics of lancedb e.g `open`,
-  `schema`, `query` execution, and table `maintenance`. Everything Arrow- or
-  LanceDB-shaped lives here and is **private to this module** — the table fields
-  are `pub(in crate::lance)`, so `ports`/`model` cannot even name a
-  `lancedb::Table` or an Arrow array.
-- **`object_store/`** — the R2/SSE-C layer the adapter writes through
-  (connection + encryption config in `args`, the OTel operation-counting
-  `r2_metrics` wrapper). A separable sibling tied to the external R2 deployment.
+- **`adapters/`** — the adapter implementations of the ports. Everything
+  storage-specific lives under here, so `ports`/`model` stay free of LanceDB and
+  Arrow.
+  - **`adapters/lance/`** — the LanceDB/R2 **adapter**: the concrete type
+    (`SkeetStore`) implementing every port, plus specifics of lancedb e.g `open`,
+    `schema`, `query` execution, and table `maintenance`. Everything Arrow- or
+    LanceDB-shaped lives here and is **private to this module** — the table fields
+    are `pub(in crate::adapters::lance)`, so `ports`/`model` cannot even name a
+    `lancedb::Table` or an Arrow array.
+  - **`adapters/object_store/`** — the R2/SSE-C layer the adapter writes through
+    (connection + encryption config in `args`, the OTel operation-counting
+    `r2_metrics` wrapper). A separable sibling tied to the external R2 deployment.
 - **`observability/`** — cross-cutting OTel gauges (`store_metrics`) and
   structured query-plan logging (`query_log`). Sits on top of the adapter: it
   observes it.
