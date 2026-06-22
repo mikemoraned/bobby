@@ -212,7 +212,7 @@ Promoted the staging feed/appraisals to real production URLs — `bobby.houseofm
 - **Plausible analytics**: gated behind a `--plausible-script-url` CLI param (set only in production) using Plausible's script-tag install; staging/local render nothing.
 - **Published the "Bobby" feed**: added a `register-feed-production` recipe (`--feed-name bobby`, `--display-name Bobby`); the production app serves `--feed-name bobby` so `getFeedSkeleton` matches the registered rkey.
 
-## Slice: 1.0 refactor, review and code minimisation, focussed on `skeet-store`
+## Slice: refactor, review and code minimisation, focussed on `skeet-store`
 
 A "be able to walk away from it for a while" maintenance slice. Scope was narrowed mid-way to `skeet-store` only; the per-crate passes for the remaining crates moved to later slices. Driven by two external reviews (a store-structure review and a Rust design-patterns review), both since deleted with their durable findings folded into `docs/next-slices.md` and `docs/architecture.md`.
 
