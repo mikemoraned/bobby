@@ -2,11 +2,18 @@
 
 ## Recommendations (smallest → largest change)
 
-1. **Add `ParseZoneError` and `ParseRejectionError`** (§3) — two small error enums replacing `type Err = String` in three `FromStr` impls.
-2. **Validate `ModelProvider` and `Purpose` constructors** (§4) — add non-empty/known-value checks to two NewType constructors.
-3. **Close `&str` gaps at four call sites** (§2) — change `bsky_cdn_thumbnail_url`, `SkeetId::for_post`, `FeedConfig` accessors, and `blocked_labels` to use existing NewTypes.
-4. **Replace `Box<dyn Error>` in two library functions** (§7) — typed errors for `PruneConfig::from_file` and `BlocklistConfig` methods.
-5. **Tighten `pub mod` to `mod` + `pub use`** in three leaf crates (§6) — `skeet-appraise`, `skeet-feed`, `skeet-publish`. Low-priority; do when already touching them.
+> **Status (2026-06-22):** the `skeet-store` pass closed exactly one rust-patterns
+> item — **`ParseZoneError`** (part of #1). Everything else lives in *other* crates
+> and is scheduled under the per-crate passes in `docs/next-slices.md`, tagged below
+> as **[firehose slice]** (*robust … firehose consumption + `skeet-prune` review/re-org*,
+> Group 0 — `skeet-prune` + firehose-adjacent `bluesky`/prune config) or
+> **[remaining-crates slice]** (*1.0 refactor … focussed on remaining crates*).
+
+1. **Add `ParseRejectionError`** (§3) — one small enum replacing `type Err = String` in `Rejection`/`RejectionCategory` `FromStr`. (`ParseZoneError` ✅ done in the store pass.) → **[remaining-crates slice]**, Shared/support libs (`shared`).
+2. **Validate `ModelProvider` and `Purpose` constructors** (§4). → **[remaining-crates slice]** — `ModelProvider` (`shared/refine_model.rs`) under the ML-libs + `skeet-refine` pass; `Purpose` (`eval`) under Shared/support libs.
+3. **Close `&str` gaps at four call sites** (§2). → `bsky_cdn_thumbnail_url` + `blocked_labels` (`bluesky`) under **[firehose slice]**, Group 0; `SkeetId::for_post` (`shared`) + `FeedConfig` accessors (`skeet-feed`) under **[remaining-crates slice]** (Shared/support + Web services).
+4. **Replace `Box<dyn Error>` in `PruneConfig::from_file` and `BlocklistConfig`** (§7) — both prune config in `shared`. → **[firehose slice]**, Group 0.
+5. **Tighten `pub mod` to `mod` + `pub use`** in `skeet-appraise`, `skeet-feed`, `skeet-publish` (§6). → **[remaining-crates slice]** (Web services + Publishing). Low-priority; do when already touching them.
 6. **Skip unless revisiting architecture:** TypeState for pipeline assembly (§5), zero-copy views (§8), combinator-style filter composition (§9) — all assessed as wrong fit or insufficient payoff.
 
 A read of the full codebase (~17 crates, ~20k LOC) through the lens of
@@ -178,7 +185,7 @@ The type system carries the proof."
 Bobby follows this for ~25 NewTypes, each with a dedicated error. Three
 exceptions use `type Err = String`:
 
-- `Zone::FromStr` at `shared/src/zone.rs:47`
+- `Zone::FromStr` — ✅ **done** (now returns `ParseZoneError`; closed in the store pass)
 - `Rejection::FromStr` at `shared/src/rejection.rs:21`
 - `RejectionCategory::FromStr` at `shared/src/rejection.rs:91`
 
@@ -187,8 +194,10 @@ Every other `FromStr` in the codebase returns a dedicated error
 break the pattern, and downstream code that catches the parse failure gets an
 opaque `String` instead of a matchable variant.
 
-**Fix:** add `ParseZoneError` and `ParseRejectionError` (two small enums),
-matching the recipe used everywhere else.
+**Fix (remaining):** add `ParseRejectionError` (covering `Rejection` +
+`RejectionCategory`), matching the recipe used everywhere else; `ParseZoneError` is
+already done. Scheduled in `docs/next-slices.md` → *remaining-crates* slice,
+Shared/support libs (`shared`).
 
 ---
 

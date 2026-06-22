@@ -116,6 +116,90 @@ The general bias is to refactor towards patterns and structures that are the bes
 * [ ] **Shared/support libs — `shared`, `bluesky`, `web-support`, `build-support`, `test-support`, `eval`.** Cross-crate types and helpers; check `shared`'s types stay pure data (no policy methods).
 * [ ] **Metrics exporters — `cloudflare-exporter`, `openai-exporter`.** Confirm both are still wired up and used; delete if obsolete.
 
+## Slice: `skeet-store` engine & storage scaling
+
+These were identified in the "1.0 refactor, review and code minimisation, focussed on skeet-store" slice but deliberately deferred as too large for that slice. Each is gated 
+on data scale, needs a dependency upgrade, or is strategic. Captured here so the analysis survives the slices summarisation.
+
+Analysis assumed these pins: `lancedb 0.27.2` / `lance 4.0.0` / `arrow 57`. None of the no-upgrade items below need the lance 0.30 bump.
+
+### Engine pushdown (no upgrade; gated on scale)
+
+Several read paths materialise whole tables into Rust and compute there — fine at
+current volume, revisit when the images table is big enough to hurt.
+
+* [ ] **Paging pushdown.** `list_summaries_page` pushes the `discovered_at < cursor`
+  filter down but then collects *every* matching row, sorts in memory, and truncates
+  to `limit` — O(rows-before-cursor), not O(limit). The high-level `lancedb 0.27.2`
+  `Query` builder has `limit`/`offset` but **no `order_by`**, so the in-memory sort is
+  a workaround for a missing method. Fix via the `lance 4.0.0` `Scanner` (`as_native()`,
+  already used elsewhere): `order_by(discovered_at desc)` + `limit(n+1)`, letting the
+  `discovered_at` scalar index do the work.
+* [ ] **Aggregation/distinct pushdown.** `count_scored_images`,
+  `count_scores_by_model_version`, `unique_skeet_ids`, and the in-memory sort in
+  `list_all_image_ids_by_most_recent` scan + compute in Rust. Push down via the lance
+  `Scanner` `count_star`/`count`/`aggregate` (or DataFusion SQL). Leave the
+  version-gated `cached_scores` full-scan as-is — it's cached and the known-versions
+  filter is awkward as pushdown.
+
+### DataFusion-direct (the pragmatic path; subsumes the above)
+
+* [ ] `lancedb`/`lance` *are* DataFusion apps; `lance` exposes `LanceTableProvider` + a
+  SQL entry point. "Use DataFusion directly" is **not** a migration — register a
+  table's `Dataset` as a `LanceTableProvider` in a `SessionContext` and run
+  `SELECT … ORDER BY … LIMIT n` / `GROUP BY` for the complex reads, per-method,
+  incrementally, data staying in Lance. The typed-`only_if_expr` work from the store
+  pass is the groundwork (one query-construction seam in `adapters/lance/query.rs`).
+  Low cost, additive, no architectural commitment; resolves the pushdown items as a
+  side effect.
+
+### LanceDB 0.30 upgrade (a project, not an afternoon)
+
+* [ ] `lancedb 0.30.0` pins `lance =7.0.0` + `arrow 58` + `datafusion 53` → a
+  **workspace-wide `arrow 57→58` bump and `lance 4→7` (three majors)**. Budget for it;
+  do it *after* the no-upgrade pushdown work. What it buys: `order_by` on the high-level
+  `Query` builder (paging without dropping to `Scanner`), DataFusion `Expr` predicates
+  for `merge_insert`/deletes, **Lance Namespace** (catalog), and unenforced primary keys.
+
+### Blob v2 for the 2 MB PNGs (storage/compaction; needs `images_v7`)
+
+* [ ] Images are inline `LargeBinary` today; columnar projection already keeps pixels
+  out of summary scans, so this is a **compaction/storage-layout** win (could relieve
+  the hand-tuned `target_rows_per_fragment=500` memory hack in maintenance), **not** a
+  read-latency one. Lance 4.0.0 blob v2 is a `Struct<data: LargeBinary?, uri: Utf8?>`
+  column (inline `data` *or* external `uri`) with dedicated `optimize` blob handling —
+  but it's **lance-dataset-level** (lancedb's high-level `Table` doesn't surface it even
+  in 0.30) and needs an `images_v7` schema bump. Worth it only if the compaction memory
+  tuning becomes fragile.
+
+### Lance Namespace as the prod/staging home (with/after 0.30)
+
+* [ ] The prod/staging split is currently table-name conventions (`docs/versioning.md`).
+  Lance Namespace (SDK 1.0, exposed on the connection in lancedb 0.29/0.30, versioned
+  like the Iceberg REST Catalog spec) is a structural home for it — adopt alongside the
+  0.30 upgrade if the naming convention starts to chafe.
+
+### Read/write capability split (type-level safety; consciously deferred)
+
+* [ ] The store-pass carve was by-thing (Images/Scores/…); the review's other option
+  was a **read/write capability split** — a read-only interface (`trait ImageReader`/
+  `ScoreReader`, or a `ReadStore`) that reader-side consumers depend on so they *cannot*
+  call `add`/`upsert`/`delete`. This makes the prod/staging "readers are covariant; never
+  run a staging *writer* against the shared store" rule — today a runtime
+  `--allow-shared-store-write` flag — a **compile-time** fact. The concrete `SkeetStore`
+  implements both halves; writers take the full type. Layers over the existing ports.
+
+### Strong-consistency read tuning (small)
+
+* [ ] Every read uses `read_consistency_interval(Duration::ZERO)` (re-checks the manifest
+  each op; every Strong read pays a growing R2 LIST, bounded by hourly manifest pruning).
+  A deliberate correctness choice — but read-mostly paths (feed serving) might tolerate a
+  few seconds of staleness for fewer R2 LISTs. Consider surfacing the interval through
+  `StoreArgs` per-CLI.
+
+> Iceberg was considered and rejected as a storage backend — that durable decision
+> now lives in `docs/architecture.md` (Constraints / Technology Choices), not here.
+
 ## Slice: try using embeddings for classification/scoring in refine
 
 ### Target

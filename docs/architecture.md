@@ -21,6 +21,7 @@ The original project scanned Twitter's firehose, applied face detection (via Ope
 - **Burn:** use [Burn](https://burn.dev) ([GitHub](https://github.com/tracel-ai/burn)) for running ML models
 - **Sampling:** processing at line-speed may not be possible — sampling is fine. Simple parts (e.g. checking if a message contains an image) should be inline with receiving a message.
 - **Interactive UI:** prefer [htmx](https://htmx.org) for interactivity in HTML views (server-rendered templates returning HTML fragments). Avoid client-side JS frameworks unless htmx is genuinely insufficient.
+- **Storage — LanceDB on R2, not Iceberg:** the store (`skeet-store`) is [LanceDB](https://lancedb.com) over Cloudflare R2. **Iceberg was considered and rejected.** It's a workload *mismatch* — Bobby does point lookups by content-hash `image_id` and stores ~2 MB image blobs per row, which Lance's scalar indices + blob handling serve well; Iceberg/Parquet is tuned for large analytical scans with file-level pruning and has no scalar point index, so it would be a downgrade. Adopting it is also a data-format migration, not an API swap. The one genuine draw — an open multi-engine catalog — is reachable via Lance Namespace without leaving Lance.
 
 ## Prune and Refine Pattern
 
