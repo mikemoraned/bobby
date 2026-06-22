@@ -94,7 +94,8 @@ Each crate gets at least one full human pass: read all code, delete dead code, r
 
 #### Wrap-up
 
-* [ ] **Capture all changes and verify.** Ensure CLAUDE.md / docs references to moved paths are updated, then run `just clippy`, `just test-no-docker`, and `just mutants-on-diff` clean.
+* [x] **Capture all changes and verify.** Ensure CLAUDE.md / docs references to moved paths are updated, then run `just clippy`, `just test-no-docker`, and `just mutants-on-diff` clean.
+    * Doc path-refs updated (`docs/versioning.md`, `docs/next-slices.md`) for the `cluster.just`→`cluster-deploy.just` split; `just clippy` + `just test-no-docker` both green. `just mutants-on-diff` **skipped by decision** — needs Docker (mutants' default nextest profile includes the `_docker` integ tests) and the diff-vs-`main` is the whole slice.
 
 ### Tasks: Features
 

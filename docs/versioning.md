@@ -205,10 +205,10 @@ Data-plane versioning (above) is separate from compute isolation. All current
 `infra/k8s` components — `pruner`, `live-refine`, `skeet-publish`, the three
 exporter cronjobs, `optimise`, and the `OnePasswordItem` secrets — live in the
 **`production`** namespace (`infra/k8s/namespace.yaml`, applied before the
-secrets in `just cluster-1password-secrets-install`). `just/cluster.just` targets
-that namespace (`NAMESPACE := "production"`) in every deploy / rollout / logs /
-scale / status recipe and when creating the `ghcr-pull-secret`. The feed runs on
-Fly, not k8s.
+secrets in `just cluster-1password-secrets-install`). `NAMESPACE := "production"`
+(defined in `just/cluster.just`) is the target of every deploy / rollout / logs /
+scale / status recipe (`just/cluster-deploy.just`) and of the `ghcr-pull-secret`
+creation (`just/cluster.just`). The feed runs on Fly, not k8s.
 
 A worktree that needs to run a *changed* component runs it in its own namespace,
 sharing the backend stores; unchanged components are not duplicated. Keep it
@@ -221,4 +221,5 @@ OTel `deployment.environment` stays `hetzner`: it names *where* the code runs
 ## Build & deploy
 
 Build and deployment stay local on the laptop; all invocations are captured in
-the Justfile (`just/container.just`, `just/cluster.just`, `just/refine.just`).
+the Justfile (`just/container.just` build/push, `just/cluster.just` provisioning,
+`just/cluster-deploy.just` deploy/rollback, `just/refine.just` promotion).
