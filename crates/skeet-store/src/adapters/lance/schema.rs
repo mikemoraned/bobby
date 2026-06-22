@@ -9,9 +9,9 @@ use enum_map::Enum;
 ///
 /// Keying the [`SkeetStore`](crate::SkeetStore) table handles by this enum (via
 /// an `EnumMap`) makes "do this for every table" total and exhaustive: adding a
-/// variant is a compile error until every `match` and the `enum_map!`
-/// constructor handle it. [`as_str`](Self::as_str) yields the on-disk name for
-/// the string-keyed [`TableVersions`](crate::TableVersions) port.
+/// variant is a compile error until every `match` (`as_str`, [`spec`](Self::spec))
+/// handles it. [`as_str`](Self::as_str) yields the on-disk name for the
+/// string-keyed [`TableVersions`](crate::TableVersions) port.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Enum)]
 pub enum TableName {
     Images,
@@ -40,6 +40,41 @@ impl TableName {
             .map(Self::from_usize)
             .find(|t| t.as_str() == name)
     }
+
+    /// How this table is created and indexed — the single declarative description
+    /// `open()` iterates over. Adding a table variant forces a `spec` arm here.
+    pub(super) fn spec(self) -> TableSpec {
+        match self {
+            Self::Images => TableSpec {
+                schema: images_v6_schema,
+                indexed_columns: &["image_id", "discovered_at"],
+            },
+            Self::Scores => TableSpec {
+                schema: images_score_v2_schema,
+                indexed_columns: &["image_id", "model_version"],
+            },
+            Self::Validate => TableSpec {
+                schema: validate_v1_schema,
+                indexed_columns: &[],
+            },
+            Self::SkeetAppraisal => TableSpec {
+                schema: manual_skeet_appraisal_v1_schema,
+                indexed_columns: &["skeet_id"],
+            },
+            Self::ImageAppraisal => TableSpec {
+                schema: manual_image_appraisal_v1_schema,
+                indexed_columns: &["image_id"],
+            },
+        }
+    }
+}
+
+/// Declarative create/index description for one table: its Arrow schema and the
+/// columns to BTree-index. Drives `open()`'s create-if-missing / index-if-missing
+/// pass so each is written once.
+pub(super) struct TableSpec {
+    pub schema: fn() -> Arc<Schema>,
+    pub indexed_columns: &'static [&'static str],
 }
 
 impl fmt::Display for TableName {
