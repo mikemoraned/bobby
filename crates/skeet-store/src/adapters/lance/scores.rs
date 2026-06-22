@@ -11,7 +11,7 @@ use super::arrow::typed_column;
 use super::decode::{decode_rows, decode_score_row, score_columns};
 use super::query::{col_eq, col_in, execute_query};
 use super::schema::{TableName, images_score_v2_schema};
-use crate::{ModelScore, ModelVersion, Score, Scores, SkeetStore, StoreError};
+use crate::{ModelScore, ModelVersion, Scores, SkeetStore, StoreError};
 
 #[async_trait]
 impl Scores for SkeetStore {
@@ -65,18 +65,10 @@ impl Scores for SkeetStore {
             .limit(1);
         let batches = execute_query(&query, "get_score").await?;
 
-        if batches.is_empty() || batches[0].num_rows() == 0 {
-            return Ok(None);
-        }
-
-        let scores = typed_column::<Float32Array>(&batches[0], "score")?;
-        let model_versions = typed_column::<StringArray>(&batches[0], "model_version")?;
-        let score = Score::new(scores.value(0))?;
-        let model_version = ModelVersion::from(model_versions.value(0));
-        Ok(Some(ModelScore {
-            score,
-            model_version,
-        }))
+        Ok(decode_rows(&batches, score_columns, decode_score_row)?
+            .into_iter()
+            .next()
+            .map(|(_, ms)| ms))
     }
 
     #[instrument(skip(self))]

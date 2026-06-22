@@ -254,29 +254,19 @@ impl<S: ScoredView + AppraisalsSource + Scores + TableVersions> FeedPublisher<S>
             .unwrap_or_else(chrono::Duration::zero);
 
         let known_versions = self.models.versions().cloned().collect();
-        let entries = self
-            .store
-            .list_scored_summaries_published_since(now - widest, &known_versions)
-            .await?;
-        let skeet_appraisals = self
-            .store
-            .skeet_appraisals()
-            .list_all()
-            .await?
-            .into_iter()
-            .collect();
-        let image_appraisals = self
-            .store
-            .image_appraisals()
-            .list_all()
-            .await?
-            .into_iter()
-            .collect();
+        let skeet_src = self.store.skeet_appraisals();
+        let image_src = self.store.image_appraisals();
+        let (entries, skeet_appraisals, image_appraisals) = tokio::try_join!(
+            self.store
+                .list_scored_summaries_published_since(now - widest, &known_versions),
+            skeet_src.list_all(),
+            image_src.list_all(),
+        )?;
 
         Ok(WindowedFeed {
             entries,
-            skeet_appraisals,
-            image_appraisals,
+            skeet_appraisals: skeet_appraisals.into_iter().collect(),
+            image_appraisals: image_appraisals.into_iter().collect(),
             models: Arc::clone(&self.models),
         })
     }

@@ -23,13 +23,14 @@ impl ScoredView for SkeetStore {
         &self,
         since: Option<&DiscoveredAt>,
     ) -> Result<Vec<ImageId>, StoreError> {
-        let all_ids = self.list_all_image_ids_by_most_recent(since).await?;
-
         let scored_query = self
             .table(TableName::Scores)
             .query()
             .select(lancedb::query::Select::columns(&["image_id"]));
-        let scored_batches = execute_query(&scored_query, "list_unscored:scored_ids").await?;
+        let (all_ids, scored_batches) = tokio::try_join!(
+            self.list_all_image_ids_by_most_recent(since),
+            execute_query(&scored_query, "list_unscored:scored_ids"),
+        )?;
 
         let scored: std::collections::HashSet<String> = decode_rows(
             &scored_batches,
@@ -181,11 +182,7 @@ impl SkeetStore {
             "read scores (after age filter)"
         );
 
-        all_scores.sort_by(|a, b| {
-            b.0.score
-                .partial_cmp(&a.0.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        all_scores.sort_by(|a, b| b.0.score.cmp(&a.0.score));
         all_scores.truncate(limit);
         Ok(all_scores)
     }
@@ -276,12 +273,7 @@ impl SkeetStore {
 
         info!(matched_rows = scored.len(), "joined scores with summaries");
 
-        scored.sort_by(|a, b| {
-            b.scored
-                .score
-                .partial_cmp(&a.scored.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        scored.sort_by(|a, b| b.scored.score.cmp(&a.scored.score));
         Ok(scored)
     }
 }

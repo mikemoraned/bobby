@@ -94,7 +94,7 @@ impl SkeetStore {
             .only_if_expr(col_eq_int("random_number", random_number));
         let result_batches = execute_query(&query, "validate").await?;
 
-        if result_batches.is_empty() {
+        if result_batches.is_empty() || result_batches[0].num_rows() == 0 {
             return Err(StoreError::ValidationFailed(
                 "no rows returned for validation query".to_string(),
             ));
@@ -102,12 +102,6 @@ impl SkeetStore {
 
         let timestamps =
             typed_column::<TimestampMicrosecondArray>(&result_batches[0], "timestamp")?;
-        if result_batches[0].num_rows() == 0 {
-            return Err(StoreError::ValidationFailed(
-                "no rows returned for validation query".to_string(),
-            ));
-        }
-
         let found_micros = timestamps.value(0);
         if found_micros != timestamp_micros {
             return Err(StoreError::ValidationFailed(format!(
