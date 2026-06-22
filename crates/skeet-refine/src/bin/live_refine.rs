@@ -9,7 +9,7 @@ use skeet_refine::refining::{
     RefineAgent, ScoringOutcome, build_agent, create_client, refine_image_resilient,
 };
 use skeet_refine::tick::{RunningTotals, ScoringFailure, TickAccumulator};
-use skeet_store::{Scores, StoreArgs, StoreMetrics};
+use skeet_store::{ModelScore, Scores, StoreArgs, StoreMetrics};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::info;
@@ -131,7 +131,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             vec![]
         } else {
             let scores = acc.scores();
-            store.batch_upsert_scores(&acc.pending_scores).await?;
+            // Adapt the accumulator's (id, score, version) triples to the store's
+            // ModelScore boundary; retyping `pending_scores` itself is a later slice.
+            let to_upsert: Vec<_> = acc
+                .pending_scores
+                .iter()
+                .map(|(id, score, model_version)| {
+                    (
+                        id.clone(),
+                        ModelScore {
+                            score: *score,
+                            model_version: model_version.clone(),
+                        },
+                    )
+                })
+                .collect();
+            store.batch_upsert_scores(&to_upsert).await?;
             info!(
                 scored = acc.pending_scores.len(),
                 remaining = acc.remaining(unscored_count),

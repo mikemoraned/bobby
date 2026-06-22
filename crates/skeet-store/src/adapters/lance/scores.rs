@@ -11,23 +11,26 @@ use super::arrow::typed_column;
 use super::decode::{decode_rows, decode_score_row, score_columns};
 use super::query::execute_query;
 use super::schema::{TableName, images_score_v2_schema};
-use crate::{ModelVersion, Score, Scores, SkeetStore, StoreError};
+use crate::{ModelScore, ModelVersion, Score, Scores, SkeetStore, StoreError};
 
 #[async_trait]
 impl Scores for SkeetStore {
     #[instrument(skip(self))]
     async fn batch_upsert_scores(
         &self,
-        scores: &[(ImageId, Score, ModelVersion)],
+        scores: &[(ImageId, ModelScore)],
     ) -> Result<(), StoreError> {
         if scores.is_empty() {
             return Ok(());
         }
 
         let schema = images_score_v2_schema();
-        let image_ids: Vec<String> = scores.iter().map(|(id, _, _)| id.to_string()).collect();
-        let score_vals: Vec<f32> = scores.iter().map(|(_, s, _)| f32::from(*s)).collect();
-        let model_versions: Vec<String> = scores.iter().map(|(_, _, mv)| mv.to_string()).collect();
+        let image_ids: Vec<String> = scores.iter().map(|(id, _)| id.to_string()).collect();
+        let score_vals: Vec<f32> = scores.iter().map(|(_, ms)| f32::from(ms.score)).collect();
+        let model_versions: Vec<String> = scores
+            .iter()
+            .map(|(_, ms)| ms.model_version.to_string())
+            .collect();
 
         let batch = RecordBatch::try_new(
             schema.clone(),
@@ -54,10 +57,7 @@ impl Scores for SkeetStore {
     }
 
     #[instrument(skip(self))]
-    async fn get_score(
-        &self,
-        image_id: &ImageId,
-    ) -> Result<Option<(Score, ModelVersion)>, StoreError> {
+    async fn get_score(&self, image_id: &ImageId) -> Result<Option<ModelScore>, StoreError> {
         let query = self
             .table(TableName::Scores)
             .query()
@@ -73,14 +73,17 @@ impl Scores for SkeetStore {
         let model_versions = typed_column::<StringArray>(&batches[0], "model_version")?;
         let score = Score::new(scores.value(0))?;
         let model_version = ModelVersion::from(model_versions.value(0));
-        Ok(Some((score, model_version)))
+        Ok(Some(ModelScore {
+            score,
+            model_version,
+        }))
     }
 
     #[instrument(skip(self))]
     async fn list_scores_for_ids(
         &self,
         image_ids: &[ImageId],
-    ) -> Result<HashMap<ImageId, (Score, ModelVersion)>, StoreError> {
+    ) -> Result<HashMap<ImageId, ModelScore>, StoreError> {
         if image_ids.is_empty() {
             return Ok(HashMap::new());
         }

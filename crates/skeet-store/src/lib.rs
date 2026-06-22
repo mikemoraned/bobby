@@ -19,7 +19,10 @@ pub mod versioned_cache;
 pub use adapters::lance::{SkeetStore, TableName};
 pub use adapters::object_store::StoreArgs;
 pub use error::StoreError;
-pub use model::{ImageRecord, StoredImage, StoredImageSummary, StoredOriginal, Version};
+pub use model::{
+    ImageRecord, ModelScore, ScoredSummary, StoredImage, StoredImageSummary, StoredOriginal,
+    Version,
+};
 pub use observability::StoreMetrics;
 pub use ports::{Appraisals, AppraisalsSource, Images, ScoredView, Scores, TableVersions};
 pub use shared::{Appraiser, Band, ImageId, ModelVersion, Score};

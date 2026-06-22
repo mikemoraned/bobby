@@ -23,7 +23,7 @@ use skeet_appraise::{
     AppraiserLayer, ModelsLayer, OAuthConfigLayer, PublishedFeedLayer, StartedAtLayer, StoreLayer,
 };
 use skeet_store::test_utils::{make_record, open_temp_store};
-use skeet_store::{Images, ModelVersion, Score, Scores, SkeetStore};
+use skeet_store::{Images, ModelScore, ModelVersion, Score, Scores, SkeetStore};
 use test_support::test_models;
 use testcontainers::core::{IntoContainerPort, WaitFor};
 use testcontainers::runners::AsyncRunner;
@@ -109,8 +109,10 @@ async fn seed_store(store: &SkeetStore, suffix: &str) {
     store
         .upsert_score(
             &image_id,
-            &Score::new(0.85).expect("valid score"),
-            &ModelVersion::from("test"),
+            ModelScore {
+                score: Score::new(0.85).expect("valid score"),
+                model_version: ModelVersion::from("test"),
+            },
         )
         .await
         .expect("upsert score");

@@ -7,7 +7,7 @@ use chrono::Utc;
 use shared::{BlueskyCid, DiscoveredAt, ImageId, OriginalAt, Zone};
 use skeet_publish::connect;
 use skeet_store::test_utils::test_image;
-use skeet_store::{ImageRecord, Images, ModelVersion, Score, Scores, SkeetStore};
+use skeet_store::{ImageRecord, Images, ModelScore, ModelVersion, Score, Scores, SkeetStore};
 use testcontainers::ContainerAsync;
 use testcontainers_modules::redis::{REDIS_PORT, Redis};
 use tokio::time::{Instant, sleep};
@@ -58,8 +58,10 @@ pub async fn seed(store: &SkeetStore) {
         store
             .upsert_score(
                 &record.image_id,
-                &Score::new(score).expect("valid score"),
-                &mv,
+                ModelScore {
+                    score: Score::new(score).expect("valid score"),
+                    model_version: mv.clone(),
+                },
             )
             .await
             .expect("upsert score");

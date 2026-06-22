@@ -61,7 +61,7 @@ impl SkeetStore {
 mod tests {
     use super::*;
     use crate::test_utils::{make_record, open_temp_store};
-    use crate::{Images, ModelVersion, Score, Scores};
+    use crate::{Images, ModelScore, ModelVersion, Score, Scores};
 
     fn names(snapshot: &HashSet<Version>) -> HashSet<String> {
         snapshot.iter().map(|v| v.name.clone()).collect()
@@ -123,8 +123,10 @@ mod tests {
         store
             .upsert_score(
                 &record.image_id,
-                &Score::new(0.5).expect("valid score"),
-                &ModelVersion::from("test"),
+                ModelScore {
+                    score: Score::new(0.5).expect("valid score"),
+                    model_version: ModelVersion::from("test"),
+                },
             )
             .await
             .expect("upsert score");

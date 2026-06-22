@@ -11,5 +11,5 @@ mod score;
 mod version;
 
 pub use image::{ImageRecord, StoredImage, StoredImageSummary, StoredOriginal};
-pub use score::ScoresMap;
+pub use score::{ModelScore, ScoredSummary, ScoresMap};
 pub use version::Version;

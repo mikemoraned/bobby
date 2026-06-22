@@ -12,7 +12,7 @@ use super::query::execute_query;
 use super::schema::TableName;
 use crate::model::ScoresMap;
 use crate::{
-    Images, ModelVersion, Score, ScoredView, SkeetStore, StoreError, StoredImageSummary,
+    Images, ModelScore, ModelVersion, ScoredSummary, ScoredView, SkeetStore, StoreError,
     TableVersions,
 };
 
@@ -51,7 +51,7 @@ impl ScoredView for SkeetStore {
         limit: usize,
         max_age_hours: Option<u64>,
         known_versions: &HashSet<ModelVersion>,
-    ) -> Result<Vec<(StoredImageSummary, Score, ModelVersion)>, StoreError> {
+    ) -> Result<Vec<ScoredSummary>, StoreError> {
         if limit > Self::MAX_SCORED_SUMMARIES {
             return Err(StoreError::LimitExceeded {
                 requested: limit,
@@ -76,20 +76,20 @@ impl ScoredView for SkeetStore {
         &self,
         cutoff: chrono::DateTime<chrono::Utc>,
         known_versions: &HashSet<ModelVersion>,
-    ) -> Result<Vec<(StoredImageSummary, Score, ModelVersion)>, StoreError> {
+    ) -> Result<Vec<ScoredSummary>, StoreError> {
         let windowed_ids = self.find_image_ids_published_since(cutoff).await?;
         if windowed_ids.is_empty() {
             return Ok(Vec::new());
         }
 
         let all_scores = self.cached_scores().await?;
-        let scored: Vec<(Score, ModelVersion, ImageId)> = windowed_ids
+        let scored: Vec<(ModelScore, ImageId)> = windowed_ids
             .iter()
             .filter_map(|id| {
                 all_scores
                     .get(id)
-                    .filter(|(_, mv)| known_versions.contains(mv))
-                    .map(|(score, mv)| (*score, mv.clone(), id.clone()))
+                    .filter(|vs| known_versions.contains(&vs.model_version))
+                    .map(|vs| (vs.clone(), id.clone()))
             })
             .collect();
         if scored.is_empty() {
@@ -169,21 +169,25 @@ impl SkeetStore {
         limit: usize,
         recent_ids: &Option<std::collections::HashSet<ImageId>>,
         known_versions: &HashSet<ModelVersion>,
-    ) -> Result<Vec<(Score, ModelVersion, ImageId)>, StoreError> {
+    ) -> Result<Vec<(ModelScore, ImageId)>, StoreError> {
         let all_scores_map = self.cached_scores().await?;
 
-        let mut all_scores: Vec<(Score, ModelVersion, ImageId)> = all_scores_map
+        let mut all_scores: Vec<(ModelScore, ImageId)> = all_scores_map
             .iter()
             .filter(|(id, _)| recent_ids.as_ref().is_none_or(|recent| recent.contains(id)))
-            .filter(|(_, (_, mv))| known_versions.contains(mv))
-            .map(|(id, (score, mv))| (*score, mv.clone(), id.clone()))
+            .filter(|(_, vs)| known_versions.contains(&vs.model_version))
+            .map(|(id, vs)| (vs.clone(), id.clone()))
             .collect();
         info!(
             score_rows = all_scores.len(),
             "read scores (after age filter)"
         );
 
-        all_scores.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        all_scores.sort_by(|a, b| {
+            b.0.score
+                .partial_cmp(&a.0.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         all_scores.truncate(limit);
         Ok(all_scores)
     }
@@ -234,16 +238,14 @@ impl SkeetStore {
     #[instrument(skip(self, top_scores))]
     async fn fetch_summaries_for_scores(
         &self,
-        top_scores: &[(Score, ModelVersion, ImageId)],
-    ) -> Result<Vec<(StoredImageSummary, Score, ModelVersion)>, StoreError> {
-        let score_map: HashMap<&ImageId, (Score, ModelVersion)> = top_scores
-            .iter()
-            .map(|(s, mv, id)| (id, (*s, mv.clone())))
-            .collect();
+        top_scores: &[(ModelScore, ImageId)],
+    ) -> Result<Vec<ScoredSummary>, StoreError> {
+        let score_map: HashMap<&ImageId, &ModelScore> =
+            top_scores.iter().map(|(vs, id)| (id, vs)).collect();
 
         let in_list = top_scores
             .iter()
-            .map(|(_, _, id)| format!("'{id}'"))
+            .map(|(_, id)| format!("'{id}'"))
             .collect::<Vec<_>>()
             .join(", ");
         let filter = format!("image_id IN ({in_list})");
@@ -268,17 +270,24 @@ impl SkeetStore {
             "read summaries for top scores"
         );
 
-        let mut scored: Vec<(StoredImageSummary, Score, ModelVersion)> = summaries
+        let mut scored: Vec<ScoredSummary> = summaries
             .into_iter()
-            .filter_map(|s| {
-                let entry = score_map.get(&s.image_id).cloned();
-                entry.map(|(sc, mv)| (s, sc, mv))
+            .filter_map(|summary| {
+                score_map.get(&summary.image_id).map(|vs| ScoredSummary {
+                    summary,
+                    scored: (*vs).clone(),
+                })
             })
             .collect();
 
         info!(matched_rows = scored.len(), "joined scores with summaries");
 
-        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.scored
+                .score
+                .partial_cmp(&a.scored.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         Ok(scored)
     }
 }

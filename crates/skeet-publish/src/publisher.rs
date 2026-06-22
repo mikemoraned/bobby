@@ -7,8 +7,8 @@ use chrono::{DateTime, Utc};
 use deadpool_redis::redis;
 use shared::{Appraisal, Band, ImageId, NormalizedScore, OriginalAt, RefineModels, SkeetId};
 use skeet_store::{
-    AppraisalsSource, ModelVersion, Score, ScoredView, Scores, StoreError, StoredImageSummary,
-    TableVersions, Version, VersionedCache,
+    AppraisalsSource, ModelScore, ScoredSummary, ScoredView, Scores, StoreError, TableVersions,
+    Version, VersionedCache,
 };
 use tokio::sync::RwLock;
 
@@ -28,14 +28,14 @@ use crate::visibility::FeedData;
 /// Assembled from an uncapped, recency-windowed store query, and implements
 /// [`FeedData`] so the shared visibility policy runs over it.
 pub struct WindowedFeed {
-    pub entries: Vec<(StoredImageSummary, Score, ModelVersion)>,
+    pub entries: Vec<ScoredSummary>,
     pub skeet_appraisals: HashMap<SkeetId, Appraisal>,
     pub image_appraisals: HashMap<ImageId, Appraisal>,
     pub models: Arc<RefineModels>,
 }
 
 impl FeedData for WindowedFeed {
-    fn entries(&self) -> &[(StoredImageSummary, Score, ModelVersion)] {
+    fn entries(&self) -> &[ScoredSummary] {
         &self.entries
     }
 
@@ -62,10 +62,10 @@ pub fn published_for_spec<F: FeedData>(
 ) -> Vec<PublishedImage> {
     let cutoff_us = (now - limit.window()).timestamp_micros();
 
-    let mut windowed: Vec<(StoredImageSummary, Score, ModelVersion)> = feed
+    let mut windowed: Vec<ScoredSummary> = feed
         .visible_entries()
         .into_iter()
-        .filter(|(summary, _, _)| summary.original_at.timestamp_micros() >= cutoff_us)
+        .filter(|entry| entry.summary.original_at.timestamp_micros() >= cutoff_us)
         .collect();
 
     match order {
@@ -75,7 +75,8 @@ pub fn published_for_spec<F: FeedData>(
 
     windowed
         .into_iter()
-        .filter_map(|(summary, _, _)| {
+        .filter_map(|entry| {
+            let summary = entry.summary;
             resolver
                 .resolve(&summary.skeet_id, &summary.image_id)
                 .map(|image_url| {
@@ -151,11 +152,14 @@ impl PartialOrd for RecencyRank {
     }
 }
 
-fn quality_rank<F: FeedData>(
-    feed: &F,
-    entry: &(StoredImageSummary, Score, ModelVersion),
-) -> QualityRank {
-    let (summary, score, model_version) = entry;
+fn quality_rank<F: FeedData>(feed: &F, entry: &ScoredSummary) -> QualityRank {
+    let ScoredSummary {
+        summary,
+        scored: ModelScore {
+            score,
+            model_version,
+        },
+    } = entry;
     let image_band = image_effective_band(
         *score,
         model_version,
@@ -170,8 +174,8 @@ fn quality_rank<F: FeedData>(
     }
 }
 
-fn recency_rank(entry: &(StoredImageSummary, Score, ModelVersion)) -> RecencyRank {
-    let summary = &entry.0;
+fn recency_rank(entry: &ScoredSummary) -> RecencyRank {
+    let summary = &entry.summary;
     RecencyRank {
         original_at: summary.original_at.clone(),
         image_id: summary.image_id.clone(),
@@ -369,6 +373,7 @@ mod tests {
     use shared::{
         Appraiser, Band, BlueskyCid, DiscoveredAt, OriginalAt, RefineModel, Threshold, Zone,
     };
+    use skeet_store::{ModelVersion, Score, StoredImageSummary};
     use test_support::test_models;
 
     use crate::image_url_resolver::CdnImageUrlResolver;
@@ -378,11 +383,7 @@ mod tests {
     /// A scored entry for skeet `rkey`, published `published`, with a positive
     /// score (≥ 0.5 for the `test` model) and a `V3` image id so the CDN
     /// resolver succeeds.
-    fn entry(
-        rkey: &str,
-        published: DateTime<Utc>,
-        score: f32,
-    ) -> (StoredImageSummary, Score, ModelVersion) {
+    fn entry(rkey: &str, published: DateTime<Utc>, score: f32) -> ScoredSummary {
         let summary = StoredImageSummary {
             image_id: ImageId::V3(BlueskyCid::new(CID).expect("valid cid")),
             skeet_id: format!("at://did:plc:abc/app.bsky.feed.post/{rkey}")
@@ -394,14 +395,16 @@ mod tests {
             config_version: ModelVersion::from("test"),
             detected_text: String::new(),
         };
-        (
+        ScoredSummary {
             summary,
-            Score::new(score).expect("valid score"),
-            ModelVersion::from("test"),
-        )
+            scored: ModelScore {
+                score: Score::new(score).expect("valid score"),
+                model_version: ModelVersion::from("test"),
+            },
+        }
     }
 
-    fn feed(entries: Vec<(StoredImageSummary, Score, ModelVersion)>) -> WindowedFeed {
+    fn feed(entries: Vec<ScoredSummary>) -> WindowedFeed {
         WindowedFeed {
             entries,
             skeet_appraisals: HashMap::new(),
@@ -484,7 +487,7 @@ mod tests {
         let now = Utc::now();
         // A V2 id has no recoverable cid, so the CDN resolver returns None.
         let mut bad = entry("v2", now - chrono::Duration::hours(1), 0.9);
-        bad.0.image_id = "v2:0123456789abcdef0123456789abcdef"
+        bad.summary.image_id = "v2:0123456789abcdef0123456789abcdef"
             .parse()
             .expect("valid v2 id");
         let feed = feed(vec![
@@ -505,7 +508,7 @@ mod tests {
     fn manual_band_override_hides_skeet() {
         let now = Utc::now();
         let e = entry("demoted", now - chrono::Duration::hours(1), 0.9);
-        let demoted_skeet = e.0.skeet_id.clone();
+        let demoted_skeet = e.summary.skeet_id.clone();
         let mut feed = feed(vec![e]);
         feed.skeet_appraisals.insert(
             demoted_skeet,
@@ -544,21 +547,13 @@ mod tests {
     }
 
     /// A recent entry (inside any window) scored `score` by model `model`.
-    fn entry_m(
-        now: DateTime<Utc>,
-        rkey: &str,
-        score: f32,
-        model: &str,
-    ) -> (StoredImageSummary, Score, ModelVersion) {
+    fn entry_m(now: DateTime<Utc>, rkey: &str, score: f32, model: &str) -> ScoredSummary {
         let mut e = entry(rkey, now - chrono::Duration::hours(1), score);
-        e.2 = ModelVersion::from(model);
+        e.scored.model_version = ModelVersion::from(model);
         e
     }
 
-    fn quality_feed(
-        entries: Vec<(StoredImageSummary, Score, ModelVersion)>,
-        models: Arc<RefineModels>,
-    ) -> WindowedFeed {
+    fn quality_feed(entries: Vec<ScoredSummary>, models: Arc<RefineModels>) -> WindowedFeed {
         WindowedFeed {
             entries,
             skeet_appraisals: HashMap::new(),
@@ -612,7 +607,7 @@ mod tests {
         let now = Utc::now();
         let demoted = entry_m(now, "demoted", 0.95, "t05");
         let plain = entry_m(now, "plain", 0.90, "t05");
-        let demoted_skeet = demoted.0.skeet_id.clone();
+        let demoted_skeet = demoted.summary.skeet_id.clone();
 
         // Score-alone both land in High, so the higher score (`demoted`, 0.95) leads.
         let feed = quality_feed(
@@ -660,15 +655,15 @@ mod tests {
         const CID_B: &str = "bafkreibme22gw2h7y2h7tg2fhqotaqkucnbc24deqo72b6mkl2egezxhvy";
 
         let mut a = entry_m(now, "a", 0.95, "t05");
-        a.0.image_id = ImageId::V3(BlueskyCid::new(CID).expect("valid cid"));
+        a.summary.image_id = ImageId::V3(BlueskyCid::new(CID).expect("valid cid"));
         let mut b = entry_m(now, "b", 0.95, "t05");
-        b.0.image_id = ImageId::V3(BlueskyCid::new(CID_B).expect("valid cid"));
+        b.summary.image_id = ImageId::V3(BlueskyCid::new(CID_B).expect("valid cid"));
 
-        let a_skeet = a.0.skeet_id.clone();
-        let b_skeet = b.0.skeet_id.clone();
-        let b_image = b.0.image_id.clone();
+        let a_skeet = a.summary.skeet_id.clone();
+        let b_skeet = b.summary.skeet_id.clone();
+        let b_image = b.summary.image_id.clone();
 
-        let setup = |entries: Vec<(StoredImageSummary, Score, ModelVersion)>| {
+        let setup = |entries: Vec<ScoredSummary>| {
             let mut feed = quality_feed(entries, models_with(&[("t05", 0.5)]));
             for skeet in [a_skeet.clone(), b_skeet.clone()] {
                 feed.skeet_appraisals.insert(

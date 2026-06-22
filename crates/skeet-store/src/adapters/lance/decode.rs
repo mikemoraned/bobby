@@ -5,7 +5,7 @@ use shared::{DiscoveredAt, ImageId, ModelVersion, OriginalAt, SkeetId, Zone};
 use tracing::instrument;
 
 use super::arrow::{micros_to_datetime, typed_column};
-use crate::{Score, StoreError, StoredImage, StoredImageSummary, StoredOriginal};
+use crate::{ModelScore, Score, StoreError, StoredImage, StoredImageSummary, StoredOriginal};
 
 /// Typed columns of the scores table: `(image_id, score, model_version)`. Shared
 /// by every scan that builds a [`ScoresMap`](crate::model::ScoresMap) entry.
@@ -22,11 +22,17 @@ pub fn score_columns(batch: &RecordBatch) -> Result<ScoreColumns<'_>, StoreError
 pub fn decode_score_row(
     (ids, scores, model_versions): &ScoreColumns<'_>,
     i: usize,
-) -> Result<(ImageId, (Score, ModelVersion)), StoreError> {
+) -> Result<(ImageId, ModelScore), StoreError> {
     let image_id: ImageId = ids.value(i).parse()?;
     let score = Score::new(scores.value(i))?;
     let model_version = ModelVersion::from(model_versions.value(i));
-    Ok((image_id, (score, model_version)))
+    Ok((
+        image_id,
+        ModelScore {
+            score,
+            model_version,
+        },
+    ))
 }
 
 pub struct SummaryColumns<'a> {

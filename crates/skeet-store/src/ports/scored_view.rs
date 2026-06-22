@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use async_trait::async_trait;
 use shared::{DiscoveredAt, ImageId};
 
-use crate::{ModelVersion, Score, StoreError, StoredImageSummary};
+use crate::{ModelVersion, ScoredSummary, StoreError};
 
 /// Cross-table read-models that join the images and scores tables.
 ///
@@ -26,7 +26,7 @@ pub trait ScoredView: Send + Sync {
         limit: usize,
         max_age_hours: Option<u64>,
         known_versions: &HashSet<ModelVersion>,
-    ) -> Result<Vec<(StoredImageSummary, Score, ModelVersion)>, StoreError>;
+    ) -> Result<Vec<ScoredSummary>, StoreError>;
     /// All scored summaries published (`original_at`) at or after `cutoff` whose
     /// `model_version` is in `known_versions`, **uncapped** and unordered (the
     /// caller orders). Unlike [`ScoredView::list_scored_summaries_by_score`] there
@@ -35,5 +35,5 @@ pub trait ScoredView: Send + Sync {
         &self,
         cutoff: chrono::DateTime<chrono::Utc>,
         known_versions: &HashSet<ModelVersion>,
-    ) -> Result<Vec<(StoredImageSummary, Score, ModelVersion)>, StoreError>;
+    ) -> Result<Vec<ScoredSummary>, StoreError>;
 }

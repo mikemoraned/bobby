@@ -17,7 +17,7 @@ use skeet_publish::{
     CdnImageUrlResolver, FeedPublisher, Limit, Order, PublishOutcome, PublishedList, connect,
 };
 use skeet_store::test_utils::open_temp_store;
-use skeet_store::{Images, ModelVersion, Score, Scores};
+use skeet_store::{Images, ModelScore, ModelVersion, Score, Scores};
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::redis::Redis;
 
@@ -72,8 +72,10 @@ async fn skips_publish_when_no_relevant_change_docker() {
     store
         .upsert_score(
             &extra.image_id,
-            &Score::new(0.8).expect("valid score"),
-            &ModelVersion::from("test"),
+            ModelScore {
+                score: Score::new(0.8).expect("valid score"),
+                model_version: ModelVersion::from("test"),
+            },
         )
         .await
         .expect("upsert extra score");

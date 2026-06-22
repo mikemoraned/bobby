@@ -23,7 +23,7 @@ use skeet_appraise::{
 };
 use skeet_publish::{Limit, Order, PublishedImage, PublishedList, PublishedListCatalog, connect};
 use skeet_store::test_utils::{make_record, make_record_at, open_temp_store, test_image};
-use skeet_store::{ImageRecord, Images, ModelVersion, Score, Scores, SkeetStore};
+use skeet_store::{ImageRecord, Images, ModelScore, ModelVersion, Score, Scores, SkeetStore};
 use test_support::test_models;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::redis::{REDIS_PORT, Redis};
@@ -93,8 +93,10 @@ async fn seed_scored(store: &SkeetStore, suffix: &str, r: u8, score: f32) -> (St
     store
         .upsert_score(
             &record.image_id,
-            &Score::new(score).expect("valid score"),
-            &ModelVersion::from("test"),
+            ModelScore {
+                score: Score::new(score).expect("valid score"),
+                model_version: ModelVersion::from("test"),
+            },
         )
         .await
         .expect("upsert score");
@@ -228,8 +230,10 @@ async fn seed_and_publishable(
     store
         .upsert_score(
             &image_id,
-            &Score::new(score).expect("valid score"),
-            &ModelVersion::from("test"),
+            ModelScore {
+                score: Score::new(score).expect("valid score"),
+                model_version: ModelVersion::from("test"),
+            },
         )
         .await
         .expect("upsert score");
@@ -271,8 +275,10 @@ async fn home_page_shows_published_entries_docker() {
     store
         .upsert_score(
             &image_id,
-            &Score::new(0.85).expect("valid score"),
-            &ModelVersion::from("test"),
+            ModelScore {
+                score: Score::new(0.85).expect("valid score"),
+                model_version: ModelVersion::from("test"),
+            },
         )
         .await
         .expect("upsert score");
@@ -431,8 +437,10 @@ async fn home_effective_band_is_capped_by_manual_skeet_band_docker() {
     store
         .upsert_score(
             &image_id,
-            &Score::new(0.95).expect("valid score"),
-            &ModelVersion::from("test"),
+            ModelScore {
+                score: Score::new(0.95).expect("valid score"),
+                model_version: ModelVersion::from("test"),
+            },
         )
         .await
         .expect("upsert score");
@@ -523,8 +531,10 @@ async fn seed_n_scored(store: &SkeetStore, n: usize) -> Vec<String> {
         store
             .upsert_score(
                 &image_id,
-                &Score::new(0.85).expect("valid score"),
-                &ModelVersion::from("test"),
+                ModelScore {
+                    score: Score::new(0.85).expect("valid score"),
+                    model_version: ModelVersion::from("test"),
+                },
             )
             .await
             .expect("upsert score");

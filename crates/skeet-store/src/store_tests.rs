@@ -4,8 +4,8 @@ use shared::{Appraisal, DiscoveredAt, OriginalAt, SkeetId, Zone};
 
 use crate::test_utils::{make_record_at, open_temp_store, test_image, test_image_with_color};
 use crate::{
-    AppraisalsSource, Appraiser, Band, ImageId, ImageRecord, Images, ModelVersion, Score,
-    ScoredView, Scores, SkeetStore, TableName,
+    AppraisalsSource, Appraiser, Band, ImageId, ImageRecord, Images, ModelScore, ModelVersion,
+    Score, ScoredView, Scores, SkeetStore, TableName,
 };
 
 /// The scores table's numeric LanceDB version counter, via the public
@@ -164,11 +164,23 @@ async fn upsert_and_read_score() {
     let score = Score::new(0.75).expect("valid score");
     let mv = test_model_version();
     store
-        .upsert_score(&record.image_id, &score, &mv)
+        .upsert_score(
+            &record.image_id,
+            ModelScore {
+                score,
+                model_version: mv.clone(),
+            },
+        )
         .await
         .unwrap();
     let result = store.get_score(&record.image_id).await.unwrap();
-    assert_eq!(result, Some((score, mv)));
+    assert_eq!(
+        result,
+        Some(ModelScore {
+            score,
+            model_version: mv
+        })
+    );
 }
 
 #[tokio::test]
@@ -180,17 +192,35 @@ async fn upsert_overwrites_existing_score() {
 
     let mv = test_model_version();
     store
-        .upsert_score(&record.image_id, &Score::new(0.5).expect("valid"), &mv)
+        .upsert_score(
+            &record.image_id,
+            ModelScore {
+                score: Score::new(0.5).expect("valid"),
+                model_version: mv.clone(),
+            },
+        )
         .await
         .unwrap();
     let new_score = Score::new(0.9).expect("valid");
     store
-        .upsert_score(&record.image_id, &new_score, &mv)
+        .upsert_score(
+            &record.image_id,
+            ModelScore {
+                score: new_score,
+                model_version: mv.clone(),
+            },
+        )
         .await
         .unwrap();
 
     let result = store.get_score(&record.image_id).await.unwrap();
-    assert_eq!(result, Some((new_score, mv)));
+    assert_eq!(
+        result,
+        Some(ModelScore {
+            score: new_score,
+            model_version: mv
+        })
+    );
 }
 
 #[tokio::test]
@@ -211,17 +241,39 @@ async fn scores_roundtrip_preserves_v1_and_v2_schemes() {
     assert_eq!(v2_mv.to_string(), "v2:def67890");
 
     store
-        .upsert_score(&r_v1.image_id, &Score::new(0.4).expect("valid"), &v1_mv)
+        .upsert_score(
+            &r_v1.image_id,
+            ModelScore {
+                score: Score::new(0.4).expect("valid"),
+                model_version: v1_mv.clone(),
+            },
+        )
         .await
         .unwrap();
     store
-        .upsert_score(&r_v2.image_id, &Score::new(0.9).expect("valid"), &v2_mv)
+        .upsert_score(
+            &r_v2.image_id,
+            ModelScore {
+                score: Score::new(0.9).expect("valid"),
+                model_version: v2_mv.clone(),
+            },
+        )
         .await
         .unwrap();
 
     // Single-row path (get_score) preserves the scheme on each entry.
-    let (_, mv_back_v1) = store.get_score(&r_v1.image_id).await.unwrap().unwrap();
-    let (_, mv_back_v2) = store.get_score(&r_v2.image_id).await.unwrap().unwrap();
+    let mv_back_v1 = store
+        .get_score(&r_v1.image_id)
+        .await
+        .unwrap()
+        .unwrap()
+        .model_version;
+    let mv_back_v2 = store
+        .get_score(&r_v2.image_id)
+        .await
+        .unwrap()
+        .unwrap()
+        .model_version;
 
     assert_eq!(mv_back_v1.scheme(), HashScheme::V1);
     assert_eq!(mv_back_v1.hash(), "abc12345");
@@ -238,7 +290,7 @@ async fn scores_roundtrip_preserves_v1_and_v2_schemes() {
         .unwrap();
     let by_id: std::collections::HashMap<_, _> = summaries
         .iter()
-        .map(|(s, _, mv)| (s.image_id.clone(), mv.clone()))
+        .map(|ss| (ss.summary.image_id.clone(), ss.scored.model_version.clone()))
         .collect();
     assert_eq!(by_id.get(&r_v1.image_id), Some(&v1_mv));
     assert_eq!(by_id.get(&r_v2.image_id), Some(&v2_mv));
@@ -258,7 +310,13 @@ async fn list_unscored_returns_images_without_scores() {
 
     let mv = test_model_version();
     store
-        .upsert_score(&r1.image_id, &Score::new(0.8).expect("valid"), &mv)
+        .upsert_score(
+            &r1.image_id,
+            ModelScore {
+                score: Score::new(0.8).expect("valid"),
+                model_version: mv.clone(),
+            },
+        )
         .await
         .unwrap();
 
@@ -279,7 +337,13 @@ async fn list_unscored_excludes_images_scored_under_any_model_version() {
 
     let old_mv = ModelVersion::from("old_v1");
     store
-        .upsert_score(&r1.image_id, &Score::new(0.8).expect("valid"), &old_mv)
+        .upsert_score(
+            &r1.image_id,
+            ModelScore {
+                score: Score::new(0.8).expect("valid"),
+                model_version: old_mv.clone(),
+            },
+        )
         .await
         .unwrap();
 
@@ -370,11 +434,23 @@ async fn list_scored_summaries_ordered_by_score() {
 
     let mv = test_model_version();
     store
-        .upsert_score(&r1.image_id, &Score::new(0.3).expect("valid"), &mv)
+        .upsert_score(
+            &r1.image_id,
+            ModelScore {
+                score: Score::new(0.3).expect("valid"),
+                model_version: mv.clone(),
+            },
+        )
         .await
         .unwrap();
     store
-        .upsert_score(&r2.image_id, &Score::new(0.9).expect("valid"), &mv)
+        .upsert_score(
+            &r2.image_id,
+            ModelScore {
+                score: Score::new(0.9).expect("valid"),
+                model_version: mv.clone(),
+            },
+        )
         .await
         .unwrap();
     // r3 not scored
@@ -384,10 +460,10 @@ async fn list_scored_summaries_ordered_by_score() {
         .await
         .unwrap();
     assert_eq!(scored.len(), 2);
-    assert_eq!(scored[0].0.image_id, r2.image_id);
-    assert_eq!(scored[0].1, Score::new(0.9).expect("valid"));
-    assert_eq!(scored[1].0.image_id, r1.image_id);
-    assert_eq!(scored[1].1, Score::new(0.3).expect("valid"));
+    assert_eq!(scored[0].summary.image_id, r2.image_id);
+    assert_eq!(scored[0].scored.score, Score::new(0.9).expect("valid"));
+    assert_eq!(scored[1].summary.image_id, r1.image_id);
+    assert_eq!(scored[1].scored.score, Score::new(0.3).expect("valid"));
 }
 
 struct CacheTestFixture {
@@ -408,7 +484,13 @@ async fn setup_cache_test(prefix: &str) -> CacheTestFixture {
 
     let mv = test_model_version();
     store
-        .upsert_score(&r1.image_id, &Score::new(0.5).expect("valid"), &mv)
+        .upsert_score(
+            &r1.image_id,
+            ModelScore {
+                score: Score::new(0.5).expect("valid"),
+                model_version: mv.clone(),
+            },
+        )
         .await
         .unwrap();
 
@@ -418,7 +500,7 @@ async fn setup_cache_test(prefix: &str) -> CacheTestFixture {
         .await
         .unwrap();
     assert_eq!(scored.len(), 1);
-    assert_eq!(scored[0].0.image_id, r1.image_id);
+    assert_eq!(scored[0].summary.image_id, r1.image_id);
 
     CacheTestFixture {
         store,
@@ -441,15 +523,15 @@ async fn assert_scores_reflect_update(
         .unwrap();
     assert_eq!(scored.len(), 2);
     assert_eq!(
-        scored[0].0.image_id, *expected_first,
+        scored[0].summary.image_id, *expected_first,
         "wrong image in first position"
     );
-    assert_eq!(scored[0].1, expected_first_score);
+    assert_eq!(scored[0].scored.score, expected_first_score);
     assert_eq!(
-        scored[1].0.image_id, *expected_second,
+        scored[1].summary.image_id, *expected_second,
         "wrong image in second position"
     );
-    assert_eq!(scored[1].1, expected_second_score);
+    assert_eq!(scored[1].scored.score, expected_second_score);
 }
 
 #[tokio::test]
@@ -459,7 +541,13 @@ async fn scores_cache_invalidated_after_write() {
 
     // Add a new score
     f.store
-        .upsert_score(&f.r2.image_id, &Score::new(0.8).expect("valid"), &mv)
+        .upsert_score(
+            &f.r2.image_id,
+            ModelScore {
+                score: Score::new(0.8).expect("valid"),
+                model_version: mv.clone(),
+            },
+        )
         .await
         .unwrap();
     assert_scores_reflect_update(
@@ -473,7 +561,13 @@ async fn scores_cache_invalidated_after_write() {
 
     // Update an existing score
     f.store
-        .upsert_score(&f.r1.image_id, &Score::new(0.95).expect("valid"), &mv)
+        .upsert_score(
+            &f.r1.image_id,
+            ModelScore {
+                score: Score::new(0.95).expect("valid"),
+                model_version: mv.clone(),
+            },
+        )
         .await
         .unwrap();
     assert_scores_reflect_update(
@@ -496,13 +590,17 @@ async fn scores_cache_invalidated_after_batch_upsert() {
         .batch_upsert_scores(&[
             (
                 f.r1.image_id.clone(),
-                Score::new(0.6).expect("valid"),
-                mv.clone(),
+                ModelScore {
+                    score: Score::new(0.6).expect("valid"),
+                    model_version: mv.clone(),
+                },
             ),
             (
                 f.r2.image_id.clone(),
-                Score::new(0.9).expect("valid"),
-                mv.clone(),
+                ModelScore {
+                    score: Score::new(0.9).expect("valid"),
+                    model_version: mv.clone(),
+                },
             ),
         ])
         .await
@@ -527,18 +625,24 @@ async fn batch_upsert_scores_version_increments_by_one() {
         .batch_upsert_scores(&[
             (
                 f.r1.image_id.clone(),
-                Score::new(0.6).expect("valid"),
-                mv.clone(),
+                ModelScore {
+                    score: Score::new(0.6).expect("valid"),
+                    model_version: mv.clone(),
+                },
             ),
             (
                 f.r2.image_id.clone(),
-                Score::new(0.9).expect("valid"),
-                mv.clone(),
+                ModelScore {
+                    score: Score::new(0.9).expect("valid"),
+                    model_version: mv.clone(),
+                },
             ),
             (
                 make_record("batch_version_extra").image_id.clone(),
-                Score::new(0.3).expect("valid"),
-                mv.clone(),
+                ModelScore {
+                    score: Score::new(0.3).expect("valid"),
+                    model_version: mv.clone(),
+                },
             ),
         ])
         .await
@@ -923,14 +1027,29 @@ async fn list_scores_for_ids_returns_matching() {
 
     let mv = test_model_version();
     let s1 = Score::new(0.7).expect("valid");
-    store.upsert_score(&r1.image_id, &s1, &mv).await.unwrap();
+    store
+        .upsert_score(
+            &r1.image_id,
+            ModelScore {
+                score: s1,
+                model_version: mv.clone(),
+            },
+        )
+        .await
+        .unwrap();
 
     let scores = store
         .list_scores_for_ids(&[r1.image_id.clone(), r2.image_id.clone()])
         .await
         .unwrap();
     assert_eq!(scores.len(), 1);
-    assert_eq!(scores[&r1.image_id], (s1, mv));
+    assert_eq!(
+        scores[&r1.image_id],
+        ModelScore {
+            score: s1,
+            model_version: mv
+        }
+    );
 }
 
 #[tokio::test]
@@ -949,7 +1068,13 @@ async fn list_scored_summaries_filters_by_max_age() {
     );
     store.add(&old).await.unwrap();
     store
-        .upsert_score(&old.image_id, &Score::new(0.9).expect("valid"), &mv)
+        .upsert_score(
+            &old.image_id,
+            ModelScore {
+                score: Score::new(0.9).expect("valid"),
+                model_version: mv.clone(),
+            },
+        )
         .await
         .unwrap();
 
@@ -957,7 +1082,13 @@ async fn list_scored_summaries_filters_by_max_age() {
     let recent = make_record("age_recent");
     store.add(&recent).await.unwrap();
     store
-        .upsert_score(&recent.image_id, &Score::new(0.5).expect("valid"), &mv)
+        .upsert_score(
+            &recent.image_id,
+            ModelScore {
+                score: Score::new(0.5).expect("valid"),
+                model_version: mv.clone(),
+            },
+        )
         .await
         .unwrap();
 
@@ -967,7 +1098,7 @@ async fn list_scored_summaries_filters_by_max_age() {
         .await
         .unwrap();
     assert_eq!(scored.len(), 1);
-    assert_eq!(scored[0].0.image_id, recent.image_id);
+    assert_eq!(scored[0].summary.image_id, recent.image_id);
 
     // With None (no age filter), both should appear
     let scored_all = store
@@ -1009,7 +1140,13 @@ async fn list_scored_summaries_published_since_windows_by_original_at_and_requir
     );
     store.add(&old).await.unwrap();
     store
-        .upsert_score(&old.image_id, &Score::new(0.9).expect("valid"), &mv)
+        .upsert_score(
+            &old.image_id,
+            ModelScore {
+                score: Score::new(0.9).expect("valid"),
+                model_version: mv.clone(),
+            },
+        )
         .await
         .unwrap();
 
@@ -1018,7 +1155,13 @@ async fn list_scored_summaries_published_since_windows_by_original_at_and_requir
     let recent = scored_record("pub_recent", (0, 10, 0), OriginalAt::new(now));
     store.add(&recent).await.unwrap();
     store
-        .upsert_score(&recent.image_id, &Score::new(0.1).expect("valid"), &mv)
+        .upsert_score(
+            &recent.image_id,
+            ModelScore {
+                score: Score::new(0.1).expect("valid"),
+                model_version: mv.clone(),
+            },
+        )
         .await
         .unwrap();
 
@@ -1032,7 +1175,7 @@ async fn list_scored_summaries_published_since_windows_by_original_at_and_requir
         .await
         .unwrap();
     assert_eq!(windowed.len(), 1);
-    assert_eq!(windowed[0].0.image_id, recent.image_id);
+    assert_eq!(windowed[0].summary.image_id, recent.image_id);
 
     // 100h window: both scored images, but not the unscored one.
     let wider = store
@@ -1040,7 +1183,7 @@ async fn list_scored_summaries_published_since_windows_by_original_at_and_requir
         .await
         .unwrap();
     let ids: std::collections::HashSet<_> =
-        wider.iter().map(|(s, _, _)| s.image_id.clone()).collect();
+        wider.iter().map(|ss| ss.summary.image_id.clone()).collect();
     assert_eq!(wider.len(), 2);
     assert!(ids.contains(&old.image_id));
     assert!(ids.contains(&recent.image_id));
@@ -1065,7 +1208,13 @@ async fn count_scored_images_counts_distinct_known_version_scores() {
         let rec = scored_record(rkey, hue, OriginalAt::new(now));
         store.add(&rec).await.unwrap();
         store
-            .upsert_score(&rec.image_id, &Score::new(0.9).expect("valid"), &known_mv)
+            .upsert_score(
+                &rec.image_id,
+                ModelScore {
+                    score: Score::new(0.9).expect("valid"),
+                    model_version: known_mv.clone(),
+                },
+            )
             .await
             .unwrap();
     }
@@ -1076,8 +1225,10 @@ async fn count_scored_images_counts_distinct_known_version_scores() {
     store
         .upsert_score(
             &unknown.image_id,
-            &Score::new(0.9).expect("valid"),
-            &unknown_mv,
+            ModelScore {
+                score: Score::new(0.9).expect("valid"),
+                model_version: unknown_mv.clone(),
+            },
         )
         .await
         .unwrap();
@@ -1097,7 +1248,13 @@ async fn score_reads_discard_unknown_model_versions() {
     let kept = scored_record("known_score", (10, 0, 0), OriginalAt::new(now));
     store.add(&kept).await.unwrap();
     store
-        .upsert_score(&kept.image_id, &Score::new(0.9).expect("valid"), &known_mv)
+        .upsert_score(
+            &kept.image_id,
+            ModelScore {
+                score: Score::new(0.9).expect("valid"),
+                model_version: known_mv.clone(),
+            },
+        )
         .await
         .unwrap();
 
@@ -1106,8 +1263,10 @@ async fn score_reads_discard_unknown_model_versions() {
     store
         .upsert_score(
             &dropped.image_id,
-            &Score::new(0.9).expect("valid"),
-            &unknown_mv,
+            ModelScore {
+                score: Score::new(0.9).expect("valid"),
+                model_version: unknown_mv.clone(),
+            },
         )
         .await
         .unwrap();
@@ -1119,14 +1278,14 @@ async fn score_reads_discard_unknown_model_versions() {
         .await
         .unwrap();
     assert_eq!(by_score.len(), 1);
-    assert_eq!(by_score[0].0.image_id, kept.image_id);
+    assert_eq!(by_score[0].summary.image_id, kept.image_id);
 
     let windowed = store
         .list_scored_summaries_published_since(now - chrono::Duration::hours(24), &registered)
         .await
         .unwrap();
     assert_eq!(windowed.len(), 1);
-    assert_eq!(windowed[0].0.image_id, kept.image_id);
+    assert_eq!(windowed[0].summary.image_id, kept.image_id);
 }
 
 #[tokio::test]
@@ -1145,7 +1304,13 @@ async fn optimise_preserves_data() {
 
     let mv = test_model_version();
     store
-        .upsert_score(&record.image_id, &Score::new(0.8).expect("valid"), &mv)
+        .upsert_score(
+            &record.image_id,
+            ModelScore {
+                score: Score::new(0.8).expect("valid"),
+                model_version: mv.clone(),
+            },
+        )
         .await
         .unwrap();
 
@@ -1154,7 +1319,13 @@ async fn optimise_preserves_data() {
     assert_eq!(store.count().await.unwrap(), 1);
     assert!(store.exists(&record.image_id).await.unwrap());
     let score = store.get_score(&record.image_id).await.unwrap();
-    assert_eq!(score, Some((Score::new(0.8).expect("valid"), mv)));
+    assert_eq!(
+        score,
+        Some(ModelScore {
+            score: Score::new(0.8).expect("valid"),
+            model_version: mv
+        })
+    );
 }
 
 #[tokio::test]
@@ -1173,7 +1344,13 @@ async fn prune_old_versions_preserves_data() {
 
     let mv = test_model_version();
     store
-        .upsert_score(&record.image_id, &Score::new(0.8).expect("valid"), &mv)
+        .upsert_score(
+            &record.image_id,
+            ModelScore {
+                score: Score::new(0.8).expect("valid"),
+                model_version: mv.clone(),
+            },
+        )
         .await
         .unwrap();
 
@@ -1182,7 +1359,13 @@ async fn prune_old_versions_preserves_data() {
     assert_eq!(store.count().await.unwrap(), 1);
     assert!(store.exists(&record.image_id).await.unwrap());
     let score = store.get_score(&record.image_id).await.unwrap();
-    assert_eq!(score, Some((Score::new(0.8).expect("valid"), mv)));
+    assert_eq!(
+        score,
+        Some(ModelScore {
+            score: Score::new(0.8).expect("valid"),
+            model_version: mv
+        })
+    );
 }
 
 #[tokio::test]
@@ -1195,7 +1378,13 @@ async fn prune_old_versions_walks_all_tables() {
     store.add(&record).await.unwrap();
     let mv = test_model_version();
     store
-        .upsert_score(&record.image_id, &Score::new(0.6).expect("valid"), &mv)
+        .upsert_score(
+            &record.image_id,
+            ModelScore {
+                score: Score::new(0.6).expect("valid"),
+                model_version: mv.clone(),
+            },
+        )
         .await
         .unwrap();
     store.validate().await.unwrap();
@@ -1220,7 +1409,10 @@ async fn prune_old_versions_walks_all_tables() {
     assert!(store.exists(&record.image_id).await.unwrap());
     assert_eq!(
         store.get_score(&record.image_id).await.unwrap(),
-        Some((Score::new(0.6).expect("valid"), mv))
+        Some(ModelScore {
+            score: Score::new(0.6).expect("valid"),
+            model_version: mv
+        })
     );
     let skeet_appraisal = store
         .skeet_appraisals()

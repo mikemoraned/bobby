@@ -128,11 +128,15 @@ impl FeedSnapshotSource {
         let items = published
             .into_iter()
             .filter_map(|item| {
-                let (score, model_version) = scores.get(&item.image_id)?;
+                let scored = scores.get(&item.image_id)?;
                 let manual_image_band = image_bands.get(&item.image_id).copied();
                 let manual_skeet_band = skeet_bands.get(&item.skeet_id).copied();
-                let image_band =
-                    image_effective_band(*score, model_version, &self.models, manual_image_band);
+                let image_band = image_effective_band(
+                    scored.score,
+                    &scored.model_version,
+                    &self.models,
+                    manual_image_band,
+                );
                 // The feed-effective band caps the image's band with the manual skeet
                 // override (`min`), matching what the feed/quality sort publishes. The
                 // slice is non-empty, so `skeet_effective_band` is always `Some`.
@@ -141,7 +145,7 @@ impl FeedSnapshotSource {
                 Some(FeedItem {
                     skeet_id: item.skeet_id,
                     image_id: item.image_id,
-                    score: *score,
+                    score: scored.score,
                     effective_band,
                     manual_image_band,
                     manual_skeet_band,

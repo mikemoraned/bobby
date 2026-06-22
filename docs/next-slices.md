@@ -33,7 +33,18 @@ Each crate related to `skeet-prune` gets at least one full human pass (ideally):
 Tasks:
 * ...
 
-#### Group 1: cursor-based resumption (do first)
+#### Group 1: bobby.houseofmoran.io should fall back to older data when newer unavailable
+
+It's possible there could be an outage of the backing pruner process for > 48h which means what is shown on the feed or on website could expire gradually. I think what I'd like to do here is add a fallback mechanism where, for preferred Order + Limit, it will try successively older lists if it doesn't find anything in the preferred one. So, here's how it would roughly work:
+* Finds all feeds available and orders them by age limit (i.e. 48h before 7d before 1y)
+* When looking for a preferred feed (e.g. `quality-48h`) if that feed is empty, then it will find the next oldest available feed with the same ordering, in this case `quality-7d`. If that's also empty or missing then it should go to next.
+
+This way when there is some sort of outage it gracefully degrades to older data.
+
+Tasks:
+* ...
+
+#### Group 2: cursor-based resumption
 
 - Track `info.time_us` of the last processed event; set `JetstreamConfig.cursor` (a `DateTime<Utc>`) on reconnect, rewound ~5s for gapless playback. Currently `None` ⇒ every reconnect live-tails and drops the gap.
 - Safe to replay because the store is idempotent (keyed by content hash / `SkeetId`).
@@ -42,7 +53,7 @@ Tasks:
 Tasks:
 * ...
 
-#### Group 2: reconnect backoff (do second)
+#### Group 3: reconnect backoff
 
 - Add exponential backoff with jitter between reconnect *cycles* (one cycle = one pass over all shuffled endpoints), capped ~30–60s; reset after a connection stays up.
 - Currently `warn; continue` with no delay, and `max_retries: 0` disables the library's retry — so an outage retry-storms all four instances.
@@ -67,6 +78,10 @@ The general bias is to refactor towards patterns and structures that are the bes
 * [ ] **Publishing** — `skeet-publish`.** The firehose → classify → score → publish chain.
 * [ ] **Web services — `skeet-feed`, `skeet-appraise`.** The two HTTP-facing crates (banner/feed + auth-gated appraisals).
 * [ ] **ML/detection libs, and related parent crate which uses them — `skeet-refine`, `face-detection`, `skin-detection`, `text-detection`.** Model loading/inference wrappers; confirm each model is still documented in `docs/`.
+    * **Couple every score with its provenance — stop passing bare `Score`.** The store pass introduced `ModelScore { score, model_version }` (a model score carrying the version that produced it) and threaded it through the store ports/read-models. Extend that principle across the scoring pipeline: wherever a `Score` is coupled to *what produced it*, pass the paired type, not a bare `Score` + a sidecar field. A bare `Score` should appear only where code genuinely operates on scores generically (e.g. numeric comparison/sorting).
+        * Audit `skeet-refine` (`tick.rs` `pending_scores: Vec<(ImageId, Score, ModelVersion)>`, `refining.rs`, the train harness) and `shared` (`refine_model.rs`) for `Score` + `ModelVersion` passed separately → `ModelScore`.
+        * Extract the appraiser analog: an **`AppraiserScore`** (working name) pairing a manual rating with the `Appraiser` who gave it — the `(Band, Appraiser)` that `Appraisal` already half-models and that `Appraisals::set(id, band, appraiser)` still passes positionally. Decide whether this *is* `Appraisal` or a sibling, and route band+appraiser through it.
+        * Net effect: `Score` (and `Band`) flow as raw values only inside generic numeric/ordering code; everywhere they cross a boundary they travel with their provenance.
 * [ ] **Shared/support libs — `shared`, `bluesky`, `web-support`, `build-support`, `test-support`, `eval`.** Cross-crate types and helpers; check `shared`'s types stay pure data (no policy methods).
 * [ ] **Metrics exporters — `cloudflare-exporter`, `openai-exporter`.** Confirm both are still wired up and used; delete if obsolete.
 

@@ -11,11 +11,9 @@ use serde::Deserialize;
 use std::sync::Arc;
 
 use crate::{AppraiseStore, Store};
-use shared::{
-    Appraisal, Appraiser, Band, DiscoveredAt, ImageId, ModelVersion, RefineModels, SkeetId,
-};
+use shared::{Appraisal, Appraiser, Band, DiscoveredAt, ImageId, RefineModels, SkeetId};
 use skeet_publish::effective_band::{image_effective_band, skeet_effective_band};
-use skeet_store::{Score, StoredImageSummary};
+use skeet_store::{ModelScore, StoredImageSummary};
 use tracing::{info, instrument};
 
 use crate::AppraiserExtractor;
@@ -169,7 +167,7 @@ pub async fn admin(
 
 fn build_rows(
     summaries: &[StoredImageSummary],
-    score_map: &HashMap<ImageId, (Score, ModelVersion)>,
+    score_map: &HashMap<ImageId, ModelScore>,
     skeet_appraisals: &HashMap<SkeetId, Appraisal>,
     image_appraisals: &HashMap<ImageId, Appraisal>,
     models: &RefineModels,
@@ -179,15 +177,17 @@ fn build_rows(
         .iter()
         .map(|s| {
             let scored = score_map.get(&s.image_id);
-            let score = scored.map(|(sc, _)| *sc);
+            let score = scored.map(|vs| vs.score);
             let refiner = scored
-                .map(|(_, mv)| mv.to_string())
+                .map(|vs| vs.model_version.to_string())
                 .unwrap_or_else(|| "—".to_string());
             let score_str = score
                 .map(|sc| format!("{sc}"))
                 .unwrap_or_else(|| "—".to_string());
             let auto_band = scored
-                .map(|(sc, mv)| image_effective_band(*sc, mv, models, None).to_string())
+                .map(|vs| {
+                    image_effective_band(vs.score, &vs.model_version, models, None).to_string()
+                })
                 .unwrap_or_else(|| "—".to_string());
 
             let (manual_appraisal, item_id, appraise_kind) = if view == "image" {
@@ -209,10 +209,14 @@ fn build_rows(
             // (`min`), matching what the feed/quality sort publishes.
             let skeet_manual = skeet_appraisals.get(&s.skeet_id).map(|a| a.band);
             let image_manual = image_appraisals.get(&s.image_id).map(|a| a.band);
-            let image_band = match scored {
-                Some((sc, mv)) => Some(image_effective_band(*sc, mv, models, image_manual)),
-                None => image_manual,
-            };
+            let image_band = scored.map_or(image_manual, |vs| {
+                Some(image_effective_band(
+                    vs.score,
+                    &vs.model_version,
+                    models,
+                    image_manual,
+                ))
+            });
             let effective = image_band
                 .map_or(skeet_manual, |ib| skeet_effective_band(skeet_manual, &[ib]))
                 .map(|b| b.to_string())
