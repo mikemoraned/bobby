@@ -8,6 +8,7 @@ logs/
 docs/
 infra/
 just/
+deploy/
 model-conversion/
 examples/
 blocklist/

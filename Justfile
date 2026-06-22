@@ -1,16 +1,27 @@
 STORE := "store"
 R2_STORE := "s3://hom-bobby/encrypted-store"
 
+# OTEL attributes for local runs; `service.version` tracks the build hash so local
+# traces line up with deployed ones. References GIT_HASH (see just/container.just).
+LOCAL_OTEL_RESOURCE_ATTRS := "OTEL_RESOURCE_ATTRIBUTES=deployment.environment=local,service.version=" + GIT_HASH
+
+# Local data-plane & dev tooling
 import 'just/store.just'
+import 'just/prune.just'
 import 'just/refine.just'
+import 'just/publish.just'
 import 'just/feed.just'
 import 'just/appraise.just'
-import 'just/publish.just'
-import 'just/container.just'
-import 'just/cluster.just'
+import 'just/local.just'
+import 'just/secrets.just'
+import 'just/observability.just'
 import 'just/cloudflare.just'
 import 'just/openai.just'
-import 'just/local.just'
+
+# Build & deploy
+import 'just/container.just'
+import 'just/cluster.just'
+import 'just/cluster-deploy.just'
 
 default:
     just --list

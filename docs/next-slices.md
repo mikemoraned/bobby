@@ -1,5 +1,153 @@
 # Next Slices
 
+## Slice: Make statistics more visible / understandable
+
+### Target
+
+As of 20th June we say "(22,223,000 images checked so far)" on https://bobby.houseofmoran.io but this doesn't make it clear how few of these actually match the archetype.
+
+We'd like to change this to say something like "(400,000 images checked over past 2 days, of which 46 (0.01%) match what we are looking for)". This should show human-readable numbers and days e.g. time rounded to nearest hour/day/week/month/year multiple, and percentages shown to a round two decimal places.
+
+### Tasks
+
+We'll get there in gradual steps:
+* within `skeet-store`:
+    * [ ] Record prune statistics:
+        * [ ] create new `Statistics` trait (impl'd by SkeetStore) which can store prune statistics i.e. something similar to what we are currently saving in otel metrics:
+            * Count of Skeets seen on firehose
+            * Count of Images examined i.e. how many were looked at even before they were saved
+            * Count of Images saved as candidates
+            * These are counts within a particular interval (see below), which should also be recorded with a start and end timestamp
+        * [ ] Update pruner so that it saves these stats to `Statistics` every time it updates the logged output. It should save a new record of stats for each interval e.g. from timestamp T1 to T2, 20 skeets seen, etc
+    * [ ] Add ability of `Statistics` trait to calculate:
+        * a sum of prune counts seen over a particular interval (based on saved prune records above), which is the number of images examined
+* witnin `skeet-publish`:
+    * [ ] In publisher, publish the following for each `PublishedList` at, for example, `v3-quality-7d:statistics` as a json object:
+        * start/end of interval covered (so, absolute start/end of the 7d period in this example)
+        * count of examined images
+        * count of images we eventually show (this is just the length of the list)
+* within `skeet-feed`:
+    * [ ] Get the counts of images examined and shown, and the interval given, and use these to create the "(400,000 images checked over past 2 days, of which 46 (0.01%) match what we are looking for)" text.
+* [ ] refactor any existing `count` methods in other `skeet-store` traits to live in the `Statistics` trait
+* [ ] once `skeet-feed` deployed and not using it anymore stop creating/publishing `v3-examined-count` 
+
+## Slice: 1.0 refactor, review and code minimisation, focussed on remaining crates
+
+#### Focus on longer-term maintainance
+
+Refactor, review and minimisation of code for longer-term maintenance so "I can walk away from this for a while".
+
+* the general expectation is that I want to be able to leave this repo for a while and go work on other stuff, and not need to worry about surprising code or lingering cruft/weirdness.
+* split out code into sub-dirs based on role e.g. crates are at top-level in repo, and so should go into a subdir; follow generally accepted conventions where possible.
+
+The general bias is to refactor towards patterns and structures that are the best practice for what kinds of things each crate is doing.
+
+#### Tasks
+
+* [ ] **Publishing** — `skeet-publish`.** The firehose → classify → score → publish chain.
+    * **From the patterns review:** tighten over-broad `pub mod` → `mod` + selective `pub use` (most modules are `pub mod` today). Low-priority; do while already in the crate.
+* [ ] **Web services — `skeet-feed`, `skeet-appraise`.** The two HTTP-facing crates (banner/feed + auth-gated appraisals).
+    * **From the patterns review:** `skeet-feed/src/feed_config.rs` `did()`/`feed_uri()`/`service_endpoint()` return raw `String` → return domain types (`Did`, etc.). Also tighten over-broad `pub mod` → `mod` + `pub use` in both crates (`skeet-appraise/src/lib.rs` ≈12 `pub mod`; `skeet-feed` most modules `pub mod`) — low-priority, do while touching them.
+* [ ] **ML/detection libs, and related parent crate which uses them — `skeet-refine`, `face-detection`, `skin-detection`, `text-detection`.** Model loading/inference wrappers; confirm each model is still documented in `docs/`.
+    * **Couple every score with its provenance — stop passing bare `Score`.** The store pass introduced `ModelScore { score, model_version }` (a model score carrying the version that produced it) and threaded it through the store ports/read-models. Extend that principle across the scoring pipeline: wherever a `Score` is coupled to *what produced it*, pass the paired type, not a bare `Score` + a sidecar field. A bare `Score` should appear only where code genuinely operates on scores generically (e.g. numeric comparison/sorting).
+        * Audit `skeet-refine` (`tick.rs` `pending_scores: Vec<(ImageId, Score, ModelVersion)>`, `refining.rs`, the train harness) and `shared` (`refine_model.rs`) for `Score` + `ModelVersion` passed separately → `ModelScore`.
+        * Extract the appraiser analog: an **`AppraiserScore`** (working name) pairing a manual rating with the `Appraiser` who gave it — the `(Band, Appraiser)` that `Appraisal` already half-models and that `Appraisals::set(id, band, appraiser)` still passes positionally. Decide whether this *is* `Appraisal` or a sibling, and route band+appraiser through it.
+        * Net effect: `Score` (and `Band`) flow as raw values only inside generic numeric/ordering code; everywhere they cross a boundary they travel with their provenance.
+    * **From the patterns review:** validate the `ModelProvider` constructor (`shared/src/refine_model.rs`) — today it accepts any string (only an `openai()` factory; the open `new` path lets an unknown provider propagate silently). Add a known-set / non-empty check. (Co-located here because this area already touches `refine_model.rs`, though the type lives in `shared`.)
+* [ ] **Shared/support libs — `shared`, `bluesky`, `web-support`, `build-support`, `test-support`, `eval`.** Cross-crate types and helpers; check `shared`'s types stay pure data (no policy methods).
+    * **From the patterns review:**
+        * `shared/src/rejection.rs`: `Rejection::FromStr` and `RejectionCategory::FromStr` are still `type Err = String` → add a `ParseRejectionError` enum (the recipe every other NewType uses; `ParseZoneError` already done in the store pass).
+        * close `&str` gaps where validated NewTypes already exist: `shared/src/skeet_id.rs` `SkeetId::for_post(did, rkey)` → `&Did`/`&RecordKey`; `bluesky/src/image_url.rs` `bsky_cdn_thumbnail_url(did, cid)` → `&Did`/`&BlueskyCid`; `bluesky/src/post_thread.rs` `blocked_labels` `Vec<String>` → `Vec<Label>`.
+        * replace `Box<dyn std::error::Error>` with typed `thiserror` variants in `shared/src/lib.rs` `PruneConfig::from_file` and `shared/src/blocklist.rs` `BlocklistConfig::{from_file,save}` — the only library fns not on typed errors.
+        * validate the `Purpose` constructor (`eval/src/results.rs`) — it accepts empty strings today.
+* [ ] **Metrics exporters — `cloudflare-exporter`, `openai-exporter`.** Confirm both are still wired up and used; delete if obsolete.
+
+> **Patterns assessed and not pursued** (from the deleted patterns review, recorded so they aren't re-raised): TypeState for the `skeet-prune` pipeline assembly (ceremony exceeds the payoff for ~50 lines of linear setup); zero-copy borrowing views (clone-based is right for this throughput + async/channel boundaries); combinator-style filter composition (inline iterator chains are simpler — only pays off for filters built dynamically at runtime).
+
+## Slice: `skeet-store` engine & storage scaling
+
+These were identified in the "1.0 refactor, review and code minimisation, focussed on skeet-store" slice but deliberately deferred as too large for that slice. Each is gated 
+on data scale, needs a dependency upgrade, or is strategic. Captured here so the analysis survives the slices summarisation.
+
+Analysis assumed these pins: `lancedb 0.27.2` / `lance 4.0.0` / `arrow 57`. None of the no-upgrade items below need the lance 0.30 bump.
+
+### Engine pushdown (no upgrade; gated on scale)
+
+Several read paths materialise whole tables into Rust and compute there — fine at
+current volume, revisit when the images table is big enough to hurt.
+
+* [ ] **Paging pushdown.** `list_summaries_page` pushes the `discovered_at < cursor`
+  filter down but then collects *every* matching row, sorts in memory, and truncates
+  to `limit` — O(rows-before-cursor), not O(limit). The high-level `lancedb 0.27.2`
+  `Query` builder has `limit`/`offset` but **no `order_by`**, so the in-memory sort is
+  a workaround for a missing method. Fix via the `lance 4.0.0` `Scanner` (`as_native()`,
+  already used elsewhere): `order_by(discovered_at desc)` + `limit(n+1)`, letting the
+  `discovered_at` scalar index do the work.
+* [ ] **Aggregation/distinct pushdown.** `count_scored_images`,
+  `count_scores_by_model_version`, `unique_skeet_ids`, and the in-memory sort in
+  `list_all_image_ids_by_most_recent` scan + compute in Rust. Push down via the lance
+  `Scanner` `count_star`/`count`/`aggregate` (or DataFusion SQL). Leave the
+  version-gated `cached_scores` full-scan as-is — it's cached and the known-versions
+  filter is awkward as pushdown.
+
+### DataFusion-direct (the pragmatic path; subsumes the above)
+
+* [ ] `lancedb`/`lance` *are* DataFusion apps; `lance` exposes `LanceTableProvider` + a
+  SQL entry point. "Use DataFusion directly" is **not** a migration — register a
+  table's `Dataset` as a `LanceTableProvider` in a `SessionContext` and run
+  `SELECT … ORDER BY … LIMIT n` / `GROUP BY` for the complex reads, per-method,
+  incrementally, data staying in Lance. The typed-`only_if_expr` work from the store
+  pass is the groundwork (one query-construction seam in `adapters/lance/query.rs`).
+  Low cost, additive, no architectural commitment; resolves the pushdown items as a
+  side effect.
+
+### LanceDB 0.30 upgrade (a project, not an afternoon)
+
+* [ ] `lancedb 0.30.0` pins `lance =7.0.0` + `arrow 58` + `datafusion 53` → a
+  **workspace-wide `arrow 57→58` bump and `lance 4→7` (three majors)**. Budget for it;
+  do it *after* the no-upgrade pushdown work. What it buys: `order_by` on the high-level
+  `Query` builder (paging without dropping to `Scanner`), DataFusion `Expr` predicates
+  for `merge_insert`/deletes, **Lance Namespace** (catalog), and unenforced primary keys.
+
+### Blob v2 for the 2 MB PNGs (storage/compaction; needs `images_v7`)
+
+* [ ] Images are inline `LargeBinary` today; columnar projection already keeps pixels
+  out of summary scans, so this is a **compaction/storage-layout** win (could relieve
+  the hand-tuned `target_rows_per_fragment=500` memory hack in maintenance), **not** a
+  read-latency one. Lance 4.0.0 blob v2 is a `Struct<data: LargeBinary?, uri: Utf8?>`
+  column (inline `data` *or* external `uri`) with dedicated `optimize` blob handling —
+  but it's **lance-dataset-level** (lancedb's high-level `Table` doesn't surface it even
+  in 0.30) and needs an `images_v7` schema bump. Worth it only if the compaction memory
+  tuning becomes fragile.
+
+### Lance Namespace as the prod/staging home (with/after 0.30)
+
+* [ ] The prod/staging split is currently table-name conventions (`docs/versioning.md`).
+  Lance Namespace (SDK 1.0, exposed on the connection in lancedb 0.29/0.30, versioned
+  like the Iceberg REST Catalog spec) is a structural home for it — adopt alongside the
+  0.30 upgrade if the naming convention starts to chafe.
+
+### Read/write capability split (type-level safety; consciously deferred)
+
+* [ ] The store-pass carve was by-thing (Images/Scores/…); the review's other option
+  was a **read/write capability split** — a read-only interface (`trait ImageReader`/
+  `ScoreReader`, or a `ReadStore`) that reader-side consumers depend on so they *cannot*
+  call `add`/`upsert`/`delete`. This makes the prod/staging "readers are covariant; never
+  run a staging *writer* against the shared store" rule — today a runtime
+  `--allow-shared-store-write` flag — a **compile-time** fact. The concrete `SkeetStore`
+  implements both halves; writers take the full type. Layers over the existing ports.
+
+### Strong-consistency read tuning (small)
+
+* [ ] Every read uses `read_consistency_interval(Duration::ZERO)` (re-checks the manifest
+  each op; every Strong read pays a growing R2 LIST, bounded by hourly manifest pruning).
+  A deliberate correctness choice — but read-mostly paths (feed serving) might tolerate a
+  few seconds of staleness for fewer R2 LISTs. Consider surfacing the interval through
+  `StoreArgs` per-CLI.
+
+> Iceberg was considered and rejected as a storage backend — that durable decision
+> now lives in `docs/architecture.md` (Constraints / Technology Choices), not here.
+
 ## Slice: try using embeddings for classification/scoring in refine
 
 ### Target
@@ -208,7 +356,7 @@ This is the first time using Tailscale this way, so isolate the Tailscale depend
 
 * [ ] **Build an `arm64` image** — the cluster is ARM (like `pruner`/`live-refine`), but `Dockerfile.skeet-appraise` ships `linux/amd64` for fly. During the parallel run both arches are live, so build multi-arch (`--platform linux/amd64,linux/arm64`) or add an arm64 tag; drop amd64 once fly is gone (group E).
 * [ ] **k8s Deployment + Service** (`infra/k8s/skeet-appraise-deployment.yaml`): unlike the `live-refine` worker this is a long-running HTTP server, so it needs a `Service` (port 8080) fronting the Deployment. Args: `--store-path`, `--model-path`, feed-shape params, `--auth-mode tailscale`, `--bind 0.0.0.0:8080`. Env: R2 + SSE-C + OTEL only — **no GitHub/session/redis**: tailscale mode has no OAuth and no sessions, so the redis-for-sessions dependency drops out here.
-* [ ] **`just/cluster.just` recipes**: `cluster-deploy-skeet-appraise`, logs, enable/disable, rollback, and add to the `cluster-*-all` aggregates (mirroring `live-refine`). Reuse the existing R2/SSE-C/OTEL `OnePasswordItem`s — no new secrets needed for the app itself.
+* [ ] **`just/cluster-deploy.just` recipes**: `cluster-deploy-skeet-appraise`, logs, enable/disable, rollback, and add to the `cluster-*-all` aggregates (mirroring `live-refine`). Reuse the existing R2/SSE-C/OTEL `OnePasswordItem`s — no new secrets needed for the app itself.
 
 #### C. Expose it over tailscale via the operator (`Ingress`)
 

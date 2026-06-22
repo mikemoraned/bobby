@@ -1,5 +1,5 @@
 [workspace]
-members = ["bluesky", "build-support", "eval", "skeet-store", "skeet-prune", "skeet-feed", "skeet-appraise", "skeet-publish", "skeet-refine", "face-detection", "shared", "skin-detection", "text-detection", "cloudflare-exporter", "openai-exporter", "test-support", "web-support"]
+members = ["crates/bluesky", "crates/build-support", "crates/eval", "crates/observability", "crates/skeet-store", "crates/skeet-prune", "crates/skeet-feed", "crates/skeet-appraise", "crates/skeet-publish", "crates/skeet-refine", "crates/face-detection", "crates/shared", "crates/skin-detection", "crates/text-detection", "crates/cloudflare-exporter", "crates/openai-exporter", "crates/test-support", "crates/web-support"]
 resolver = "2"
 
 [workspace.lints.clippy]
@@ -7,16 +7,16 @@ unwrap_used = "deny"
 expect_used = "deny"
 
 [workspace.dependencies]
-build-support = { path = "build-support" }
-eval = { path = "eval" }
-test-support = { path = "test-support" }
+build-support = { path = "crates/build-support" }
+eval = { path = "crates/eval" }
+test-support = { path = "crates/test-support" }
 chrono = "0.4"
-bluesky = { path = "bluesky" }
+bluesky = { path = "crates/bluesky" }
 clap = { version = "4", features = ["derive", "env"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 serde = { version = "1", features = ["derive"] }
-shared = { path = "shared" }
-skeet-publish = { path = "skeet-publish" }
+shared = { path = "crates/shared" }
+skeet-publish = { path = "crates/skeet-publish" }
 smartcore = "0.5"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
@@ -33,7 +33,7 @@ serde_json = "1"
 md5 = "0.7"
 cid = "0.11"
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
-web-support = { path = "web-support" }
+web-support = { path = "crates/web-support" }
 hex = "0.4"
 regex = "1"
 reqwest = { version = "0.13", features = ["json", "rustls", "query"], default-features = false }
