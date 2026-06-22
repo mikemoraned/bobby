@@ -89,7 +89,8 @@ Each crate gets at least one full human pass: read all code, delete dead code, r
 
 #### Justfile pass
 
-* [ ] **Re-chunk and prune the just rules.** Review the root `Justfile` and `just/*.just`: split overgrown files (`store.just` ~125 lines, `cluster.just` ~170 lines) into more logical chunks, fold/relocate misplaced recipes, and delete any recipe that no longer makes sense (obsolete deploys, dead helpers). Keep imports consistent and `just --list` readable.
+* [x] **Re-chunk and prune the just rules.** Review the root `Justfile` and `just/*.just`: split overgrown files (`store.just` ~125 lines, `cluster.just` ~170 lines) into more logical chunks, fold/relocate misplaced recipes, and delete any recipe that no longer makes sense (obsolete deploys, dead helpers). Keep imports consistent and `just --list` readable.
+    * `store.just` slimmed to store data-plane only (validate/optimise/inspect/maintenance/moderation); the grab-bag's other concerns relocated to their owning files: refine/ML/eval → `refine.just`, `prune`/`prune-r2` → new `prune.just`, trace tooling → new `observability.just`, secret-gen → new `secrets.just`, `capture-appraisals` → `appraise.just`, `update-prices` → `openai.just`. `cluster.just` split into provisioning (`cluster.just`) + workload ops (new `cluster-deploy.just`). Deleted obsolete `cluster-undeploy-compact` (the `compact` cronjob was replaced by `optimise`). Cross-cutting `LOCAL_OTEL_RESOURCE_ATTRS` promoted to the root `Justfile`. Imports in the root grouped (local tooling vs build/deploy). Verified: `just --evaluate`, `just --list`, `just --summary` all clean.
 
 #### Wrap-up
 

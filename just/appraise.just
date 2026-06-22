@@ -1,6 +1,9 @@
 appraise-r2:
     RUST_BACKTRACE=1 OTEL_SERVICE_NAME=skeet-appraise {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file deploy/bobby-local.env -- cargo run --release --bin skeet-appraise -- --store-path {{ R2_STORE }} --local-admin --bind 127.0.0.1:8081
 
+capture-appraisals:
+    op run --env-file deploy/bobby-local.env -- cargo run --quiet --release --bin capture-appraisals -- --store-path {{ R2_STORE }}
+
 deploy_appraise_staging: deploy_appraise_staging_secrets deploy_appraise_staging_app end_to_end_test_appraise_staging
 
 deploy_appraise_staging_secrets:
