@@ -8,7 +8,7 @@ use tracing::{debug, info, instrument};
 
 use super::arrow::typed_column;
 use super::decode::{batches_to_summaries, decode_rows, decode_score_row, score_columns};
-use super::query::execute_query;
+use super::query::{col_at_or_after_micros, col_in, execute_query};
 use super::schema::TableName;
 use crate::model::ScoresMap;
 use crate::{
@@ -109,15 +109,14 @@ impl SkeetStore {
         &self,
         cutoff: chrono::DateTime<chrono::Utc>,
     ) -> Result<HashSet<ImageId>, StoreError> {
-        let cutoff_us = cutoff.timestamp_micros();
-        let filter = format!(
-            "original_at >= arrow_cast({cutoff_us}, 'Timestamp(Microsecond, Some(\"UTC\"))')"
-        );
         let query = self
             .table(TableName::Images)
             .query()
             .select(lancedb::query::Select::columns(&["image_id"]))
-            .only_if(filter);
+            .only_if_expr(col_at_or_after_micros(
+                "original_at",
+                cutoff.timestamp_micros(),
+            ));
         let batches = execute_query(&query, "find_image_ids_published_since").await?;
         let ids: HashSet<ImageId> = decode_rows(
             &batches,
@@ -142,15 +141,14 @@ impl SkeetStore {
             return Ok(None);
         };
         let cutoff = chrono::Utc::now() - chrono::Duration::hours(hours as i64);
-        let cutoff_us = cutoff.timestamp_micros();
-        let filter = format!(
-            "discovered_at >= arrow_cast({cutoff_us}, 'Timestamp(Microsecond, Some(\"UTC\"))')"
-        );
         let query = self
             .table(TableName::Images)
             .query()
             .select(lancedb::query::Select::columns(&["image_id"]))
-            .only_if(filter);
+            .only_if_expr(col_at_or_after_micros(
+                "discovered_at",
+                cutoff.timestamp_micros(),
+            ));
         let batches = execute_query(&query, "find_recent_image_ids").await?;
         let ids: std::collections::HashSet<ImageId> = decode_rows(
             &batches,
@@ -243,13 +241,6 @@ impl SkeetStore {
         let score_map: HashMap<&ImageId, &ModelScore> =
             top_scores.iter().map(|(vs, id)| (id, vs)).collect();
 
-        let in_list = top_scores
-            .iter()
-            .map(|(_, id)| format!("'{id}'"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let filter = format!("image_id IN ({in_list})");
-
         let query = self
             .table(TableName::Images)
             .query()
@@ -262,7 +253,10 @@ impl SkeetStore {
                 "config_version",
                 "detected_text",
             ]))
-            .only_if(filter);
+            .only_if_expr(col_in(
+                "image_id",
+                top_scores.iter().map(|(_, id)| id.to_string()),
+            ));
         let batches = execute_query(&query, "fetch_summaries_for_scores").await?;
         let summaries = batches_to_summaries(&batches)?;
         info!(

@@ -9,7 +9,7 @@ use tracing::instrument;
 
 use super::arrow::typed_column;
 use super::decode::{decode_rows, decode_score_row, score_columns};
-use super::query::execute_query;
+use super::query::{col_eq, col_in, execute_query};
 use super::schema::{TableName, images_score_v2_schema};
 use crate::{ModelScore, ModelVersion, Score, Scores, SkeetStore, StoreError};
 
@@ -61,7 +61,7 @@ impl Scores for SkeetStore {
         let query = self
             .table(TableName::Scores)
             .query()
-            .only_if(format!("image_id = '{image_id}'"))
+            .only_if_expr(col_eq("image_id", image_id.to_string()))
             .limit(1);
         let batches = execute_query(&query, "get_score").await?;
 
@@ -88,13 +88,6 @@ impl Scores for SkeetStore {
             return Ok(HashMap::new());
         }
 
-        let in_list = image_ids
-            .iter()
-            .map(|id| format!("'{id}'"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let filter = format!("image_id IN ({in_list})");
-
         let query = self
             .table(TableName::Scores)
             .query()
@@ -103,7 +96,10 @@ impl Scores for SkeetStore {
                 "score",
                 "model_version",
             ]))
-            .only_if(filter);
+            .only_if_expr(col_in(
+                "image_id",
+                image_ids.iter().map(|id| id.to_string()),
+            ));
         let batches = execute_query(&query, "list_scores_for_ids").await?;
 
         Ok(decode_rows(&batches, score_columns, decode_score_row)?

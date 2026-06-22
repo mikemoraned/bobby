@@ -11,7 +11,7 @@ use super::arrow::{encode_image_as_png, typed_column};
 use super::decode::{
     batches_to_original_images, batches_to_stored_images, batches_to_summaries, decode_rows,
 };
-use super::query::execute_query;
+use super::query::{col_at_or_after_micros, col_before_micros, col_eq, col_in, execute_query};
 use super::schema::{TableName, images_v6_schema};
 use crate::{
     ImageRecord, Images, SkeetStore, StoreError, StoredImage, StoredImageSummary, StoredOriginal,
@@ -75,7 +75,7 @@ impl Images for SkeetStore {
         let query = self
             .table(TableName::Images)
             .query()
-            .only_if(format!("image_id = '{image_id}'"))
+            .only_if_expr(col_eq("image_id", image_id.to_string()))
             .limit(1);
         let batches = execute_query(&query, "get_by_id").await?;
         Ok(batches_to_stored_images(&batches)?.into_iter().next())
@@ -89,10 +89,10 @@ impl Images for SkeetStore {
         if image_ids.is_empty() {
             return Ok(HashMap::new());
         }
-        let query = self
-            .table(TableName::Images)
-            .query()
-            .only_if(id_in_list_filter(image_ids));
+        let query = self.table(TableName::Images).query().only_if_expr(col_in(
+            "image_id",
+            image_ids.iter().map(|id| id.to_string()),
+        ));
         let batches = execute_query(&query, "get_by_ids").await?;
         Ok(batches_to_stored_images(&batches)?
             .into_iter()
@@ -111,7 +111,10 @@ impl Images for SkeetStore {
         let query = self
             .table(TableName::Images)
             .query()
-            .only_if(id_in_list_filter(image_ids))
+            .only_if_expr(col_in(
+                "image_id",
+                image_ids.iter().map(|id| id.to_string()),
+            ))
             .select(lancedb::query::Select::columns(&[
                 "image_id",
                 "skeet_id",
@@ -134,7 +137,7 @@ impl Images for SkeetStore {
         let query = self
             .table(TableName::Images)
             .query()
-            .only_if(format!("image_id = '{image_id}'"))
+            .only_if_expr(col_eq("image_id", image_id.to_string()))
             .select(lancedb::query::Select::columns(&["image_id"]))
             .limit(1);
         let batches = execute_query(&query, "exists").await?;
@@ -179,9 +182,9 @@ impl Images for SkeetStore {
             .query()
             .select(lancedb::query::Select::columns(SUMMARY_COLUMNS));
         if let Some(cursor) = before.as_ref() {
-            let cursor_us = cursor.timestamp_micros();
-            query = query.only_if(format!(
-                "discovered_at < arrow_cast({cursor_us}, 'Timestamp(Microsecond, Some(\"UTC\"))')"
+            query = query.only_if_expr(col_before_micros(
+                "discovered_at",
+                cursor.timestamp_micros(),
             ));
         }
 
@@ -235,9 +238,9 @@ impl Images for SkeetStore {
                     "discovered_at",
                 ]));
         if let Some(ts) = since {
-            let cutoff_us = ts.timestamp_micros();
-            query = query.only_if(format!(
-                "discovered_at >= arrow_cast({cutoff_us}, 'Timestamp(Microsecond, Some(\"UTC\"))')"
+            query = query.only_if_expr(col_at_or_after_micros(
+                "discovered_at",
+                ts.timestamp_micros(),
             ));
         }
         let batches = execute_query(&query, "list_all_image_ids_by_most_recent").await?;
@@ -260,15 +263,6 @@ impl Images for SkeetStore {
         id_times.sort_by(|a, b| b.1.cmp(&a.1));
         Ok(id_times.into_iter().map(|(id, _)| id).collect())
     }
-}
-
-fn id_in_list_filter(image_ids: &[ImageId]) -> String {
-    let id_list = image_ids
-        .iter()
-        .map(|id| format!("'{id}'"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!("image_id IN ({id_list})")
 }
 
 #[cfg(test)]

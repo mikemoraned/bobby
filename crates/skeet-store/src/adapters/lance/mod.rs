@@ -31,7 +31,7 @@ use tokio::sync::RwLock;
 use tracing::instrument;
 
 use self::arrow::typed_column;
-use self::query::execute_query;
+use self::query::{col_eq_int, execute_query};
 use self::schema::validate_v1_schema;
 use crate::{StoreError, Version, VersionedCache, model};
 
@@ -91,7 +91,7 @@ impl SkeetStore {
         let query = self
             .table(TableName::Validate)
             .query()
-            .only_if(format!("random_number = {random_number}"));
+            .only_if_expr(col_eq_int("random_number", random_number));
         let result_batches = execute_query(&query, "validate").await?;
 
         if result_batches.is_empty() {

@@ -12,7 +12,7 @@ use tracing::instrument;
 
 use super::arrow::typed_column;
 use super::decode::decode_rows;
-use super::query::execute_query;
+use super::query::{col_eq, execute_query};
 use super::schema::{TableName, appraisal_schema};
 use crate::{Appraisals, AppraisalsSource, SkeetStore, StoreError};
 
@@ -83,7 +83,7 @@ where
         let query = self
             .table
             .query()
-            .only_if(format!("{} = '{id}'", self.id_column))
+            .only_if_expr(col_eq(self.id_column, id.to_string()))
             .limit(1);
         let batches = execute_query(&query, &format!("appraisal_get:{}", self.id_column)).await?;
         parse_single_appraisal(&batches)
