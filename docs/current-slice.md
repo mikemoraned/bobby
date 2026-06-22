@@ -1,4 +1,4 @@
-# Current Slice: 1.0 refactor, review and code minimisation
+# Current Slice: 1.0 refactor, review and code minimisation, focussed on skeet-store
 
 ### Target
 
@@ -78,11 +78,12 @@ Each crate gets at least one full human pass: read all code, delete dead code, r
         * Verify after **each** stage: `just clippy` + `just test-no-docker` + `just validate-storage`; the `lib.rs` re-export surface stays identical.
         * **Decisions (resolved):** `lance` and `object_store` live under a top-level **`adapters/`** module (`adapters/lance`, `adapters/object_store`) to make the ports/adapters split obvious — `object_store` stays a separable sibling of `lance` *within* `adapters/` (tied to a separate external project, the Stage-C codec home) · `DiscoveredAt`/`OriginalAt` move to **`shared`** (Stage 1) · keep **`lance` together**, splitting only on the size limit.
         * **Cross-links:** the three pending quality items land in their new homes — `ScoredSummary`→`model/score.rs`, `FromRecordBatch`→`lance/` (decode code), `TableName`→`lance/` (schema code). Reorg-first ⇒ they slot in; quality-first ⇒ they move in Stage 2.
-* [ ] **Processing-pipeline binaries — `skeet-prune`, `skeet-refine`, `skeet-publish`.** The firehose → classify → score → publish chain.
-* [ ] **Web services — `skeet-feed`, `skeet-appraise`.** The two HTTP-facing crates (banner/feed + auth-gated appraisals).
-* [ ] **ML/detection libs — `face-detection`, `skin-detection`, `text-detection`.** Model loading/inference wrappers; confirm each model is still documented in `docs/`.
-* [ ] **Shared/support libs — `shared`, `bluesky`, `web-support`, `build-support`, `test-support`, `eval`.** Cross-crate types and helpers; check `shared`'s types stay pure data (no policy methods).
-* [ ] **Metrics exporters — `cloudflare-exporter`, `openai-exporter`.** Confirm both are still wired up and used; delete if obsolete.
+* moved to a later slice:
+* [-] **Processing-pipeline binaries — `skeet-prune`, `skeet-refine`, `skeet-publish`.** The firehose → classify → score → publish chain.
+* [-] **Web services — `skeet-feed`, `skeet-appraise`.** The two HTTP-facing crates (banner/feed + auth-gated appraisals).
+* [-] **ML/detection libs — `face-detection`, `skin-detection`, `text-detection`.** Model loading/inference wrappers; confirm each model is still documented in `docs/`.
+* [-] **Shared/support libs — `shared`, `bluesky`, `web-support`, `build-support`, `test-support`, `eval`.** Cross-crate types and helpers; check `shared`'s types stay pure data (no policy methods).
+* [-] **Metrics exporters — `cloudflare-exporter`, `openai-exporter`.** Confirm both are still wired up and used; delete if obsolete.
 
 #### Justfile pass
 
