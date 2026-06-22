@@ -16,15 +16,13 @@ mod scored_view;
 mod scores;
 mod versions;
 
-pub use schema::{
-    IMAGE_APPRAISAL_TABLE_NAME, SCORE_TABLE_NAME, SKEET_APPRAISAL_TABLE_NAME, TABLE_NAME,
-    VALIDATE_TABLE_NAME,
-};
+pub use schema::TableName;
 
 use std::sync::Arc;
 
 use arrow_array::{Int64Array, RecordBatch, TimestampMicrosecondArray};
 use chrono::Utc;
+use enum_map::EnumMap;
 use lance::dataset::{WriteMode, WriteParams};
 use lance_io::object_store::{ObjectStoreParams, WrappingObjectStore};
 use lancedb::query::QueryBase;
@@ -38,20 +36,21 @@ use self::schema::validate_v1_schema;
 use crate::{StoreError, Version, VersionedCache, model};
 
 pub struct SkeetStore {
-    pub(in crate::adapters::lance) images_table: lancedb::Table,
-    pub(in crate::adapters::lance) scores_table: lancedb::Table,
-    pub(in crate::adapters::lance) validate_table: lancedb::Table,
-    pub(in crate::adapters::lance) skeet_appraisal_table: lancedb::Table,
-    pub(in crate::adapters::lance) image_appraisal_table: lancedb::Table,
-    /// All tables, paired with their canonical name. Source of truth for
-    /// per-table iteration (fragment counts, version snapshots). Populated in
-    /// `SkeetStore::open` so adding or removing a table is a single edit.
-    pub(in crate::adapters::lance) tables: Vec<(&'static str, lancedb::Table)>,
+    /// Every table handle, keyed by [`TableName`]. The single source of truth for
+    /// both direct access (`self.table(TableName::Images)`) and whole-store
+    /// iteration (fragment counts, version snapshots, maintenance); a total map,
+    /// so every variant is present by construction (built in `SkeetStore::open`).
+    pub(in crate::adapters::lance) tables: EnumMap<TableName, lancedb::Table>,
     pub(in crate::adapters::lance) scores_cache: RwLock<VersionedCache<Version, model::ScoresMap>>,
     pub(in crate::adapters::lance) store_wrapper: Arc<dyn WrappingObjectStore>,
 }
 
 impl SkeetStore {
+    /// The handle for one table. Infallible — the map is total over [`TableName`].
+    pub(in crate::adapters::lance) fn table(&self, name: TableName) -> &lancedb::Table {
+        &self.tables[name]
+    }
+
     /// Build `WriteOptions` that include the R2 metrics wrapper, if configured.
     pub(in crate::adapters::lance) fn write_options(&self) -> WriteOptions {
         WriteOptions {
@@ -83,14 +82,14 @@ impl SkeetStore {
             ],
         )?;
 
-        self.validate_table
+        self.table(TableName::Validate)
             .add(vec![batch])
             .write_options(self.write_options())
             .execute()
             .await?;
 
         let query = self
-            .validate_table
+            .table(TableName::Validate)
             .query()
             .only_if(format!("random_number = {random_number}"));
         let result_batches = execute_query(&query, "validate").await?;

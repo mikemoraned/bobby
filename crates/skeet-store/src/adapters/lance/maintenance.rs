@@ -1,7 +1,7 @@
 use lancedb::table::{CompactionOptions, OptimizeAction};
 use tracing::{info, instrument};
 
-use super::schema::TABLE_NAME;
+use super::schema::TableName;
 use crate::StoreError;
 use crate::health;
 
@@ -21,8 +21,8 @@ use crate::health;
 //    groups (~1GB), well within k8s memory limits
 //  - num_threads=1 ensures only one compaction task runs at a time
 //  - batch_size=64 limits the scanner read batch during compaction
-fn compact_options_for(name: &str) -> CompactionOptions {
-    if name == TABLE_NAME {
+fn compact_options_for(name: TableName) -> CompactionOptions {
+    if name == TableName::Images {
         CompactionOptions {
             num_threads: Some(1),
             target_rows_per_fragment: 500,
@@ -41,12 +41,12 @@ fn compact_options_for(name: &str) -> CompactionOptions {
 
 impl super::SkeetStore {
     /// All `(name, table, compact_options)` triples drawn from the
-    /// `SkeetStore::tables` registry. Single source of truth for which tables
+    /// `SkeetStore::tables` map. Single source of truth for which tables
     /// a maintenance op walks.
-    fn maintenance_tables(&self) -> Vec<(&'static str, &lancedb::Table, CompactionOptions)> {
+    fn maintenance_tables(&self) -> Vec<(TableName, &lancedb::Table, CompactionOptions)> {
         self.tables
             .iter()
-            .map(|(name, table)| (*name, table, compact_options_for(name)))
+            .map(|(name, table)| (name, table, compact_options_for(name)))
             .collect()
     }
 
@@ -98,33 +98,33 @@ impl super::SkeetStore {
 }
 
 async fn compact_and_reindex(
-    name: &str,
+    name: TableName,
     table: &lancedb::Table,
     options: CompactionOptions,
 ) -> Result<(), StoreError> {
     let before = table.stats().await?;
-    info!(table = name, ?before, "compacting");
+    info!(table = %name, ?before, "compacting");
     table
         .optimize(OptimizeAction::Compact {
             options,
             remap_options: None,
         })
         .await?;
-    info!(table = name, "compaction done, rebuilding indices");
+    info!(table = %name, "compaction done, rebuilding indices");
     table
         .optimize(OptimizeAction::Index(Default::default()))
         .await?;
     let after = table.stats().await?;
-    info!(table = name, ?after, "optimization complete");
+    info!(table = %name, ?after, "optimization complete");
     Ok(())
 }
 
 async fn prune_versions(
-    name: &str,
+    name: TableName,
     table: &lancedb::Table,
     older_than: chrono::Duration,
 ) -> Result<(), StoreError> {
-    info!(table = name, "pruning old versions");
+    info!(table = %name, "pruning old versions");
     let stats = table
         .optimize(OptimizeAction::Prune {
             older_than: Some(older_than),
@@ -132,6 +132,6 @@ async fn prune_versions(
             error_if_tagged_old_versions: None,
         })
         .await?;
-    info!(table = name, ?stats.prune, "prune complete");
+    info!(table = %name, ?stats.prune, "prune complete");
     Ok(())
 }

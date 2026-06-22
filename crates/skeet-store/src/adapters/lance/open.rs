@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use enum_map::enum_map;
 use lance::dataset::ReadParams;
 use lance_io::object_store::ObjectStoreParams;
 use lancedb::index::Index;
@@ -8,9 +9,8 @@ use tokio::sync::RwLock;
 use tracing::{info, instrument};
 
 use super::schema::{
-    IMAGE_APPRAISAL_TABLE_NAME, SCORE_TABLE_NAME, SKEET_APPRAISAL_TABLE_NAME, TABLE_NAME,
-    VALIDATE_TABLE_NAME, images_score_v2_schema, images_v6_schema,
-    manual_image_appraisal_v1_schema, manual_skeet_appraisal_v1_schema, validate_v1_schema,
+    TableName, images_score_v2_schema, images_v6_schema, manual_image_appraisal_v1_schema,
+    manual_skeet_appraisal_v1_schema, validate_v1_schema,
 };
 use crate::adapters::object_store::R2MetricsWrapper;
 use crate::error::StoreError;
@@ -43,32 +43,32 @@ impl SkeetStore {
         };
 
         let table_names = db.table_names().execute().await?;
-        if !table_names.contains(&TABLE_NAME.to_string()) {
-            db.create_empty_table(TABLE_NAME, images_v6_schema())
+        if !table_names.contains(&TableName::Images.as_str().to_string()) {
+            db.create_empty_table(TableName::Images.as_str(), images_v6_schema())
                 .execute()
                 .await?;
         }
-        if !table_names.contains(&SCORE_TABLE_NAME.to_string()) {
-            db.create_empty_table(SCORE_TABLE_NAME, images_score_v2_schema())
+        if !table_names.contains(&TableName::Scores.as_str().to_string()) {
+            db.create_empty_table(TableName::Scores.as_str(), images_score_v2_schema())
                 .execute()
                 .await?;
         }
-        if !table_names.contains(&VALIDATE_TABLE_NAME.to_string()) {
-            db.create_empty_table(VALIDATE_TABLE_NAME, validate_v1_schema())
+        if !table_names.contains(&TableName::Validate.as_str().to_string()) {
+            db.create_empty_table(TableName::Validate.as_str(), validate_v1_schema())
                 .execute()
                 .await?;
         }
-        if !table_names.contains(&SKEET_APPRAISAL_TABLE_NAME.to_string()) {
+        if !table_names.contains(&TableName::SkeetAppraisal.as_str().to_string()) {
             db.create_empty_table(
-                SKEET_APPRAISAL_TABLE_NAME,
+                TableName::SkeetAppraisal.as_str(),
                 manual_skeet_appraisal_v1_schema(),
             )
             .execute()
             .await?;
         }
-        if !table_names.contains(&IMAGE_APPRAISAL_TABLE_NAME.to_string()) {
+        if !table_names.contains(&TableName::ImageAppraisal.as_str().to_string()) {
             db.create_empty_table(
-                IMAGE_APPRAISAL_TABLE_NAME,
+                TableName::ImageAppraisal.as_str(),
                 manual_image_appraisal_v1_schema(),
             )
             .execute()
@@ -76,7 +76,7 @@ impl SkeetStore {
         }
 
         let images_table = db
-            .open_table(TABLE_NAME)
+            .open_table(TableName::Images.as_str())
             .lance_read_params(read_params.clone())
             .execute()
             .await?;
@@ -98,7 +98,7 @@ impl SkeetStore {
         }
 
         let scores_table = db
-            .open_table(SCORE_TABLE_NAME)
+            .open_table(TableName::Scores.as_str())
             .lance_read_params(read_params.clone())
             .execute()
             .await?;
@@ -123,7 +123,7 @@ impl SkeetStore {
         }
 
         let skeet_appraisal_table = db
-            .open_table(SKEET_APPRAISAL_TABLE_NAME)
+            .open_table(TableName::SkeetAppraisal.as_str())
             .lance_read_params(read_params.clone())
             .execute()
             .await?;
@@ -139,7 +139,7 @@ impl SkeetStore {
         }
 
         let image_appraisal_table = db
-            .open_table(IMAGE_APPRAISAL_TABLE_NAME)
+            .open_table(TableName::ImageAppraisal.as_str())
             .lance_read_params(read_params.clone())
             .execute()
             .await?;
@@ -155,7 +155,7 @@ impl SkeetStore {
         }
 
         let validate_table = db
-            .open_table(VALIDATE_TABLE_NAME)
+            .open_table(TableName::Validate.as_str())
             .lance_read_params(read_params)
             .execute()
             .await?;
@@ -175,19 +175,14 @@ impl SkeetStore {
         }
 
         info!(uri, "store opened");
-        let tables = vec![
-            (TABLE_NAME, images_table.clone()),
-            (SCORE_TABLE_NAME, scores_table.clone()),
-            (SKEET_APPRAISAL_TABLE_NAME, skeet_appraisal_table.clone()),
-            (IMAGE_APPRAISAL_TABLE_NAME, image_appraisal_table.clone()),
-            (VALIDATE_TABLE_NAME, validate_table.clone()),
-        ];
+        let tables = enum_map! {
+            TableName::Images => images_table.clone(),
+            TableName::Scores => scores_table.clone(),
+            TableName::Validate => validate_table.clone(),
+            TableName::SkeetAppraisal => skeet_appraisal_table.clone(),
+            TableName::ImageAppraisal => image_appraisal_table.clone(),
+        };
         Ok(Self {
-            images_table,
-            scores_table,
-            validate_table,
-            skeet_appraisal_table,
-            image_appraisal_table,
             tables,
             scores_cache: RwLock::new(VersionedCache::new()),
             store_wrapper,

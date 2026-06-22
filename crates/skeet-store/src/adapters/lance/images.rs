@@ -12,7 +12,7 @@ use super::decode::{
     batches_to_original_images, batches_to_stored_images, batches_to_summaries, decode_rows,
 };
 use super::query::execute_query;
-use super::schema::images_v6_schema;
+use super::schema::{TableName, images_v6_schema};
 use crate::{
     ImageRecord, Images, SkeetStore, StoreError, StoredImage, StoredImageSummary, StoredOriginal,
 };
@@ -61,7 +61,7 @@ impl Images for SkeetStore {
             ],
         )?;
 
-        self.images_table
+        self.table(TableName::Images)
             .add(vec![batch])
             .write_options(self.write_options())
             .execute()
@@ -73,7 +73,7 @@ impl Images for SkeetStore {
     #[instrument(skip(self))]
     async fn get_by_id(&self, image_id: &ImageId) -> Result<Option<StoredImage>, StoreError> {
         let query = self
-            .images_table
+            .table(TableName::Images)
             .query()
             .only_if(format!("image_id = '{image_id}'"))
             .limit(1);
@@ -90,7 +90,7 @@ impl Images for SkeetStore {
             return Ok(HashMap::new());
         }
         let query = self
-            .images_table
+            .table(TableName::Images)
             .query()
             .only_if(id_in_list_filter(image_ids));
         let batches = execute_query(&query, "get_by_ids").await?;
@@ -109,7 +109,7 @@ impl Images for SkeetStore {
             return Ok(HashMap::new());
         }
         let query = self
-            .images_table
+            .table(TableName::Images)
             .query()
             .only_if(id_in_list_filter(image_ids))
             .select(lancedb::query::Select::columns(&[
@@ -132,7 +132,7 @@ impl Images for SkeetStore {
     #[instrument(skip(self))]
     async fn exists(&self, image_id: &ImageId) -> Result<bool, StoreError> {
         let query = self
-            .images_table
+            .table(TableName::Images)
             .query()
             .only_if(format!("image_id = '{image_id}'"))
             .select(lancedb::query::Select::columns(&["image_id"]))
@@ -143,7 +143,7 @@ impl Images for SkeetStore {
 
     #[instrument(skip(self))]
     async fn delete_by_id(&self, image_id: &ImageId) -> Result<(), StoreError> {
-        self.images_table
+        self.table(TableName::Images)
             .delete(&format!("image_id = '{image_id}'"))
             .await?;
         Ok(())
@@ -151,13 +151,13 @@ impl Images for SkeetStore {
 
     #[instrument(skip(self))]
     async fn count(&self) -> Result<usize, StoreError> {
-        Ok(self.images_table.count_rows(None).await?)
+        Ok(self.table(TableName::Images).count_rows(None).await?)
     }
 
     #[instrument(skip(self))]
     async fn list_all_summaries(&self) -> Result<Vec<StoredImageSummary>, StoreError> {
         let query = self
-            .images_table
+            .table(TableName::Images)
             .query()
             .select(lancedb::query::Select::columns(SUMMARY_COLUMNS));
         let batches = execute_query(&query, "list_all_summaries").await?;
@@ -175,7 +175,7 @@ impl Images for SkeetStore {
         }
 
         let mut query = self
-            .images_table
+            .table(TableName::Images)
             .query()
             .select(lancedb::query::Select::columns(SUMMARY_COLUMNS));
         if let Some(cursor) = before.as_ref() {
@@ -202,7 +202,7 @@ impl Images for SkeetStore {
     #[instrument(skip(self))]
     async fn unique_skeet_ids(&self) -> Result<Vec<SkeetId>, StoreError> {
         let query = self
-            .images_table
+            .table(TableName::Images)
             .query()
             .select(lancedb::query::Select::columns(&["skeet_id"]));
         let batches = execute_query(&query, "unique_skeet_ids").await?;
@@ -227,13 +227,13 @@ impl Images for SkeetStore {
         &self,
         since: Option<&DiscoveredAt>,
     ) -> Result<Vec<ImageId>, StoreError> {
-        let mut query = self
-            .images_table
-            .query()
-            .select(lancedb::query::Select::columns(&[
-                "image_id",
-                "discovered_at",
-            ]));
+        let mut query =
+            self.table(TableName::Images)
+                .query()
+                .select(lancedb::query::Select::columns(&[
+                    "image_id",
+                    "discovered_at",
+                ]));
         if let Some(ts) = since {
             let cutoff_us = ts.timestamp_micros();
             query = query.only_if(format!(
@@ -251,7 +251,10 @@ impl Images for SkeetStore {
                 ))
             },
             |(image_ids, discovered_ats), i| {
-                Ok((image_ids.value(i).parse::<ImageId>()?, discovered_ats.value(i)))
+                Ok((
+                    image_ids.value(i).parse::<ImageId>()?,
+                    discovered_ats.value(i),
+                ))
             },
         )?;
         id_times.sort_by(|a, b| b.1.cmp(&a.1));

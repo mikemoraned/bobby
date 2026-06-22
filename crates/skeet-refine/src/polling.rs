@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use shared::DiscoveredAt;
 use skeet_store::{
-    Images, ScoredView, StoreError, TABLE_NAME, TableVersions, Version, VersionedCache,
+    Images, ScoredView, StoreError, TableName, TableVersions, Version, VersionedCache,
 };
 use tracing::info;
 
@@ -37,7 +37,7 @@ impl<S: Images + ScoredView + TableVersions> PollingBatchSource<S> {
     /// underlying scan pushes down a `discovered_at >= last_discovered_at`
     /// filter so the oldest unscored straggler is always re-included.
     pub async fn fetch(&mut self) -> Result<Batch, StoreError> {
-        let images_version = self.store.table_version(TABLE_NAME).await?;
+        let images_version = self.store.table_version(TableName::Images.as_str()).await?;
 
         if self.images_gate.is_cached_current(&images_version) {
             return Ok(Batch::default());

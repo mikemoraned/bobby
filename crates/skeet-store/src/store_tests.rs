@@ -4,8 +4,8 @@ use shared::{Appraisal, DiscoveredAt, OriginalAt, SkeetId, Zone};
 
 use crate::test_utils::{make_record_at, open_temp_store, test_image, test_image_with_color};
 use crate::{
-    AppraisalsSource, Appraiser, Band, ImageId, ImageRecord, Images, ModelVersion,
-    SCORE_TABLE_NAME, Score, ScoredView, Scores, SkeetStore,
+    AppraisalsSource, Appraiser, Band, ImageId, ImageRecord, Images, ModelVersion, Score,
+    ScoredView, Scores, SkeetStore, TableName,
 };
 
 /// The scores table's numeric LanceDB version counter, via the public
@@ -16,7 +16,7 @@ async fn scores_table_version(store: &SkeetStore) -> u64 {
         .await
         .expect("table versions")
         .into_iter()
-        .find(|(name, _)| *name == SCORE_TABLE_NAME)
+        .find(|(name, _)| *name == TableName::Scores)
         .expect("scores table present")
         .1
 }

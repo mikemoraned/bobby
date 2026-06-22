@@ -10,7 +10,7 @@ use tracing::instrument;
 use super::arrow::typed_column;
 use super::decode::{decode_rows, decode_score_row, score_columns};
 use super::query::execute_query;
-use super::schema::images_score_v2_schema;
+use super::schema::{TableName, images_score_v2_schema};
 use crate::{ModelVersion, Score, Scores, SkeetStore, StoreError};
 
 #[async_trait]
@@ -46,7 +46,7 @@ impl Scores for SkeetStore {
         )?;
 
         let reader = RecordBatchIterator::new(vec![Ok(batch)], schema);
-        let mut builder = self.scores_table.merge_insert(&["image_id"]);
+        let mut builder = self.table(TableName::Scores).merge_insert(&["image_id"]);
         builder.when_matched_update_all(None);
         builder.when_not_matched_insert_all();
         builder.execute(Box::new(reader)).await?;
@@ -59,7 +59,7 @@ impl Scores for SkeetStore {
         image_id: &ImageId,
     ) -> Result<Option<(Score, ModelVersion)>, StoreError> {
         let query = self
-            .scores_table
+            .table(TableName::Scores)
             .query()
             .only_if(format!("image_id = '{image_id}'"))
             .limit(1);
@@ -93,7 +93,7 @@ impl Scores for SkeetStore {
         let filter = format!("image_id IN ({in_list})");
 
         let query = self
-            .scores_table
+            .table(TableName::Scores)
             .query()
             .select(lancedb::query::Select::columns(&[
                 "image_id",
@@ -122,7 +122,7 @@ impl Scores for SkeetStore {
         known_versions: &HashSet<ModelVersion>,
     ) -> Result<usize, StoreError> {
         let query = self
-            .scores_table
+            .table(TableName::Scores)
             .query()
             .select(lancedb::query::Select::columns(&[
                 "image_id",
@@ -160,7 +160,7 @@ impl Scores for SkeetStore {
     #[instrument(skip(self))]
     async fn count_scores_by_model_version(&self) -> Result<HashMap<String, usize>, StoreError> {
         let query = self
-            .scores_table
+            .table(TableName::Scores)
             .query()
             .select(lancedb::query::Select::columns(&["model_version"]));
         let batches = execute_query(&query, "count_scores_by_model_version").await?;

@@ -2,26 +2,24 @@ use std::collections::HashSet;
 
 use async_trait::async_trait;
 
+use super::schema::TableName;
 use crate::error::StoreError;
 use crate::{SkeetStore, TableVersions, Version};
 
 #[async_trait]
 impl TableVersions for SkeetStore {
     async fn table_version(&self, table: &str) -> Result<Version, StoreError> {
-        let (name, t) = self
-            .tables
-            .iter()
-            .find(|(name, _)| *name == table)
+        let name = TableName::from_name(table)
             .ok_or_else(|| StoreError::UnknownTable(table.to_string()))?;
-        let v = t.version().await?;
-        Ok(Version::new(*name, v.to_string()))
+        let v = self.table(name).version().await?;
+        Ok(Version::new(name.as_str(), v.to_string()))
     }
 
     async fn version_snapshot(&self) -> Result<HashSet<Version>, StoreError> {
         let mut snapshot = HashSet::with_capacity(self.tables.len());
         for (name, t) in &self.tables {
             let v = t.version().await?;
-            snapshot.insert(Version::new(*name, v.to_string()));
+            snapshot.insert(Version::new(name.as_str(), v.to_string()));
         }
         Ok(snapshot)
     }
@@ -31,11 +29,11 @@ impl SkeetStore {
     /// The numeric LanceDB version counter for each table — the gauge source for
     /// version metrics. Store-agnostic callers should prefer the opaque
     /// [`TableVersions`] port instead.
-    pub async fn table_versions(&self) -> Result<Vec<(&'static str, u64)>, StoreError> {
+    pub async fn table_versions(&self) -> Result<Vec<(TableName, u64)>, StoreError> {
         let mut versions = Vec::with_capacity(self.tables.len());
         for (name, table) in &self.tables {
             let v = table.version().await?;
-            versions.push((*name, v));
+            versions.push((name, v));
         }
         Ok(versions)
     }
@@ -43,17 +41,17 @@ impl SkeetStore {
     /// The fragment count for each table — a LanceDB storage-maintenance signal
     /// (drives compaction scheduling and gauges). Lance-physical, so it stays off
     /// the [`TableVersions`] port.
-    pub async fn fragment_counts(&self) -> Result<Vec<(&'static str, u64)>, StoreError> {
+    pub async fn fragment_counts(&self) -> Result<Vec<(TableName, u64)>, StoreError> {
         let mut counts = Vec::with_capacity(self.tables.len());
         for (name, table) in &self.tables {
             let native = table
                 .as_native()
                 .ok_or_else(|| StoreError::CannotGetFragmentCount {
-                    table: (*name).to_string(),
+                    table: name.to_string(),
                     reason: "table is not a native LanceDB table".to_string(),
                 })?;
             let count = native.count_fragments().await?;
-            counts.push((*name, count as u64));
+            counts.push((name, count as u64));
         }
         Ok(counts)
     }
@@ -63,19 +61,16 @@ impl SkeetStore {
 mod tests {
     use super::*;
     use crate::test_utils::{make_record, open_temp_store};
-    use crate::{
-        IMAGE_APPRAISAL_TABLE_NAME, Images, ModelVersion, SCORE_TABLE_NAME,
-        SKEET_APPRAISAL_TABLE_NAME, Score, Scores, TABLE_NAME, VALIDATE_TABLE_NAME,
-    };
+    use crate::{Images, ModelVersion, Score, Scores};
 
     fn names(snapshot: &HashSet<Version>) -> HashSet<String> {
         snapshot.iter().map(|v| v.name.clone()).collect()
     }
 
-    fn tag_for(snapshot: &HashSet<Version>, name: &str) -> String {
+    fn tag_for(snapshot: &HashSet<Version>, table: TableName) -> String {
         snapshot
             .iter()
-            .find(|v| v.name == name)
+            .find(|v| v.name == table.as_str())
             .map(|v| v.tag.clone())
             .expect("table missing from snapshot")
     }
@@ -88,14 +83,14 @@ mod tests {
         let snapshot = store.version_snapshot().await.expect("version snapshot");
 
         let expected: HashSet<String> = [
-            TABLE_NAME,
-            SCORE_TABLE_NAME,
-            SKEET_APPRAISAL_TABLE_NAME,
-            IMAGE_APPRAISAL_TABLE_NAME,
-            VALIDATE_TABLE_NAME,
+            TableName::Images,
+            TableName::Scores,
+            TableName::SkeetAppraisal,
+            TableName::ImageAppraisal,
+            TableName::Validate,
         ]
         .iter()
-        .map(|s| (*s).to_string())
+        .map(|t| t.as_str().to_string())
         .collect();
         assert_eq!(names(&snapshot), expected);
     }
@@ -115,13 +110,13 @@ mod tests {
             .await
             .expect("snapshot after image");
         assert_ne!(
-            tag_for(&before, TABLE_NAME),
-            tag_for(&after_image, TABLE_NAME),
+            tag_for(&before, TableName::Images),
+            tag_for(&after_image, TableName::Images),
             "images table tag should change after add"
         );
         assert_eq!(
-            tag_for(&before, SCORE_TABLE_NAME),
-            tag_for(&after_image, SCORE_TABLE_NAME),
+            tag_for(&before, TableName::Scores),
+            tag_for(&after_image, TableName::Scores),
             "scores table tag should be unchanged"
         );
 
@@ -139,13 +134,13 @@ mod tests {
             .await
             .expect("snapshot after score");
         assert_ne!(
-            tag_for(&after_image, SCORE_TABLE_NAME),
-            tag_for(&after_score, SCORE_TABLE_NAME),
+            tag_for(&after_image, TableName::Scores),
+            tag_for(&after_score, TableName::Scores),
             "scores table tag should change after upsert"
         );
         assert_eq!(
-            tag_for(&after_image, TABLE_NAME),
-            tag_for(&after_score, TABLE_NAME),
+            tag_for(&after_image, TableName::Images),
+            tag_for(&after_score, TableName::Images),
             "images table tag should be unchanged after score upsert"
         );
     }

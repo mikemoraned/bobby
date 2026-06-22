@@ -13,7 +13,7 @@ use tracing::instrument;
 use super::arrow::typed_column;
 use super::decode::decode_rows;
 use super::query::execute_query;
-use super::schema::appraisal_schema;
+use super::schema::{TableName, appraisal_schema};
 use crate::{Appraisals, AppraisalsSource, SkeetStore, StoreError};
 
 /// The LanceDB-backed handle to one manual-appraisal table, keyed by `K`
@@ -102,14 +102,14 @@ where
 impl AppraisalsSource for SkeetStore {
     fn skeet_appraisals(&self) -> Box<dyn Appraisals<SkeetId>> {
         Box::new(AppraisalTable::new(
-            self.skeet_appraisal_table.clone(),
+            self.table(TableName::SkeetAppraisal).clone(),
             "skeet_id",
         ))
     }
 
     fn image_appraisals(&self) -> Box<dyn Appraisals<ImageId>> {
         Box::new(AppraisalTable::new(
-            self.image_appraisal_table.clone(),
+            self.table(TableName::ImageAppraisal).clone(),
             "image_id",
         ))
     }

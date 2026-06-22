@@ -95,7 +95,9 @@ pub fn decode_rows<'a, C, T>(
 pub fn batches_to_summaries(
     batches: &[RecordBatch],
 ) -> Result<Vec<StoredImageSummary>, StoreError> {
-    decode_rows(batches, SummaryColumns::extract, |cols, i| cols.to_summary(i))
+    decode_rows(batches, SummaryColumns::extract, |cols, i| {
+        cols.to_summary(i)
+    })
 }
 
 #[instrument(skip(batches))]

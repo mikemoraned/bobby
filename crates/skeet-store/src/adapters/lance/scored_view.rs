@@ -9,7 +9,7 @@ use tracing::{debug, info, instrument};
 use super::arrow::typed_column;
 use super::decode::{batches_to_summaries, decode_rows, decode_score_row, score_columns};
 use super::query::execute_query;
-use super::schema::SCORE_TABLE_NAME;
+use super::schema::TableName;
 use crate::model::ScoresMap;
 use crate::{
     Images, ModelVersion, Score, ScoredView, SkeetStore, StoreError, StoredImageSummary,
@@ -26,7 +26,7 @@ impl ScoredView for SkeetStore {
         let all_ids = self.list_all_image_ids_by_most_recent(since).await?;
 
         let scored_query = self
-            .scores_table
+            .table(TableName::Scores)
             .query()
             .select(lancedb::query::Select::columns(&["image_id"]));
         let scored_batches = execute_query(&scored_query, "list_unscored:scored_ids").await?;
@@ -114,7 +114,7 @@ impl SkeetStore {
             "original_at >= arrow_cast({cutoff_us}, 'Timestamp(Microsecond, Some(\"UTC\"))')"
         );
         let query = self
-            .images_table
+            .table(TableName::Images)
             .query()
             .select(lancedb::query::Select::columns(&["image_id"]))
             .only_if(filter);
@@ -147,7 +147,7 @@ impl SkeetStore {
             "discovered_at >= arrow_cast({cutoff_us}, 'Timestamp(Microsecond, Some(\"UTC\"))')"
         );
         let query = self
-            .images_table
+            .table(TableName::Images)
             .query()
             .select(lancedb::query::Select::columns(&["image_id"]))
             .only_if(filter);
@@ -190,7 +190,7 @@ impl SkeetStore {
 
     #[instrument(skip(self))]
     async fn cached_scores(&self) -> Result<ScoresMap, StoreError> {
-        let current_version = self.table_version(SCORE_TABLE_NAME).await?;
+        let current_version = self.table_version(TableName::Scores.as_str()).await?;
 
         // Fast path: reuse the cache if it was built at this table version.
         if let Some(scores) = self
@@ -205,14 +205,14 @@ impl SkeetStore {
 
         // Slow path: full scan and cache update
         debug!(version = %current_version.tag, "scores cache miss — full scan");
-        let scored_query = self
-            .scores_table
-            .query()
-            .select(lancedb::query::Select::columns(&[
-                "image_id",
-                "score",
-                "model_version",
-            ]));
+        let scored_query =
+            self.table(TableName::Scores)
+                .query()
+                .select(lancedb::query::Select::columns(&[
+                    "image_id",
+                    "score",
+                    "model_version",
+                ]));
         let scored_batches = execute_query(&scored_query, "cached_scores:full_scan").await?;
 
         let scores: ScoresMap = decode_rows(&scored_batches, score_columns, decode_score_row)?
@@ -249,7 +249,7 @@ impl SkeetStore {
         let filter = format!("image_id IN ({in_list})");
 
         let query = self
-            .images_table
+            .table(TableName::Images)
             .query()
             .select(lancedb::query::Select::columns(&[
                 "image_id",

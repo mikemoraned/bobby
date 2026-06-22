@@ -16,10 +16,7 @@ mod ports;
 pub mod test_utils;
 pub mod versioned_cache;
 
-pub use adapters::lance::{
-    IMAGE_APPRAISAL_TABLE_NAME, SCORE_TABLE_NAME, SKEET_APPRAISAL_TABLE_NAME, SkeetStore,
-    TABLE_NAME, VALIDATE_TABLE_NAME,
-};
+pub use adapters::lance::{SkeetStore, TableName};
 pub use adapters::object_store::StoreArgs;
 pub use error::StoreError;
 pub use model::{ImageRecord, StoredImage, StoredImageSummary, StoredOriginal, Version};
