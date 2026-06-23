@@ -26,6 +26,7 @@ skin-detection = { path = "../skin-detection" }
 text-detection = { path = "../text-detection" }
 skeet-store = { path = "../skeet-store" }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 
 [build-dependencies]

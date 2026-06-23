@@ -4,8 +4,44 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use shared::{Rejection, RejectionCategory};
 use skeet_store::ImageRecord;
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
+use tracing::warn;
 
 use crate::firehose::SkeetCandidate;
+
+/// A stage should stop: either the downstream receiver was dropped or shutdown
+/// was requested on the shared [`CancellationToken`].
+pub struct Stopped;
+
+/// Forward `item` to the next stage while observing the shared shutdown token.
+///
+/// A dropped downstream receiver is treated as a pipeline-wide shutdown: the
+/// token is cancelled so every other stage unwinds through the same seam.
+/// Returns `Err(Stopped)` when the caller should stop — either because
+/// downstream is gone or because shutdown was already in progress.
+pub async fn forward<T>(
+    tx: &mpsc::Sender<T>,
+    item: T,
+    token: &CancellationToken,
+) -> Result<(), Stopped> {
+    tokio::select! {
+        () = token.cancelled() => Err(Stopped),
+        sent = tx.send(item) => sent.map_err(|_| {
+            warn!("downstream closed, shutting down pipeline");
+            token.cancel();
+            Stopped
+        }),
+    }
+}
+
+/// Receive the next item, or `None` once the channel is closed or shutdown was
+/// requested on the shared [`CancellationToken`].
+pub async fn recv<T>(rx: &mut mpsc::Receiver<T>, token: &CancellationToken) -> Option<T> {
+    tokio::select! {
+        () = token.cancelled() => None,
+        item = rx.recv() => item,
+    }
+}
 
 /// Cumulative throughput and current queue depth for one pipeline stage.
 #[derive(Default)]

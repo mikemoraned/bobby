@@ -8,6 +8,7 @@ use shared::{PruneConfig, RejectionCategory};
 use skeet_prune::{ChannelMonitors, ImageResult, MetaResult, PipelineCounters, SkeetCandidate};
 use skeet_store::StoreArgs;
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 #[derive(Parser)]
@@ -90,36 +91,54 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let counters = Arc::new(PipelineCounters::default());
     let channels = ChannelMonitors::new(firehose_tx.clone(), meta_tx.clone(), image_tx.clone());
 
+    // Shared shutdown signal: any stage whose downstream closes cancels the
+    // token, so every other stage unwinds through the same seam.
+    let token = CancellationToken::new();
+
     let meta_http = http.clone();
     let firehose_counters = Arc::clone(&counters);
     let meta_counters = Arc::clone(&counters);
     let image_counters = Arc::clone(&counters);
 
+    let firehose_token = token.clone();
     tokio::spawn(async move {
-        skeet_prune::firehose_stage::run(firehose_tx, firehose_counters).await;
+        skeet_prune::firehose_stage::run(firehose_tx, firehose_counters, firehose_token).await;
     });
 
+    let meta_token = token.clone();
     tokio::spawn(async move {
-        skeet_prune::prune_meta_stage::run(&mut firehose_rx, meta_tx, meta_http, meta_counters)
-            .await;
+        skeet_prune::prune_meta_stage::run(
+            &mut firehose_rx,
+            meta_tx,
+            meta_http,
+            meta_counters,
+            meta_token,
+        )
+        .await;
     });
 
     let image_workers = args.image_workers;
+    let image_token = token.clone();
+    let classify_config = skeet_prune::prune_image_stage::ClassifyConfig {
+        http,
+        prune_config,
+        config_version,
+    };
     tokio::spawn(async move {
         skeet_prune::prune_image_stage::run_workers(
             meta_rx,
             image_tx,
-            http,
-            prune_config,
-            config_version,
+            classify_config,
             image_counters,
             image_workers,
+            image_token,
         )
         .await;
     });
 
     let log_interval = std::time::Duration::from_secs(args.status_interval_secs);
-    skeet_prune::save_stage::run(&mut image_rx, &store, counters, channels, log_interval).await;
+    skeet_prune::save_stage::run(&mut image_rx, &store, counters, channels, log_interval, token)
+        .await;
 
     Ok(())
 }

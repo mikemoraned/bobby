@@ -2,12 +2,17 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use crate::firehose::SkeetCandidate;
-use crate::pipeline::PipelineCounters;
+use crate::pipeline::{self, PipelineCounters};
 
-pub async fn run(tx: mpsc::Sender<SkeetCandidate>, counters: Arc<PipelineCounters>) {
+pub async fn run(
+    tx: mpsc::Sender<SkeetCandidate>,
+    counters: Arc<PipelineCounters>,
+    token: CancellationToken,
+) {
     let recv_timeout = std::time::Duration::from_secs(30);
 
     loop {
@@ -21,22 +26,24 @@ pub async fn run(tx: mpsc::Sender<SkeetCandidate>, counters: Arc<PipelineCounter
         info!("firehose connected, listening for posts...");
 
         loop {
-            let event = match tokio::time::timeout(recv_timeout, receiver.recv_async()).await {
-                Ok(Ok(event)) => event,
-                Ok(Err(_)) => {
-                    warn!("firehose channel closed");
-                    break;
-                }
-                Err(_) => {
-                    warn!("no message received in {recv_timeout:?}, reconnecting");
-                    break;
-                }
+            let event = tokio::select! {
+                () = token.cancelled() => return,
+                result = tokio::time::timeout(recv_timeout, receiver.recv_async()) => match result {
+                    Ok(Ok(event)) => event,
+                    Ok(Err(_)) => {
+                        warn!("firehose channel closed");
+                        break;
+                    }
+                    Err(_) => {
+                        warn!("no message received in {recv_timeout:?}, reconnecting");
+                        break;
+                    }
+                },
             };
 
             if let Some(candidate) = crate::firehose::extract_skeet_candidate(&event) {
                 counters.firehose.fetch_add(1, Ordering::Relaxed);
-                if tx.send(candidate).await.is_err() {
-                    warn!("downstream dropped, shutting down firehose");
+                if pipeline::forward(&tx, candidate, &token).await.is_err() {
                     return;
                 }
             }

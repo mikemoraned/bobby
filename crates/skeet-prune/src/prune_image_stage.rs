@@ -4,9 +4,10 @@ use std::sync::atomic::Ordering;
 use face_detection::FaceDetector;
 use shared::{ModelVersion, PruneConfig};
 use tokio::sync::{Mutex, mpsc};
+use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
-use crate::pipeline::{ImageResult, MetaResult, PipelineCounters};
+use crate::pipeline::{self, ImageResult, MetaResult, PipelineCounters};
 
 // The text-detection models are compile-time-bundled assets; a load failure is an
 // unrecoverable startup error for the worker, so panicking the spawned task is intended.
@@ -16,29 +17,37 @@ fn load_text_detector() -> text_detection::TextDetector {
         .expect("failed to load text detection models")
 }
 
+/// Per-worker classification inputs, cloned into each spawned worker.
+#[derive(Clone)]
+pub struct ClassifyConfig {
+    pub http: reqwest::Client,
+    pub prune_config: PruneConfig,
+    pub config_version: ModelVersion,
+}
+
 pub async fn run_workers(
     rx: mpsc::Receiver<MetaResult>,
     tx: mpsc::Sender<ImageResult>,
-    http: reqwest::Client,
-    prune_config: PruneConfig,
-    config_version: ModelVersion,
+    config: ClassifyConfig,
     counters: Arc<PipelineCounters>,
     num_workers: usize,
+    token: CancellationToken,
 ) {
     info!(num_workers, "starting image stage workers");
 
     let rx = Arc::new(Mutex::new(rx));
     let mut handles = Vec::with_capacity(num_workers);
 
-    let enable_text = prune_config.is_category_enabled(shared::RejectionCategory::Text);
+    let enable_text = config
+        .prune_config
+        .is_category_enabled(shared::RejectionCategory::Text);
 
     for worker_id in 0..num_workers {
         let rx = Arc::clone(&rx);
         let tx = tx.clone();
-        let http = http.clone();
-        let config_version = config_version.clone();
-        let prune_config = prune_config.clone();
+        let config = config.clone();
         let counters = Arc::clone(&counters);
+        let token = token.clone();
 
         handles.push(tokio::spawn(async move {
             let face = FaceDetector::from_bundled_weights();
@@ -50,16 +59,7 @@ pub async fn run_workers(
             };
             let detectors = Detectors { face, text };
             info!(worker_id, "image worker ready");
-            run_single(
-                rx,
-                tx,
-                http,
-                detectors,
-                prune_config,
-                config_version,
-                counters,
-            )
-            .await;
+            run_single(rx, tx, config, detectors, counters, token).await;
         }));
     }
 
@@ -78,14 +78,21 @@ struct Detectors {
 async fn run_single(
     rx: Arc<Mutex<mpsc::Receiver<MetaResult>>>,
     tx: mpsc::Sender<ImageResult>,
-    http: reqwest::Client,
+    config: ClassifyConfig,
     detectors: Detectors,
-    prune_config: PruneConfig,
-    config_version: ModelVersion,
     counters: Arc<PipelineCounters>,
+    token: CancellationToken,
 ) {
+    let ClassifyConfig {
+        http,
+        prune_config,
+        config_version,
+    } = config;
     loop {
-        let result = rx.lock().await.recv().await;
+        let result = tokio::select! {
+            () = token.cancelled() => return,
+            result = async { rx.lock().await.recv().await } => result,
+        };
         let Some(result) = result else { return };
 
         match result {
@@ -107,21 +114,24 @@ async fn run_single(
                         Err(reasons) => ImageResult::Rejected(reasons),
                     };
 
-                    if tx.send(result).await.is_err() {
-                        warn!("downstream dropped, shutting down image filter");
+                    if pipeline::forward(&tx, result, &token).await.is_err() {
                         return;
                     }
                 }
             }
             MetaResult::Post { image_count } => {
-                if tx.send(ImageResult::Post { image_count }).await.is_err() {
-                    warn!("downstream dropped, shutting down image filter");
+                if pipeline::forward(&tx, ImageResult::Post { image_count }, &token)
+                    .await
+                    .is_err()
+                {
                     return;
                 }
             }
             MetaResult::Rejected(reasons) => {
-                if tx.send(ImageResult::Rejected(reasons)).await.is_err() {
-                    warn!("downstream dropped, shutting down image filter");
+                if pipeline::forward(&tx, ImageResult::Rejected(reasons), &token)
+                    .await
+                    .is_err()
+                {
                     return;
                 }
             }

@@ -4,10 +4,11 @@ use std::sync::atomic::Ordering;
 use serde_json::Value;
 use shared::Rejection;
 use tokio::sync::mpsc;
-use tracing::{trace, warn};
+use tokio_util::sync::CancellationToken;
+use tracing::trace;
 
 use crate::firehose::SkeetCandidate;
-use crate::pipeline::{MetaResult, PipelineCounters};
+use crate::pipeline::{self, MetaResult, PipelineCounters};
 
 pub enum MetaFilterOutcome {
     Pass,
@@ -34,8 +35,9 @@ pub async fn run(
     tx: mpsc::Sender<MetaResult>,
     http: reqwest::Client,
     counters: Arc<PipelineCounters>,
+    token: CancellationToken,
 ) {
-    while let Some(candidate) = rx.recv().await {
+    while let Some(candidate) = pipeline::recv(rx, &token).await {
         counters.meta.fetch_add(1, Ordering::Relaxed);
         let image_count = candidate.images.len() as u64;
 
@@ -59,14 +61,15 @@ pub async fn run(
             }
         };
 
-        if tx.send(result).await.is_err() {
-            warn!("downstream dropped, shutting down meta filter");
+        if pipeline::forward(&tx, result, &token).await.is_err() {
             return;
         }
 
         let image_count = if passed { image_count } else { 0 };
-        if tx.send(MetaResult::Post { image_count }).await.is_err() {
-            warn!("downstream dropped, shutting down meta filter");
+        if pipeline::forward(&tx, MetaResult::Post { image_count }, &token)
+            .await
+            .is_err()
+        {
             return;
         }
     }
