@@ -1,3 +1,5 @@
+//! The four ordered pipeline stages — firehose → meta → image → save — and the
+//! message types, counters, and shutdown seam they share.
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -8,6 +10,11 @@ use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
 use crate::firehose::SkeetCandidate;
+
+pub mod firehose_stage;
+pub mod prune_image_stage;
+pub mod prune_meta_stage;
+pub mod save_stage;
 
 /// A stage should stop: either the downstream receiver was dropped or shutdown
 /// was requested on the shared [`CancellationToken`].

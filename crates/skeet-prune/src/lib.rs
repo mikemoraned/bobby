@@ -2,15 +2,14 @@
 
 mod classify;
 mod firehose;
-pub mod firehose_stage;
 mod metrics;
 mod persistence;
 mod pipeline;
-pub mod prune_image_stage;
-pub mod prune_meta_stage;
-pub mod save_stage;
 mod status;
 
 pub use classify::classify;
 pub use firehose::SkeetCandidate;
-pub use pipeline::{ChannelMonitors, ImageResult, MetaResult, PipelineCounters};
+pub use pipeline::{
+    ChannelMonitors, ImageResult, MetaResult, PipelineCounters, firehose_stage,
+    prune_image_stage, prune_meta_stage, save_stage,
+};
