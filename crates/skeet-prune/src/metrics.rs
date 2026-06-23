@@ -6,6 +6,8 @@ use opentelemetry::{
 };
 use shared::{Rejection, RejectionCategory};
 
+use crate::pipeline::PipelineSnapshot;
+
 /// OTel metrics emitted by skeet-prune at each status log interval.
 pub struct PruneMetrics {
     throughput: Counter<u64>,
@@ -88,70 +90,60 @@ impl PruneMetrics {
 
     /// Emit metrics for one status interval. Counters receive the delta since the
     /// last call; gauges receive the current value.
-    #[allow(clippy::too_many_arguments)]
-    pub fn emit(
-        &mut self,
-        firehose_count: u64,
-        meta_count: u64,
-        image_count: u64,
-        firehose_depth: usize,
-        meta_depth: usize,
-        image_depth: usize,
-        skeets: u64,
-        images: u64,
-        saved: u64,
-        rejection_counts: &HashMap<Rejection, u64>,
-        category_counts: &HashMap<RejectionCategory, u64>,
-        sole_category_counts: &HashMap<RejectionCategory, u64>,
-    ) {
+    pub fn emit(&mut self, snapshot: &PipelineSnapshot) {
+        let stages = &snapshot.stages;
+        let content = &snapshot.content;
+
         // Pipeline throughput — emit delta per stage
-        let firehose_delta = firehose_count.saturating_sub(self.prev_firehose);
+        let firehose_delta = stages.firehose.throughput.saturating_sub(self.prev_firehose);
         if firehose_delta > 0 {
             self.throughput
                 .add(firehose_delta, &[KeyValue::new("stage", "firehose")]);
-            self.prev_firehose = firehose_count;
+            self.prev_firehose = stages.firehose.throughput;
         }
-        let meta_delta = meta_count.saturating_sub(self.prev_meta);
+        let meta_delta = stages.meta.throughput.saturating_sub(self.prev_meta);
         if meta_delta > 0 {
             self.throughput
                 .add(meta_delta, &[KeyValue::new("stage", "meta")]);
-            self.prev_meta = meta_count;
+            self.prev_meta = stages.meta.throughput;
         }
-        let image_delta = image_count.saturating_sub(self.prev_image);
+        let image_delta = stages.image.throughput.saturating_sub(self.prev_image);
         if image_delta > 0 {
             self.throughput
                 .add(image_delta, &[KeyValue::new("stage", "image")]);
-            self.prev_image = image_count;
+            self.prev_image = stages.image.throughput;
         }
 
         // Pipeline depth — emit current value
+        self.depth.record(
+            stages.firehose.depth as u64,
+            &[KeyValue::new("stage", "firehose")],
+        );
         self.depth
-            .record(firehose_depth as u64, &[KeyValue::new("stage", "firehose")]);
+            .record(stages.meta.depth as u64, &[KeyValue::new("stage", "meta")]);
         self.depth
-            .record(meta_depth as u64, &[KeyValue::new("stage", "meta")]);
-        self.depth
-            .record(image_depth as u64, &[KeyValue::new("stage", "image")]);
+            .record(stages.image.depth as u64, &[KeyValue::new("stage", "image")]);
 
         // Content counters — emit delta
-        let skeets_delta = skeets.saturating_sub(self.prev_skeets);
+        let skeets_delta = content.posts.saturating_sub(self.prev_skeets);
         if skeets_delta > 0 {
             self.skeets_total.add(skeets_delta, &[]);
-            self.prev_skeets = skeets;
+            self.prev_skeets = content.posts;
         }
 
-        let images_delta = images.saturating_sub(self.prev_images);
+        let images_delta = content.images.saturating_sub(self.prev_images);
         if images_delta > 0 {
             self.images_total.add(images_delta, &[]);
-            self.prev_images = images;
+            self.prev_images = content.images;
         }
 
-        let saved_delta = saved.saturating_sub(self.prev_saved);
+        let saved_delta = content.saved.saturating_sub(self.prev_saved);
         if saved_delta > 0 {
             self.saved_total.add(saved_delta, &[]);
-            self.prev_saved = saved;
+            self.prev_saved = content.saved;
         }
 
-        for (reason, &count) in rejection_counts {
+        for (reason, &count) in &snapshot.rejections.by_reason {
             let prev = self.prev_rejected.get(reason).copied().unwrap_or(0);
             let delta = count.saturating_sub(prev);
             if delta > 0 {
@@ -161,7 +153,7 @@ impl PruneMetrics {
             }
         }
 
-        for (cat, &count) in category_counts {
+        for (cat, &count) in &snapshot.rejections.by_category {
             let prev = self.prev_categories.get(cat).copied().unwrap_or(0);
             let delta = count.saturating_sub(prev);
             if delta > 0 {
@@ -171,7 +163,7 @@ impl PruneMetrics {
             }
         }
 
-        for (cat, &count) in sole_category_counts {
+        for (cat, &count) in &snapshot.rejections.by_sole_category {
             let prev = self.prev_sole_categories.get(cat).copied().unwrap_or(0);
             let delta = count.saturating_sub(prev);
             if delta > 0 {
@@ -186,6 +178,7 @@ impl PruneMetrics {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pipeline::{ContentCounts, PipelineStages, RejectionBreakdown, StageStats};
     use opentelemetry::metrics::MeterProvider;
     use opentelemetry_sdk::metrics::{InMemoryMetricExporter, SdkMeterProvider};
     use test_support::{flush_and_collect, sum_counter};
@@ -199,71 +192,70 @@ mod tests {
         (metrics, provider, exporter)
     }
 
+    fn throughput(firehose: u64, meta: u64, image: u64) -> PipelineSnapshot {
+        PipelineSnapshot {
+            stages: PipelineStages {
+                firehose: StageStats {
+                    throughput: firehose,
+                    ..Default::default()
+                },
+                meta: StageStats {
+                    throughput: meta,
+                    ..Default::default()
+                },
+                image: StageStats {
+                    throughput: image,
+                    ..Default::default()
+                },
+            },
+            ..Default::default()
+        }
+    }
+
+    fn depths(firehose: usize, meta: usize, image: usize) -> PipelineSnapshot {
+        PipelineSnapshot {
+            stages: PipelineStages {
+                firehose: StageStats {
+                    depth: firehose,
+                    ..Default::default()
+                },
+                meta: StageStats {
+                    depth: meta,
+                    ..Default::default()
+                },
+                image: StageStats {
+                    depth: image,
+                    ..Default::default()
+                },
+            },
+            ..Default::default()
+        }
+    }
+
+    fn content(posts: u64, images: u64, saved: u64) -> PipelineSnapshot {
+        PipelineSnapshot {
+            content: ContentCounts {
+                posts,
+                images,
+                saved,
+            },
+            ..Default::default()
+        }
+    }
+
     fn empty_emit(metrics: &mut PruneMetrics) {
-        metrics.emit(
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        metrics.emit(&PipelineSnapshot::default());
     }
 
     #[test]
     fn throughput_counter_emits_delta_only_when_increasing() {
         let (mut metrics, provider, exporter) = make_test_metrics();
         // First emit: firehose=10 — counter should add 10.
-        metrics.emit(
-            10,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        metrics.emit(&throughput(10, 0, 0));
         // Second emit: firehose=10 again (delta=0) — counter must NOT advance.
-        metrics.emit(
-            10,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        metrics.emit(&throughput(10, 0, 0));
         // Third emit: firehose=15 (delta=5) — counter adds 5.
-        metrics.emit(
-            15,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        metrics.emit(&throughput(15, 0, 0));
         let total = sum_counter(
             &provider,
             &exporter,
@@ -276,20 +268,7 @@ mod tests {
     #[test]
     fn throughput_counter_keeps_stages_independent() {
         let (mut metrics, provider, exporter) = make_test_metrics();
-        metrics.emit(
-            7,
-            11,
-            13,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        metrics.emit(&throughput(7, 11, 13));
         let snap = flush_and_collect(&provider, &exporter);
         assert_eq!(
             snap.sum_counter(
@@ -312,20 +291,7 @@ mod tests {
     fn depth_gauge_emits_current_value_each_call() {
         let (mut metrics, provider, exporter) = make_test_metrics();
         // Gauges emit current value unconditionally — even when "delta" would be zero.
-        metrics.emit(
-            0,
-            0,
-            0,
-            5,
-            7,
-            9,
-            0,
-            0,
-            0,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        metrics.emit(&depths(5, 7, 9));
         let snap = flush_and_collect(&provider, &exporter);
         assert_eq!(
             snap.last_gauge_u64("skeet_prune.pipeline.depth", Some(("stage", "firehose"))),
@@ -344,51 +310,12 @@ mod tests {
     #[test]
     fn content_counters_emit_deltas() {
         let (mut metrics, provider, exporter) = make_test_metrics();
-        metrics.emit(
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            4,
-            6,
-            2,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        metrics.emit(&content(4, 6, 2));
         // Emit again with same totals — must not double-count.
         empty_emit(&mut metrics);
-        metrics.emit(
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            4,
-            6,
-            2,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        metrics.emit(&content(4, 6, 2));
         // Then bump.
-        metrics.emit(
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            5,
-            6,
-            3,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        metrics.emit(&content(5, 6, 3));
         let snap = flush_and_collect(&provider, &exporter);
         assert_eq!(snap.sum_counter("skeet_prune.skeets.total", None), 5);
         assert_eq!(snap.sum_counter("skeet_prune.images.total", None), 6);
@@ -401,51 +328,21 @@ mod tests {
         let mut rejs: HashMap<Rejection, u64> = HashMap::new();
         rejs.insert(Rejection::TooMuchText, 3);
         rejs.insert(Rejection::FaceTooSmall, 1);
-        metrics.emit(
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            &rejs,
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        let emit_reasons = |metrics: &mut PruneMetrics, rejs: &HashMap<Rejection, u64>| {
+            metrics.emit(&PipelineSnapshot {
+                rejections: RejectionBreakdown {
+                    by_reason: rejs.clone(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+        };
+        emit_reasons(&mut metrics, &rejs);
         // Same map again — no advance.
-        metrics.emit(
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            &rejs,
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        emit_reasons(&mut metrics, &rejs);
         // Bump TooMuchText to 7.
         rejs.insert(Rejection::TooMuchText, 7);
-        metrics.emit(
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            &rejs,
-            &HashMap::new(),
-            &HashMap::new(),
-        );
+        emit_reasons(&mut metrics, &rejs);
         let snap = flush_and_collect(&provider, &exporter);
         assert_eq!(
             snap.sum_counter(
@@ -470,11 +367,23 @@ mod tests {
         cats.insert(RejectionCategory::Face, 5);
         let mut sole: HashMap<RejectionCategory, u64> = HashMap::new();
         sole.insert(RejectionCategory::Face, 2);
-        metrics.emit(0, 0, 0, 0, 0, 0, 0, 0, 0, &HashMap::new(), &cats, &sole);
-        metrics.emit(0, 0, 0, 0, 0, 0, 0, 0, 0, &HashMap::new(), &cats, &sole);
+        let emit_cats = |metrics: &mut PruneMetrics,
+                         cats: &HashMap<RejectionCategory, u64>,
+                         sole: &HashMap<RejectionCategory, u64>| {
+            metrics.emit(&PipelineSnapshot {
+                rejections: RejectionBreakdown {
+                    by_category: cats.clone(),
+                    by_sole_category: sole.clone(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+        };
+        emit_cats(&mut metrics, &cats, &sole);
+        emit_cats(&mut metrics, &cats, &sole);
         cats.insert(RejectionCategory::Face, 8);
         sole.insert(RejectionCategory::Face, 3);
-        metrics.emit(0, 0, 0, 0, 0, 0, 0, 0, 0, &HashMap::new(), &cats, &sole);
+        emit_cats(&mut metrics, &cats, &sole);
         let snap = flush_and_collect(&provider, &exporter);
         assert_eq!(
             snap.sum_counter("skeet_prune.categories.total", Some(("category", "Face"))),

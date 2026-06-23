@@ -7,7 +7,10 @@ use shared::{Rejection, RejectionCategory};
 use tracing::info;
 
 use crate::metrics::PruneMetrics;
-use crate::pipeline::{ChannelMonitors, PipelineCounters};
+use crate::pipeline::{
+    ChannelMonitors, ContentCounts, PipelineCounters, PipelineSnapshot, PipelineStages,
+    RejectionBreakdown, StageStats,
+};
 
 const ALL_CATEGORIES: [RejectionCategory; 3] = [
     RejectionCategory::Face,
@@ -199,19 +202,32 @@ impl Status {
              | depth: firehose={firehose_depth}, meta={meta_depth}, image={image_depth}",
         );
 
-        self.metrics.emit(
-            firehose,
-            meta,
-            image,
-            firehose_depth,
-            meta_depth,
-            image_depth,
-            posts,
-            images,
-            saved,
-            &self.rejection_counts,
-            &self.category_counts,
-            &self.sole_category_counts,
-        );
+        let snapshot = PipelineSnapshot {
+            stages: PipelineStages {
+                firehose: StageStats {
+                    throughput: firehose,
+                    depth: firehose_depth,
+                },
+                meta: StageStats {
+                    throughput: meta,
+                    depth: meta_depth,
+                },
+                image: StageStats {
+                    throughput: image,
+                    depth: image_depth,
+                },
+            },
+            content: ContentCounts {
+                posts,
+                images,
+                saved,
+            },
+            rejections: RejectionBreakdown {
+                by_reason: self.rejection_counts.clone(),
+                by_category: self.category_counts.clone(),
+                by_sole_category: self.sole_category_counts.clone(),
+            },
+        };
+        self.metrics.emit(&snapshot);
     }
 }

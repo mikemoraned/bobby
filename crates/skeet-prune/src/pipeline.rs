@@ -1,10 +1,53 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use shared::Rejection;
+use shared::{Rejection, RejectionCategory};
 use skeet_store::ImageRecord;
 use tokio::sync::mpsc;
 
 use crate::firehose::SkeetCandidate;
+
+/// Cumulative throughput and current queue depth for one pipeline stage.
+#[derive(Default)]
+pub struct StageStats {
+    pub throughput: u64,
+    pub depth: usize,
+}
+
+/// Per-stage pipeline metrics.
+#[derive(Default)]
+pub struct PipelineStages {
+    pub firehose: StageStats,
+    pub meta: StageStats,
+    pub image: StageStats,
+}
+
+/// Cumulative content counts: skeets seen, images examined, images saved.
+#[derive(Default)]
+pub struct ContentCounts {
+    pub posts: u64,
+    pub images: u64,
+    pub saved: u64,
+}
+
+/// Cumulative rejection counts broken down by reason, by detection category, and
+/// by the category that was the sole detection.
+#[derive(Default)]
+pub struct RejectionBreakdown {
+    pub by_reason: HashMap<Rejection, u64>,
+    pub by_category: HashMap<RejectionCategory, u64>,
+    pub by_sole_category: HashMap<RejectionCategory, u64>,
+}
+
+/// One status-interval's worth of pipeline numbers, captured once and handed to
+/// each consumer (OTel today, the store's statistics record later). Carries no
+/// telemetry-backend dependency so the same value can be reused by either.
+#[derive(Default)]
+pub struct PipelineSnapshot {
+    pub stages: PipelineStages,
+    pub content: ContentCounts,
+    pub rejections: RejectionBreakdown,
+}
 
 /// Messages between `prune_meta_stage` and `prune_image_stage`.
 pub enum MetaResult {
