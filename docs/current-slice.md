@@ -96,3 +96,48 @@ Tasks:
 * [x] **Pure: the "reset after a connection stays up" decision (tested first).** Backoff must escalate while connects *fail or flap* but reset once a session is healthy — so factor the rule into a pure, testable seam: `fn session_was_stable(up_for: Duration) -> bool` against a named `STABLE_AFTER: Duration` threshold (a session that lasted ≥ threshold counts as "stayed up" ⇒ next cycle resets to base; a sub-threshold drop is a flap ⇒ keep escalating). TDD: stub `false`, assert the threshold boundary (examples + a monotonicity proptest), then implement. (This is the bit `backon` *doesn't* give for free — it resets per fresh `.retry()` call, so we need to decide *when* to start a fresh sequence vs. stay in the escalating one.)
 * [x] **Rewire `firehose_stage::run` to drive reconnect through `backon`.** Replace the bare `warn; continue` (no-delay) outer loop with a `backon`-scheduled one: the retried operation is *connect → run the recv loop → classify the ended session*. Connect failure and a **flap** (`!session_was_stable(up_for)`) both surface as the retry's `Err` so `backon` sleeps with the escalating, jittered, capped delay; a **stable** session ending returns `Ok`, ending the retry so the outer loop re-enters with a fresh `reconnect_backoff()` (= reset to base). Use `.notify(|err, dur| warn!(?dur, %err, "firehose reconnect backing off"))` so every backoff is visible (replaces today's bare `warn`). Keep `JetstreamConfig.max_retries: 0`. Carry the Group 2 `last_time_us` across attempts — prefer `RetryableWithContext` for the state-threading if a plain `&mut` capture in the `FnMut` async closure fights the borrow-checker. Verify `just clippy` + `just test-no-docker`. (Lands **after** Group 2 — the cursor that makes gaps lossless must precede deliberately lengthening them.)
 * [x] **Close out.** Run `just clippy`, `just test-no-docker`, and `just mutants-on-diff` clean over the diff — the two pure seams (`reconnect_backoff` config, `session_was_stable`) are the mutation-covered surface; the live escalate/reset behaviour is a human/CI smoke-check (no pluggable stream until the replay slice, and `backon`'s schedule is time/socket-bound). Optionally note in a comment that swapping `backon`'s `Sleeper` (`.sleep(fn)`) + tokio `start_paused` is the route to a deterministic loop test if one is wanted later. (`just mutants-on-diff` not run here at the user's request — clippy + test-no-docker are clean.)
+
+### Observations + associated Tasks to fix / understand
+
+**Symptom (observed 2026-06-23, local run on a residential connection).** After Groups 2/3 landed, the pruner flaps: it connects, runs a while, the WS drops (`firehose channel closed`), and the reconnect backoff escalates 1.7s → 3.8s → 5.2s → 14.6s → 18.9s → 54.4s as successive sessions shorten (54.8s, then 4.6s, 6.5s, 1.16s, 0.70s, 2.7s). "I'm sure I didn't used to see these." Note up front: pre-Groups-2/3 the same drops were *silent and self-healing* (`warn; continue` → instant live-tail reconnect, no replay, no escalating delay) — so part of what's new is **visibility + amplification**, not necessarily more drops. Background analysis: `skeet-prune-review.md` §10 + the firehose research below.
+
+#### H1 — The drops are Jetstream's normal server-side cycling (≈WS 1006), not a regression of ours — LIKELY (confirm via H2)
+
+The drops hit across *multiple* endpoints (east **and** west), and Bluesky documents this exact behaviour: [jetstream#27](https://github.com/bluesky-social/jetstream/issues/27) reports frequent **1006 (closed, no frame) every ~5–10s**; the [firehose docs](https://docs.bsky.app/docs/advanced-guides/firehose) say `bsky.network` connections "may drop… if your client implements auto-reconnection… impact should be minimal" — i.e. drops are *expected* and prompt reconnection is the designed remedy. If true, our job is to reconnect quickly + idempotently (the cursor already makes that safe), **not** to treat each drop as an outage to back off from (see H3).
+
+Tasks:
+* [ ] Confirm the close code/reason per drop (needs H2). Expect **1006**; a *different* code (e.g. 1008/1009/1011, or a close frame with a reason) would point at us (bad cursor, message too big, policy) instead — that distinction decides whether H3/H4 are the whole story or there's a real client bug.
+
+#### H2 — The real disconnect reason is being thrown away — CONFIRMED (suppressed); prerequisite for H1/H4
+
+`jetstream-oxide 0.1.2` logs the actual cause (`log::error!("Web socket error: {error}")`, and the server close frame `Reason/Code` at trace) via the **`log`** crate. Our `Targets` filter (`skeet_prune=info,shared=info,skeet_store=info,…`) has no `jetstream_oxide` directive, so it's all dropped; our `"firehose channel closed"` is just `recv_async()` seeing the closed channel and can't carry the reason. `tracing-log` *is* in the lockfile (bridge present), so the fix is likely just the filter.
+
+Tasks:
+* [ ] **Quick test, no code change:** rerun with `RUST_LOG="skeet_prune=info,shared=info,skeet_store=info,jetstream_oxide=trace,tungstenite=debug,tokio_tungstenite=debug"` and read the WS error / close code at a drop.
+* [ ] If *nothing* from `jetstream_oxide` appears, the `LogTracer` isn't installed/levelled — add an explicit `tracing_log::LogTracer::init()` (+ `log::set_max_level`) in `shared::tracing` so `log`-crate deps surface at all.
+* [ ] Once confirmed, add `jetstream_oxide=warn` (close-frame + WS errors are `error!`/`trace!`) to the pruner's *default* filter so drops are diagnosable in the persisted `pruner.log` without env fiddling — cheap, permanent visibility.
+
+#### H3 — `STABLE_AFTER = 60s` exceeds the typical session length, so the backoff never resets → escalation spiral — CONFIRMED (from the run); highest-leverage fix
+
+`session_was_stable` only resets the backoff at ≥ 60s, but Jetstream cycles connections in *well under* a minute (H1). In the captured run the **first, healthy 54.8s session (~300 skeets processed) was classified a flap** (54.8 < 60), and every later session was shorter — so the backoff *only ever escalates*, to the 60s cap, leaving the pruner reconnecting ~once a minute and replaying ~a minute of backlog each time. Classifying a flap by **duration** is the wrong signal: "connected, received events, then the server cycled us" is normal and should reconnect *promptly*.
+
+Tasks:
+* [ ] Re-tune the reset signal from *duration* to *progress*: a session that received ≥1 event (made progress) resets the backoff regardless of length; reserve escalation for genuine connect-failures / sessions that delivered **zero** events. Thread an events-received count out of `run_session` and decide on that. (Pure seam stays unit-testable.)
+* [ ] If keeping a duration component at all, drop `STABLE_AFTER` well below the observed session length (seconds, not 60s) so normal cycling doesn't read as flapping.
+* [ ] Sanity-check the resulting behaviour against H1's data: a routine 1006 should now reconnect at ~base delay (≈1s + jitter), not climb to the cap.
+
+#### H4 — Cursor replay amplifies under escalating backoff (and catch-up connections may be more fragile) — THEORY (needs H2 + an A/B)
+
+Each reconnect cursor is `cursor_from(last_time_us)` — anchored to the last event seen, rewound 5s — so the replay window is *everything since the last event*, which grows with the backoff gap (a 54s backoff ⇒ ~54s+ replay burst). With H3's spiral this compounds: longer gap → bigger replay → pipeline (H5) falls further behind → `last_time_us` lags more. Separately, [jetstream#42](https://github.com/bluesky-social/jetstream/issues/42) notes catch-up (cursored) connections drop/reorder events and **`time_us` is non-monotonic during catch-up** — relevant to `last_time_us = Some(event_time_us(&event))`, which assumes monotonicity (the 5s rewind mostly absorbs it). The captured run is *consistent* with cursored reconnects dying faster than the initial live-tail one, but n is small.
+
+Tasks:
+* [ ] Add per-connect visibility: log the cursor and its replay span (`now − cursor`) at connect, and events-received + duration at each session end (feeds H3 too). Shows the replay growing with the backoff.
+* [ ] **A/B isolation:** one run with the cursor forced to `None`. If session lengths stop shortening, catch-up fragility is real; if not, it's pure server cycling (H1) and the cursor is exonerated.
+* [ ] *(Only if A/B implicates replay size)* cap the replay — e.g. if the gap exceeds some bound, fall back to live-tail (`None`) and accept that gap as lost, rather than replaying minutes. Decide against the Group 2 "accept restart gap as lost" precedent.
+
+#### H5 — The meta stage is the throughput bottleneck, so the pipeline lags real-time → cursors lag → replays grow — CONFIRMED (from the run); contributor, not the drop cause
+
+`depth: firehose=16` is pinned at the channel cap throughout, while `meta`/`image` depths stay low — i.e. the **single-threaded `prune_meta_stage`** (one serial `getPostThread` HTTP call per candidate) can't drain the firehose channel on residential latency. This does **not** drop the socket (jetstream-oxide buffers into `flume::unbounded`, so a slow consumer never stalls the WS read), but it keeps `last_time_us` behind real-time, enlarging every cursor replay (H4) and making it harder to ever "catch up". Review §3/§4 already flag the image stage; the meta stage has the same shape and is the current limiter.
+
+Tasks:
+* [ ] *(Separate task / its own change — not a quick fix)* parallelise the meta stage like the image stage (a small worker pool over `getPostThread`), so steady-state throughput exceeds the firehose rate and the pipeline tracks real-time. Gate on whether H3/H4 alone calm the flapping first.
