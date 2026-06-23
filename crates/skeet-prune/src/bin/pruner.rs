@@ -5,8 +5,7 @@ use std::sync::Arc;
 
 use clap::Parser;
 use shared::{PruneConfig, RejectionCategory};
-use skeet_prune::firehose::SkeetCandidate;
-use skeet_prune::pipeline::{ChannelMonitors, ImageResult, MetaResult, PipelineCounters};
+use skeet_prune::{ChannelMonitors, ImageResult, MetaResult, PipelineCounters, SkeetCandidate};
 use skeet_store::StoreArgs;
 use tokio::sync::mpsc;
 use tracing::info;

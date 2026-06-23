@@ -96,7 +96,7 @@ async fn run_single(
                     crate::firehose::download_candidate_images(&candidate, &http).await;
 
                 for skeet_image in skeet_images {
-                    let result = match crate::classify_image(
+                    let result = match crate::classify::classify_image(
                         skeet_image,
                         &detectors.face,
                         detectors.text.as_ref(),
