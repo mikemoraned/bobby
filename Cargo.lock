@@ -10990,6 +10990,7 @@ name = "skeet-prune"
 version = "0.1.0"
 dependencies = [
  "atrium-api",
+ "backon",
  "bluesky",
  "build-support",
  "chrono",
@@ -11012,6 +11013,7 @@ dependencies = [
  "skin-detection",
  "test-support",
  "text-detection",
+ "thiserror 2.0.18",
  "tokio",
  "tokio-util",
  "toml 0.8.23",

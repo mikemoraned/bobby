@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 atrium-api = { version = "0.25", default-features = false, features = ["namespace-appbsky"] }
+backon = { workspace = true }
 bluesky = { workspace = true }
 eval = { workspace = true }
 chrono = { workspace = true }
@@ -24,6 +25,7 @@ opentelemetry = { workspace = true }
 shared = { workspace = true }
 skin-detection = { path = "../skin-detection" }
 text-detection = { path = "../text-detection" }
+thiserror = { workspace = true }
 skeet-store = { path = "../skeet-store" }
 tokio = { workspace = true }
 tokio-util = { workspace = true }

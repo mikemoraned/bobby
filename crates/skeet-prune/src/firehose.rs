@@ -6,6 +6,7 @@ use atrium_api::{
     record::KnownRecord,
     types::{BlobRef, TypedBlobRef, Union},
 };
+use backon::ExponentialBuilder;
 use chrono::{DateTime, Utc};
 use jetstream_oxide::{
     DefaultJetstreamEndpoints, JetstreamCompression, JetstreamConfig, JetstreamConnector,
@@ -49,6 +50,30 @@ pub const fn cursor_from(time_us: u64) -> Option<DateTime<Utc>> {
         Some(micros) => DateTime::from_timestamp_micros(micros as i64),
         None => None,
     }
+}
+
+const RECONNECT_MIN_DELAY: Duration = Duration::from_secs(1);
+const RECONNECT_MAX_DELAY: Duration = Duration::from_secs(60);
+
+/// Backoff schedule for reconnect *cycles* (one cycle = one full pass over the
+/// shuffled endpoints in [`connect`]). Polite and never-give-up: jitter
+/// de-synchronises retries across the shared public Jetstream instances, the
+/// delay is capped, and the schedule retries indefinitely through an outage.
+pub fn reconnect_backoff() -> ExponentialBuilder {
+    ExponentialBuilder::default()
+        .with_jitter()
+        .with_min_delay(RECONNECT_MIN_DELAY)
+        .with_max_delay(RECONNECT_MAX_DELAY)
+        .without_max_times()
+}
+
+const STABLE_AFTER: Duration = Duration::from_secs(60);
+
+/// Whether a session that lasted `up_for` counts as having "stayed up": at or
+/// beyond [`STABLE_AFTER`] the next reconnect resets to the base backoff delay,
+/// while a shorter-lived session is a flap and keeps the backoff escalating.
+pub const fn session_was_stable(up_for: Duration) -> bool {
+    up_for.as_nanos() >= STABLE_AFTER.as_nanos()
 }
 
 const ALL_ENDPOINTS: [DefaultJetstreamEndpoints; 4] = [
@@ -277,6 +302,7 @@ fn parse_created_at(dt: &atrium_api::types::string::Datetime) -> DateTime<Utc> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use backon::BackoffBuilder;
     use proptest::prelude::*;
 
     // Largest `time_us` whose rewound cursor is still a representable
@@ -399,6 +425,43 @@ mod tests {
             let cursor = cursor_from(time_us).expect("representable");
             let rewind_micros = RECONNECT_REWIND.as_micros() as i64;
             prop_assert_eq!(cursor.timestamp_micros(), time_us as i64 - rewind_micros);
+        }
+    }
+
+    #[test]
+    fn reconnect_backoff_is_capped_jittered_and_unbounded() {
+        let mut backoff = reconnect_backoff().build();
+        let mut delays = Vec::new();
+        for _ in 0..10_000 {
+            // never-give-up: the schedule keeps yielding through a long outage
+            let delay = backoff.next().expect("backoff must never stop retrying");
+            assert!(delay >= RECONNECT_MIN_DELAY, "below min delay: {delay:?}");
+            // capped: jitter adds at most the (capped) base delay on top
+            assert!(delay <= RECONNECT_MAX_DELAY * 2, "above jittered cap: {delay:?}");
+            delays.push(delay);
+        }
+        // jitter: once saturated at the cap, delays vary rather than pinning to
+        // a single value (with jitter off they would all be identical).
+        let last = *delays.last().expect("non-empty");
+        assert!(
+            delays.iter().rev().take(100).any(|&d| d != last),
+            "expected jitter to vary the capped delay",
+        );
+    }
+
+    #[test]
+    fn session_at_threshold_is_stable_just_below_is_a_flap() {
+        assert!(session_was_stable(STABLE_AFTER));
+        assert!(!session_was_stable(STABLE_AFTER - Duration::from_nanos(1)));
+    }
+
+    proptest! {
+        #[test]
+        fn session_stability_is_monotonic_in_uptime(secs in 0u64..1_000_000) {
+            // a longer-lived session can only become "more stable", never less
+            let shorter = Duration::from_secs(secs);
+            let longer = shorter + Duration::from_secs(1);
+            prop_assert!(session_was_stable(longer) || !session_was_stable(shorter));
         }
     }
 }
