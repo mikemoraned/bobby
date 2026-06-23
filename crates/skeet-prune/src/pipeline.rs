@@ -23,7 +23,7 @@ pub struct PipelineStages {
 }
 
 /// Cumulative content counts: skeets seen, images examined, images saved.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ContentCounts {
     pub posts: u64,
     pub images: u64,
@@ -32,7 +32,7 @@ pub struct ContentCounts {
 
 /// Cumulative rejection counts broken down by reason, by detection category, and
 /// by the category that was the sole detection.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct RejectionBreakdown {
     pub by_reason: HashMap<Rejection, u64>,
     pub by_category: HashMap<RejectionCategory, u64>,

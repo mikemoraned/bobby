@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -18,18 +18,26 @@ const ALL_CATEGORIES: [RejectionCategory; 3] = [
     RejectionCategory::Metadata,
 ];
 
-pub struct Status {
-    post_count: u64,
-    image_count: u64,
-    saved_count: u64,
-    rejected_count: u64,
-    rejection_counts: HashMap<Rejection, u64>,
-    category_counts: HashMap<RejectionCategory, u64>,
-    sole_category_counts: HashMap<RejectionCategory, u64>,
-    last_log: Instant,
-    log_interval: Duration,
-    log_every_n: u64,
+/// Running rejection tallies: the headline count of rejected images plus the
+/// per-reason and per-category breakdowns.
+#[derive(Default)]
+struct RejectionTally {
+    total: u64,
+    breakdown: RejectionBreakdown,
+}
+
+/// Governs when `log_summary` fires and anchors the cumulative-rate clock.
+struct LogCadence {
     started_at: Instant,
+    last_log: Instant,
+    interval: Duration,
+    every_n: u64,
+}
+
+pub struct Status {
+    content: ContentCounts,
+    rejections: RejectionTally,
+    cadence: LogCadence,
     counters: Arc<PipelineCounters>,
     channels: ChannelMonitors,
     metrics: PruneMetrics,
@@ -42,18 +50,16 @@ impl Status {
         counters: Arc<PipelineCounters>,
         channels: ChannelMonitors,
     ) -> Self {
+        let now = Instant::now();
         Self {
-            post_count: 0,
-            image_count: 0,
-            saved_count: 0,
-            rejected_count: 0,
-            rejection_counts: HashMap::new(),
-            category_counts: HashMap::new(),
-            sole_category_counts: HashMap::new(),
-            last_log: Instant::now(),
-            log_interval,
-            log_every_n,
-            started_at: Instant::now(),
+            content: ContentCounts::default(),
+            rejections: RejectionTally::default(),
+            cadence: LogCadence {
+                started_at: now,
+                last_log: now,
+                interval: log_interval,
+                every_n: log_every_n,
+            },
             counters,
             channels,
             metrics: PruneMetrics::new(&opentelemetry::global::meter("skeet_prune")),
@@ -61,61 +67,62 @@ impl Status {
     }
 
     pub fn record_post(&mut self, image_count: u64) {
-        self.post_count += 1;
-        self.image_count += image_count;
+        self.content.posts += 1;
+        self.content.images += image_count;
         self.maybe_log();
     }
 
     pub const fn record_saved(&mut self) {
-        self.saved_count += 1;
+        self.content.saved += 1;
     }
 
     pub fn record_rejected(&mut self, reasons: &[Rejection]) {
-        self.rejected_count += 1;
+        self.rejections.total += 1;
+        let breakdown = &mut self.rejections.breakdown;
         let mut categories_seen: HashSet<RejectionCategory> = HashSet::new();
         for reason in reasons {
-            *self.rejection_counts.entry(*reason).or_default() += 1;
+            *breakdown.by_reason.entry(*reason).or_default() += 1;
             categories_seen.insert(reason.category());
         }
         for &cat in &categories_seen {
-            *self.category_counts.entry(cat).or_default() += 1;
+            *breakdown.by_category.entry(cat).or_default() += 1;
         }
         if categories_seen.len() == 1
             && let Some(sole) = categories_seen.into_iter().next()
         {
-            *self.sole_category_counts.entry(sole).or_default() += 1;
+            *breakdown.by_sole_category.entry(sole).or_default() += 1;
         }
     }
 
     pub const fn saved_count(&self) -> u64 {
-        self.saved_count
+        self.content.saved
     }
 
     fn maybe_log(&mut self) {
-        if self.post_count == 1
-            || self.post_count.is_multiple_of(self.log_every_n)
-            || self.last_log.elapsed() >= self.log_interval
+        if self.content.posts == 1
+            || self.content.posts.is_multiple_of(self.cadence.every_n)
+            || self.cadence.last_log.elapsed() >= self.cadence.interval
         {
             self.log_summary();
-            self.last_log = Instant::now();
+            self.cadence.last_log = Instant::now();
         }
     }
 
     // Every `expect` below is a `write!` into a `String`, which is infallible.
     #[allow(clippy::expect_used)]
     fn log_summary(&mut self) {
-        let hit_rate = if self.image_count > 0 {
-            (self.saved_count as f64 / self.image_count as f64) * 100.0
+        let hit_rate = if self.content.images > 0 {
+            (self.content.saved as f64 / self.content.images as f64) * 100.0
         } else {
             0.0
         };
 
-        let posts = self.post_count;
-        let images = self.image_count;
-        let saved = self.saved_count;
-        let rejected = self.rejected_count;
+        let posts = self.content.posts;
+        let images = self.content.images;
+        let saved = self.content.saved;
+        let rejected = self.rejections.total;
 
-        let elapsed = self.started_at.elapsed().as_secs_f64();
+        let elapsed = self.cadence.started_at.elapsed().as_secs_f64();
         let skeets_per_sec = if elapsed > 0.0 {
             posts as f64 / elapsed
         } else {
@@ -128,9 +135,9 @@ impl Status {
             "skeets: {posts} ({skeets_per_sec:.1}/s) | images: {images} | {saved_detail} | rejected: {rejected}"
         );
 
-        if !self.rejection_counts.is_empty() {
-            let total_reasons: u64 = self.rejection_counts.values().sum();
-            let mut sorted: Vec<_> = self.rejection_counts.iter().collect();
+        if !self.rejections.breakdown.by_reason.is_empty() {
+            let total_reasons: u64 = self.rejections.breakdown.by_reason.values().sum();
+            let mut sorted: Vec<_> = self.rejections.breakdown.by_reason.iter().collect();
             sorted.sort_by_key(|(r, _)| r.to_string());
 
             write!(msg, " (").expect("write to String");
@@ -144,16 +151,28 @@ impl Status {
             write!(msg, ")").expect("write to String");
         }
 
-        if !self.category_counts.is_empty() {
+        if !self.rejections.breakdown.by_category.is_empty() {
             write!(msg, " | categories: ").expect("write to String");
             for (i, cat) in ALL_CATEGORIES.iter().enumerate() {
-                let count = self.category_counts.get(cat).copied().unwrap_or(0);
+                let count = self
+                    .rejections
+                    .breakdown
+                    .by_category
+                    .get(cat)
+                    .copied()
+                    .unwrap_or(0);
                 let pct = if rejected > 0 {
                     (count as f64 / rejected as f64) * 100.0
                 } else {
                     0.0
                 };
-                let sole = self.sole_category_counts.get(cat).copied().unwrap_or(0);
+                let sole = self
+                    .rejections
+                    .breakdown
+                    .by_sole_category
+                    .get(cat)
+                    .copied()
+                    .unwrap_or(0);
                 let sole_pct = if rejected > 0 {
                     (sole as f64 / rejected as f64) * 100.0
                 } else {
@@ -217,16 +236,8 @@ impl Status {
                     depth: image_depth,
                 },
             },
-            content: ContentCounts {
-                posts,
-                images,
-                saved,
-            },
-            rejections: RejectionBreakdown {
-                by_reason: self.rejection_counts.clone(),
-                by_category: self.category_counts.clone(),
-                by_sole_category: self.sole_category_counts.clone(),
-            },
+            content: self.content.clone(),
+            rejections: self.rejections.breakdown.clone(),
         };
         self.metrics.emit(&snapshot);
     }
