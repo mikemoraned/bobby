@@ -11003,6 +11003,7 @@ dependencies = [
  "libtest-mimic",
  "opentelemetry",
  "opentelemetry_sdk",
+ "proptest",
  "reqwest 0.13.2",
  "serde",
  "serde_json",

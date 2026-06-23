@@ -35,6 +35,7 @@ build-support = { workspace = true }
 [dev-dependencies]
 libtest-mimic = "0.8"
 opentelemetry_sdk = { workspace = true, features = ["testing"] }
+proptest = { workspace = true }
 test-support = { workspace = true }
 toml = { workspace = true }
 

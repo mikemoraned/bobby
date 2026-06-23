@@ -16,7 +16,7 @@ just prerequisites
   - **Claude:** you run in a sandbox without Docker — use `just test-no-docker` instead
 - `just test-no-docker` — same as `just test` but omits testcontainers-based tests; safe to run without Docker
 - `just end_to_end_test` — run tests that require live external APIs (OpenAI, Cloudflare, staging)
-- `just mutants-on-diff` — run mutation testing on changed code; run after completing any non-trivial change
+- `just mutants-on-diff` — run mutation testing on changed code, **scoped to core logic**: pure, invariant-bearing code and domain/value types (e.g. `shared`, `model`-layer types, and any pure function you'd proptest — wherever it lives). Run it after a non-trivial change to such code. **Skip it for IO/glue/wiring** — store/redis/network adapters, HTTP handlers, pipeline orchestration, telemetry emit, CLI bins — where surviving mutants are usually equivalent or only killable by integration tests, so chasing them burns slow compute for no real signal. "Core" is by *nature*, not a fixed crate/path list; CLI bins and build scripts are excluded mechanically in `.cargo/mutants.toml`, the rest is this judgment.
 - `just validate-storage` — validate store read/write works
 
 ## Methodology

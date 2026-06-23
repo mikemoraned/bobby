@@ -20,6 +20,37 @@ use tracing::{info, warn};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// How far to rewind the resume cursor before reconnecting, so the replayed
+/// window overlaps the disconnect boundary rather than leaving a gap. Safe
+/// because the ultimate sink is idempotent (keyed by content hash / `SkeetId`).
+const RECONNECT_REWIND: Duration = Duration::from_secs(5);
+
+/// The `time_us` carried by any Jetstream event, regardless of variant. Used to
+/// advance the resume cursor on every observed event — not only post candidates
+/// — so a quiet period can't leave the cursor stale.
+pub const fn event_time_us(event: &JetstreamEvent) -> u64 {
+    match event {
+        JetstreamEvent::Commit(
+            CommitEvent::Create { info, .. }
+            | CommitEvent::Update { info, .. }
+            | CommitEvent::Delete { info, .. },
+        ) => info.time_us,
+        JetstreamEvent::Identity(identity) => identity.info.time_us,
+        JetstreamEvent::Account(account) => account.info.time_us,
+    }
+}
+
+/// Build a resume cursor from the last observed event time, rewound by
+/// [`RECONNECT_REWIND`]. Returns `None` when the rewind would precede the Unix
+/// epoch (no meaningful cursor to resume from).
+pub const fn cursor_from(time_us: u64) -> Option<DateTime<Utc>> {
+    let rewind_micros = RECONNECT_REWIND.as_micros() as u64;
+    match time_us.checked_sub(rewind_micros) {
+        Some(micros) => DateTime::from_timestamp_micros(micros as i64),
+        None => None,
+    }
+}
+
 const ALL_ENDPOINTS: [DefaultJetstreamEndpoints; 4] = [
     DefaultJetstreamEndpoints::USEastOne,
     DefaultJetstreamEndpoints::USEastTwo,
@@ -27,7 +58,9 @@ const ALL_ENDPOINTS: [DefaultJetstreamEndpoints; 4] = [
     DefaultJetstreamEndpoints::USWestTwo,
 ];
 
-pub async fn connect() -> Result<JetstreamReceiver, Box<dyn std::error::Error>> {
+pub async fn connect(
+    cursor: Option<DateTime<Utc>>,
+) -> Result<JetstreamReceiver, Box<dyn std::error::Error>> {
     info!("connecting to firehose");
 
     let wanted_collections = vec!["app.bsky.feed.post".parse::<Nsid>()?];
@@ -43,6 +76,7 @@ pub async fn connect() -> Result<JetstreamReceiver, Box<dyn std::error::Error>> 
             compression: JetstreamCompression::Zstd,
             wanted_collections: wanted_collections.clone(),
             max_retries: 0,
+            cursor,
             ..Default::default()
         };
 
@@ -238,4 +272,133 @@ fn blob_cid(blob_ref: &BlobRef) -> Option<BlueskyCid> {
 fn parse_created_at(dt: &atrium_api::types::string::Datetime) -> DateTime<Utc> {
     let fixed: &chrono::DateTime<chrono::FixedOffset> = dt.as_ref();
     fixed.with_timezone(&Utc)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    // Largest `time_us` whose rewound cursor is still a representable
+    // `DateTime<Utc>`; keeps the proptests away from chrono's range edge.
+    const MAX_REPR_US: u64 = 8_000_000_000_000_000_000;
+
+    fn event_from_json(json: &str) -> JetstreamEvent {
+        serde_json::from_str(json).expect("valid jetstream event json")
+    }
+
+    #[test]
+    fn event_time_us_reads_commit_create() {
+        let json = r#"{
+            "did": "did:plc:abc123",
+            "time_us": 1111,
+            "kind": "commit",
+            "commit": {
+                "operation": "create",
+                "rev": "rev1",
+                "rkey": "rkey1",
+                "collection": "app.bsky.feed.post",
+                "cid": "bafyreibvjvcv745gig4mvqs4hctx4zfkono4rjejm2ta6gtyay3sefw7p4",
+                "record": {
+                    "$type": "app.bsky.feed.post",
+                    "text": "hello",
+                    "createdAt": "2024-01-01T00:00:00.000Z"
+                }
+            }
+        }"#;
+        assert_eq!(event_time_us(&event_from_json(json)), 1111);
+    }
+
+    #[test]
+    fn event_time_us_reads_commit_delete() {
+        let json = r#"{
+            "did": "did:plc:abc123",
+            "time_us": 2222,
+            "kind": "commit",
+            "commit": {
+                "operation": "delete",
+                "rev": "rev1",
+                "rkey": "rkey1",
+                "collection": "app.bsky.feed.post"
+            }
+        }"#;
+        assert_eq!(event_time_us(&event_from_json(json)), 2222);
+    }
+
+    #[test]
+    fn event_time_us_reads_identity() {
+        let json = r#"{
+            "did": "did:plc:abc123",
+            "time_us": 3333,
+            "kind": "identity",
+            "identity": {
+                "did": "did:plc:abc123",
+                "handle": "alice.test",
+                "seq": 1,
+                "time": "2024-01-01T00:00:00.000Z"
+            }
+        }"#;
+        assert_eq!(event_time_us(&event_from_json(json)), 3333);
+    }
+
+    #[test]
+    fn event_time_us_reads_account() {
+        let json = r#"{
+            "did": "did:plc:abc123",
+            "time_us": 4444,
+            "kind": "account",
+            "account": {
+                "active": true,
+                "did": "did:plc:abc123",
+                "seq": 1,
+                "time": "2024-01-01T00:00:00.000Z"
+            }
+        }"#;
+        assert_eq!(event_time_us(&event_from_json(json)), 4444);
+    }
+
+    #[test]
+    fn cursor_from_rewinds_by_the_configured_amount() {
+        let time_us = 1_700_000_000_000_000;
+        let cursor = cursor_from(time_us).expect("representable");
+        let rewind_micros = RECONNECT_REWIND.as_micros() as i64;
+        assert_eq!(cursor.timestamp_micros(), time_us as i64 - rewind_micros);
+    }
+
+    #[test]
+    fn cursor_from_undefined_if_would_be_negative() {
+        assert_eq!(cursor_from(0), None);
+        let just_below_rewind = RECONNECT_REWIND.as_micros() as u64 - 1;
+        assert_eq!(cursor_from(just_below_rewind), None);
+    }
+
+    proptest! {
+        #[test]
+        fn cursor_is_not_after_the_event_instant(
+            time_us in (RECONNECT_REWIND.as_micros() as u64)..=MAX_REPR_US
+        ) {
+            let cursor = cursor_from(time_us).expect("representable");
+            prop_assert!(cursor.timestamp_micros() <= time_us as i64);
+        }
+
+        #[test]
+        fn cursor_is_monotonic_in_time_us(
+            a in (RECONNECT_REWIND.as_micros() as u64)..=MAX_REPR_US,
+            b in (RECONNECT_REWIND.as_micros() as u64)..=MAX_REPR_US,
+        ) {
+            let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+            let c_lo = cursor_from(lo).expect("representable");
+            let c_hi = cursor_from(hi).expect("representable");
+            prop_assert!(c_lo.timestamp_micros() <= c_hi.timestamp_micros());
+        }
+
+        #[test]
+        fn cursor_round_trips_micros_within_the_rewind(
+            time_us in (RECONNECT_REWIND.as_micros() as u64)..=MAX_REPR_US
+        ) {
+            let cursor = cursor_from(time_us).expect("representable");
+            let rewind_micros = RECONNECT_REWIND.as_micros() as i64;
+            prop_assert_eq!(cursor.timestamp_micros(), time_us as i64 - rewind_micros);
+        }
+    }
 }

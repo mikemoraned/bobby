@@ -15,8 +15,14 @@ pub async fn run(
 ) {
     let recv_timeout = std::time::Duration::from_secs(30);
 
+    // The resume cursor lives only in memory: it survives reconnects within
+    // this process, but a restart resumes at live-tail (the redeploy/crash gap
+    // is intentionally accepted as lost).
+    let mut last_time_us: Option<u64> = None;
+
     loop {
-        let receiver = match crate::firehose::connect().await {
+        let cursor = last_time_us.and_then(crate::firehose::cursor_from);
+        let receiver = match crate::firehose::connect(cursor).await {
             Ok(r) => r,
             Err(e) => {
                 warn!(error = %e, "failed to connect to firehose, retrying");
@@ -40,6 +46,8 @@ pub async fn run(
                     }
                 },
             };
+
+            last_time_us = Some(crate::firehose::event_time_us(&event));
 
             if let Some(candidate) = crate::firehose::extract_skeet_candidate(&event) {
                 counters.firehose.fetch_add(1, Ordering::Relaxed);
