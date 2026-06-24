@@ -43,8 +43,11 @@ struct Args {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
+    // `jetstream_oxide` logs the underlying WebSocket disconnect reason (and the
+    // server close code) via the `log` crate, bridged into tracing; surface it at
+    // `warn` so reconnect causes land in `pruner.log` without needing `RUST_LOG`.
     let _guard = shared::tracing::init_with_file(
-        "skeet_prune=info,shared=info,skeet_store=info,lance_io=warn,object_store=warn",
+        "skeet_prune=info,shared=info,skeet_store=info,lance_io=warn,object_store=warn,jetstream_oxide=warn",
         "pruner.log",
     );
 
