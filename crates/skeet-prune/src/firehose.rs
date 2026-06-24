@@ -26,6 +26,13 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// because the ultimate sink is idempotent (keyed by content hash / `SkeetId`).
 const RECONNECT_REWIND: Duration = Duration::from_secs(5);
 
+/// Largest replay window we will request on reconnect. Past this we live-tail
+/// instead and accept the skipped gap as lost: a large catch-up replay is costly,
+/// and because `jetstream-oxide` tears the connection down on a message it can't
+/// decode (rather than skipping it), a replay that keeps re-hitting the same bad
+/// event becomes a fatal loop — the cap bounds that blast radius.
+const REPLAY_MAX_AGE: Duration = Duration::from_secs(30);
+
 /// The `time_us` carried by any Jetstream event, regardless of variant. Used to
 /// advance the resume cursor on every observed event — not only post candidates
 /// — so a quiet period can't leave the cursor stale.
@@ -49,6 +56,20 @@ pub const fn cursor_from(time_us: u64) -> Option<DateTime<Utc>> {
     match time_us.checked_sub(rewind_micros) {
         Some(micros) => DateTime::from_timestamp_micros(micros as i64),
         None => None,
+    }
+}
+
+/// The cursor to resume from on reconnect, or `None` to live-tail. Rewinds the
+/// last observed event by [`RECONNECT_REWIND`] for gapless overlap, but falls back
+/// to live-tail when the resulting replay window (`now - cursor`) would exceed
+/// [`REPLAY_MAX_AGE`] — see that const for why an unbounded replay is dangerous.
+pub fn replay_cursor(last_time_us: u64, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
+    let cursor = cursor_from(last_time_us)?;
+    let max_age = chrono::TimeDelta::from_std(REPLAY_MAX_AGE).ok()?;
+    if now.signed_duration_since(cursor) > max_age {
+        None
+    } else {
+        Some(cursor)
     }
 }
 
@@ -425,6 +446,58 @@ mod tests {
             let cursor = cursor_from(time_us).expect("representable");
             let rewind_micros = RECONNECT_REWIND.as_micros() as i64;
             prop_assert_eq!(cursor.timestamp_micros(), time_us as i64 - rewind_micros);
+        }
+    }
+
+    // --- replay_cursor: the replay-age cap (H6) ---
+
+    fn now_at(micros: i64) -> DateTime<Utc> {
+        DateTime::from_timestamp_micros(micros).expect("representable")
+    }
+
+    #[test]
+    fn replay_cursor_resumes_for_a_recent_event() {
+        // event 1s before now ⇒ replay window ~6s (1s + the 5s rewind), under the cap
+        let now_us: i64 = 2_000_000_000_000_000;
+        let event_us = (now_us - 1_000_000) as u64;
+        assert_eq!(replay_cursor(event_us, now_at(now_us)), cursor_from(event_us));
+    }
+
+    #[test]
+    fn replay_cursor_live_tails_for_a_stale_event() {
+        // event 120s before now ⇒ replay window ~125s, well over the cap
+        let now_us: i64 = 2_000_000_000_000_000;
+        let event_us = (now_us - 120_000_000) as u64;
+        assert_eq!(replay_cursor(event_us, now_at(now_us)), None);
+    }
+
+    #[test]
+    fn replay_cursor_cap_boundary_resumes_at_the_cap_live_tails_just_past() {
+        // replay window = (now - event) + rewind; the cap triggers strictly past REPLAY_MAX_AGE.
+        let now_us: i64 = 2_000_000_000_000_000;
+        let rewind = RECONNECT_REWIND.as_micros() as i64;
+        let cap = REPLAY_MAX_AGE.as_micros() as i64;
+        let at_cap_event = (now_us - (cap - rewind)) as u64;
+        assert!(replay_cursor(at_cap_event, now_at(now_us)).is_some());
+        let past_cap_event = (now_us - (cap - rewind) - 1) as u64;
+        assert_eq!(replay_cursor(past_cap_event, now_at(now_us)), None);
+    }
+
+    proptest! {
+        #[test]
+        fn replay_cursor_never_resumes_beyond_the_cap(
+            now_us in 1_000_000_000_000_000i64..=(MAX_REPR_US as i64),
+            offset_us in 0i64..2_000_000_000i64,
+        ) {
+            let now = now_at(now_us);
+            let event_us = (now_us - offset_us).max(0) as u64;
+            let cap = chrono::TimeDelta::from_std(REPLAY_MAX_AGE).expect("in range");
+            // when we resume it is exactly the rewound cursor and within the cap;
+            // live-tailing (None) is always a safe fallback so it carries no obligation.
+            if let Some(c) = replay_cursor(event_us, now) {
+                prop_assert_eq!(Some(c), cursor_from(event_us));
+                prop_assert!(now.signed_duration_since(c) <= cap);
+            }
         }
     }
 

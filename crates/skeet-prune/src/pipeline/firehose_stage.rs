@@ -3,6 +3,7 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use backon::RetryableWithContext;
+use chrono::Utc;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -81,7 +82,18 @@ async fn run_session(
     counters: Arc<PipelineCounters>,
     token: CancellationToken,
 ) -> (Option<u64>, Result<SessionOutcome, ReconnectError>) {
-    let cursor = last_time_us.and_then(crate::firehose::cursor_from);
+    // First connect (nothing seen yet) live-tails silently; `replay_cursor`
+    // returning `None` despite a known position means the replay window outgrew
+    // the cap and we're deliberately skipping the gap to live-tail — worth a warn.
+    let cursor = last_time_us.and_then(|t| {
+        let now = Utc::now();
+        let cursor = crate::firehose::replay_cursor(t, now);
+        if cursor.is_none() {
+            let gap_s = (now.timestamp_micros() - t as i64) / 1_000_000;
+            warn!(gap_s, "resume gap exceeds replay cap; live-tailing past it (gap events skipped)");
+        }
+        cursor
+    });
     let receiver = match crate::firehose::connect(cursor).await {
         Ok(r) => r,
         Err(e) => return (last_time_us, Err(ReconnectError::Connect(e.to_string()))),
