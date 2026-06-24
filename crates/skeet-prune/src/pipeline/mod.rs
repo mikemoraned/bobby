@@ -3,9 +3,9 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use async_channel::{Receiver, Sender};
 use shared::{Rejection, RejectionCategory};
 use skeet_store::ImageRecord;
-use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
@@ -26,11 +26,7 @@ pub struct Stopped;
 /// token is cancelled so every other stage unwinds through the same seam.
 /// Returns `Err(Stopped)` when the caller should stop — either because
 /// downstream is gone or because shutdown was already in progress.
-pub async fn forward<T>(
-    tx: &mpsc::Sender<T>,
-    item: T,
-    token: &CancellationToken,
-) -> Result<(), Stopped> {
+pub async fn forward<T>(tx: &Sender<T>, item: T, token: &CancellationToken) -> Result<(), Stopped> {
     tokio::select! {
         () = token.cancelled() => Err(Stopped),
         sent = tx.send(item) => sent.map_err(|_| {
@@ -43,10 +39,13 @@ pub async fn forward<T>(
 
 /// Receive the next item, or `None` once the channel is closed or shutdown was
 /// requested on the shared [`CancellationToken`].
-pub async fn recv<T>(rx: &mut mpsc::Receiver<T>, token: &CancellationToken) -> Option<T> {
+///
+/// The receiver is a multi-consumer [`async_channel::Receiver`], so it is shared
+/// by `&self` across a stage's worker pool rather than owned by one consumer.
+pub async fn recv<T>(rx: &Receiver<T>, token: &CancellationToken) -> Option<T> {
     tokio::select! {
         () = token.cancelled() => None,
-        item = rx.recv() => item,
+        item = rx.recv() => item.ok(),
     }
 }
 
@@ -130,16 +129,16 @@ impl PipelineCounters {
 
 /// Handles to monitor channel depths from the save stage.
 pub struct ChannelMonitors {
-    firehose_tx: mpsc::Sender<SkeetCandidate>,
-    meta_tx: mpsc::Sender<MetaResult>,
-    image_tx: mpsc::Sender<ImageResult>,
+    firehose_tx: Sender<SkeetCandidate>,
+    meta_tx: Sender<MetaResult>,
+    image_tx: Sender<ImageResult>,
 }
 
 impl ChannelMonitors {
     pub const fn new(
-        firehose_tx: mpsc::Sender<SkeetCandidate>,
-        meta_tx: mpsc::Sender<MetaResult>,
-        image_tx: mpsc::Sender<ImageResult>,
+        firehose_tx: Sender<SkeetCandidate>,
+        meta_tx: Sender<MetaResult>,
+        image_tx: Sender<ImageResult>,
     ) -> Self {
         Self {
             firehose_tx,
@@ -148,34 +147,15 @@ impl ChannelMonitors {
         }
     }
 
-    fn depth(tx: &impl ChannelDepth) -> usize {
-        tx.max_capacity() - tx.capacity()
-    }
-
     pub fn firehose_depth(&self) -> usize {
-        Self::depth(&self.firehose_tx)
+        self.firehose_tx.len()
     }
 
     pub fn meta_depth(&self) -> usize {
-        Self::depth(&self.meta_tx)
+        self.meta_tx.len()
     }
 
     pub fn image_depth(&self) -> usize {
-        Self::depth(&self.image_tx)
-    }
-}
-
-trait ChannelDepth {
-    fn capacity(&self) -> usize;
-    fn max_capacity(&self) -> usize;
-}
-
-impl<T> ChannelDepth for mpsc::Sender<T> {
-    fn capacity(&self) -> usize {
-        self.capacity()
-    }
-
-    fn max_capacity(&self) -> usize {
-        self.max_capacity()
+        self.image_tx.len()
     }
 }

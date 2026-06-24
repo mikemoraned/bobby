@@ -4,7 +4,6 @@ use std::time::{Duration, Instant};
 
 use backon::RetryableWithContext;
 use chrono::Utc;
-use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
@@ -32,7 +31,7 @@ enum SessionOutcome {
 }
 
 pub async fn run(
-    tx: mpsc::Sender<SkeetCandidate>,
+    tx: async_channel::Sender<SkeetCandidate>,
     counters: Arc<PipelineCounters>,
     token: CancellationToken,
 ) {
@@ -78,7 +77,7 @@ pub async fn run(
 async fn run_session(
     mut last_time_us: Option<u64>,
     recv_timeout: Duration,
-    tx: mpsc::Sender<SkeetCandidate>,
+    tx: async_channel::Sender<SkeetCandidate>,
     counters: Arc<PipelineCounters>,
     token: CancellationToken,
 ) -> (Option<u64>, Result<SessionOutcome, ReconnectError>) {

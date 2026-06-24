@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use async_channel::{Receiver, Sender};
 use face_detection::FaceDetector;
 use shared::{ModelVersion, PruneConfig};
-use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
@@ -26,8 +26,8 @@ pub struct ClassifyConfig {
 }
 
 pub async fn run_workers(
-    rx: mpsc::Receiver<MetaResult>,
-    tx: mpsc::Sender<ImageResult>,
+    rx: Receiver<MetaResult>,
+    tx: Sender<ImageResult>,
     config: ClassifyConfig,
     counters: Arc<PipelineCounters>,
     num_workers: usize,
@@ -35,7 +35,6 @@ pub async fn run_workers(
 ) {
     info!(num_workers, "starting image stage workers");
 
-    let rx = Arc::new(Mutex::new(rx));
     let mut handles = Vec::with_capacity(num_workers);
 
     let enable_text = config
@@ -43,7 +42,7 @@ pub async fn run_workers(
         .is_category_enabled(shared::RejectionCategory::Text);
 
     for worker_id in 0..num_workers {
-        let rx = Arc::clone(&rx);
+        let rx = rx.clone();
         let tx = tx.clone();
         let config = config.clone();
         let counters = Arc::clone(&counters);
@@ -59,7 +58,7 @@ pub async fn run_workers(
             };
             let detectors = Detectors { face, text };
             info!(worker_id, "image worker ready");
-            run_single(rx, tx, config, detectors, counters, token).await;
+            run_single(&rx, &tx, config, detectors, &counters, &token).await;
         }));
     }
 
@@ -76,25 +75,19 @@ struct Detectors {
 }
 
 async fn run_single(
-    rx: Arc<Mutex<mpsc::Receiver<MetaResult>>>,
-    tx: mpsc::Sender<ImageResult>,
+    rx: &Receiver<MetaResult>,
+    tx: &Sender<ImageResult>,
     config: ClassifyConfig,
     detectors: Detectors,
-    counters: Arc<PipelineCounters>,
-    token: CancellationToken,
+    counters: &PipelineCounters,
+    token: &CancellationToken,
 ) {
     let ClassifyConfig {
         http,
         prune_config,
         config_version,
     } = config;
-    loop {
-        let result = tokio::select! {
-            () = token.cancelled() => return,
-            result = async { rx.lock().await.recv().await } => result,
-        };
-        let Some(result) = result else { return };
-
+    while let Some(result) = pipeline::recv(rx, token).await {
         match result {
             MetaResult::Candidate(candidate) => {
                 counters.image.fetch_add(1, Ordering::Relaxed);
@@ -114,13 +107,13 @@ async fn run_single(
                         Err(reasons) => ImageResult::Rejected(reasons),
                     };
 
-                    if pipeline::forward(&tx, result, &token).await.is_err() {
+                    if pipeline::forward(tx, result, token).await.is_err() {
                         return;
                     }
                 }
             }
             MetaResult::Post { image_count } => {
-                if pipeline::forward(&tx, ImageResult::Post { image_count }, &token)
+                if pipeline::forward(tx, ImageResult::Post { image_count }, token)
                     .await
                     .is_err()
                 {
@@ -128,7 +121,7 @@ async fn run_single(
                 }
             }
             MetaResult::Rejected(reasons) => {
-                if pipeline::forward(&tx, ImageResult::Rejected(reasons), &token)
+                if pipeline::forward(tx, ImageResult::Rejected(reasons), token)
                     .await
                     .is_err()
                 {

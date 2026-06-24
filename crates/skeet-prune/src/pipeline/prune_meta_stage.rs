@@ -1,11 +1,11 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use async_channel::{Receiver, Sender};
 use serde_json::Value;
 use shared::Rejection;
-use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::trace;
+use tracing::{info, trace, warn};
 
 use crate::firehose::SkeetCandidate;
 use crate::pipeline::{self, MetaResult, PipelineCounters};
@@ -28,20 +28,53 @@ pub fn check_metadata(post_thread_json: &Value) -> MetaFilterOutcome {
     MetaFilterOutcome::Pass
 }
 
-/// Pipeline stage: receives candidates from `firehose_stage`, fetches post
-/// metadata, and forwards only those that pass the metadata check.
-pub async fn run(
-    rx: &mut mpsc::Receiver<SkeetCandidate>,
-    tx: mpsc::Sender<MetaResult>,
+/// Pipeline stage: forward only candidates that pass the metadata check.
+///
+/// A pool of workers receive candidates from `firehose_stage`, fetch post
+/// metadata, and forward those that pass. The stage is network-I/O-bound (one
+/// serial `getPostThread` round-trip per candidate), so workers share the input
+/// channel and run their fetches concurrently to keep pace with firehose intake.
+pub async fn run_workers(
+    rx: Receiver<SkeetCandidate>,
+    tx: Sender<MetaResult>,
     http: reqwest::Client,
     counters: Arc<PipelineCounters>,
+    num_workers: usize,
     token: CancellationToken,
 ) {
-    while let Some(candidate) = pipeline::recv(rx, &token).await {
+    info!(num_workers, "starting meta stage workers");
+
+    let mut handles = Vec::with_capacity(num_workers);
+    for _ in 0..num_workers {
+        let rx = rx.clone();
+        let tx = tx.clone();
+        let http = http.clone();
+        let counters = Arc::clone(&counters);
+        let token = token.clone();
+        handles.push(tokio::spawn(async move {
+            run_single(&rx, &tx, &http, &counters, &token).await;
+        }));
+    }
+
+    for handle in handles {
+        if let Err(e) = handle.await {
+            warn!("meta worker panicked: {e}");
+        }
+    }
+}
+
+async fn run_single(
+    rx: &Receiver<SkeetCandidate>,
+    tx: &Sender<MetaResult>,
+    http: &reqwest::Client,
+    counters: &PipelineCounters,
+    token: &CancellationToken,
+) {
+    while let Some(candidate) = pipeline::recv(rx, token).await {
         counters.meta.fetch_add(1, Ordering::Relaxed);
         let image_count = candidate.images.len() as u64;
 
-        let (result, passed) = match bluesky::fetch_post_thread(&http, &candidate.skeet_id).await {
+        let (result, passed) = match bluesky::fetch_post_thread(http, &candidate.skeet_id).await {
             Ok(json) => match check_metadata(&json) {
                 MetaFilterOutcome::Pass => (MetaResult::Candidate(candidate), true),
                 MetaFilterOutcome::Blocked(reason) => {
@@ -61,12 +94,12 @@ pub async fn run(
             }
         };
 
-        if pipeline::forward(&tx, result, &token).await.is_err() {
+        if pipeline::forward(tx, result, token).await.is_err() {
             return;
         }
 
         let image_count = if passed { image_count } else { 0 };
-        if pipeline::forward(&tx, MetaResult::Post { image_count }, &token)
+        if pipeline::forward(tx, MetaResult::Post { image_count }, token)
             .await
             .is_err()
         {

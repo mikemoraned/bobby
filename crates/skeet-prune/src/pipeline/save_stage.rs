@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use async_channel::Receiver;
 use skeet_store::Images;
-use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
@@ -9,7 +9,7 @@ use crate::pipeline::{self, ChannelMonitors, ImageResult, PipelineCounters};
 use crate::{persistence, status};
 
 pub async fn run(
-    rx: &mut mpsc::Receiver<ImageResult>,
+    rx: &Receiver<ImageResult>,
     store: &impl Images,
     counters: Arc<PipelineCounters>,
     channels: ChannelMonitors,
