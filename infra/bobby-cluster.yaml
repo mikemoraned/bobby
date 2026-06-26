@@ -1,4 +1,6 @@
-cluster_name: bobby
+config_format_version: 1
+
+cluster_name: bobby-cluster2
 kubeconfig_path: "./infra/kubeconfig"
 k3s_version: v1.32.0+k3s1
 
@@ -18,8 +20,9 @@ schedule_workloads_on_masters: true
 protect_against_deletion: false
 
 masters_pool:
-  instance_type: cax21
+  instance_type: cx33
   instance_count: 1
-  location: fsn1
+  locations:
+    - fsn1
 
 worker_node_pools: []

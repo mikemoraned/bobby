@@ -1,6 +1,6 @@
 # Remote Setup (Hetzner k3s)
 
-Bobby's pruner, live-refine, skeet-publish, and exporter/optimise cronjobs run on a single-node k3s cluster on Hetzner Cloud ARM (CAX21, Falkenstein). The cluster is disposable; persistent state lives in R2. These stable components run in a dedicated `production` namespace — see [versioning.md](versioning.md) for the production/staging split they're the foundation of. (The feed itself runs on Fly, not k8s.)
+Bobby's pruner, live-refine, skeet-publish, and exporter/optimise cronjobs run on a single-node k3s cluster on Hetzner Cloud (CX33, Falkenstein). The cluster is disposable; persistent state lives in R2. These stable components run in a dedicated `production` namespace — see [versioning.md](versioning.md) for the production/staging split they're the foundation of. (The feed itself runs on Fly, not k8s.)
 
 ## Prerequisites
 
@@ -40,7 +40,7 @@ Images are published to GitHub Container Registry (`ghcr.io/mikemoraned/bobby/`)
 ### Build and push pruner
 
 ```sh
-just build-pruner   # builds linux/arm64 image
+just build-pruner   # builds linux/amd64 image
 just push-pruner    # builds and pushes to GHCR
 ```
 
@@ -112,5 +112,5 @@ Builds and pushes images tagged with the current git hash, then applies every `i
 ## Cluster config
 
 - **Config file**: `infra/bobby-cluster.yaml`
-- **Instance**: CAX21 (4 vCPU ARM, 8 GB RAM) in `fsn1`
+- **Instance**: CX33 (4 vCPU x86, 8 GB RAM) in `fsn1`
 - **Single master** with `schedule_workloads_on_masters: true`, no worker pools
