@@ -1,4 +1,4 @@
-cluster_name: bobby
+cluster_name: bobby-cluster2
 kubeconfig_path: "./infra/kubeconfig"
 k3s_version: v1.32.0+k3s1
 
