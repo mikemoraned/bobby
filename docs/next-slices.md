@@ -354,7 +354,7 @@ This is the first time using Tailscale this way, so isolate the Tailscale depend
 
 #### B. Deploy `skeet-appraise` into the hetzner cluster
 
-* [ ] **Build an `arm64` image** — the cluster is ARM (like `pruner`/`live-refine`), but `Dockerfile.skeet-appraise` ships `linux/amd64` for fly. During the parallel run both arches are live, so build multi-arch (`--platform linux/amd64,linux/arm64`) or add an arm64 tag; drop amd64 once fly is gone (group E).
+* [ ] **No separate arch build needed** — the cluster now runs `linux/amd64` (CX33), the same arch `skeet-appraise` already ships for fly, so the existing amd64 image runs on cluster nodes as-is. Just push it under the cluster's tag/registry the way `pruner`/`live-refine` are pushed.
 * [ ] **k8s Deployment + Service** (`infra/k8s/skeet-appraise-deployment.yaml`): unlike the `live-refine` worker this is a long-running HTTP server, so it needs a `Service` (port 8080) fronting the Deployment. Args: `--store-path`, `--model-path`, feed-shape params, `--auth-mode tailscale`, `--bind 0.0.0.0:8080`. Env: R2 + SSE-C + OTEL only — **no GitHub/session/redis**: tailscale mode has no OAuth and no sessions, so the redis-for-sessions dependency drops out here.
 * [ ] **`just/cluster-deploy.just` recipes**: `cluster-deploy-skeet-appraise`, logs, enable/disable, rollback, and add to the `cluster-*-all` aggregates (mirroring `live-refine`). Reuse the existing R2/SSE-C/OTEL `OnePasswordItem`s — no new secrets needed for the app itself.
 

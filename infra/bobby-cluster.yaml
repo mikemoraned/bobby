@@ -20,7 +20,7 @@ schedule_workloads_on_masters: true
 protect_against_deletion: false
 
 masters_pool:
-  instance_type: cax21
+  instance_type: cx33
   instance_count: 1
   locations:
     - fsn1

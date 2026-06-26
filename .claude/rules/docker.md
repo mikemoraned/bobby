@@ -8,14 +8,14 @@ paths:
 
 ## Shared builder + `--target`
 
-There are two Dockerfiles, one per platform: **`Dockerfile.cluster`** (arm64,
-Hetzner) and **`Dockerfile.fly`** (amd64, fly.io). Each has a **single `builder`
-stage** that compiles *every* shipped binary for that platform in one
+There are two Dockerfiles, one per service-set: **`Dockerfile.cluster`** (Hetzner)
+and **`Dockerfile.fly`** (fly.io). Both build `linux/amd64`. Each has a **single
+`builder` stage** that compiles *every* shipped binary for that set in one
 `cargo build`, then one thin `runner-<name>` stage per service that copies out only
 its own binary. A given service image is produced with
 `docker buildx build -f Dockerfile.<cluster|fly> --target runner-<name>`.
 
-One builder, not per-service Dockerfiles, so the dep tree compiles once per platform:
+One builder, not per-service Dockerfiles, so the dep tree compiles once per set:
 BuildKit reuses the cached `builder` across `--target` invocations.
 
 ### Builder stage
@@ -24,13 +24,13 @@ BuildKit reuses the cached `builder` across `--target` invocations.
   `-p <crate> --bin <bin>` repeated (e.g. `cloudflare-exporter` ships two bins, so
   `--bin sync_operations --bin sync_storage`). Keep `--bin` — a bare `-p` builds
   every bin in the crate (`skeet-prune` has 6, `skeet-refine` has 5).
-- Three cache mounts: cargo registry, cargo git, and an **arch-scoped** `target/`
-  (`id=bobby-target-arm64` / `-amd64`, `sharing=locked`). The `target/` mount keeps
-  cargo incremental: a source-only edit re-runs the builder RUN (BuildKit invalidates
-  it because `COPY . .` changed), but cargo reuses every dep from the mount and
-  recompiles only the changed first-party crate(s). The id is hardcoded to the
-  Dockerfile's platform — arm64 and amd64 artifacts share `target/release/` paths and
-  must never share one mount.
+- Three cache mounts: cargo registry, cargo git, and a **per-service-set** `target/`
+  (`id=bobby-target-cluster-amd64` / `-fly-amd64`, `sharing=locked`). The `target/`
+  mount keeps cargo incremental: a source-only edit re-runs the builder RUN (BuildKit
+  invalidates it because `COPY . .` changed), but cargo reuses every dep from the mount
+  and recompiles only the changed first-party crate(s). The two sets build disjoint bin
+  sets into the same `target/release/` paths, so each needs its own mount id — they must
+  never share one.
 - Build artifacts live in the ephemeral mount, so copy what the runners need out to
   `/build/out/` **inside the RUN** (every binary; for the cluster builder also the
   `.bpk`/`.rten` files baked from `target/` for pruner). `dash` (the default RUN
@@ -57,8 +57,10 @@ BuildKit reuses the cached `builder` across `--target` invocations.
 
 ## Platform targets
 
-- **`Dockerfile.cluster`** (`linux/arm64`, Hetzner): pruner, live-refine, skeet-publish, optimise, cloudflare-exporter, openai-exporter.
-- **`Dockerfile.fly`** (`linux/amd64`, fly.io shared tier; built emulated on Apple Silicon, ~4× slower than native arm64): skeet-feed, skeet-appraise.
+- **`Dockerfile.cluster`** (`linux/amd64`, Hetzner): pruner, live-refine, skeet-publish, optimise, cloudflare-exporter, openai-exporter.
+- **`Dockerfile.fly`** (`linux/amd64`, fly.io shared tier): skeet-feed, skeet-appraise.
+
+Both are `linux/amd64`, built emulated on Apple Silicon (~4× slower than native).
 
 ## Adding a new service
 
