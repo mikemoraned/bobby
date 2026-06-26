@@ -1,5 +1,5 @@
 HETZNER_SSH_DIR := "infra/ssh"
-export KUBECONFIG := "/Users/mxm/Code/mine/bobby_worktrees/bobby/infra/kubeconfig" # cluster-creation/deletion sits on main branch
+export KUBECONFIG := "/Users/mxm/Code/mine/bobby_worktrees/bobby-cluster2/infra/kubeconfig"
 
 # Namespace holding the stable production components. Per-worktree staging runs
 # its *changed* components in its own namespace, sharing the backend stores.
