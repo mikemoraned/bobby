@@ -56,9 +56,18 @@ pub async fn run_workers(
             } else {
                 None
             };
-            let detectors = Detectors { face, text };
+            let ClassifyConfig {
+                http,
+                prune_config,
+                config_version,
+            } = config;
+            let ctx = ClassifyContext {
+                detectors: Detectors { face, text },
+                prune_config,
+                config_version,
+            };
             info!(worker_id, "image worker ready");
-            run_single(&rx, &tx, config, detectors, &counters, &token).await;
+            run_single(&rx, &tx, &http, ctx, &counters, &token).await;
         }));
     }
 
@@ -74,35 +83,62 @@ struct Detectors {
     text: Option<text_detection::TextDetector>,
 }
 
+/// Owned per-worker classification state. The detectors are `Send` but not
+/// `Sync` (burn params hold `OnceCell`s), so this is *moved* into each
+/// `spawn_blocking` call and handed back out rather than shared via `Arc` — which
+/// lets the CPU-bound classify run off the async runtime thread regardless.
+struct ClassifyContext {
+    detectors: Detectors,
+    prune_config: PruneConfig,
+    config_version: ModelVersion,
+}
+
 async fn run_single(
     rx: &Receiver<MetaResult>,
     tx: &Sender<ImageResult>,
-    config: ClassifyConfig,
-    detectors: Detectors,
+    http: &reqwest::Client,
+    mut ctx: ClassifyContext,
     counters: &PipelineCounters,
     token: &CancellationToken,
 ) {
-    let ClassifyConfig {
-        http,
-        prune_config,
-        config_version,
-    } = config;
     while let Some(result) = pipeline::recv(rx, token).await {
         match result {
             MetaResult::Candidate(candidate) => {
                 counters.image.fetch_add(1, Ordering::Relaxed);
 
                 let skeet_images =
-                    crate::firehose::download_candidate_images(&candidate, &http).await;
+                    crate::firehose::download_candidate_images(&candidate, http).await;
 
                 for skeet_image in skeet_images {
-                    let result = match crate::classify::classify_image(
-                        skeet_image,
-                        &detectors.face,
-                        detectors.text.as_ref(),
-                        &prune_config,
-                        &config_version,
-                    ) {
+                    // Classification is CPU-bound (face + skin + optional text
+                    // inference) with no `.await`, so it runs on the blocking pool
+                    // rather than monopolising a runtime thread. The context moves in
+                    // and back out; awaiting the handle keeps each worker to one
+                    // in-flight classify (bounded concurrency).
+                    let handle = tokio::task::spawn_blocking(move || {
+                        let result = crate::classify::classify_image(
+                            skeet_image,
+                            &ctx.detectors.face,
+                            ctx.detectors.text.as_ref(),
+                            &ctx.prune_config,
+                            &ctx.config_version,
+                        );
+                        (ctx, result)
+                    });
+                    let classified = match handle.await {
+                        Ok((returned, result)) => {
+                            ctx = returned;
+                            result
+                        }
+                        // A panic consumes the moved-in context, so the worker can't
+                        // continue — matching the pre-`spawn_blocking` inline behaviour.
+                        Err(e) => {
+                            warn!(error = %e, "image classification task panicked, stopping worker");
+                            return;
+                        }
+                    };
+
+                    let result = match classified {
                         Ok(record) => ImageResult::Classified(Box::new(record)),
                         Err(reasons) => ImageResult::Rejected(reasons),
                     };
