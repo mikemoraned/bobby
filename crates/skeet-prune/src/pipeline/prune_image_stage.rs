@@ -7,9 +7,7 @@ use shared::{ModelVersion, PruneConfig};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
-use crate::pipeline::{
-    self, ImageMessage, ImageResult, MetaMessage, MetaResult, PipelineCounters,
-};
+use crate::pipeline::{self, ContentCounts, ImageMessage, MetaMessage, MetaResult, PipelineCounters};
 
 // The text-detection models are compile-time-bundled assets; a load failure is an
 // unrecoverable startup error for the worker, so panicking the spawned task is intended.
@@ -99,7 +97,7 @@ async fn run_single(
     counters: &PipelineCounters,
     token: &CancellationToken,
 ) {
-    while let Some((result, counts)) = pipeline::recv(rx, token).await {
+    while let Some((result, mut counts)) = pipeline::recv(rx, token).await {
         match result {
             MetaResult::Candidate(candidate) => {
                 counters.image.fetch_add(1, Ordering::Relaxed);
@@ -107,7 +105,7 @@ async fn run_single(
                 let skeet_images =
                     crate::firehose::download_candidate_images(&candidate, http).await;
 
-                let mut classified = Vec::with_capacity(skeet_images.len());
+                let mut saves = Vec::with_capacity(skeet_images.len());
                 for skeet_image in skeet_images {
                     let handle = tokio::task::spawn_blocking(move || {
                         let result = crate::classify::classify_image(
@@ -122,10 +120,10 @@ async fn run_single(
                     match handle.await {
                         Ok((returned, result)) => {
                             ctx = returned;
-                            classified.push(match result {
-                                Ok(record) => ImageResult::Classified(Box::new(record)),
-                                Err(reasons) => ImageResult::Rejected(reasons),
-                            });
+                            match result {
+                                Ok(record) => saves.push(record),
+                                Err(reasons) => counts += &ContentCounts::rejected(&reasons),
+                            }
                         }
                         Err(e) => {
                             warn!(error = %e, "image classification task panicked, stopping worker");
@@ -134,16 +132,17 @@ async fn run_single(
                     }
                 }
 
-                if pipeline::forward(tx, (classified, counts), token)
-                    .await
-                    .is_err()
-                {
+                if pipeline::forward(tx, (saves, counts), token).await.is_err() {
                     return;
                 }
             }
-            MetaResult::Rejected(reasons) => {
-                let message = (vec![ImageResult::Rejected(reasons)], counts);
-                if pipeline::forward(tx, message, token).await.is_err() {
+            // The metadata rejection is already tallied into `counts`; only the
+            // delta needs forwarding, with no records to save.
+            MetaResult::Rejected => {
+                if pipeline::forward(tx, (Vec::new(), counts), token)
+                    .await
+                    .is_err()
+                {
                     return;
                 }
             }

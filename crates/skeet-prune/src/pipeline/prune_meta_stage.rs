@@ -19,7 +19,9 @@ pub enum MetaFilterOutcome {
 
 /// Build the single meta→image message for a candidate from its metadata
 /// outcome. A passed candidate contributes its full image count; a blocked one
-/// contributes none — both count as one observed post.
+/// contributes a post with no images plus the metadata rejection — both count as
+/// one observed post, and the rejection is tallied here so nothing downstream
+/// has to carry it.
 fn meta_message(candidate: SkeetCandidate, outcome: MetaFilterOutcome) -> MetaMessage {
     match outcome {
         MetaFilterOutcome::Pass => {
@@ -27,8 +29,8 @@ fn meta_message(candidate: SkeetCandidate, outcome: MetaFilterOutcome) -> MetaMe
             (MetaResult::Candidate(candidate), ContentCounts::post(images))
         }
         MetaFilterOutcome::Blocked(_) => (
-            MetaResult::Rejected(vec![Rejection::BlockedByMetadata]),
-            ContentCounts::post(0),
+            MetaResult::Rejected,
+            ContentCounts::post(0) + ContentCounts::rejected(&[Rejection::BlockedByMetadata]),
         ),
     }
 }
@@ -142,12 +144,15 @@ mod tests {
     }
 
     #[test]
-    fn blocked_carries_one_post_and_no_images() {
+    fn blocked_tallies_the_rejection_into_its_counts() {
         let (result, counts) = meta_message(
             candidate_with_images(3),
             MetaFilterOutcome::Blocked("blocked labels: porn".to_string()),
         );
-        assert!(matches!(result, MetaResult::Rejected(_)));
-        assert_eq!(counts, ContentCounts::post(0));
+        assert!(matches!(result, MetaResult::Rejected));
+        assert_eq!(
+            counts,
+            ContentCounts::post(0) + ContentCounts::rejected(&[Rejection::BlockedByMetadata])
+        );
     }
 }

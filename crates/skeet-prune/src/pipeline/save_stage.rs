@@ -5,7 +5,7 @@ use skeet_store::Images;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
-use crate::pipeline::{self, ChannelMonitors, ImageMessage, ImageResult, PipelineCounters};
+use crate::pipeline::{self, ChannelMonitors, ImageMessage, PipelineCounters};
 use crate::{persistence, status};
 
 pub async fn run(
@@ -18,16 +18,9 @@ pub async fn run(
 ) {
     let mut status = status::Status::new(log_interval, 100, counters, channels);
 
-    while let Some((images, counts)) = pipeline::recv(rx, &token).await {
-        for image in images {
-            match image {
-                ImageResult::Classified(record) => {
-                    persistence::save(store, &record, &mut status).await;
-                }
-                ImageResult::Rejected(reasons) => {
-                    status.record_rejected(&reasons);
-                }
-            }
+    while let Some((records, counts)) = pipeline::recv(rx, &token).await {
+        for record in records {
+            persistence::save(store, &record, &mut status).await;
         }
         status.record_counts(&counts);
     }
@@ -57,29 +50,29 @@ mod tests {
     }
 
     /// The fixed message stream the golden test drives through the sink: one
-    /// bundled `(images, counts)` message per candidate. The asserted totals
+    /// bundled `(records, counts)` message per candidate, with rejections already
+    /// folded into `counts` (as the stages do upstream). The asserted totals
     /// below stay byte-identical across counting-shape changes.
     fn scenario(rec_b1: ImageRecord, rec_d: ImageRecord, rec_e: ImageRecord) -> Vec<ImageMessage> {
         use Rejection::{BlockedByMetadata, FaceTooSmall, TooMuchText};
-        let reject = |reason| ImageResult::Rejected(vec![reason]);
-        let classified = |rec| ImageResult::Classified(Box::new(rec));
+        let reject = |reason| ContentCounts::rejected(&[reason]);
         vec![
             // B: passed, 3 images (one fresh save, two rejections of varied category).
             (
-                vec![classified(rec_b1), reject(FaceTooSmall), reject(TooMuchText)],
-                ContentCounts::post(3),
+                vec![rec_b1],
+                ContentCounts::post(3) + reject(FaceTooSmall) + reject(TooMuchText),
             ),
             // C: passed, 2 images, all reject.
             (
-                vec![reject(FaceTooSmall), reject(FaceTooSmall)],
-                ContentCounts::post(2),
+                Vec::new(),
+                ContentCounts::post(2) + reject(FaceTooSmall) + reject(FaceTooSmall),
             ),
             // A: meta-rejected (no images examined).
-            (vec![reject(BlockedByMetadata)], ContentCounts::post(0)),
+            (Vec::new(), ContentCounts::post(0) + reject(BlockedByMetadata)),
             // D: passed, 1 image, fresh save.
-            (vec![classified(rec_d)], ContentCounts::post(1)),
+            (vec![rec_d], ContentCounts::post(1)),
             // E: passed, 1 image, already-exists save (pre-seeded into the store).
-            (vec![classified(rec_e)], ContentCounts::post(1)),
+            (vec![rec_e], ContentCounts::post(1)),
         ]
     }
 

@@ -2,7 +2,7 @@ use std::fmt::Write as _;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use shared::{Rejection, RejectionCategory};
+use shared::RejectionCategory;
 use tracing::info;
 
 use crate::metrics::PruneMetrics;
@@ -65,10 +65,6 @@ impl Status {
 
     pub fn record_saved(&mut self) {
         self.content += &ContentCounts::saved();
-    }
-
-    pub fn record_rejected(&mut self, reasons: &[Rejection]) {
-        self.content += &ContentCounts::rejected(reasons);
     }
 
     pub const fn saved_count(&self) -> u64 {

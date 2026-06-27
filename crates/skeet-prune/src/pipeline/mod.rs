@@ -2,7 +2,7 @@
 //! message types, counters, and shutdown seam they share.
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
-use std::ops::AddAssign;
+use std::ops::{Add, AddAssign};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_channel::{Receiver, Sender};
@@ -67,12 +67,13 @@ pub struct PipelineStages {
 }
 
 /// The pipeline's content tallies: skeets seen, images examined and saved, and
-/// the rejection breakdown. Each pipeline message carries a `ContentCounts`
-/// delta, and the sink folds them all into one running total with [`AddAssign`].
+/// the rejection breakdown. Each stage folds the work it did into the
+/// `ContentCounts` it forwards, and the sink merges them all into one running
+/// total.
 ///
-/// A commutative monoid under [`merge`](Self::merge) / `+=`: [`Default`] is the
-/// identity and the combine is associative (saturating, so the laws hold for all
-/// `u64` without overflow).
+/// A commutative monoid under `+` / `+=`: [`Default`] is the identity and the
+/// combine is associative (saturating, so the laws hold for all `u64` without
+/// overflow).
 #[derive(Default, Clone, PartialEq, Eq, Debug)]
 pub struct ContentCounts {
     pub posts: u64,
@@ -128,12 +129,13 @@ impl ContentCounts {
             ..Self::default()
         }
     }
+}
 
-    /// Combine two tallies field-wise. Equivalent to `+=`; kept by value for the
-    /// monoid-law proptests.
-    #[must_use]
-    pub fn merge(mut self, other: Self) -> Self {
-        self += &other;
+impl Add for ContentCounts {
+    type Output = Self;
+
+    fn add(mut self, rhs: Self) -> Self {
+        self += &rhs;
         self
     }
 }
@@ -178,28 +180,24 @@ pub struct PipelineSnapshot {
     pub content: ContentCounts,
 }
 
-/// Metadata-stage outcome for one candidate.
+/// Metadata-stage outcome for one candidate: either it needs image
+/// classification, or it was rejected (the rejection is already tallied into the
+/// accompanying [`ContentCounts`], so there's nothing left to carry).
 pub enum MetaResult {
     Candidate(SkeetCandidate),
-    Rejected(Vec<Rejection>),
-}
-
-/// Image-stage outcome for one downloaded image.
-pub enum ImageResult {
-    Classified(Box<ImageRecord>),
-    Rejected(Vec<Rejection>),
+    Rejected,
 }
 
 /// A `prune_meta_stage` → `prune_image_stage` message: one candidate's metadata
-/// outcome paired with the content-count delta it contributes.
+/// outcome paired with the content-count delta the meta stage produced.
 pub type MetaMessage = (MetaResult, ContentCounts);
 
 /// A `prune_image_stage` → `save_stage` message.
 ///
-/// One candidate's per-image outcomes (empty when a passed post yielded no
-/// downloadable images) paired with the single content-count delta the
-/// candidate contributes.
-pub type ImageMessage = (Vec<ImageResult>, ContentCounts);
+/// The image records to persist (empty when nothing survived classification, or
+/// for a metadata-rejected post) paired with the single content-count delta the
+/// candidate contributes — rejections already folded in upstream.
+pub type ImageMessage = (Vec<ImageRecord>, ContentCounts);
 
 /// Per-stage item counters for throughput monitoring.
 #[derive(Default)]
@@ -286,15 +284,15 @@ mod tests {
 
     proptest! {
         #[test]
-        fn merge_has_default_identity(c in counts()) {
-            prop_assert_eq!(ContentCounts::default().merge(c.clone()), c.clone());
-            prop_assert_eq!(c.clone().merge(ContentCounts::default()), c);
+        fn add_has_default_identity(c in counts()) {
+            prop_assert_eq!(ContentCounts::default() + c.clone(), c.clone());
+            prop_assert_eq!(c.clone() + ContentCounts::default(), c);
         }
 
         #[test]
-        fn merge_is_associative(a in counts(), b in counts(), c in counts()) {
-            let left = a.clone().merge(b.clone()).merge(c.clone());
-            let right = a.merge(b.merge(c));
+        fn add_is_associative(a in counts(), b in counts(), c in counts()) {
+            let left = (a.clone() + b.clone()) + c.clone();
+            let right = a + (b + c);
             prop_assert_eq!(left, right);
         }
     }
