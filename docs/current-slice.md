@@ -9,7 +9,7 @@ We'd like to change this to say something like "(400,000 images checked over pas
 ### Tasks
 
 We'll get there in gradual steps:
-* [ ] do a supporting refactor which factors out a `content_statistics_stage` stage which sits after the current `save_stage`. It's only job is to receive the `ContentCounts` from previous stages. So effectively we split `save_stage` into a stage which just saves to the store, and a `content_statistics_stage` which does everything else that stage currently does. (Consequence: `saved` is folded sink-side in `save_stage` today; once `Status` moves downstream it must ride the data plane save→stats — superseding the firehose-slice "keep saved sink-side" note.)
+* [x] do a supporting refactor which factors out a `content_statistics_stage` stage which sits after the current `save_stage`. It's only job is to receive the `ContentCounts` from previous stages. So effectively we split `save_stage` into a stage which just saves to the store, and a `content_statistics_stage` which does everything else that stage currently does. (Consequence: `saved` is folded sink-side in `save_stage` today; once `Status` moves downstream it must ride the data plane save→stats — superseding the firehose-slice "keep saved sink-side" note.)
 * within `skeet-store`:
     * [ ] Record prune statistics:
         * [ ] create new `Statistics` trait (impl'd by SkeetStore) which can store prune statistics i.e. something similar to what we are currently saving in otel metrics:

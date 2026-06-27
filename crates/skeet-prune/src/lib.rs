@@ -10,6 +10,6 @@ mod status;
 pub use classify::classify;
 pub use firehose::SkeetCandidate;
 pub use pipeline::{
-    ChannelMonitors, ImageMessage, MetaMessage, PipelineCounters, firehose_stage,
-    prune_image_stage, prune_meta_stage, save_stage,
+    ChannelMonitors, ImageMessage, MetaMessage, PipelineCounters, StatsMessage,
+    content_statistics_stage, firehose_stage, prune_image_stage, prune_meta_stage, save_stage,
 };

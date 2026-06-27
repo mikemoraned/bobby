@@ -63,14 +63,6 @@ impl Status {
         }
     }
 
-    pub fn record_saved(&mut self) {
-        self.content += &ContentCounts::saved();
-    }
-
-    pub const fn saved_count(&self) -> u64 {
-        self.content.saved
-    }
-
     fn maybe_log(&mut self) {
         if self.content.posts == 1
             || self.content.posts.is_multiple_of(self.cadence.every_n)

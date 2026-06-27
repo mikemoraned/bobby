@@ -7,13 +7,13 @@ along with metadata recording what happened to everything that flowed through.
 ## Stages
 
 ```
-ingest ──▶ filter ──▶ … ──▶ filter ──▶ save
+ingest ──▶ filter ──▶ … ──▶ filter ──▶ save ──▶ stats
 ```
 
-The first stage fetches data from the firehose. Each subsequent stage filters by
-a different criterion, dropping what it rejects and passing the rest on. The
-final stage persists what made it through, together with the metadata about what
-was done.
+The first stage fetches data from the firehose. Each subsequent filter stage
+filters by a different criterion, dropping what it rejects and passing the rest
+on. The save stage persists what made it through; the final stage merges the
+metadata about what was done into a running tally and reports it.
 
 Stages run concurrently and communicate over bounded channels, so a slow stage
 applies backpressure upstream rather than letting work pile up unboundedly. A
@@ -28,7 +28,10 @@ Concretely, `skeet-prune`'s stages are:
 3. **Image filter** — download each image and run cheap detectors — face
    detection, skin detection, and optional text detection — keeping only images
    that plausibly match the target (a selfie with a recognizable landmark).
-4. **Save** — persist the survivors to the store, recording the run's tallies.
+4. **Save** — persist the survivors to the store, folding the resulting `saved`
+   count into the metadata it forwards on.
+5. **Content statistics** — merge each message's metadata into one running
+   total and periodically log and emit the summary. It does no storage work.
 
 The checks deliberately favour recall over precision: cheap and approximate
 here, with the expensive precise judgement left to `skeet-refine` downstream. The
@@ -54,17 +57,17 @@ So the stage that makes a decision is the stage that records it — no stage pas
 a raw "this was rejected" marker downstream just so something else can count it.
 This is what lets the work half shrink to nothing while the metadata still
 carries the full story, and it lets the final stage simply merge each message's
-metadata into a grand total rather than re-deriving anything.
+metadata into a grand total rather than re-deriving anything. The save stage is
+no exception: whether an item is actually persisted depends on storage state (it
+may already exist), so the save stage is the one that knows, and it folds its
+`saved` decision into the metadata it forwards just like every other stage.
 
 The tally is a **monoid**: there is an empty value and an associative combine, so
 "accumulate upstream plus mine" is one operation and the order of merging never
 matters.
 
-### Two deliberate exceptions
+### One deliberate exception
 
-- **What was *saved* is recorded at the final stage**, not accumulated up the
-  pipeline. Whether an item is actually persisted depends on storage state (it
-  may already exist), so only the stage that writes it knows.
 - **Stage throughput and queue depth are measured out-of-band**, not folded into
   the per-message metadata. They answer a different question — *is this stage the
   bottleneck?* — about pipeline health rather than about what was observed in the
