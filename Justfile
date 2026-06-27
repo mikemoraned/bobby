@@ -55,6 +55,11 @@ mutants-on-diff:
     git diff main > /tmp/bobby-mutants-diff.patch
     cargo mutants --in-diff /tmp/bobby-mutants-diff.patch
 
+# Same as mutants-on-diff but its test runs omit _docker tests; safe without Docker
+mutants-on-diff-no-docker:
+    git diff main > /tmp/bobby-mutants-diff.patch
+    cargo mutants --in-diff /tmp/bobby-mutants-diff.patch -- --profile no-docker
+
 clippy:
     cargo clippy --quiet --workspace -- -D warnings
 
