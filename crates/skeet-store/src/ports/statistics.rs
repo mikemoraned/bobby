@@ -10,9 +10,11 @@ pub trait Statistics: Send + Sync {
     /// Append one interval's prune statistics.
     async fn record(&self, stats: &PruneStats) -> Result<(), StoreError>;
 
-    /// Sum the counts of every recorded interval whose `interval_start` falls in
-    /// the half-open window `[start, end)`, returned as a single [`PruneStats`]
-    /// spanning that window (its `interval_start`/`interval_end` are `start`/`end`).
+    /// Combine every recorded interval whose `interval_start` falls in the
+    /// half-open window `[start, end)` into a single [`PruneStats`]: the counts
+    /// sum and the bounds widen to the covered span (earliest start, latest end)
+    /// of the contributing records. An empty window returns zero counts bounded
+    /// by the queried `[start, end)`.
     async fn interval_counts(
         &self,
         start: DateTime<Utc>,
