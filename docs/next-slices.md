@@ -4,7 +4,7 @@
 
 ### Target
 
-As of 20th June we say "(22,223,000 images checked so far)" on https://bobby.houseofmoran.io but this doesn't make it clear how few of these actually match the archetype.
+As of 27th June we say "(22,223,000 images checked so far)" on https://bobby.houseofmoran.io but this doesn't make it clear how few of these actually match the archetype.
 
 We'd like to change this to say something like "(400,000 images checked over past 2 days, of which 46 (0.01%) match what we are looking for)". This should show human-readable numbers and days e.g. time rounded to nearest hour/day/week/month/year multiple, and percentages shown to a round two decimal places.
 
