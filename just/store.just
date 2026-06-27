@@ -22,6 +22,12 @@ optimise-r2-check:
 model-versions:
     {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file deploy/bobby-local.env -- cargo run --quiet --release --bin model-versions -- --store-path {{ R2_STORE }}
 
+show-prune-statistics minutes="5":
+    cargo run --quiet --release --bin show-prune-statistics -- --store-path {{ STORE }} --minutes {{ minutes }}
+
+show-prune-statistics-r2 minutes="5":
+    {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file deploy/bobby-local.env -- cargo run --quiet --release --bin show-prune-statistics -- --store-path {{ R2_STORE }} --minutes {{ minutes }}
+
 abort-multipart-uploads:
     {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file deploy/bobby-local.env -- cargo run --quiet --release --bin abort-multipart-uploads -- --store-path {{ R2_STORE }}
 
