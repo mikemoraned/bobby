@@ -8,11 +8,29 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, trace, warn};
 
 use crate::firehose::SkeetCandidate;
-use crate::pipeline::{self, MetaResult, PipelineCounters};
+use crate::pipeline::{self, ContentCounts, MetaMessage, MetaResult, PipelineCounters};
 
 pub enum MetaFilterOutcome {
     Pass,
+    /// Blocked, carrying a human-readable reason for the trace log. A failed
+    /// `getPostThread` fetch is treated the same way.
     Blocked(String),
+}
+
+/// Build the single meta→image message for a candidate from its metadata
+/// outcome. A passed candidate contributes its full image count; a blocked one
+/// contributes none — both count as one observed post.
+fn meta_message(candidate: SkeetCandidate, outcome: MetaFilterOutcome) -> MetaMessage {
+    match outcome {
+        MetaFilterOutcome::Pass => {
+            let images = candidate.images.len() as u64;
+            (MetaResult::Candidate(candidate), ContentCounts::post(images))
+        }
+        MetaFilterOutcome::Blocked(_) => (
+            MetaResult::Rejected(vec![Rejection::BlockedByMetadata]),
+            ContentCounts::post(0),
+        ),
+    }
 }
 
 /// Check whether a skeet should be blocked based on its `getPostThread` metadata.
@@ -36,7 +54,7 @@ pub fn check_metadata(post_thread_json: &Value) -> MetaFilterOutcome {
 /// channel and run their fetches concurrently to keep pace with firehose intake.
 pub async fn run_workers(
     rx: Receiver<SkeetCandidate>,
-    tx: Sender<MetaResult>,
+    tx: Sender<MetaMessage>,
     http: reqwest::Client,
     counters: Arc<PipelineCounters>,
     num_workers: usize,
@@ -65,45 +83,71 @@ pub async fn run_workers(
 
 async fn run_single(
     rx: &Receiver<SkeetCandidate>,
-    tx: &Sender<MetaResult>,
+    tx: &Sender<MetaMessage>,
     http: &reqwest::Client,
     counters: &PipelineCounters,
     token: &CancellationToken,
 ) {
     while let Some(candidate) = pipeline::recv(rx, token).await {
         counters.meta.fetch_add(1, Ordering::Relaxed);
-        let image_count = candidate.images.len() as u64;
 
-        let (result, passed) = match bluesky::fetch_post_thread(http, &candidate.skeet_id).await {
-            Ok(json) => match check_metadata(&json) {
-                MetaFilterOutcome::Pass => (MetaResult::Candidate(candidate), true),
-                MetaFilterOutcome::Blocked(reason) => {
-                    trace!(skeet_id = %candidate.skeet_id, reason, "blocked by metadata");
-                    (
-                        MetaResult::Rejected(vec![Rejection::BlockedByMetadata]),
-                        false,
-                    )
-                }
-            },
-            Err(e) => {
-                trace!(skeet_id = %candidate.skeet_id, error = %e, "failed to fetch post metadata, rejecting");
-                (
-                    MetaResult::Rejected(vec![Rejection::BlockedByMetadata]),
-                    false,
-                )
-            }
+        let outcome = match bluesky::fetch_post_thread(http, &candidate.skeet_id).await {
+            Ok(json) => check_metadata(&json),
+            Err(e) => MetaFilterOutcome::Blocked(format!("fetch failed: {e}")),
         };
-
-        if pipeline::forward(tx, result, token).await.is_err() {
-            return;
+        if let MetaFilterOutcome::Blocked(reason) = &outcome {
+            trace!(skeet_id = %candidate.skeet_id, reason, "blocked by metadata, rejecting");
         }
 
-        let image_count = if passed { image_count } else { 0 };
-        if pipeline::forward(tx, MetaResult::Post { image_count }, token)
+        if pipeline::forward(tx, meta_message(candidate, outcome), token)
             .await
             .is_err()
         {
             return;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+    use shared::BlueskyCid;
+
+    use super::*;
+    use crate::firehose::ImageCandidate;
+
+    const VALID_CID: &str = "bafyreibvjvcv745gig4mvqs4hctx4zfkono4rjejm2ta6gtyay3sefw7p4";
+
+    fn candidate_with_images(n: usize) -> SkeetCandidate {
+        let images = (0..n)
+            .map(|_| ImageCandidate {
+                cid: BlueskyCid::new(VALID_CID).expect("valid cid"),
+                url: "https://example.com/img".to_string(),
+            })
+            .collect();
+        SkeetCandidate {
+            skeet_id: "at://did:plc:abc/app.bsky.feed.post/abc"
+                .parse()
+                .expect("valid skeet id"),
+            original_at: Utc::now(),
+            images,
+        }
+    }
+
+    #[test]
+    fn pass_carries_one_post_and_full_image_count() {
+        let (result, counts) = meta_message(candidate_with_images(3), MetaFilterOutcome::Pass);
+        assert!(matches!(result, MetaResult::Candidate(_)));
+        assert_eq!(counts, ContentCounts::post(3));
+    }
+
+    #[test]
+    fn blocked_carries_one_post_and_no_images() {
+        let (result, counts) = meta_message(
+            candidate_with_images(3),
+            MetaFilterOutcome::Blocked("blocked labels: porn".to_string()),
+        );
+        assert!(matches!(result, MetaResult::Rejected(_)));
+        assert_eq!(counts, ContentCounts::post(0));
     }
 }

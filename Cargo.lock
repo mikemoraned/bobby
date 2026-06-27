@@ -11012,6 +11012,7 @@ dependencies = [
  "shared",
  "skeet-store",
  "skin-detection",
+ "tempfile",
  "test-support",
  "text-detection",
  "thiserror 2.0.18",

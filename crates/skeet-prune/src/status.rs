@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -8,8 +7,7 @@ use tracing::info;
 
 use crate::metrics::PruneMetrics;
 use crate::pipeline::{
-    ChannelMonitors, ContentCounts, PipelineCounters, PipelineSnapshot, PipelineStages,
-    RejectionBreakdown, StageStats,
+    ChannelMonitors, ContentCounts, PipelineCounters, PipelineSnapshot, PipelineStages, StageStats,
 };
 
 const ALL_CATEGORIES: [RejectionCategory; 3] = [
@@ -17,14 +15,6 @@ const ALL_CATEGORIES: [RejectionCategory; 3] = [
     RejectionCategory::Text,
     RejectionCategory::Metadata,
 ];
-
-/// Running rejection tallies: the headline count of rejected images plus the
-/// per-reason and per-category breakdowns.
-#[derive(Default)]
-struct RejectionTally {
-    total: u64,
-    breakdown: RejectionBreakdown,
-}
 
 /// Governs when `log_summary` fires and anchors the cumulative-rate clock.
 struct LogCadence {
@@ -36,7 +26,6 @@ struct LogCadence {
 
 pub struct Status {
     content: ContentCounts,
-    rejections: RejectionTally,
     cadence: LogCadence,
     counters: Arc<PipelineCounters>,
     channels: ChannelMonitors,
@@ -53,7 +42,6 @@ impl Status {
         let now = Instant::now();
         Self {
             content: ContentCounts::default(),
-            rejections: RejectionTally::default(),
             cadence: LogCadence {
                 started_at: now,
                 last_log: now,
@@ -66,32 +54,21 @@ impl Status {
         }
     }
 
-    pub fn record_post(&mut self, image_count: u64) {
-        self.content.posts += 1;
-        self.content.images += image_count;
-        self.maybe_log();
+    /// Fold one candidate's content delta (posts/images) into the running total
+    /// and advance the log cadence once per observed post.
+    pub fn record_counts(&mut self, counts: &ContentCounts) {
+        self.content += counts;
+        if counts.posts > 0 {
+            self.maybe_log();
+        }
     }
 
-    pub const fn record_saved(&mut self) {
-        self.content.saved += 1;
+    pub fn record_saved(&mut self) {
+        self.content += &ContentCounts::saved();
     }
 
     pub fn record_rejected(&mut self, reasons: &[Rejection]) {
-        self.rejections.total += 1;
-        let breakdown = &mut self.rejections.breakdown;
-        let mut categories_seen: HashSet<RejectionCategory> = HashSet::new();
-        for reason in reasons {
-            *breakdown.by_reason.entry(*reason).or_default() += 1;
-            categories_seen.insert(reason.category());
-        }
-        for &cat in &categories_seen {
-            *breakdown.by_category.entry(cat).or_default() += 1;
-        }
-        if categories_seen.len() == 1
-            && let Some(sole) = categories_seen.into_iter().next()
-        {
-            *breakdown.by_sole_category.entry(sole).or_default() += 1;
-        }
+        self.content += &ContentCounts::rejected(reasons);
     }
 
     pub const fn saved_count(&self) -> u64 {
@@ -120,7 +97,7 @@ impl Status {
         let posts = self.content.posts;
         let images = self.content.images;
         let saved = self.content.saved;
-        let rejected = self.rejections.total;
+        let rejected = self.content.rejected;
 
         let elapsed = self.cadence.started_at.elapsed().as_secs_f64();
         let skeets_per_sec = if elapsed > 0.0 {
@@ -135,9 +112,9 @@ impl Status {
             "skeets: {posts} ({skeets_per_sec:.1}/s) | images: {images} | {saved_detail} | rejected: {rejected}"
         );
 
-        if !self.rejections.breakdown.by_reason.is_empty() {
-            let total_reasons: u64 = self.rejections.breakdown.by_reason.values().sum();
-            let mut sorted: Vec<_> = self.rejections.breakdown.by_reason.iter().collect();
+        if !self.content.rejections.by_reason.is_empty() {
+            let total_reasons: u64 = self.content.rejections.by_reason.values().sum();
+            let mut sorted: Vec<_> = self.content.rejections.by_reason.iter().collect();
             sorted.sort_by_key(|(r, _)| r.to_string());
 
             write!(msg, " (").expect("write to String");
@@ -151,12 +128,12 @@ impl Status {
             write!(msg, ")").expect("write to String");
         }
 
-        if !self.rejections.breakdown.by_category.is_empty() {
+        if !self.content.rejections.by_category.is_empty() {
             write!(msg, " | categories: ").expect("write to String");
             for (i, cat) in ALL_CATEGORIES.iter().enumerate() {
                 let count = self
+                    .content
                     .rejections
-                    .breakdown
                     .by_category
                     .get(cat)
                     .copied()
@@ -167,8 +144,8 @@ impl Status {
                     0.0
                 };
                 let sole = self
+                    .content
                     .rejections
-                    .breakdown
                     .by_sole_category
                     .get(cat)
                     .copied()
@@ -237,7 +214,6 @@ impl Status {
                 },
             },
             content: self.content.clone(),
-            rejections: self.rejections.breakdown.clone(),
         };
         self.metrics.emit(&snapshot);
     }

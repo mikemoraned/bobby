@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use clap::Parser;
 use shared::{PruneConfig, RejectionCategory};
-use skeet_prune::{ChannelMonitors, ImageResult, MetaResult, PipelineCounters, SkeetCandidate};
+use skeet_prune::{ChannelMonitors, ImageMessage, MetaMessage, PipelineCounters, SkeetCandidate};
 use skeet_store::StoreArgs;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -95,8 +95,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // and meta→image channels are MPMC so each stage's worker pool shares one
     // input; image→save has a single consumer but uses the same channel type.
     let (firehose_tx, firehose_rx) = async_channel::bounded::<SkeetCandidate>(16);
-    let (meta_tx, meta_rx) = async_channel::bounded::<MetaResult>(16);
-    let (image_tx, image_rx) = async_channel::bounded::<ImageResult>(100);
+    let (meta_tx, meta_rx) = async_channel::bounded::<MetaMessage>(16);
+    let (image_tx, image_rx) = async_channel::bounded::<ImageMessage>(100);
 
     let counters = Arc::new(PipelineCounters::default());
     let channels = ChannelMonitors::new(firehose_tx.clone(), meta_tx.clone(), image_tx.clone());

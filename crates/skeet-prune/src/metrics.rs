@@ -143,7 +143,7 @@ impl PruneMetrics {
             self.prev_saved = content.saved;
         }
 
-        for (reason, &count) in &snapshot.rejections.by_reason {
+        for (reason, &count) in &content.rejections.by_reason {
             let prev = self.prev_rejected.get(reason).copied().unwrap_or(0);
             let delta = count.saturating_sub(prev);
             if delta > 0 {
@@ -153,7 +153,7 @@ impl PruneMetrics {
             }
         }
 
-        for (cat, &count) in &snapshot.rejections.by_category {
+        for (cat, &count) in &content.rejections.by_category {
             let prev = self.prev_categories.get(cat).copied().unwrap_or(0);
             let delta = count.saturating_sub(prev);
             if delta > 0 {
@@ -163,7 +163,7 @@ impl PruneMetrics {
             }
         }
 
-        for (cat, &count) in &snapshot.rejections.by_sole_category {
+        for (cat, &count) in &content.rejections.by_sole_category {
             let prev = self.prev_sole_categories.get(cat).copied().unwrap_or(0);
             let delta = count.saturating_sub(prev);
             if delta > 0 {
@@ -238,6 +238,7 @@ mod tests {
                 posts,
                 images,
                 saved,
+                ..Default::default()
             },
             ..Default::default()
         }
@@ -330,8 +331,11 @@ mod tests {
         rejs.insert(Rejection::FaceTooSmall, 1);
         let emit_reasons = |metrics: &mut PruneMetrics, rejs: &HashMap<Rejection, u64>| {
             metrics.emit(&PipelineSnapshot {
-                rejections: RejectionBreakdown {
-                    by_reason: rejs.clone(),
+                content: ContentCounts {
+                    rejections: RejectionBreakdown {
+                        by_reason: rejs.clone(),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
                 ..Default::default()
@@ -371,9 +375,12 @@ mod tests {
                          cats: &HashMap<RejectionCategory, u64>,
                          sole: &HashMap<RejectionCategory, u64>| {
             metrics.emit(&PipelineSnapshot {
-                rejections: RejectionBreakdown {
-                    by_category: cats.clone(),
-                    by_sole_category: sole.clone(),
+                content: ContentCounts {
+                    rejections: RejectionBreakdown {
+                        by_category: cats.clone(),
+                        by_sole_category: sole.clone(),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
                 ..Default::default()

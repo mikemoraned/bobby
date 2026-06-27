@@ -7,7 +7,9 @@ use shared::{ModelVersion, PruneConfig};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
-use crate::pipeline::{self, ImageResult, MetaResult, PipelineCounters};
+use crate::pipeline::{
+    self, ImageMessage, ImageResult, MetaMessage, MetaResult, PipelineCounters,
+};
 
 // The text-detection models are compile-time-bundled assets; a load failure is an
 // unrecoverable startup error for the worker, so panicking the spawned task is intended.
@@ -26,8 +28,8 @@ pub struct ClassifyConfig {
 }
 
 pub async fn run_workers(
-    rx: Receiver<MetaResult>,
-    tx: Sender<ImageResult>,
+    rx: Receiver<MetaMessage>,
+    tx: Sender<ImageMessage>,
     config: ClassifyConfig,
     counters: Arc<PipelineCounters>,
     num_workers: usize,
@@ -90,14 +92,14 @@ struct ClassifyContext {
 }
 
 async fn run_single(
-    rx: &Receiver<MetaResult>,
-    tx: &Sender<ImageResult>,
+    rx: &Receiver<MetaMessage>,
+    tx: &Sender<ImageMessage>,
     http: &reqwest::Client,
     mut ctx: ClassifyContext,
     counters: &PipelineCounters,
     token: &CancellationToken,
 ) {
-    while let Some(result) = pipeline::recv(rx, token).await {
+    while let Some((result, counts)) = pipeline::recv(rx, token).await {
         match result {
             MetaResult::Candidate(candidate) => {
                 counters.image.fetch_add(1, Ordering::Relaxed);
@@ -105,6 +107,7 @@ async fn run_single(
                 let skeet_images =
                     crate::firehose::download_candidate_images(&candidate, http).await;
 
+                let mut classified = Vec::with_capacity(skeet_images.len());
                 for skeet_image in skeet_images {
                     let handle = tokio::task::spawn_blocking(move || {
                         let result = crate::classify::classify_image(
@@ -116,29 +119,22 @@ async fn run_single(
                         );
                         (ctx, result)
                     });
-                    let classified = match handle.await {
+                    match handle.await {
                         Ok((returned, result)) => {
                             ctx = returned;
-                            result
+                            classified.push(match result {
+                                Ok(record) => ImageResult::Classified(Box::new(record)),
+                                Err(reasons) => ImageResult::Rejected(reasons),
+                            });
                         }
                         Err(e) => {
                             warn!(error = %e, "image classification task panicked, stopping worker");
                             return;
                         }
-                    };
-
-                    let result = match classified {
-                        Ok(record) => ImageResult::Classified(Box::new(record)),
-                        Err(reasons) => ImageResult::Rejected(reasons),
-                    };
-
-                    if pipeline::forward(tx, result, token).await.is_err() {
-                        return;
                     }
                 }
-            }
-            MetaResult::Post { image_count } => {
-                if pipeline::forward(tx, ImageResult::Post { image_count }, token)
+
+                if pipeline::forward(tx, (classified, counts), token)
                     .await
                     .is_err()
                 {
@@ -146,10 +142,8 @@ async fn run_single(
                 }
             }
             MetaResult::Rejected(reasons) => {
-                if pipeline::forward(tx, ImageResult::Rejected(reasons), token)
-                    .await
-                    .is_err()
-                {
+                let message = (vec![ImageResult::Rejected(reasons)], counts);
+                if pipeline::forward(tx, message, token).await.is_err() {
                     return;
                 }
             }
