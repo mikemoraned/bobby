@@ -1546,3 +1546,30 @@ async fn prune_statistics_interval_counts_sums_overlapping_records() {
         }
     );
 }
+
+#[tokio::test]
+async fn prune_statistics_latest_interval_end() {
+    use chrono::{Duration, TimeZone};
+
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    assert_eq!(store.latest_interval_end().await.unwrap(), None);
+
+    let base = Utc.with_ymd_and_hms(2026, 6, 1, 0, 0, 0).unwrap();
+    let record = |start_h: i64| PruneStats {
+        interval_start: base + Duration::hours(start_h),
+        interval_end: base + Duration::hours(start_h + 1),
+        skeets_seen: 1,
+        images_examined: 1,
+        images_saved: 0,
+    };
+    // Record out of order to confirm the max, not the last write, is returned.
+    store.record(&record(2)).await.unwrap();
+    store.record(&record(0)).await.unwrap();
+
+    assert_eq!(
+        store.latest_interval_end().await.unwrap(),
+        Some(base + Duration::hours(3))
+    );
+}

@@ -19,7 +19,7 @@ We'll get there in gradual steps:
             * These are counts within a particular interval (see below), which should also be recorded with a start and end timestamp
         * [ ] backfill statistics (via one-off cli which we'll delete afterwards):
             * because we've not been running this statistics gathering already, we don't have all the information we need. In particular, we don't have a count of skeets that were seen but not saved.
-            * so, we should write a cli which is resumable from where it go via:
+            * so, we should write a cli which is resumable from where it got to via:
                 1. Using the `Images` port, find oldest image saved, and extract the date
                 2. Using the `Statistics` port, find interval for which we have some already statistics (initially, this should be empty i.e. None)
                 3. Find the max of oldest Image date and newest end of interval, with the intent of finding the intervals we still have to backfill. 

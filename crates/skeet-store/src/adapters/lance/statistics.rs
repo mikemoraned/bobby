@@ -74,6 +74,21 @@ impl Statistics for SkeetStore {
     }
 
     #[instrument(skip(self))]
+    async fn latest_interval_end(&self) -> Result<Option<DateTime<Utc>>, StoreError> {
+        let query = self
+            .table(TableName::PruneStats)
+            .query()
+            .select(lancedb::query::Select::columns(&["interval_end"]));
+        let batches = execute_query(&query, "latest_interval_end").await?;
+        let ends = decode_rows(
+            &batches,
+            |batch| typed_column::<TimestampMicrosecondArray>(batch, "interval_end"),
+            |col, i| Ok(col.value(i)),
+        )?;
+        Ok(ends.into_iter().max().map(micros_to_datetime))
+    }
+
+    #[instrument(skip(self))]
     async fn interval_counts(
         &self,
         start: DateTime<Utc>,

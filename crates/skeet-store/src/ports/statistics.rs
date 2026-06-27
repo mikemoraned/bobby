@@ -10,6 +10,10 @@ pub trait Statistics: Send + Sync {
     /// Append one interval's prune statistics.
     async fn record(&self, stats: &PruneStats) -> Result<(), StoreError>;
 
+    /// The latest `interval_end` over all recorded intervals, or `None` when no
+    /// statistics have been recorded yet — the resume point for backfilling.
+    async fn latest_interval_end(&self) -> Result<Option<DateTime<Utc>>, StoreError>;
+
     /// Combine every recorded interval whose `interval_start` falls in the
     /// half-open window `[start, end)` into a single [`PruneStats`]: the counts
     /// sum and the bounds widen to the covered span (earliest start, latest end)
