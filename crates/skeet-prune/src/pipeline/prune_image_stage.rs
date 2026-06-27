@@ -1,0 +1,151 @@
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+
+use async_channel::{Receiver, Sender};
+use face_detection::FaceDetector;
+use shared::{ModelVersion, PruneConfig};
+use tokio_util::sync::CancellationToken;
+use tracing::{info, warn};
+
+use crate::pipeline::{self, ContentCounts, ImageMessage, MetaMessage, MetaResult, PipelineCounters};
+
+// The text-detection models are compile-time-bundled assets; a load failure is an
+// unrecoverable startup error for the worker, so panicking the spawned task is intended.
+#[allow(clippy::expect_used)]
+fn load_text_detector() -> text_detection::TextDetector {
+    text_detection::TextDetector::from_bundled_models()
+        .expect("failed to load text detection models")
+}
+
+/// Per-worker classification inputs, cloned into each spawned worker.
+#[derive(Clone)]
+pub struct ClassifyConfig {
+    pub http: reqwest::Client,
+    pub prune_config: PruneConfig,
+    pub config_version: ModelVersion,
+}
+
+pub async fn run_workers(
+    rx: Receiver<MetaMessage>,
+    tx: Sender<ImageMessage>,
+    config: ClassifyConfig,
+    counters: Arc<PipelineCounters>,
+    num_workers: usize,
+    token: CancellationToken,
+) {
+    info!(num_workers, "starting image stage workers");
+
+    let mut handles = Vec::with_capacity(num_workers);
+
+    let enable_text = config
+        .prune_config
+        .is_category_enabled(shared::RejectionCategory::Text);
+
+    for worker_id in 0..num_workers {
+        let rx = rx.clone();
+        let tx = tx.clone();
+        let config = config.clone();
+        let counters = Arc::clone(&counters);
+        let token = token.clone();
+
+        handles.push(tokio::spawn(async move {
+            let face = FaceDetector::from_bundled_weights();
+            let text = if enable_text {
+                info!(worker_id, "loading text detection models");
+                Some(load_text_detector())
+            } else {
+                None
+            };
+            let ClassifyConfig {
+                http,
+                prune_config,
+                config_version,
+            } = config;
+            let ctx = ClassifyContext {
+                detectors: Detectors { face, text },
+                prune_config,
+                config_version,
+            };
+            info!(worker_id, "image worker ready");
+            run_single(&rx, &tx, &http, ctx, &counters, &token).await;
+        }));
+    }
+
+    for handle in handles {
+        if let Err(e) = handle.await {
+            warn!("image worker panicked: {e}");
+        }
+    }
+}
+
+struct Detectors {
+    face: FaceDetector,
+    text: Option<text_detection::TextDetector>,
+}
+
+struct ClassifyContext {
+    detectors: Detectors,
+    prune_config: PruneConfig,
+    config_version: ModelVersion,
+}
+
+async fn run_single(
+    rx: &Receiver<MetaMessage>,
+    tx: &Sender<ImageMessage>,
+    http: &reqwest::Client,
+    mut ctx: ClassifyContext,
+    counters: &PipelineCounters,
+    token: &CancellationToken,
+) {
+    while let Some((result, mut counts)) = pipeline::recv(rx, token).await {
+        match result {
+            MetaResult::Candidate(candidate) => {
+                counters.image.fetch_add(1, Ordering::Relaxed);
+
+                let skeet_images =
+                    crate::firehose::download_candidate_images(&candidate, http).await;
+
+                let mut saves = Vec::with_capacity(skeet_images.len());
+                for skeet_image in skeet_images {
+                    let handle = tokio::task::spawn_blocking(move || {
+                        let result = crate::classify::classify_image(
+                            skeet_image,
+                            &ctx.detectors.face,
+                            ctx.detectors.text.as_ref(),
+                            &ctx.prune_config,
+                            &ctx.config_version,
+                        );
+                        (ctx, result)
+                    });
+                    match handle.await {
+                        Ok((returned, result)) => {
+                            ctx = returned;
+                            match result {
+                                Ok(record) => saves.push(record),
+                                Err(reasons) => counts += &ContentCounts::rejected(&reasons),
+                            }
+                        }
+                        Err(e) => {
+                            warn!(error = %e, "image classification task panicked, stopping worker");
+                            return;
+                        }
+                    }
+                }
+
+                if pipeline::forward(tx, (saves, counts), token).await.is_err() {
+                    return;
+                }
+            }
+            // The metadata rejection is already tallied into `counts`; only the
+            // delta needs forwarding, with no records to save.
+            MetaResult::Rejected => {
+                if pipeline::forward(tx, (Vec::new(), counts), token)
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        }
+    }
+}

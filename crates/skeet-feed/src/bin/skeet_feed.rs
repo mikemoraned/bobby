@@ -7,7 +7,7 @@ use cot::project::Bootstrapper;
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
 use skeet_feed::{FeedSourceLayer, PublishedImagesSourceLayer};
-use skeet_publish::{FeedSource, Limit, Order, PublishedImagesSource, RedisFeedSource};
+use skeet_publish::{FallbackFeedSource, FeedSource, Limit, Order, PublishedImagesSource};
 use tracing::info;
 
 #[derive(Parser)]
@@ -74,17 +74,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "starting skeet-feed server (feed from the redis publish server)"
     );
 
-    // The Bluesky feed is the `quality-48h` list written by skeet-publish.
-    let feed_source: Arc<dyn FeedSource> = Arc::new(RedisFeedSource::new(
+    // The Bluesky feed prefers the `quality-48h` list written by skeet-publish,
+    // falling back to successively older same-order lists (`quality-7d`, …) when
+    // it is empty or missing, so an outage degrades gracefully to older data.
+    let feed_source: Arc<dyn FeedSource> = Arc::new(FallbackFeedSource::new(
         args.redis_publish_url.clone(),
         Order::Quality,
         Limit::hours(48),
     ));
 
-    // The public image page renders the wider `quality-4w` list. Each published
-    // image already carries its dimensions (measured by the publisher's CDN
-    // probe), so the feed renders aspect ratios without fetching any image.
-    let published_images_source: Arc<dyn PublishedImagesSource> = Arc::new(RedisFeedSource::new(
+    // The public image page prefers the wider `quality-4w` list, falling back to
+    // older same-order lists when it is empty or missing. Each published image
+    // already carries its dimensions (measured by the publisher's CDN probe), so
+    // the feed renders aspect ratios without fetching any image.
+    let published_images_source: Arc<dyn PublishedImagesSource> = Arc::new(FallbackFeedSource::new(
         args.redis_publish_url,
         Order::Quality,
         Limit::weeks(4),

@@ -10989,7 +10989,9 @@ dependencies = [
 name = "skeet-prune"
 version = "0.1.0"
 dependencies = [
+ "async-channel",
  "atrium-api",
+ "backon",
  "bluesky",
  "build-support",
  "chrono",
@@ -11003,15 +11005,19 @@ dependencies = [
  "libtest-mimic",
  "opentelemetry",
  "opentelemetry_sdk",
+ "proptest",
  "reqwest 0.13.2",
  "serde",
  "serde_json",
  "shared",
  "skeet-store",
  "skin-detection",
+ "tempfile",
  "test-support",
  "text-detection",
+ "thiserror 2.0.18",
  "tokio",
+ "tokio-util",
  "toml 0.8.23",
  "tracing",
 ]

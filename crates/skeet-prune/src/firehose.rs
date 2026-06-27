@@ -6,6 +6,7 @@ use atrium_api::{
     record::KnownRecord,
     types::{BlobRef, TypedBlobRef, Union},
 };
+use backon::ExponentialBuilder;
 use chrono::{DateTime, Utc};
 use jetstream_oxide::{
     DefaultJetstreamEndpoints, JetstreamCompression, JetstreamConfig, JetstreamConnector,
@@ -20,6 +21,82 @@ use tracing::{info, warn};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// How far to rewind the resume cursor before reconnecting, so the replayed
+/// window overlaps the disconnect boundary rather than leaving a gap. Safe
+/// because the ultimate sink is idempotent (keyed by content hash / `SkeetId`).
+const RECONNECT_REWIND: Duration = Duration::from_secs(5);
+
+/// Largest replay window we will request on reconnect. Past this we live-tail
+/// instead and accept the skipped gap as lost: a large catch-up replay is costly,
+/// and because `jetstream-oxide` tears the connection down on a message it can't
+/// decode (rather than skipping it), a replay that keeps re-hitting the same bad
+/// event becomes a fatal loop — the cap bounds that blast radius.
+const REPLAY_MAX_AGE: Duration = Duration::from_secs(30);
+
+/// The `time_us` carried by any Jetstream event, regardless of variant. Used to
+/// advance the resume cursor on every observed event — not only post candidates
+/// — so a quiet period can't leave the cursor stale.
+pub const fn event_time_us(event: &JetstreamEvent) -> u64 {
+    match event {
+        JetstreamEvent::Commit(
+            CommitEvent::Create { info, .. }
+            | CommitEvent::Update { info, .. }
+            | CommitEvent::Delete { info, .. },
+        ) => info.time_us,
+        JetstreamEvent::Identity(identity) => identity.info.time_us,
+        JetstreamEvent::Account(account) => account.info.time_us,
+    }
+}
+
+/// Build a resume cursor from the last observed event time, rewound by
+/// [`RECONNECT_REWIND`]. Returns `None` when the rewind would precede the Unix
+/// epoch (no meaningful cursor to resume from).
+pub const fn cursor_from(time_us: u64) -> Option<DateTime<Utc>> {
+    let rewind_micros = RECONNECT_REWIND.as_micros() as u64;
+    match time_us.checked_sub(rewind_micros) {
+        Some(micros) => DateTime::from_timestamp_micros(micros as i64),
+        None => None,
+    }
+}
+
+/// The cursor to resume from on reconnect, or `None` to live-tail. Rewinds the
+/// last observed event by [`RECONNECT_REWIND`] for gapless overlap, but falls back
+/// to live-tail when the resulting replay window (`now - cursor`) would exceed
+/// [`REPLAY_MAX_AGE`] — see that const for why an unbounded replay is dangerous.
+pub fn replay_cursor(last_time_us: u64, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
+    let cursor = cursor_from(last_time_us)?;
+    let max_age = chrono::TimeDelta::from_std(REPLAY_MAX_AGE).ok()?;
+    if now.signed_duration_since(cursor) > max_age {
+        None
+    } else {
+        Some(cursor)
+    }
+}
+
+const RECONNECT_MIN_DELAY: Duration = Duration::from_secs(1);
+const RECONNECT_MAX_DELAY: Duration = Duration::from_secs(60);
+
+/// Backoff schedule for reconnect *cycles* (one cycle = one full pass over the
+/// shuffled endpoints in [`connect`]). Polite and never-give-up: jitter
+/// de-synchronises retries across the shared public Jetstream instances, the
+/// delay is capped, and the schedule retries indefinitely through an outage.
+pub fn reconnect_backoff() -> ExponentialBuilder {
+    ExponentialBuilder::default()
+        .with_jitter()
+        .with_min_delay(RECONNECT_MIN_DELAY)
+        .with_max_delay(RECONNECT_MAX_DELAY)
+        .without_max_times()
+}
+
+const STABLE_AFTER: Duration = Duration::from_secs(60);
+
+/// Whether a session that lasted `up_for` counts as having "stayed up": at or
+/// beyond [`STABLE_AFTER`] the next reconnect resets to the base backoff delay,
+/// while a shorter-lived session is a flap and keeps the backoff escalating.
+pub const fn session_was_stable(up_for: Duration) -> bool {
+    up_for.as_nanos() >= STABLE_AFTER.as_nanos()
+}
+
 const ALL_ENDPOINTS: [DefaultJetstreamEndpoints; 4] = [
     DefaultJetstreamEndpoints::USEastOne,
     DefaultJetstreamEndpoints::USEastTwo,
@@ -27,7 +104,9 @@ const ALL_ENDPOINTS: [DefaultJetstreamEndpoints; 4] = [
     DefaultJetstreamEndpoints::USWestTwo,
 ];
 
-pub async fn connect() -> Result<JetstreamReceiver, Box<dyn std::error::Error>> {
+pub async fn connect(
+    cursor: Option<DateTime<Utc>>,
+) -> Result<JetstreamReceiver, Box<dyn std::error::Error>> {
     info!("connecting to firehose");
 
     let wanted_collections = vec!["app.bsky.feed.post".parse::<Nsid>()?];
@@ -43,6 +122,7 @@ pub async fn connect() -> Result<JetstreamReceiver, Box<dyn std::error::Error>> 
             compression: JetstreamCompression::Zstd,
             wanted_collections: wanted_collections.clone(),
             max_retries: 0,
+            cursor,
             ..Default::default()
         };
 
@@ -238,4 +318,223 @@ fn blob_cid(blob_ref: &BlobRef) -> Option<BlueskyCid> {
 fn parse_created_at(dt: &atrium_api::types::string::Datetime) -> DateTime<Utc> {
     let fixed: &chrono::DateTime<chrono::FixedOffset> = dt.as_ref();
     fixed.with_timezone(&Utc)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use backon::BackoffBuilder;
+    use proptest::prelude::*;
+
+    // Largest `time_us` whose rewound cursor is still a representable
+    // `DateTime<Utc>`; keeps the proptests away from chrono's range edge.
+    const MAX_REPR_US: u64 = 8_000_000_000_000_000_000;
+
+    fn event_from_json(json: &str) -> JetstreamEvent {
+        serde_json::from_str(json).expect("valid jetstream event json")
+    }
+
+    #[test]
+    fn event_time_us_reads_commit_create() {
+        let json = r#"{
+            "did": "did:plc:abc123",
+            "time_us": 1111,
+            "kind": "commit",
+            "commit": {
+                "operation": "create",
+                "rev": "rev1",
+                "rkey": "rkey1",
+                "collection": "app.bsky.feed.post",
+                "cid": "bafyreibvjvcv745gig4mvqs4hctx4zfkono4rjejm2ta6gtyay3sefw7p4",
+                "record": {
+                    "$type": "app.bsky.feed.post",
+                    "text": "hello",
+                    "createdAt": "2024-01-01T00:00:00.000Z"
+                }
+            }
+        }"#;
+        assert_eq!(event_time_us(&event_from_json(json)), 1111);
+    }
+
+    #[test]
+    fn event_time_us_reads_commit_delete() {
+        let json = r#"{
+            "did": "did:plc:abc123",
+            "time_us": 2222,
+            "kind": "commit",
+            "commit": {
+                "operation": "delete",
+                "rev": "rev1",
+                "rkey": "rkey1",
+                "collection": "app.bsky.feed.post"
+            }
+        }"#;
+        assert_eq!(event_time_us(&event_from_json(json)), 2222);
+    }
+
+    #[test]
+    fn event_time_us_reads_identity() {
+        let json = r#"{
+            "did": "did:plc:abc123",
+            "time_us": 3333,
+            "kind": "identity",
+            "identity": {
+                "did": "did:plc:abc123",
+                "handle": "alice.test",
+                "seq": 1,
+                "time": "2024-01-01T00:00:00.000Z"
+            }
+        }"#;
+        assert_eq!(event_time_us(&event_from_json(json)), 3333);
+    }
+
+    #[test]
+    fn event_time_us_reads_account() {
+        let json = r#"{
+            "did": "did:plc:abc123",
+            "time_us": 4444,
+            "kind": "account",
+            "account": {
+                "active": true,
+                "did": "did:plc:abc123",
+                "seq": 1,
+                "time": "2024-01-01T00:00:00.000Z"
+            }
+        }"#;
+        assert_eq!(event_time_us(&event_from_json(json)), 4444);
+    }
+
+    #[test]
+    fn cursor_from_rewinds_by_the_configured_amount() {
+        let time_us = 1_700_000_000_000_000;
+        let cursor = cursor_from(time_us).expect("representable");
+        let rewind_micros = RECONNECT_REWIND.as_micros() as i64;
+        assert_eq!(cursor.timestamp_micros(), time_us as i64 - rewind_micros);
+    }
+
+    #[test]
+    fn cursor_from_undefined_if_would_be_negative() {
+        assert_eq!(cursor_from(0), None);
+        let just_below_rewind = RECONNECT_REWIND.as_micros() as u64 - 1;
+        assert_eq!(cursor_from(just_below_rewind), None);
+    }
+
+    proptest! {
+        #[test]
+        fn cursor_is_not_after_the_event_instant(
+            time_us in (RECONNECT_REWIND.as_micros() as u64)..=MAX_REPR_US
+        ) {
+            let cursor = cursor_from(time_us).expect("representable");
+            prop_assert!(cursor.timestamp_micros() <= time_us as i64);
+        }
+
+        #[test]
+        fn cursor_is_monotonic_in_time_us(
+            a in (RECONNECT_REWIND.as_micros() as u64)..=MAX_REPR_US,
+            b in (RECONNECT_REWIND.as_micros() as u64)..=MAX_REPR_US,
+        ) {
+            let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+            let c_lo = cursor_from(lo).expect("representable");
+            let c_hi = cursor_from(hi).expect("representable");
+            prop_assert!(c_lo.timestamp_micros() <= c_hi.timestamp_micros());
+        }
+
+        #[test]
+        fn cursor_round_trips_micros_within_the_rewind(
+            time_us in (RECONNECT_REWIND.as_micros() as u64)..=MAX_REPR_US
+        ) {
+            let cursor = cursor_from(time_us).expect("representable");
+            let rewind_micros = RECONNECT_REWIND.as_micros() as i64;
+            prop_assert_eq!(cursor.timestamp_micros(), time_us as i64 - rewind_micros);
+        }
+    }
+
+    // --- replay_cursor: the replay-age cap (H6) ---
+
+    fn now_at(micros: i64) -> DateTime<Utc> {
+        DateTime::from_timestamp_micros(micros).expect("representable")
+    }
+
+    #[test]
+    fn replay_cursor_resumes_for_a_recent_event() {
+        // event 1s before now ⇒ replay window ~6s (1s + the 5s rewind), under the cap
+        let now_us: i64 = 2_000_000_000_000_000;
+        let event_us = (now_us - 1_000_000) as u64;
+        assert_eq!(replay_cursor(event_us, now_at(now_us)), cursor_from(event_us));
+    }
+
+    #[test]
+    fn replay_cursor_live_tails_for_a_stale_event() {
+        // event 120s before now ⇒ replay window ~125s, well over the cap
+        let now_us: i64 = 2_000_000_000_000_000;
+        let event_us = (now_us - 120_000_000) as u64;
+        assert_eq!(replay_cursor(event_us, now_at(now_us)), None);
+    }
+
+    #[test]
+    fn replay_cursor_cap_boundary_resumes_at_the_cap_live_tails_just_past() {
+        // replay window = (now - event) + rewind; the cap triggers strictly past REPLAY_MAX_AGE.
+        let now_us: i64 = 2_000_000_000_000_000;
+        let rewind = RECONNECT_REWIND.as_micros() as i64;
+        let cap = REPLAY_MAX_AGE.as_micros() as i64;
+        let at_cap_event = (now_us - (cap - rewind)) as u64;
+        assert!(replay_cursor(at_cap_event, now_at(now_us)).is_some());
+        let past_cap_event = (now_us - (cap - rewind) - 1) as u64;
+        assert_eq!(replay_cursor(past_cap_event, now_at(now_us)), None);
+    }
+
+    proptest! {
+        #[test]
+        fn replay_cursor_never_resumes_beyond_the_cap(
+            now_us in 1_000_000_000_000_000i64..=(MAX_REPR_US as i64),
+            offset_us in 0i64..2_000_000_000i64,
+        ) {
+            let now = now_at(now_us);
+            let event_us = (now_us - offset_us).max(0) as u64;
+            let cap = chrono::TimeDelta::from_std(REPLAY_MAX_AGE).expect("in range");
+            // when we resume it is exactly the rewound cursor and within the cap;
+            // live-tailing (None) is always a safe fallback so it carries no obligation.
+            if let Some(c) = replay_cursor(event_us, now) {
+                prop_assert_eq!(Some(c), cursor_from(event_us));
+                prop_assert!(now.signed_duration_since(c) <= cap);
+            }
+        }
+    }
+
+    #[test]
+    fn reconnect_backoff_is_capped_jittered_and_unbounded() {
+        let mut backoff = reconnect_backoff().build();
+        let mut delays = Vec::new();
+        for _ in 0..10_000 {
+            // never-give-up: the schedule keeps yielding through a long outage
+            let delay = backoff.next().expect("backoff must never stop retrying");
+            assert!(delay >= RECONNECT_MIN_DELAY, "below min delay: {delay:?}");
+            // capped: jitter adds at most the (capped) base delay on top
+            assert!(delay <= RECONNECT_MAX_DELAY * 2, "above jittered cap: {delay:?}");
+            delays.push(delay);
+        }
+        // jitter: once saturated at the cap, delays vary rather than pinning to
+        // a single value (with jitter off they would all be identical).
+        let last = *delays.last().expect("non-empty");
+        assert!(
+            delays.iter().rev().take(100).any(|&d| d != last),
+            "expected jitter to vary the capped delay",
+        );
+    }
+
+    #[test]
+    fn session_at_threshold_is_stable_just_below_is_a_flap() {
+        assert!(session_was_stable(STABLE_AFTER));
+        assert!(!session_was_stable(STABLE_AFTER - Duration::from_nanos(1)));
+    }
+
+    proptest! {
+        #[test]
+        fn session_stability_is_monotonic_in_uptime(secs in 0u64..1_000_000) {
+            // a longer-lived session can only become "more stable", never less
+            let shorter = Duration::from_secs(secs);
+            let longer = shorter + Duration::from_secs(1);
+            prop_assert!(session_was_stable(longer) || !session_was_stable(shorter));
+        }
+    }
 }

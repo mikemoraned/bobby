@@ -18,6 +18,10 @@
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
+use bluesky::ImageUrl;
+use chrono::Utc;
+use shared::{BlueskyCid, ImageId, SkeetId};
+use skeet_publish::{ExaminedCount, Limit, Order, PublishedImage, PublishedList, PublishedListCatalog};
 use testcontainers::ContainerAsync;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::redis::{REDIS_PORT, Redis};
@@ -48,7 +52,14 @@ async fn spawn_server() -> TestServer {
             url,
         };
     }
+    spawn_local_server().await.0
+}
 
+/// Spawn a local `skeet-feed` subprocess against a fresh testcontainers redis,
+/// returning the server and the redis URL so a test can seed published lists.
+/// Always local (needs Docker) — unlike [`spawn_server`], it ignores
+/// `TEST_BASE_URL`.
+async fn spawn_local_server() -> (TestServer, String) {
     let container = Redis::default()
         .start()
         .await
@@ -90,7 +101,7 @@ async fn spawn_server() -> TestServer {
     };
     for _ in 0..30 {
         if reqwest::get(&url).await.is_ok() {
-            return server;
+            return (server, redis_url);
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
@@ -224,4 +235,145 @@ async fn get_feed_skeleton_rejects_wrong_uri_docker() {
 
     let body: serde_json::Value = resp.json().await.expect("valid json");
     assert_eq!(body["error"], "UnknownFeed");
+}
+
+/// The feed-side preferred list. When this is empty/absent, the fallback should
+/// degrade to successively older same-order lists.
+const FEED_PREFERRED: (Order, Limit) = (Order::Quality, Limit::hours(48));
+/// The website-grid preferred list (wider window than the feed's).
+const GRID_PREFERRED: (Order, Limit) = (Order::Quality, Limit::weeks(4));
+
+/// A known-valid base32 CIDv1. The tests assert on rkeys / post links, never on
+/// CIDs, so every seeded image can share one valid CID.
+const VALID_CID: &str = "bafkreiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+fn published_image(rkey: &str) -> PublishedImage {
+    PublishedImage::unprobed(
+        ImageUrl::new(format!(
+            "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc/{VALID_CID}@jpeg"
+        ))
+        .expect("valid url"),
+        ImageId::V3(BlueskyCid::new(VALID_CID).expect("valid cid")),
+        SkeetId::for_post("did:plc:abc", rkey),
+    )
+}
+
+/// Seed the catalog with `specs`, write each populated list (one image with the
+/// given rkey), and record an examined count — the state skeet-feed reads per
+/// request.
+async fn seed(redis_url: &str, specs: &[(Order, Limit)], populated: &[((Order, Limit), &str)]) {
+    let mut conn = skeet_publish::connect(redis_url).await.expect("connect redis");
+
+    let catalog: Vec<PublishedList> = specs
+        .iter()
+        .map(|&(order, limit)| PublishedList::new(order, limit))
+        .collect();
+    PublishedListCatalog::write(&mut conn, &catalog)
+        .await
+        .expect("write catalog");
+
+    for &((order, limit), rkey) in populated {
+        PublishedList::new(order, limit)
+            .replace(&mut conn, &[published_image(rkey)], Utc::now())
+            .await
+            .expect("replace list");
+    }
+
+    ExaminedCount::write(&mut conn, 123_456)
+        .await
+        .expect("write examined count");
+}
+
+async fn feed_post_rkeys(client: &reqwest::Client, base: &str, feed_uri: &str) -> Vec<String> {
+    let resp = client
+        .get(format!(
+            "{base}/xrpc/app.bsky.feed.getFeedSkeleton?feed={feed_uri}"
+        ))
+        .send()
+        .await
+        .expect("getFeedSkeleton request");
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.expect("valid json");
+    body["feed"]
+        .as_array()
+        .expect("feed array")
+        .iter()
+        .map(|p| {
+            p["post"]
+                .as_str()
+                .expect("post string")
+                .rsplit('/')
+                .next()
+                .expect("rkey")
+                .to_string()
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn feed_and_homepage_fall_back_to_older_lists_when_preferred_empty_docker() {
+    let (server, redis_url) = spawn_local_server().await;
+    let base = &server.url;
+    let client = reqwest::Client::new();
+
+    // Both preferred lists are advertised but empty; older same-order lists carry
+    // the data: the feed should fall back from 48h to 7d, the grid from 4w to 1y.
+    seed(
+        &redis_url,
+        &[
+            FEED_PREFERRED,
+            (Order::Quality, Limit::days(7)),
+            GRID_PREFERRED,
+            (Order::Quality, Limit::years(1)),
+        ],
+        &[
+            ((Order::Quality, Limit::days(7)), "feed7d"),
+            ((Order::Quality, Limit::years(1)), "grid1y"),
+        ],
+    )
+    .await;
+
+    let feed_uri = discover_feed_uri(&client, base).await;
+    assert_eq!(
+        feed_post_rkeys(&client, base, &feed_uri).await,
+        vec!["feed7d".to_string()],
+        "getFeedSkeleton should serve the older quality-7d list when quality-48h is empty"
+    );
+
+    let resp = client.get(format!("{base}/")).send().await.expect("GET /");
+    assert_eq!(resp.status(), 200);
+    let home = resp.text().await.expect("home body");
+    assert!(
+        home.contains("post/grid1y"),
+        "homepage should serve the older quality-1y list when quality-4w is empty"
+    );
+    assert!(
+        home.contains("123,456 images checked"),
+        "the examined-count banner should still render during degradation"
+    );
+}
+
+#[tokio::test]
+async fn feed_serves_preferred_list_when_populated_docker() {
+    let (server, redis_url) = spawn_local_server().await;
+    let base = &server.url;
+    let client = reqwest::Client::new();
+
+    // Both the preferred 48h and the older 7d are populated; the preferred wins.
+    seed(
+        &redis_url,
+        &[FEED_PREFERRED, (Order::Quality, Limit::days(7))],
+        &[
+            (FEED_PREFERRED, "feed48h"),
+            ((Order::Quality, Limit::days(7)), "feed7d"),
+        ],
+    )
+    .await;
+
+    let feed_uri = discover_feed_uri(&client, base).await;
+    assert_eq!(
+        feed_post_rkeys(&client, base, &feed_uri).await,
+        vec!["feed48h".to_string()],
+        "getFeedSkeleton should serve the preferred quality-48h list when it is populated"
+    );
 }

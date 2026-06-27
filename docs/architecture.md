@@ -27,7 +27,7 @@ The original project scanned Twitter's firehose, applied face detection (via Ope
 
 The pipeline follows a **prune-and-refine** pattern:
 
-1. **Prune** (`skeet-prune`): fast, approximate checks that discard the vast majority of candidates. This stage runs inline with the firehose and uses cheap operations — face detection, skin detection, and metadata filtering — to reduce the stream to a sub-1% hit rate. Biased towards recall: a small percentage of false positives are acceptable because they will be caught in the refine stage.
+1. **Prune** (`skeet-prune`): fast, approximate checks that discard the vast majority of candidates, run continuously over the firehose to reduce the stream to a sub-1% hit rate. Biased towards recall: a small percentage of false positives are acceptable because they will be caught in the refine stage. It's built as a staged stream-processing pipeline — see [skeet-prune-pipeline.md](skeet-prune-pipeline.md) for the stages and the checks each applies.
 
 2. **Refine** (`skeet-refine`): expensive, precise scoring applied only to the candidates that survive pruning. Uses an LLM to evaluate how well each image matches the target intent (selfie with a recognizable landmark). Produces a score between 0.0 and 1.0.
 

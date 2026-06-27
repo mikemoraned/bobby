@@ -1,35 +1,25 @@
 # Next Slices
 
-## Slice: Make statistics more visible / understandable
+## Slice: drain the pipeline on SIGTERM (close the restart in-flight loss)
 
 ### Target
 
-As of 20th June we say "(22,223,000 images checked so far)" on https://bobby.houseofmoran.io but this doesn't make it clear how few of these actually match the archetype.
+The firehose slice made *reconnect* gaps lossless (cursor) but did nothing for *restart* loss. Shutdown today is purely **reactive**: stages unwind only when a channel closes (`docs/skeet-prune-pipeline.md` "Shutdown"). On a k8s redeploy (SIGTERM → SIGKILL after the grace period) the pruner is hard-killed with up to ~16+16+100 buffered items plus in-flight download/classify work across the three channels — all silently lost.
 
-We'd like to change this to say something like "(400,000 images checked over past 2 days, of which 46 (0.01%) match what we are looking for)". This should show human-readable numbers and days e.g. time rounded to nearest hour/day/week/month/year multiple, and percentages shown to a round two decimal places.
+This is the other half of restart-loss the firehose slice deliberately deferred (the cursor's in-memory-only choice "accepts the restart gap as lost"; this slice narrows that gap to "drain what's already in the pipeline").
+
+### Decisions / groundwork
+
+- **The shared `CancellationToken` already exists** — the firehose slice introduced it as the closed-downstream seam (`pipeline.rs` `forward`/`recv`). This slice adds the *deliberate* trip, not a from-scratch shutdown mechanism.
+- The shape: a SIGTERM handler trips the token to stop the **source** (firehose recv loop), then the stages are supervised (e.g. a `JoinSet`) and awaited so the bounded channels **drain into the idempotent store** before exit. Draining is safe precisely because the sink is content-hash idempotent.
+- Compose with the cursor, don't compete: the cursor handles reconnect; this handles graceful restart. Persisting the cursor across restarts stays out of scope (a separate, larger choice).
 
 ### Tasks
 
-We'll get there in gradual steps:
-* within `skeet-store`:
-    * [ ] Record prune statistics:
-        * [ ] create new `Statistics` trait (impl'd by SkeetStore) which can store prune statistics i.e. something similar to what we are currently saving in otel metrics:
-            * Count of Skeets seen on firehose
-            * Count of Images examined i.e. how many were looked at even before they were saved
-            * Count of Images saved as candidates
-            * These are counts within a particular interval (see below), which should also be recorded with a start and end timestamp
-        * [ ] Update pruner so that it saves these stats to `Statistics` every time it updates the logged output. It should save a new record of stats for each interval e.g. from timestamp T1 to T2, 20 skeets seen, etc
-    * [ ] Add ability of `Statistics` trait to calculate:
-        * a sum of prune counts seen over a particular interval (based on saved prune records above), which is the number of images examined
-* witnin `skeet-publish`:
-    * [ ] In publisher, publish the following for each `PublishedList` at, for example, `v3-quality-7d:statistics` as a json object:
-        * start/end of interval covered (so, absolute start/end of the 7d period in this example)
-        * count of examined images
-        * count of images we eventually show (this is just the length of the list)
-* within `skeet-feed`:
-    * [ ] Get the counts of images examined and shown, and the interval given, and use these to create the "(400,000 images checked over past 2 days, of which 46 (0.01%) match what we are looking for)" text.
-* [ ] refactor any existing `count` methods in other `skeet-store` traits to live in the `Statistics` trait
-* [ ] once `skeet-feed` deployed and not using it anymore stop creating/publishing `v3-examined-count` 
+* [ ] SIGTERM/SIGINT handler that trips the shared `CancellationToken` to stop the firehose source.
+* [ ] Supervise the stages (`JoinSet` or equivalent) so `main` awaits their completion rather than only awaiting the sink; on shutdown, let the channels drain into the store before exit, bounded by a drain deadline shorter than the k8s grace period.
+* [ ] Update `docs/skeet-prune-pipeline.md` "Shutdown" to describe deliberate drain alongside the reactive close.
+* [ ] Verify `just clippy` + `just test-no-docker`. A deterministic loop test is awkward (signal/time-bound); a live SIGTERM smoke-check (observe the channels drain, no lost in-flight items) is the human/CI step.
 
 ## Slice: 1.0 refactor, review and code minimisation, focussed on remaining crates
 
@@ -58,6 +48,7 @@ The general bias is to refactor towards patterns and structures that are the bes
     * **From the patterns review:**
         * `shared/src/rejection.rs`: `Rejection::FromStr` and `RejectionCategory::FromStr` are still `type Err = String` → add a `ParseRejectionError` enum (the recipe every other NewType uses; `ParseZoneError` already done in the store pass).
         * close `&str` gaps where validated NewTypes already exist: `shared/src/skeet_id.rs` `SkeetId::for_post(did, rkey)` → `&Did`/`&RecordKey`; `bluesky/src/image_url.rs` `bsky_cdn_thumbnail_url(did, cid)` → `&Did`/`&BlueskyCid`; `bluesky/src/post_thread.rs` `blocked_labels` `Vec<String>` → `Vec<Label>`.
+        * **Pull the Jetstream transport + record interpretation out of `skeet-prune::firehose` into a `bluesky::firehose` (or `bluesky::jetstream`) module** — `bluesky` is the crate that owns "talking to Bluesky," and this is generic ingress with no pruner domain in it. Move: `connect()` + the endpoint list + compression/timeout consts (returns a raw `JetstreamReceiver`), and the record-interpretation helpers (`extract_images`, `has_excluded_label`, `blob_cid`, `parse_created_at`) — the same family as `post_thread`'s label interpretation. **Leave in the pruner:** `SkeetCandidate`/`ImageCandidate` (pipeline domain, keyed by `SkeetId` — or lift to `shared`), `extract_skeet_candidate` (assembles the pruner's candidate by calling the bluesky helpers), and `download_candidate_images` (operates on the candidate types). Widens `bluesky`'s charter from "AppView client" to "AppView + Jetstream ingress" and pulls in `jetstream-oxide`/`atrium_api`/`fastrand` — update the lib.rs charter doc-comment to match. **Do this only after the firehose-improve slice's Groups 2/3 land** — the cursor param + `backon` wrapping reshape `connect`'s signature, so move it once stable. The reconnect loop, cursor tracking, and backoff stay in the pruner (consumption-robustness wrapped *around* `connect`).
         * replace `Box<dyn std::error::Error>` with typed `thiserror` variants in `shared/src/lib.rs` `PruneConfig::from_file` and `shared/src/blocklist.rs` `BlocklistConfig::{from_file,save}` — the only library fns not on typed errors.
         * validate the `Purpose` constructor (`eval/src/results.rs`) — it accepts empty strings today.
 * [ ] **Metrics exporters — `cloudflare-exporter`, `openai-exporter`.** Confirm both are still wired up and used; delete if obsolete.

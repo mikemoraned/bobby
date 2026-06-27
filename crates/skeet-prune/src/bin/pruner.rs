@@ -5,10 +5,9 @@ use std::sync::Arc;
 
 use clap::Parser;
 use shared::{PruneConfig, RejectionCategory};
-use skeet_prune::firehose::SkeetCandidate;
-use skeet_prune::pipeline::{ChannelMonitors, ImageResult, MetaResult, PipelineCounters};
+use skeet_prune::{ChannelMonitors, ImageMessage, MetaMessage, PipelineCounters, SkeetCandidate};
 use skeet_store::StoreArgs;
-use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 #[derive(Parser)]
@@ -23,6 +22,12 @@ struct Args {
     /// Status log interval in seconds (default: 30)
     #[arg(long, default_value = "30")]
     status_interval_secs: u64,
+
+    /// Number of parallel meta stage workers (default: 4). The meta stage is
+    /// network-I/O-bound (one `getPostThread` round-trip per candidate), so a
+    /// small pool keeps it from capping the pipeline at the firehose rate.
+    #[arg(long, default_value = "4")]
+    meta_workers: usize,
 
     /// Number of parallel image stage workers (default: 2)
     #[arg(long, default_value = "2")]
@@ -43,8 +48,11 @@ struct Args {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
+    // `jetstream_oxide` logs the underlying WebSocket disconnect reason (and the
+    // server close code) via the `log` crate, bridged into tracing; surface it at
+    // `warn` so reconnect causes land in `pruner.log` without needing `RUST_LOG`.
     let _guard = shared::tracing::init_with_file(
-        "skeet_prune=info,shared=info,skeet_store=info,lance_io=warn,object_store=warn",
+        "skeet_prune=info,shared=info,skeet_store=info,lance_io=warn,object_store=warn,jetstream_oxide=warn",
         "pruner.log",
     );
 
@@ -83,44 +91,65 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     store.validate().await?;
     info!("storage validation passed");
 
-    // Pipeline: firehose → meta prune → image prune → save
-    let (firehose_tx, mut firehose_rx) = mpsc::channel::<SkeetCandidate>(16);
-    let (meta_tx, meta_rx) = mpsc::channel::<MetaResult>(16);
-    let (image_tx, mut image_rx) = mpsc::channel::<ImageResult>(100);
+    // Pipeline: firehose → meta prune → image prune → save. The firehose→meta
+    // and meta→image channels are MPMC so each stage's worker pool shares one
+    // input; image→save has a single consumer but uses the same channel type.
+    let (firehose_tx, firehose_rx) = async_channel::bounded::<SkeetCandidate>(16);
+    let (meta_tx, meta_rx) = async_channel::bounded::<MetaMessage>(16);
+    let (image_tx, image_rx) = async_channel::bounded::<ImageMessage>(100);
 
     let counters = Arc::new(PipelineCounters::default());
     let channels = ChannelMonitors::new(firehose_tx.clone(), meta_tx.clone(), image_tx.clone());
+
+    // Shared shutdown signal: any stage whose downstream closes cancels the
+    // token, so every other stage unwinds through the same seam.
+    let token = CancellationToken::new();
 
     let meta_http = http.clone();
     let firehose_counters = Arc::clone(&counters);
     let meta_counters = Arc::clone(&counters);
     let image_counters = Arc::clone(&counters);
 
+    let firehose_token = token.clone();
     tokio::spawn(async move {
-        skeet_prune::firehose_stage::run(firehose_tx, firehose_counters).await;
+        skeet_prune::firehose_stage::run(firehose_tx, firehose_counters, firehose_token).await;
     });
 
+    let meta_workers = args.meta_workers;
+    let meta_token = token.clone();
     tokio::spawn(async move {
-        skeet_prune::prune_meta_stage::run(&mut firehose_rx, meta_tx, meta_http, meta_counters)
-            .await;
+        skeet_prune::prune_meta_stage::run_workers(
+            firehose_rx,
+            meta_tx,
+            meta_http,
+            meta_counters,
+            meta_workers,
+            meta_token,
+        )
+        .await;
     });
 
     let image_workers = args.image_workers;
+    let image_token = token.clone();
+    let classify_config = skeet_prune::prune_image_stage::ClassifyConfig {
+        http,
+        prune_config,
+        config_version,
+    };
     tokio::spawn(async move {
         skeet_prune::prune_image_stage::run_workers(
             meta_rx,
             image_tx,
-            http,
-            prune_config,
-            config_version,
+            classify_config,
             image_counters,
             image_workers,
+            image_token,
         )
         .await;
     });
 
     let log_interval = std::time::Duration::from_secs(args.status_interval_secs);
-    skeet_prune::save_stage::run(&mut image_rx, &store, counters, channels, log_interval).await;
+    skeet_prune::save_stage::run(&image_rx, &store, counters, channels, log_interval, token).await;
 
     Ok(())
 }

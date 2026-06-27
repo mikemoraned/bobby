@@ -1,61 +1,31 @@
-# Current Slice: robust, low-impact firehose consumption + `skeet-prune` review/re-org
+# Current Slice: Make statistics more visible / understandable
 
-### Targets
+### Target
 
-#### Focus on longer-term maintainance
+As of 27th June we say "(22,223,000 images checked so far)" on https://bobby.houseofmoran.io but this doesn't make it clear how few of these actually match the archetype.
 
-Refactor, review and minimisation of code for longer-term maintenance so "I can walk away from this for a while".
-
-* the general expectation is that I want to be able to leave this repo for a while and go work on other stuff, and not need to worry about surprising code or lingering cruft/weirdness.
-* split out code into sub-dirs based on role e.g. crates are at top-level in repo, and so should go into a subdir; follow generally accepted conventions where possible.
-
-The general bias is to refactor towards patterns and structures that are the best practice for what kinds of things the `skeet-prune` crate is doing.
-
-#### Firehose robustness, specifically
-
-`skeet-prune` already consumes the firehose the efficient way — Jetstream (not the raw `com.atproto.sync.subscribeRepos` CBOR firehose) via `jetstream-oxide`, with `JetstreamCompression::Zstd`, a server-side `wantedCollections=app.bsky.feed.post` filter, and a shuffled four-endpoint list for connect-time failover. The transport is already lean; the gap is *consumption robustness*, not mechanism. Two failure-mode defects remain, both in `firehose.rs` / `firehose_stage.rs`:
-
-- **Reconnects silently lose data.** `JetstreamConfig.cursor` is never set (we build the config with `..Default::default()`), so every reconnection starts in live-tail. A silent connection takes up to `recv_timeout` (30s) to notice, then up to ~5s × endpoints to re-establish — and every post in that whole window is gone, unobserved. On a redeploy or a flaky network this quietly punches holes in the stream we never see.
-- **The reconnect loop has no backoff.** On connect failure `firehose_stage::run` does `warn; continue` with zero delay, and `max_retries: 0` disables the library's own retry — so during a real outage the DIY loop retry-storms all four public Jetstream instances as fast as it can. That's exactly the "unnecessary load on the central servers" we don't want to be a source of.
-
-Goal: survive disconnects without losing observed posts, and stay a polite client even when things are on fire — without touching the (already-good) transport. The pipeline is already idempotent — the store is keyed by content hash / `SkeetId` — so replaying a few seconds of duplicate events on reconnect is safe and collapses to the same rows. That idempotency is the precondition that makes cursor-based resumption viable here.
-
-Apply the cursor change first, then the backoff: backoff deliberately lengthens the disconnect gap, so the cursor (which makes gaps lossless) needs to be in place *before* we make gaps longer on purpose.
+We'd like to change this to say something like "(400,000 images checked over past 2 days, of which 46 (0.01%) match what we are looking for)". This should show human-readable numbers and days e.g. time rounded to nearest hour/day/week/month/year multiple, and percentages shown to a round two decimal places.
 
 ### Tasks
 
-#### Group 0: longer-term maintainance changes
-
-Each crate related to `skeet-prune` gets at least one full human pass (ideally): read all code, delete dead code, rework anything surprising, enforce the house rules along the way — `lib.rs` under 300 lines (extract modules if over), no `#[allow(dead_code)]`, no `unwrap`/`expect` in non-test code without a justified allow, and strip comment-rot (slice/phase/PR/task refs — see [[no-slice-phase-refs-in-code-comments]]). Note any non-obvious findings per crate. (Crate-specific NewType/error/visibility cleanups for `bluesky`/`shared` are listed in the *remaining-crates* 1.0 slice's Shared/support area; apply them wherever that crate's pass happens first.)
-
-Tasks:
-* ...
-
-#### Group 1: bobby.houseofmoran.io should fall back to older data when newer unavailable
-
-It's possible there could be an outage of the backing pruner process for > 48h which means what is shown on the feed or on website could expire gradually. I think what I'd like to do here is add a fallback mechanism where, for preferred Order + Limit, it will try successively older lists if it doesn't find anything in the preferred one. So, here's how it would roughly work:
-* Finds all feeds available and orders them by age limit (i.e. 48h before 7d before 1y)
-* When looking for a preferred feed (e.g. `quality-48h`) if that feed is empty, then it will find the next oldest available feed with the same ordering, in this case `quality-7d`. If that's also empty or missing then it should go to next.
-
-This way when there is some sort of outage it gracefully degrades to older data.
-
-Tasks:
-* ...
-
-#### Group 2: cursor-based resumption
-
-- Track `info.time_us` of the last processed event; set `JetstreamConfig.cursor` (a `DateTime<Utc>`) on reconnect, rewound ~5s for gapless playback. Currently `None` ⇒ every reconnect live-tails and drops the gap.
-- Safe to replay because the store is idempotent (keyed by content hash / `SkeetId`).
-- In-memory across reconnects is the 80%; persisting the cursor (closes the restart gap) is optional.
-
-Tasks:
-* ...
-
-#### Group 3: reconnect backoff
-
-- Add exponential backoff with jitter between reconnect *cycles* (one cycle = one pass over all shuffled endpoints), capped ~30–60s; reset after a connection stays up.
-- Currently `warn; continue` with no delay, and `max_retries: 0` disables the library's retry — so an outage retry-storms all four instances.
-- Keep the DIY loop (it gives endpoint rotation, which `max_retries` doesn't); just add the delay.
-
-Tasks:
-* ...
+We'll get there in gradual steps:
+* [ ] do a supporting refactor which factors out a `content_statistics_stage` stage which sits after the current `save_stage`. It's only job is to receive the `ContentCounts` from previous stages. So effectively we split `save_stage` into a stage which just saves to the store, and a `content_statistics_stage` which does everything else that stage currently does. (Consequence: `saved` is folded sink-side in `save_stage` today; once `Status` moves downstream it must ride the data plane save→stats — superseding the firehose-slice "keep saved sink-side" note.)
+* within `skeet-store`:
+    * [ ] Record prune statistics:
+        * [ ] create new `Statistics` trait (impl'd by SkeetStore) which can store prune statistics i.e. something similar to what we are currently saving in otel metrics:
+            * Count of Skeets seen on firehose
+            * Count of Images examined i.e. how many were looked at even before they were saved
+            * Count of Images saved as candidates
+            * These are counts within a particular interval (see below), which should also be recorded with a start and end timestamp
+        * [ ] Update pruner, in new `content_statistics_stage` so that it saves these stats to `Statistics` every time it updates the logged output. It should save a new record of stats for each interval e.g. from timestamp T1 to T2, 20 skeets seen, etc. (These numbers already exist once per interval as `ContentCounts` in `Status::log_summary` — `posts`/`images`/`saved` map 1:1. Still needed: wall-clock `DateTime<Utc>` interval bounds, since the cadence is monotonic `Instant`; and a store-owned record for `Statistics::record` populated from `ContentCounts`, as `skeet-store` can't import the pruner's type.)
+    * [ ] Add ability of `Statistics` trait to calculate:
+        * a sum of prune counts seen over a particular interval (based on saved prune records above), which is the number of images examined
+* within `skeet-publish`:
+    * [ ] In publisher, publish the following for each `PublishedList` at, for example, `v3-quality-7d:statistics` as a json object:
+        * start/end of interval covered (so, absolute start/end of the 7d period in this example)
+        * count of examined images
+        * count of images we eventually show (this is just the length of the list)
+* within `skeet-feed`:
+    * [ ] Get the counts of images examined and shown, and the interval given, and use these to create the "(400,000 images checked over past 2 days, of which 46 (0.01%) match what we are looking for)" text. (With the firehose-slice fallback, read stats for the list fallback actually served — the served window, e.g. website `quality-4w` widening on degrade — not a fixed `quality-7d`/"2 days".)
+* [ ] refactor any existing `count` methods in other `skeet-store` traits to live in the `Statistics` trait
+* [ ] once `skeet-feed` deployed and not using it anymore stop creating/publishing `v3-examined-count` — also retire `estimate_processed`/`SAVE_RATE_PERCENT`, the `saved × 500` guess the real measured count replaces.

@@ -20,6 +20,7 @@ skeet-publish = { path = "crates/skeet-publish" }
 smartcore = "0.5"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
 toml = "0.8"
 opentelemetry = "0.31"
 opentelemetry_sdk = { version = "0.31", features = ["rt-tokio", "metrics"] }
@@ -56,5 +57,6 @@ oauth2 = "5"
 tower = "0.5"
 tower-sessions = "0.14"
 async-trait = "0.1"
+async-channel = "2"
 backon = "1.6"
 

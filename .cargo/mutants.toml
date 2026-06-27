@@ -1,1 +1,11 @@
 test_tool = "nextest"
+
+# Mutation testing is scoped to *core* logic (see CLAUDE.md): pure, invariant-bearing
+# code and domain/value types — the proptest-worthy surface where a surviving mutant
+# reliably signals a real test gap. CLI bins and build scripts are never core glue, so
+# exclude them mechanically. Excluding the rest of the IO/glue/wiring (store/redis/network
+# adapters, HTTP handlers, pipeline orchestration, telemetry emit) is a *judgment call*
+# at the point of running `just mutants-on-diff`, not a fixed path list — core-by-nature
+# code such as the skeet-publish fallback chain or the skeet-prune cursor/backoff seams
+# lives outside `shared`/`model`, so a blunt whitelist would wrongly drop it.
+exclude_globs = ["**/src/bin/**", "**/build.rs"]
