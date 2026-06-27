@@ -11,7 +11,8 @@ pub trait Statistics: Send + Sync {
     async fn record(&self, stats: &PruneStats) -> Result<(), StoreError>;
 
     /// The latest `interval_end` over all recorded intervals, or `None` when no
-    /// statistics have been recorded yet — the resume point for backfilling.
+    /// statistics have been recorded yet — i.e. how far forward the recorded
+    /// statistics reach.
     async fn latest_interval_end(&self) -> Result<Option<DateTime<Utc>>, StoreError>;
 
     /// Combine every recorded interval whose `interval_start` falls in the

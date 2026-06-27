@@ -17,7 +17,7 @@ We'll get there in gradual steps:
             * Count of Images examined i.e. how many were looked at even before they were saved
             * Count of Images saved as candidates
             * These are counts within a particular interval (see below), which should also be recorded with a start and end timestamp
-        * [ ] backfill statistics (via one-off cli which we'll delete afterwards):
+        * [x] backfill statistics (via one-off cli which we'll delete afterwards):
             * because we've not been running this statistics gathering already, we don't have all the information we need. In particular, we don't have a count of skeets that were seen but not saved.
             * so, we should write a cli which is resumable from where it got to via:
                 1. Using the `Images` port, find oldest image saved, and extract the date
