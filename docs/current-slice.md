@@ -17,6 +17,18 @@ We'll get there in gradual steps:
             * Count of Images examined i.e. how many were looked at even before they were saved
             * Count of Images saved as candidates
             * These are counts within a particular interval (see below), which should also be recorded with a start and end timestamp
+        * [ ] backfill statistics (via one-off cli which we'll delete afterwards):
+            * because we've not been running this statistics gathering already, we don't have all the information we need. In particular, we don't have a count of skeets that were seen but not saved.
+            * so, we should write a cli which is resumable from where it go via:
+                1. Using the `Images` port, find oldest image saved, and extract the date
+                2. Using the `Statistics` port, find interval for which we have some already statistics (initially, this should be empty i.e. None)
+                3. Find the max of oldest Image date and newest end of interval, with the intent of finding the intervals we still have to backfill. 
+                4. Working forward from this starting date in steps of 1 hour, find all Images saved during that interval:
+                    * this becomes `images_saved` of PruneStats
+                    * we calculate backwards to `skeets_seen` and `images_examined` using `SAVE_RATE_PERCENT`, with the assumption that `skeets_seen == images_examined`
+                    * in other words `skeets_seen = images_examined = (images_saved/SAVE_RATE_PERCENT)` as `images_saved = images_examined * SAVE_RATE_PERCENT`
+                    * create and `record` a `PruneStats` instance based on these numbers and this interval
+            * any changes we need to make to `Images` and `Statistics` ports to support this should be kept even after we delete the cli
         * [ ] Update pruner, in new `content_statistics_stage` so that it saves these stats to `Statistics` every time it updates the logged output. It should save a new record of stats for each interval e.g. from timestamp T1 to T2, 20 skeets seen, etc. (These numbers already exist once per interval as `ContentCounts` in `Status::log_summary` — `posts`/`images`/`saved` map 1:1. Still needed: wall-clock `DateTime<Utc>` interval bounds, since the cadence is monotonic `Instant`; and a store-owned record for `Statistics::record` populated from `ContentCounts`, as `skeet-store` can't import the pruner's type.)
     * [x] Add ability of `Statistics` trait to calculate:
         * a sum of prune counts seen over a particular interval (based on saved prune records above), which is the number of images examined — done as `interval_counts`, which returns the summed `PruneStats` (examined plus skeets-seen/saved) for the window rather than just the examined scalar
