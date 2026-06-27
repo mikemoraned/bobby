@@ -13,11 +13,13 @@ use tracing::warn;
 
 use crate::firehose::SkeetCandidate;
 
+pub mod content_counts_recorder;
 pub mod content_statistics_stage;
 pub mod firehose_stage;
 pub mod prune_image_stage;
 pub mod prune_meta_stage;
 pub mod save_stage;
+pub mod statistics_persister;
 
 /// A stage should stop: either the downstream receiver was dropped or shutdown
 /// was requested on the shared [`CancellationToken`].

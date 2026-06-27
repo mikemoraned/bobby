@@ -10990,6 +10990,7 @@ name = "skeet-prune"
 version = "0.1.0"
 dependencies = [
  "async-channel",
+ "async-trait",
  "atrium-api",
  "backon",
  "bluesky",

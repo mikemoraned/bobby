@@ -92,6 +92,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let store = args.store.open_store("pruner").await?;
     store.validate().await?;
     info!("storage validation passed");
+    // Shared between the save stage (writes images) and the stats stage (records
+    // per-interval PruneStats).
+    let store = Arc::new(store);
 
     // Pipeline: firehose → meta prune → image prune → save → stats. The
     // firehose→meta and meta→image channels are MPMC so each stage's worker pool
@@ -153,13 +156,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let save_token = token.clone();
+    let save_store = Arc::clone(&store);
     tokio::spawn(async move {
-        skeet_prune::save_stage::run(&image_rx, &store, stats_tx, save_token).await;
+        skeet_prune::save_stage::run(&image_rx, save_store.as_ref(), stats_tx, save_token).await;
     });
 
     let log_interval = std::time::Duration::from_secs(args.status_interval_secs);
     skeet_prune::content_statistics_stage::run(
         &stats_rx,
+        store.as_ref(),
         counters,
         channels,
         log_interval,

@@ -1,28 +1,38 @@
 use std::sync::Arc;
 
 use async_channel::Receiver;
+use skeet_store::Statistics;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
+use crate::pipeline::content_counts_recorder::ContentCountsRecorder;
+use crate::pipeline::statistics_persister::StatisticsPersister;
 use crate::pipeline::{self, ChannelMonitors, PipelineCounters, StatsMessage};
-use crate::status;
+use crate::status::Status;
 
-/// Final stage: merge each message's `ContentCounts` into the running tally.
+/// Final stage: fan each message's `ContentCounts` out to the recorders.
 ///
-/// It periodically logs and emits a summary, and does no storage work — the
-/// save stage upstream has already folded its `saved` decisions into the counts
-/// that arrive here.
+/// [`Status`] handles cumulative logging and metrics; [`StatisticsPersister`]
+/// writes per-interval [`PruneStats`](skeet_store::PruneStats) to the store.
+/// The stage does no save work — the save stage upstream has already folded its
+/// `saved` decisions into the counts that arrive here.
 pub async fn run(
     rx: &Receiver<StatsMessage>,
+    statistics: &impl Statistics,
     counters: Arc<PipelineCounters>,
     channels: ChannelMonitors,
     log_interval: std::time::Duration,
     token: CancellationToken,
 ) {
-    let mut status = status::Status::new(log_interval, 100, counters, channels);
+    let mut recorders: Vec<Box<dyn ContentCountsRecorder + Send + '_>> = vec![
+        Box::new(Status::new(log_interval, 100, counters, channels)),
+        Box::new(StatisticsPersister::new(statistics, log_interval)),
+    ];
 
     while let Some(counts) = pipeline::recv(rx, &token).await {
-        status.record_counts(&counts);
+        for recorder in &mut recorders {
+            recorder.record_counts(&counts).await;
+        }
     }
 
     warn!("content statistics stage ended, shutting down");
@@ -32,8 +42,10 @@ pub async fn run(
 mod tests {
     use std::time::Duration;
 
+    use chrono::Utc;
     use opentelemetry_sdk::metrics::{InMemoryMetricExporter, SdkMeterProvider};
     use shared::Rejection;
+    use skeet_store::test_utils::open_temp_store;
     use test_support::flush_and_collect;
     use tokio_util::sync::CancellationToken;
 
@@ -82,17 +94,32 @@ mod tests {
         // Close the channel so the stage's receive loop ends and `run` returns.
         drop(tx);
 
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = open_temp_store(&dir).await;
+        let before = Utc::now();
+
         let counters = Arc::new(PipelineCounters::default());
         // A zero interval makes every post-bearing message flush a summary, so the
         // final emit captures the grand totals regardless of the every-N cadence.
         run(
             &rx,
+            &store,
             counters,
             dummy_channels(),
             Duration::ZERO,
             CancellationToken::new(),
         )
         .await;
+
+        // The per-interval PruneStats recorded across the run sum to the grand
+        // totals (skeets/images/saved map 1:1 to the metric counters below).
+        let recorded = store
+            .interval_counts(before, Utc::now())
+            .await
+            .expect("interval counts");
+        assert_eq!(recorded.skeets_seen, 5);
+        assert_eq!(recorded.images_examined, 7);
+        assert_eq!(recorded.images_saved, 2);
 
         let snap = flush_and_collect(&provider, &exporter);
         assert_eq!(snap.sum_counter("skeet_prune.skeets.total", None), 5);
