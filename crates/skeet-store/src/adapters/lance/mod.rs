@@ -14,6 +14,7 @@ mod query;
 mod schema;
 mod scored_view;
 mod scores;
+mod statistics;
 mod versions;
 
 pub use schema::TableName;

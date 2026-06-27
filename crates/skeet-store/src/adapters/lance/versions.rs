@@ -88,6 +88,7 @@ mod tests {
             TableName::SkeetAppraisal,
             TableName::ImageAppraisal,
             TableName::Validate,
+            TableName::PruneStats,
         ]
         .iter()
         .map(|t| t.as_str().to_string())

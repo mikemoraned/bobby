@@ -7,9 +7,11 @@
 //! live in `shared` and are imported from there directly, not re-exported.
 
 mod image;
+mod prune_stats;
 mod score;
 mod version;
 
 pub use image::{ImageRecord, StoredImage, StoredImageSummary, StoredOriginal};
+pub use prune_stats::PruneStats;
 pub use score::{ModelScore, ScoredSummary, ScoresMap};
 pub use version::Version;

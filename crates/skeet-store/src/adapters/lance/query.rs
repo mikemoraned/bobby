@@ -46,6 +46,12 @@ pub fn col_at_or_after_micros(column: &str, micros: i64) -> DfExpr {
     col(column).gt_eq(utc_micros(micros))
 }
 
+/// `<start_micros> <= <column> < <end_micros>` — a half-open window against a
+/// UTC microsecond-timestamp column.
+pub fn col_in_micros_range(column: &str, start_micros: i64, end_micros: i64) -> DfExpr {
+    col_at_or_after_micros(column, start_micros).and(col_before_micros(column, end_micros))
+}
+
 /// A `Timestamp(Microsecond, UTC)` literal from epoch micros — the typed
 /// equivalent of the `arrow_cast(n, 'Timestamp(Microsecond, Some("UTC"))')` cast.
 fn utc_micros(micros: i64) -> DfExpr {

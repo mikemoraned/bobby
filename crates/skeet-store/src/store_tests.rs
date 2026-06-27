@@ -5,7 +5,7 @@ use shared::{Appraisal, DiscoveredAt, OriginalAt, SkeetId, Zone};
 use crate::test_utils::{make_record_at, open_temp_store, test_image, test_image_with_color};
 use crate::{
     AppraisalsSource, Appraiser, Band, ImageId, ImageRecord, Images, ModelScore, ModelVersion,
-    Score, ScoredView, Scores, SkeetStore, TableName,
+    PruneStats, Score, ScoredView, Scores, SkeetStore, Statistics, TableName,
 };
 
 /// The scores table's numeric LanceDB version counter, via the public
@@ -1398,10 +1398,20 @@ async fn prune_old_versions_walks_all_tables() {
         .set(&record.image_id, Band::MediumLow, &test_appraiser())
         .await
         .unwrap();
+    store
+        .record(&PruneStats {
+            interval_start: Utc::now(),
+            interval_end: Utc::now(),
+            skeets_seen: 3,
+            images_examined: 2,
+            images_saved: 1,
+        })
+        .await
+        .unwrap();
 
-    // Sanity: registry covers all five tables.
+    // Sanity: registry covers all six tables.
     let versions = store.table_versions().await.unwrap();
-    assert_eq!(versions.len(), 5);
+    assert_eq!(versions.len(), 6);
 
     store.prune_old_versions().await.unwrap();
 
@@ -1428,4 +1438,111 @@ async fn prune_old_versions_walks_all_tables() {
         .unwrap()
         .expect("image appraisal preserved");
     assert_eq!(image_appraisal.band, Band::MediumLow);
+}
+
+#[tokio::test]
+async fn prune_statistics_record_and_sum_interval_counts() {
+    use chrono::{Duration, TimeZone};
+
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let base = Utc.with_ymd_and_hms(2026, 6, 1, 0, 0, 0).unwrap();
+    let interval = |start_h: i64, examined: u64| PruneStats {
+        interval_start: base + Duration::hours(start_h),
+        interval_end: base + Duration::hours(start_h + 1),
+        skeets_seen: examined * 2,
+        images_examined: examined,
+        images_saved: 1,
+    };
+
+    // Three consecutive one-hour intervals starting at 0h, 1h, 2h.
+    store.record(&interval(0, 10)).await.unwrap();
+    store.record(&interval(1, 20)).await.unwrap();
+    store.record(&interval(2, 30)).await.unwrap();
+
+    // `end` is exclusive on `interval_start`: [0h, 2h) covers the 0h and 1h
+    // records only, and the window's own bounds are echoed back.
+    let first_two = store
+        .interval_counts(base, base + Duration::hours(2))
+        .await
+        .unwrap();
+    assert_eq!(
+        first_two,
+        PruneStats {
+            interval_start: base,
+            interval_end: base + Duration::hours(2),
+            skeets_seen: 60,
+            images_examined: 30,
+            images_saved: 2,
+        }
+    );
+
+    // Half-open boundary: a window aligned exactly to the 1h record's start
+    // includes it (start inclusive) and excludes the 2h record (end exclusive).
+    let only_second = store
+        .interval_counts(base + Duration::hours(1), base + Duration::hours(2))
+        .await
+        .unwrap();
+    assert_eq!(only_second.images_examined, 20);
+
+    // The full window sums all three.
+    let all = store
+        .interval_counts(base, base + Duration::hours(3))
+        .await
+        .unwrap();
+    assert_eq!(all.images_examined, 60);
+    assert_eq!(all.images_saved, 3);
+
+    // A window with no records sums to zero.
+    let empty = store
+        .interval_counts(base + Duration::hours(10), base + Duration::hours(11))
+        .await
+        .unwrap();
+    assert_eq!(empty.skeets_seen, 0);
+    assert_eq!(empty.images_examined, 0);
+    assert_eq!(empty.images_saved, 0);
+}
+
+#[tokio::test]
+async fn prune_statistics_interval_counts_sums_overlapping_records() {
+    use chrono::{Duration, TimeZone};
+
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let base = Utc.with_ymd_and_hms(2026, 6, 1, 0, 0, 0).unwrap();
+    let at = |h: i64| base + Duration::hours(h);
+
+    // Two records whose spans overlap: T1<T3<T2<T4, so interval2 starts before
+    // interval1 ends. Membership keys on `interval_start`, so overlap is
+    // irrelevant — a query over [T1, T4) sums both.
+    let interval1 = PruneStats {
+        interval_start: at(0), // T1
+        interval_end: at(2),   // T2
+        skeets_seen: 20,
+        images_examined: 10,
+        images_saved: 1,
+    };
+    let interval2 = PruneStats {
+        interval_start: at(1), // T3 (< T2)
+        interval_end: at(3),   // T4 (> T2)
+        skeets_seen: 40,
+        images_examined: 30,
+        images_saved: 2,
+    };
+    store.record(&interval1).await.unwrap();
+    store.record(&interval2).await.unwrap();
+
+    let summed = store.interval_counts(at(0), at(3)).await.unwrap();
+    assert_eq!(
+        summed,
+        PruneStats {
+            interval_start: at(0),
+            interval_end: at(3),
+            skeets_seen: 60,
+            images_examined: 40,
+            images_saved: 3,
+        }
+    );
 }
