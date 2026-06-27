@@ -20,6 +20,20 @@ applies backpressure upstream rather than letting work pile up unboundedly. A
 stage that is the throughput bottleneck can be widened into a pool of workers
 sharing its input without changing the shape of the pipeline.
 
+Concretely, `skeet-prune`'s stages are:
+
+1. **Ingest** — read image-bearing posts as they arrive on the Bluesky firehose.
+2. **Metadata filter** — drop posts whose thread metadata excludes them (e.g.
+   adult-content labels, `!no-unauthenticated` authors).
+3. **Image filter** — download each image and run cheap detectors — face
+   detection, skin detection, and optional text detection — keeping only images
+   that plausibly match the target (a selfie with a recognizable landmark).
+4. **Save** — persist the survivors to the store, recording the run's tallies.
+
+The checks deliberately favour recall over precision: cheap and approximate
+here, with the expensive precise judgement left to `skeet-refine` downstream. The
+image filter is the throughput-bound stage and runs as a worker pool.
+
 ## Messages carry work *and* metadata
 
 Each stage emits a tuple message to the next: the **work** for the next stage to

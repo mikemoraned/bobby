@@ -11,6 +11,7 @@ We'd like to change this to say something like "(400,000 images checked over pas
 ### Tasks
 
 We'll get there in gradual steps:
+* [ ] do a supporting refactor which factors out a `content_statistics_stage` stage which sits after the current `save_stage`. It's only job is to receive the `ContentCounts` from previous stages. So effectively we split `save_stage` into a stage which just saves to the store, and a `content_statistics_stage` which does everything else that stage currently does.
 * within `skeet-store`:
     * [ ] Record prune statistics:
         * [ ] create new `Statistics` trait (impl'd by SkeetStore) which can store prune statistics i.e. something similar to what we are currently saving in otel metrics:
@@ -18,10 +19,10 @@ We'll get there in gradual steps:
             * Count of Images examined i.e. how many were looked at even before they were saved
             * Count of Images saved as candidates
             * These are counts within a particular interval (see below), which should also be recorded with a start and end timestamp
-        * [ ] Update pruner so that it saves these stats to `Statistics` every time it updates the logged output. It should save a new record of stats for each interval e.g. from timestamp T1 to T2, 20 skeets seen, etc
+        * [ ] Update pruner, in new `content_statistics_stage` so that it saves these stats to `Statistics` every time it updates the logged output. It should save a new record of stats for each interval e.g. from timestamp T1 to T2, 20 skeets seen, etc
     * [ ] Add ability of `Statistics` trait to calculate:
         * a sum of prune counts seen over a particular interval (based on saved prune records above), which is the number of images examined
-* witnin `skeet-publish`:
+* within `skeet-publish`:
     * [ ] In publisher, publish the following for each `PublishedList` at, for example, `v3-quality-7d:statistics` as a json object:
         * start/end of interval covered (so, absolute start/end of the 7d period in this example)
         * count of examined images
