@@ -22,6 +22,17 @@ We've now amassed 1292 Image Appraisals so we'd probably benefit from capturing 
 * [ ] **Promote + deploy** (only if a candidate is accepted). Repoint the `production` label via the `promote` bin and do the k8s image cutover (per `docs/versioning.md` + `docs/remote-setup.md`) so the new model serves in prod. If rejected, record that the fresh snapshot reaffirmed the incumbent and skip the flip.
 * [ ] **Verify + document.** `just clippy` + `just test-no-docker`. Record the snapshot `split_id`, baseline run-id, candidate run-id, and outcome (accepted+promoted, or rejected) so the comparison is reproducible.
 
+## Slice: dynamic social-media preview image for the feed
+
+### Target
+
+A [social media preview image](https://support.metropublisher.com/hc/en-us/articles/31523564070420-Preview-Image-Settings-for-Social-Media) for `bobby.houseofmoran.io` which can be shown on facebook, twitter etc.
+
+* This should be calculated dynamically based on the same `quality-7d` content, and cached using the same last-modified caching from elsewhere.
+* We can use something like the layout algorithms used in [linzer](https://github.com/mikemoraned/geo/blob/main/apps/linzer/backend/layout/src/bin/layout.rs) e.g. `Guillotine` from the `binpack2d` crate.
+* We shouldn't use the full feed content for this but instead select the first 9 or 10 best and then in the created image put a fade effect on the bottom. This way we get a nice legible image which gives a taste of the content but doesn't take an algorithmically long time to layout.
+
+This is a genuine server-side image-composition feature (compose a montage, render it, wire up the OG/Twitter meta tags, cache it), which is why it's its own slice rather than part of the 1.0 feed polish.
 
 ## Slice: drain the pipeline on SIGTERM (close the restart in-flight loss)
 
@@ -184,18 +195,6 @@ Retire the central risk in an afternoon before building anything, reusing the sl
 * [ ] Train `linfa-logistic` (cross-validated) on the **same frozen 143-image split** used in phases 2–4, labels from `Band::is_visible_in_feed()`
 * [ ] Evaluate on the held-out test set and compare **recall-at-pinned-precision** against the deployed LLM baseline (0.870 @ P=0.800) — same gate as phase 4, so directly comparable
 * [ ] Caveat: the split has only ~88 positive training examples (~16%), thin for a learned head — if logreg underperforms, try kNN/one-class before concluding the embedding can't see the distinction. This is where the label-growth bullet (refine slice) pays off most.
-
-## Slice: dynamic social-media preview image for the feed
-
-### Target
-
-A [social media preview image](https://support.metropublisher.com/hc/en-us/articles/31523564070420-Preview-Image-Settings-for-Social-Media) for `bobby.houseofmoran.io` which can be shown on facebook, twitter etc.
-
-* This should be calculated dynamically based on the same `quality-7d` content, and cached using the same last-modified caching from elsewhere.
-* We can use something like the layout algorithms used in [linzer](https://github.com/mikemoraned/geo/blob/main/apps/linzer/backend/layout/src/bin/layout.rs) e.g. `Guillotine` from the `binpack2d` crate.
-* We shouldn't use the full feed content for this but instead select the first 9 or 10 best and then in the created image put a fade effect on the bottom. This way we get a nice legible image which gives a taste of the content but doesn't take an algorithmically long time to layout.
-
-This is a genuine server-side image-composition feature (compose a montage, render it, wire up the OG/Twitter meta tags, cache it), which is why it's its own slice rather than part of the 1.0 feed polish.
 
 ## Slice: speed-up pruner to increase coverage
 
