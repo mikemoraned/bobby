@@ -7,8 +7,8 @@ use chrono::{DateTime, Utc};
 use deadpool_redis::redis;
 use shared::{Appraisal, Band, ImageId, NormalizedScore, OriginalAt, RefineModels, SkeetId};
 use skeet_store::{
-    AppraisalsSource, ModelScore, ScoredSummary, ScoredView, Scores, StoreError, TableVersions,
-    Version, VersionedCache,
+    AppraisalsSource, ModelScore, ScoredSummary, ScoredView, Scores, Statistics, StoreError,
+    TableVersions, Version, VersionedCache,
 };
 use tokio::sync::RwLock;
 
@@ -16,6 +16,7 @@ use crate::effective_band::{image_effective_band, image_normalized_score, skeet_
 use crate::examined_count::ExaminedCount;
 use crate::image_url_resolver::ImageUrlResolver;
 use crate::limit::Limit;
+use crate::list_statistics::ListStatistics;
 use crate::order::Order;
 use crate::published::PublishedImage;
 use crate::published_list::{PublishedList, PublishedListError};
@@ -225,7 +226,7 @@ pub struct FeedPublisher<S> {
     last_relevant: RwLock<VersionedCache<HashSet<Version>, ()>>,
 }
 
-impl<S: ScoredView + AppraisalsSource + Scores + TableVersions> FeedPublisher<S> {
+impl<S: ScoredView + AppraisalsSource + Scores + TableVersions + Statistics> FeedPublisher<S> {
     pub fn new(
         store: Arc<S>,
         models: Arc<RefineModels>,
@@ -302,9 +303,19 @@ impl<S: ScoredView + AppraisalsSource + Scores + TableVersions> FeedPublisher<S>
             for pair in &mut pairs {
                 enrich(pair, &results);
             }
-            PublishedList::new(order, limit)
-                .replace(conn, &pairs, now)
-                .await?;
+            let list = PublishedList::new(order, limit);
+            list.replace(conn, &pairs, now).await?;
+
+            // Statistics cover the list's absolute window — examined over it, plus
+            // how many we found to show (the list length).
+            let interval_start = now - limit.window();
+            let examined = self
+                .store
+                .interval_counts(interval_start, now)
+                .await?
+                .images_examined;
+            let stats = ListStatistics::new(interval_start, now, examined, pairs.len() as u64);
+            list.write_statistics(conn, &stats).await?;
         }
 
         let scored = self

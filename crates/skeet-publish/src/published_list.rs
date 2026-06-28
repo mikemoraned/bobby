@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use deadpool_redis::redis;
 
 use crate::limit::Limit;
+use crate::list_statistics::ListStatistics;
 use crate::order::Order;
 use crate::published::{PublishedImage, SCHEMA_VERSION};
 use crate::spec::{InvalidSpec, parse_spec};
@@ -72,6 +73,46 @@ impl PublishedList {
     /// The companion key holding when the list was last published (RFC 3339).
     fn refreshed_at_key(&self) -> String {
         format!("{}:refreshed-at", self.name())
+    }
+
+    /// The companion key holding this list's aggregate statistics (JSON).
+    fn statistics_key(&self) -> String {
+        format!("{}:statistics", self.name())
+    }
+
+    /// Overwrite this list's published statistics.
+    pub async fn write_statistics<C>(
+        &self,
+        conn: &mut C,
+        stats: &ListStatistics,
+    ) -> Result<(), PublishedListError>
+    where
+        C: redis::aio::ConnectionLike + Send,
+    {
+        redis::cmd("SET")
+            .arg(self.statistics_key())
+            .arg(serde_json::to_string(stats)?)
+            .exec_async(conn)
+            .await?;
+        Ok(())
+    }
+
+    /// Read this list's published statistics, or `None` if none have been
+    /// written yet — a reader races a never-written key during a fresh deploy,
+    /// so absence is expected and not an error.
+    pub async fn read_statistics<C>(
+        &self,
+        conn: &mut C,
+    ) -> Result<Option<ListStatistics>, PublishedListError>
+    where
+        C: redis::aio::ConnectionLike + Send,
+    {
+        let raw: Option<String> = redis::cmd("GET")
+            .arg(self.statistics_key())
+            .query_async(conn)
+            .await?;
+        raw.map(|s| serde_json::from_str(&s).map_err(PublishedListError::from))
+            .transpose()
     }
 
     /// Atomically replace the list with `pairs` (preserving order) and record

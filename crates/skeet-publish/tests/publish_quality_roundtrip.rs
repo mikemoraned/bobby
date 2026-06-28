@@ -13,10 +13,13 @@ use chrono::Utc;
 use shared::{BlueskyCid, DiscoveredAt, ImageId, OriginalAt, Zone};
 use skeet_publish::{
     CdnImageUrlResolver, FeedPublisher, FeedSource, Limit, Order, PublishedImagesSource,
-    RedisFeedSource, connect,
+    PublishedList, RedisFeedSource, connect,
 };
 use skeet_store::test_utils::{open_temp_store, test_image};
-use skeet_store::{ImageRecord, Images, ModelScore, ModelVersion, Score, Scores, SkeetStore};
+use skeet_store::{
+    ImageRecord, Images, ModelScore, ModelVersion, PruneStats, Score, Scores, SkeetStore,
+    Statistics,
+};
 use testcontainers::ContainerAsync;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::redis::{REDIS_PORT, Redis};
@@ -179,6 +182,52 @@ async fn examined_count_published_and_read_back_docker() {
         reader.examined_count().await.expect("examined count"),
         Some(1500) // 3 saved ÷ 0.2% save rate
     );
+}
+
+/// The publisher writes per-list statistics during a publish cycle: the absolute
+/// window it covers, the images examined over that window (summed from recorded
+/// prune stats), and how many it ended up showing (the list length).
+#[tokio::test]
+async fn list_statistics_published_and_read_back_docker() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = Arc::new(open_temp_store(&dir).await);
+    seed_quality(&store).await; // three visible scored images, all published "now"
+
+    // One recorded interval inside the 48h window contributes the examined count.
+    let now = Utc::now();
+    store
+        .record(&PruneStats {
+            interval_start: now - chrono::Duration::hours(1),
+            interval_end: now,
+            skeets_seen: 5000,
+            images_examined: 5000,
+            images_saved: 3,
+        })
+        .await
+        .expect("record stats");
+
+    let (_container, url) = start_redis().await;
+
+    let publisher = FeedPublisher::new(
+        Arc::clone(&store),
+        test_support::test_models(),
+        Arc::new(CdnImageUrlResolver),
+        Arc::new(StaticExistenceChecker::all_present()),
+        vec![(Order::Quality, Limit::hours(48))],
+    );
+    let mut conn = connect(&url).await.expect("connect");
+    publisher.publish(&mut conn, now).await.expect("publish");
+
+    let stats = PublishedList::new(Order::Quality, Limit::hours(48))
+        .read_statistics(&mut conn)
+        .await
+        .expect("read statistics")
+        .expect("statistics present");
+    // Window is the list's absolute span, ending at the publish time.
+    assert_eq!(stats.interval_start, now - chrono::Duration::hours(48));
+    assert_eq!(stats.interval_end, now);
+    assert_eq!(stats.examined, 5000);
+    assert_eq!(stats.found, 3); // all three seeded skeets are visible within 48h
 }
 
 /// The wider `quality-7d` window includes a High-band skeet published 4 days ago

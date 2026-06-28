@@ -33,7 +33,7 @@ We'll get there in gradual steps:
     * [x] Add ability of `Statistics` trait to calculate:
         * a sum of prune counts seen over a particular interval (based on saved prune records above), which is the number of images examined — done as `interval_counts`, which returns the summed `PruneStats` (examined plus skeets-seen/saved) for the window rather than just the examined scalar
 * within `skeet-publish`:
-    * [ ] In publisher, publish the following for each `PublishedList` at, for example, `v3-quality-7d:statistics` as a json object:
+    * [x] In publisher, publish the following for each `PublishedList` at, for example, `v3-quality-7d:statistics` as a json object:
         * start/end of interval covered (so, absolute start/end of the 7d period in this example)
         * count of examined images
         * count of images we eventually show (this is just the length of the list)
