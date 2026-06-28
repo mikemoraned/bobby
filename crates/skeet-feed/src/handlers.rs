@@ -319,7 +319,7 @@ fn humanize_eta(wait: chrono::Duration) -> String {
 /// feed does no arithmetic of its own here beyond formatting.
 fn statistics_banner(stats: &ListStatistics) -> String {
     format!(
-        "({examined} images checked over the past {window}, of which {exists} ({percent}%) match what we are looking for)",
+        "{examined} images checked over the past {window}, of which {exists} ({percent}%) match what we are looking for.",
         examined = group_thousands(stats.examined),
         window = humanize_window(stats.interval_end - stats.interval_start),
         exists = group_thousands(stats.exists),
