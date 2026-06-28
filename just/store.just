@@ -22,13 +22,6 @@ optimise-r2-check:
 model-versions:
     {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file deploy/bobby-local.env -- cargo run --quiet --release --bin model-versions -- --store-path {{ R2_STORE }}
 
-# One-off: reconstruct historical PruneStats from saved-image timestamps.
-backfill-statistics:
-    cargo run --quiet --release --bin backfill-statistics -- --store-path {{ STORE }}
-
-backfill-statistics-r2:
-    {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file deploy/bobby-local.env -- cargo run --quiet --release --bin backfill-statistics -- --store-path {{ R2_STORE }}
-
 show-prune-statistics minutes="5":
     cargo run --quiet --release --bin show-prune-statistics -- --store-path {{ STORE }} --minutes {{ minutes }}
 
