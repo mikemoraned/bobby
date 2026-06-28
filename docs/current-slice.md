@@ -40,4 +40,7 @@ We'll get there in gradual steps:
 * within `skeet-feed`:
     * [x] Get the counts of images examined and shown, and the interval given, and use these to create the "(400,000 images checked over past 2 days, of which 46 (0.01%) match what we are looking for)" text. (With the firehose-slice fallback, read stats for the list fallback actually served — the served window, e.g. website `quality-4w` widening on degrade — not a fixed `quality-7d`/"2 days".)
 * [x] refactor any existing `count` methods in other `skeet-store` traits to live in the `Statistics` trait
+* [ ] add a small internal consistency sanity-check test which can run locally and also as an integ test against staging and production which checks:
+    1. for the "of which X (Y%) match" text, from which we extract X
+    2. there are X images shown in page i.e. there are X `img` elements in the page under `<div class="grid">`
 * [ ] once `skeet-feed` deployed and not using it anymore stop creating/publishing `v3-examined-count` — also retire `estimate_processed`/`SAVE_RATE_PERCENT`, the `saved × 500` guess the real measured count replaces.
