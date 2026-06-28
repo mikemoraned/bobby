@@ -147,12 +147,6 @@ impl RedisFeedSource {
     }
 }
 
-/// Whether a published item should be shown to the public: both the skeet and
-/// its image must still exist (per the publisher's last existence probe).
-const fn is_live(item: &PublishedImage) -> bool {
-    item.image_url_exists && item.skeet_id_exists
-}
-
 #[async_trait]
 impl FeedSource for RedisFeedSource {
     async fn skeleton(&self, _force_refresh: bool) -> Result<FeedSkeleton, FeedSourceError> {
@@ -161,7 +155,7 @@ impl FeedSource for RedisFeedSource {
         let mut seen = HashSet::new();
         let skeet_ids = published
             .into_iter()
-            .filter(is_live)
+            .filter(PublishedImage::is_live)
             .map(|item| item.skeet_id)
             .filter(|skeet_id| seen.insert(skeet_id.clone()))
             .collect();
@@ -177,7 +171,7 @@ impl FeedSource for RedisFeedSource {
 impl PublishedImagesSource for RedisFeedSource {
     async fn published_images(&self) -> Result<PublishedImages, FeedSourceError> {
         let (images, refreshed_at) = self.published().await?;
-        let images = images.into_iter().filter(is_live).collect();
+        let images = images.into_iter().filter(PublishedImage::is_live).collect();
         let statistics = self.statistics().await?;
         Ok(PublishedImages {
             images,

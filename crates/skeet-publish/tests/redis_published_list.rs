@@ -249,6 +249,7 @@ async fn list_statistics_roundtrip_and_absent_before_first_write_docker() {
         Utc::now(),
         400_000,
         46,
+        44,
     );
     list.write_statistics(&mut conn, &stats)
         .await

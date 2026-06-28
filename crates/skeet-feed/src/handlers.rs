@@ -278,13 +278,17 @@ fn humanize_window(window: chrono::Duration) -> String {
 /// Build the banner line from a served list's statistics, e.g.
 /// "(400,000 images checked over the past 2 days, of which 46 (0.01%) match what
 /// we are looking for)".
+///
+/// The match count is `exists` — the live items the publisher counted with the
+/// same predicate the feed filters on — so it always agrees with the grid. The
+/// feed does no arithmetic of its own here beyond formatting.
 fn statistics_banner(stats: &ListStatistics) -> String {
     format!(
-        "({examined} images checked over the past {window}, of which {found} ({percent}%) match what we are looking for)",
+        "({examined} images checked over the past {window}, of which {exists} ({percent}%) match what we are looking for)",
         examined = group_thousands(stats.examined),
         window = humanize_window(stats.interval_end - stats.interval_start),
-        found = group_thousands(stats.found),
-        percent = format_match_percent(match_percent(stats.examined, stats.found)),
+        exists = group_thousands(stats.exists),
+        percent = format_match_percent(match_percent(stats.examined, stats.exists)),
     )
 }
 
@@ -365,10 +369,12 @@ mod tests {
     }
 
     #[test]
-    fn statistics_banner_renders_examined_found_percent_and_window() {
+    fn statistics_banner_renders_examined_exists_percent_and_window() {
         use chrono::{Duration, Utc};
         let end = Utc::now();
-        let stats = ListStatistics::new(end - Duration::hours(48), end, 400_000, 46);
+        // `found` (48) is larger than `exists` (46): the banner reports the live
+        // `exists` count, not the full candidate count.
+        let stats = ListStatistics::new(end - Duration::hours(48), end, 400_000, 48, 46);
         assert_eq!(
             statistics_banner(&stats),
             "(400,000 images checked over the past 2 days, of which 46 (0.01%) match what we are looking for)"

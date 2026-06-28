@@ -333,7 +333,7 @@ async fn home_renders_grid_of_cards_in_order() {
 #[tokio::test]
 async fn home_shows_statistics_banner_when_present() {
     let end = Utc::now();
-    let stats = ListStatistics::new(end - chrono::Duration::hours(48), end, 400_000, 46);
+    let stats = ListStatistics::new(end - chrono::Duration::hours(48), end, 400_000, 48, 46);
     let mut client = client_with_statistics(test_params(), Some(stats)).await;
 
     let (status, body) = get_body(&mut client, "/").await;
@@ -342,18 +342,18 @@ async fn home_shows_statistics_banner_when_present() {
         body.contains(
             "(400,000 images checked over the past 2 days, of which 46 (0.01%) match what we are looking for)"
         ),
-        "the statistics banner should render examined/found/percent over the served window"
+        "the statistics banner should render examined/exists/percent over the served window"
     );
 }
 
 #[tokio::test]
 async fn home_banner_match_count_equals_grid_image_count() {
     const CID: &str = "bafkreiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    // The source has already dropped non-live images, so it yields two; but the
-    // recorded statistics still count all three candidates as `found`. The banner
-    // must report what the grid actually shows, so its figure must match the grid.
+    // The source has dropped the one non-live candidate, so it yields two images;
+    // the statistics still count all three as `found`, but `exists` (2) tracks the
+    // live count. The banner reports `exists`, so it must match the grid.
     let end = Utc::now();
-    let stats = ListStatistics::new(end - chrono::Duration::weeks(4), end, 400_000, 3);
+    let stats = ListStatistics::new(end - chrono::Duration::weeks(4), end, 400_000, 3, 2);
     let images_source = Arc::new(StubPublishedImagesSource {
         images: vec![published_image("a", CID), published_image("b", CID)],
         refreshed_at: None,

@@ -306,15 +306,15 @@ impl<S: ScoredView + AppraisalsSource + TableVersions + Statistics> FeedPublishe
             let list = PublishedList::new(order, limit);
             list.replace(conn, &pairs, now).await?;
 
-            // Statistics cover the list's absolute window — examined over it, plus
-            // how many we found to show (the list length).
             let interval_start = now - limit.window();
             let examined = self
                 .store
                 .prune_stats_for_interval(interval_start, now)
                 .await?
                 .images_examined;
-            let stats = ListStatistics::new(interval_start, now, examined, pairs.len() as u64);
+            let exists = pairs.iter().filter(|p| p.is_live()).count() as u64;
+            let stats =
+                ListStatistics::new(interval_start, now, examined, pairs.len() as u64, exists);
             list.write_statistics(conn, &stats).await?;
         }
 

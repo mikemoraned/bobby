@@ -228,6 +228,48 @@ async fn list_statistics_published_and_read_back_docker() {
     assert_eq!(stats.interval_end, now);
     assert_eq!(stats.examined, 5000);
     assert_eq!(stats.found, 3); // all three seeded skeets are visible within 48h
+    // The existence checker reports all present, so every candidate is live.
+    assert_eq!(stats.exists, 3);
+}
+
+/// Publisher-side consistency invariant: the `exists` it records equals the number
+/// of live items in the list it just wrote. With one candidate's skeet probed
+/// missing, `found` counts all three but `exists` counts only the two live ones —
+/// and that matches what re-reading the list and applying `is_live` yields.
+#[tokio::test]
+async fn published_exists_matches_live_items_in_the_written_list_docker() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = Arc::new(open_temp_store(&dir).await);
+    seed_quality(&store).await; // a_med, b_high, c_med — all visible within 48h
+
+    let (_container, url) = start_redis().await;
+
+    // Probe c_med's skeet as deleted, so it stays in the list but is not live.
+    let missing_skeet = "at://did:plc:abc/app.bsky.feed.post/c_med"
+        .parse()
+        .expect("valid skeet id");
+    let publisher = FeedPublisher::new(
+        Arc::clone(&store),
+        test_support::test_models(),
+        Arc::new(CdnImageUrlResolver),
+        Arc::new(StaticExistenceChecker::all_present().with_missing_skeets([missing_skeet])),
+        vec![(Order::Quality, Limit::hours(48))],
+    );
+    let mut conn = connect(&url).await.expect("connect");
+    publisher.publish(&mut conn, Utc::now()).await.expect("publish");
+
+    let list = PublishedList::new(Order::Quality, Limit::hours(48));
+    let written = list.read(&mut conn).await.expect("read list");
+    let stats = list
+        .read_statistics(&mut conn)
+        .await
+        .expect("read statistics")
+        .expect("statistics present");
+
+    let live_in_list = written.iter().filter(|p| p.is_live()).count() as u64;
+    assert_eq!(stats.found, written.len() as u64); // all candidates kept in the list
+    assert_eq!(stats.exists, live_in_list); // exists tracks exactly the live ones
+    assert_eq!(stats.exists, 2); // c_med dropped, a_med + b_high remain
 }
 
 /// The wider `quality-7d` window includes a High-band skeet published 4 days ago

@@ -284,7 +284,7 @@ async fn seed(redis_url: &str, specs: &[(Order, Limit)], populated: &[((Order, L
             .expect("replace list");
         list.write_statistics(
             &mut conn,
-            &ListStatistics::new(now - limit.window(), now, 123_456, 1),
+            &ListStatistics::new(now - limit.window(), now, 123_456, 1, 1),
         )
         .await
         .expect("write statistics");
@@ -375,13 +375,17 @@ async fn seed_grid_with_a_dead_candidate(redis_url: &str) {
     let mut dead = published_image("dead");
     dead.image_url_exists = false;
     let images = vec![published_image("live1"), published_image("live2"), dead];
+    // `found` counts all candidates; `exists` only the live ones, mirroring what
+    // the publisher records (the dead one is dropped by the feed's render filter).
+    let found = images.len() as u64;
+    let exists = images.iter().filter(|i| i.is_live()).count() as u64;
     let now = Utc::now();
     list.replace(&mut conn, &images, now)
         .await
         .expect("replace list");
     list.write_statistics(
         &mut conn,
-        &ListStatistics::new(now - GRID_PREFERRED.1.window(), now, 1_000_000, images.len() as u64),
+        &ListStatistics::new(now - GRID_PREFERRED.1.window(), now, 1_000_000, found, exists),
     )
     .await
     .expect("write statistics");
