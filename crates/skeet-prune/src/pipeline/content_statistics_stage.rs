@@ -22,17 +22,26 @@ pub async fn run(
     counters: Arc<PipelineCounters>,
     channels: ChannelMonitors,
     log_interval: std::time::Duration,
+    flush_interval: std::time::Duration,
     token: CancellationToken,
 ) {
     let mut recorders: Vec<Box<dyn ContentCountsRecorder + Send + '_>> = vec![
         Box::new(Status::new(log_interval, 100, counters, channels)),
-        Box::new(StatisticsPersister::new(statistics, log_interval)),
+        Box::new(StatisticsPersister::new(
+            statistics,
+            log_interval,
+            flush_interval,
+        )),
     ];
 
     while let Some(counts) = pipeline::recv(rx, &token).await {
         for recorder in &mut recorders {
             recorder.record_counts(&counts).await;
         }
+    }
+
+    for recorder in &mut recorders {
+        recorder.flush().await;
     }
 
     warn!("content statistics stage ended, shutting down");
@@ -106,6 +115,7 @@ mod tests {
             &store,
             counters,
             dummy_channels(),
+            Duration::ZERO,
             Duration::ZERO,
             CancellationToken::new(),
         )

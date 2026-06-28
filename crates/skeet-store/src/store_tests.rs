@@ -1353,13 +1353,13 @@ async fn prune_old_versions_walks_all_tables() {
         .await
         .unwrap();
     store
-        .record_prune_stats(&PruneStats {
+        .record_prune_stats(&[PruneStats {
             interval_start: Utc::now(),
             interval_end: Utc::now(),
             skeets_seen: 3,
             images_examined: 2,
             images_saved: 1,
-        })
+        }])
         .await
         .unwrap();
 
@@ -1411,9 +1411,9 @@ async fn prune_statistics_record_and_sum_interval_counts() {
     };
 
     // Three consecutive one-hour intervals starting at 0h, 1h, 2h.
-    store.record_prune_stats(&interval(0, 10)).await.unwrap();
-    store.record_prune_stats(&interval(1, 20)).await.unwrap();
-    store.record_prune_stats(&interval(2, 30)).await.unwrap();
+    store.record_prune_stats(&[interval(0, 10)]).await.unwrap();
+    store.record_prune_stats(&[interval(1, 20)]).await.unwrap();
+    store.record_prune_stats(&[interval(2, 30)]).await.unwrap();
 
     // `end` is exclusive on `interval_start`: [0h, 2h) covers the 0h and 1h
     // records only, and the window's own bounds are echoed back.
@@ -1485,8 +1485,8 @@ async fn prune_statistics_interval_counts_sums_overlapping_records() {
         images_examined: 30,
         images_saved: 2,
     };
-    store.record_prune_stats(&interval1).await.unwrap();
-    store.record_prune_stats(&interval2).await.unwrap();
+    store.record_prune_stats(&[interval1]).await.unwrap();
+    store.record_prune_stats(&[interval2]).await.unwrap();
 
     let summed = store.prune_stats_for_interval(at(0), at(3)).await.unwrap();
     assert_eq!(
@@ -1519,8 +1519,8 @@ async fn prune_statistics_latest_interval_end() {
         images_saved: 0,
     };
     // Record out of order to confirm the max, not the last write, is returned.
-    store.record_prune_stats(&record(2)).await.unwrap();
-    store.record_prune_stats(&record(0)).await.unwrap();
+    store.record_prune_stats(&[record(2)]).await.unwrap();
+    store.record_prune_stats(&[record(0)]).await.unwrap();
 
     assert_eq!(
         store.latest_prune_stats_interval_end().await.unwrap(),

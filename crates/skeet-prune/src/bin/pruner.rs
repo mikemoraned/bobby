@@ -25,6 +25,12 @@ struct Args {
     #[arg(long, default_value = "30")]
     status_interval_secs: u64,
 
+    /// How often, in seconds, buffered prune statistics are written to the store
+    /// as one batch (default: 600). Larger values cut store write churn at the
+    /// cost of a longer window of unwritten stats on crash.
+    #[arg(long, default_value = "600")]
+    statistics_flush_secs: u64,
+
     /// Number of parallel meta stage workers (default: 4). The meta stage is
     /// network-I/O-bound (one `getPostThread` round-trip per candidate), so a
     /// small pool keeps it from capping the pipeline at the firehose rate.
@@ -162,12 +168,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let log_interval = std::time::Duration::from_secs(args.status_interval_secs);
+    let flush_interval = std::time::Duration::from_secs(args.statistics_flush_secs);
     skeet_prune::content_statistics_stage::run(
         &stats_rx,
         store.as_ref(),
         counters,
         channels,
         log_interval,
+        flush_interval,
         token,
     )
     .await;

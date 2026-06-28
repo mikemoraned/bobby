@@ -25,18 +25,26 @@ struct PruneStatsColumns<'a> {
 }
 
 impl<'a> PruneStatsColumns<'a> {
-    fn to_batch(stats: &PruneStats) -> Result<RecordBatch, StoreError> {
-        let utc_micros = |dt: DateTime<Utc>| {
-            Arc::new(TimestampMicrosecondArray::from(vec![dt.timestamp_micros()]).with_timezone("UTC"))
+    fn to_batch(stats: &[PruneStats]) -> Result<RecordBatch, StoreError> {
+        let utc_micros = |f: fn(&PruneStats) -> DateTime<Utc>| {
+            Arc::new(
+                TimestampMicrosecondArray::from(
+                    stats.iter().map(|s| f(s).timestamp_micros()).collect::<Vec<_>>(),
+                )
+                .with_timezone("UTC"),
+            )
+        };
+        let u64s = |f: fn(&PruneStats) -> u64| {
+            Arc::new(UInt64Array::from(stats.iter().map(f).collect::<Vec<_>>()))
         };
         Ok(RecordBatch::try_new(
             prune_stats_v1_schema(),
             vec![
-                utc_micros(stats.interval_start),
-                utc_micros(stats.interval_end),
-                Arc::new(UInt64Array::from(vec![stats.skeets_seen])),
-                Arc::new(UInt64Array::from(vec![stats.images_examined])),
-                Arc::new(UInt64Array::from(vec![stats.images_saved])),
+                utc_micros(|s| s.interval_start),
+                utc_micros(|s| s.interval_end),
+                u64s(|s| s.skeets_seen),
+                u64s(|s| s.images_examined),
+                u64s(|s| s.images_saved),
             ],
         )?)
     }
@@ -65,7 +73,10 @@ impl<'a> PruneStatsColumns<'a> {
 #[async_trait]
 impl Statistics for SkeetStore {
     #[instrument(skip(self, stats))]
-    async fn record_prune_stats(&self, stats: &PruneStats) -> Result<(), StoreError> {
+    async fn record_prune_stats(&self, stats: &[PruneStats]) -> Result<(), StoreError> {
+        if stats.is_empty() {
+            return Ok(());
+        }
         self.table(TableName::PruneStats)
             .add(vec![PruneStatsColumns::to_batch(stats)?])
             .write_options(self.write_options())

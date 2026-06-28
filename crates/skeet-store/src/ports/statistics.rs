@@ -10,8 +10,9 @@ use crate::{PruneStats, StoreError};
 /// counts over the images and scores tables.
 #[async_trait]
 pub trait Statistics: Send + Sync {
-    /// Append one interval's prune statistics.
-    async fn record_prune_stats(&self, stats: &PruneStats) -> Result<(), StoreError>;
+    /// Append a batch of interval prune-statistics records in a single write.
+    /// An empty slice is a no-op.
+    async fn record_prune_stats(&self, stats: &[PruneStats]) -> Result<(), StoreError>;
 
     /// The latest `interval_end` over all recorded prune-stats intervals, or
     /// `None` when none have been recorded yet — i.e. how far forward the recorded
