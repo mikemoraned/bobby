@@ -197,6 +197,24 @@ A [social media preview image](https://support.metropublisher.com/hc/en-us/artic
 
 This is a genuine server-side image-composition feature (compose a montage, render it, wire up the OG/Twitter meta tags, cache it), which is why it's its own slice rather than part of the 1.0 feed polish.
 
+## Slice: speed-up pruner to increase coverage
+
+### Target
+
+As of 29th June, based on recent attempts to improve performance, it seems like the main bottleneck is cpu performance in the image filtering stage. This already maxes out the cores, so additional parallelism doesn't help. This bottleneck probably means we can't consume as much of the bluesky feed as we like. This slice is about trying out different optimisations that could help.
+
+#### Establish Baseline
+
+We don't know for sure what the upper limit is, so change the pruner so that it can run in different modes where it only enables subsets of the pipeline. So, for example, if we want to see what speed would be like if we didn't check any images, we can run it in a mode where it only enables the firehose (Ingest) and metadata stages. We'd have to make sure we don't accidentally save outcomes from this + make sure we don't pollute any metrics; it probably should still emit metrics, just under a different name e.g. `pruner-firehose,meta` (for enable stages).
+
+We also may want to consider running this on laptop and in cluster, to assess impact of network speed, perhaps temporarily disabling the main pruner and other services so to avoid contention.
+
+#### Try fail early / lazily evaluate based on specificity
+
+We don't let an image through if it fails any the rejection reasons. We could perhaps save time by finding which of the checks has highest specificity (catches most items) and running that first, and running rest when these fail.
+
+We can effectively have a fast path (lazy evaluate, stop early) and a slow path (evaluate all). We may want to keep both available so we can retest later.
+
 ## Slice: passkey + fingerprint-allowlist auth for `skeet-appraise`
 
 Replace GitHub OAuth on public `bobby-appraisals.houseofmoran.io` with passkey (WebAuthn) auth where **identity is an allowlisted credential fingerprint in config** — no IdP, no sessions, no redis. The server stores only public-key fingerprints (a few config lines, the analogue of `BOBBY_ADMIN_USERS`); the private key lives in the device's secure hardware, OS-synced across my devices, so there's no client-side key custody. Login is a challenge-response the OS prompt handles (Face/Touch ID). The core is a `--auth-mode`-selected verify-against-an-allowlist check, with `passkey` as one provider arm alongside `github` and `local-admin`.
