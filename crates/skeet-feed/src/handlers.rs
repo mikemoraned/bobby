@@ -229,11 +229,11 @@ fn group_thousands(n: u64) -> String {
 
 /// The percentage of examined images that matched. Zero when nothing was
 /// examined (avoids a divide-by-zero on a fresh window).
-fn match_percent(examined: u64, found: u64) -> f64 {
+fn match_percent(examined: u64, matched: u64) -> f64 {
     if examined == 0 {
         0.0
     } else {
-        found as f64 / examined as f64 * 100.0
+        matched as f64 / examined as f64 * 100.0
     }
 }
 

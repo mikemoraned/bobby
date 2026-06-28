@@ -107,39 +107,42 @@ impl RedisFeedSource {
     pub async fn published(
         &self,
     ) -> Result<(Vec<PublishedImage>, Option<DateTime<Utc>>), FeedSourceError> {
-        (|| async {
+        read_with_retry("reading published list", || async {
             let mut conn = connect(&self.url).await.map_err(PublishedListError::from)?;
             Ok(self.list.read_with_refreshed_at(&mut conn).await?)
-        })
-        .retry(retry_policy())
-        .when(is_transient)
-        .notify(|e, dur| {
-            warn!(
-                error = %e,
-                retry_in_ms = dur.as_millis() as u64,
-                "transient redis failure reading published list; will retry",
-            );
         })
         .await
     }
 
     /// This list's published statistics, or `None` if none have been written yet.
     pub async fn statistics(&self) -> Result<Option<ListStatistics>, FeedSourceError> {
-        (|| async {
+        read_with_retry("reading list statistics", || async {
             let mut conn = connect(&self.url).await.map_err(PublishedListError::from)?;
             Ok(self.list.read_statistics(&mut conn).await?)
         })
-        .retry(retry_policy())
+        .await
+    }
+}
+
+/// Run a redis read with the shared transient-failure retry policy, logging
+/// `what` is being retried on each transient failure (see [`is_transient`]).
+async fn read_with_retry<T, Fut>(
+    what: &'static str,
+    op: impl Fn() -> Fut,
+) -> Result<T, FeedSourceError>
+where
+    Fut: std::future::Future<Output = Result<T, FeedSourceError>>,
+{
+    op.retry(retry_policy())
         .when(is_transient)
         .notify(|e, dur| {
             warn!(
                 error = %e,
                 retry_in_ms = dur.as_millis() as u64,
-                "transient redis failure reading list statistics; will retry",
+                "transient redis failure {what}; will retry",
             );
         })
         .await
-    }
 }
 
 #[async_trait]
