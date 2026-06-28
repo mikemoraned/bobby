@@ -7,8 +7,8 @@ use chrono::{DateTime, Utc};
 use deadpool_redis::redis;
 use shared::{Appraisal, Band, ImageId, NormalizedScore, OriginalAt, RefineModels, SkeetId};
 use skeet_store::{
-    AppraisalsSource, ModelScore, ScoredSummary, ScoredView, Scores, Statistics, StoreError,
-    TableVersions, Version, VersionedCache,
+    AppraisalsSource, ModelScore, ScoredSummary, ScoredView, Statistics, StoreError, TableVersions,
+    Version, VersionedCache,
 };
 use tokio::sync::RwLock;
 
@@ -226,7 +226,7 @@ pub struct FeedPublisher<S> {
     last_relevant: RwLock<VersionedCache<HashSet<Version>, ()>>,
 }
 
-impl<S: ScoredView + AppraisalsSource + Scores + TableVersions + Statistics> FeedPublisher<S> {
+impl<S: ScoredView + AppraisalsSource + TableVersions + Statistics> FeedPublisher<S> {
     pub fn new(
         store: Arc<S>,
         models: Arc<RefineModels>,
@@ -311,7 +311,7 @@ impl<S: ScoredView + AppraisalsSource + Scores + TableVersions + Statistics> Fee
             let interval_start = now - limit.window();
             let examined = self
                 .store
-                .interval_counts(interval_start, now)
+                .prune_stats_for_interval(interval_start, now)
                 .await?
                 .images_examined;
             let stats = ListStatistics::new(interval_start, now, examined, pairs.len() as u64);

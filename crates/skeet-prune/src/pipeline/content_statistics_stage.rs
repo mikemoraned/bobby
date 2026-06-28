@@ -114,7 +114,7 @@ mod tests {
         // The per-interval PruneStats recorded across the run sum to the grand
         // totals (skeets/images/saved map 1:1 to the metric counters below).
         let recorded = store
-            .interval_counts(before, Utc::now())
+            .prune_stats_for_interval(before, Utc::now())
             .await
             .expect("interval counts");
         assert_eq!(recorded.skeets_seen, 5);

@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let end = Utc::now();
     let start = end - Duration::minutes(args.minutes);
-    let stats = store.interval_counts(start, end).await?;
+    let stats = store.prune_stats_for_interval(start, end).await?;
 
     println!(
         "interval:        {} -> {}",

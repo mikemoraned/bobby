@@ -47,7 +47,7 @@ impl ContentCountsRecorder for StatisticsPersister<'_> {
             images_examined: self.since_flush.images,
             images_saved: self.since_flush.saved,
         };
-        match self.statistics.record(&stats).await {
+        match self.statistics.record_prune_stats(&stats).await {
             Ok(()) => {
                 self.since_flush = ContentCounts::default();
                 self.interval_start = now;
@@ -78,7 +78,7 @@ mod tests {
 
     #[async_trait]
     impl Statistics for FlakyStatistics {
-        async fn record(&self, stats: &PruneStats) -> Result<(), StoreError> {
+        async fn record_prune_stats(&self, stats: &PruneStats) -> Result<(), StoreError> {
             let mut fail_next = self.fail_next.lock().unwrap();
             if *fail_next {
                 *fail_next = false;
@@ -88,7 +88,7 @@ mod tests {
             Ok(())
         }
 
-        async fn interval_counts(
+        async fn prune_stats_for_interval(
             &self,
             _start: DateTime<Utc>,
             _end: DateTime<Utc>,
@@ -96,7 +96,34 @@ mod tests {
             unreachable!("not used in these tests")
         }
 
-        async fn latest_interval_end(&self) -> Result<Option<DateTime<Utc>>, StoreError> {
+        async fn latest_prune_stats_interval_end(
+            &self,
+        ) -> Result<Option<DateTime<Utc>>, StoreError> {
+            unreachable!("not used in these tests")
+        }
+
+        async fn count_images(&self) -> Result<usize, StoreError> {
+            unreachable!("not used in these tests")
+        }
+
+        async fn count_images_in_interval(
+            &self,
+            _start: DateTime<Utc>,
+            _end: DateTime<Utc>,
+        ) -> Result<u64, StoreError> {
+            unreachable!("not used in these tests")
+        }
+
+        async fn count_scored_images(
+            &self,
+            _known_versions: &std::collections::HashSet<skeet_store::ModelVersion>,
+        ) -> Result<usize, StoreError> {
+            unreachable!("not used in these tests")
+        }
+
+        async fn count_scores_by_model_version(
+            &self,
+        ) -> Result<std::collections::HashMap<String, usize>, StoreError> {
             unreachable!("not used in these tests")
         }
     }
@@ -137,7 +164,7 @@ mod tests {
         persister.record_counts(&ContentCounts::post(1)).await;
 
         let recorded = store
-            .interval_counts(before, Utc::now())
+            .prune_stats_for_interval(before, Utc::now())
             .await
             .expect("interval counts");
         assert_eq!(recorded.skeets_seen, 2);
@@ -156,7 +183,7 @@ mod tests {
         persister.record_counts(&ContentCounts::post(5)).await;
 
         let recorded = store
-            .interval_counts(before, Utc::now())
+            .prune_stats_for_interval(before, Utc::now())
             .await
             .expect("interval counts");
         assert_eq!(recorded.skeets_seen, 0);

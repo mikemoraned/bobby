@@ -1,16 +1,18 @@
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use arrow_array::{RecordBatch, TimestampMicrosecondArray, UInt64Array};
+use arrow_array::{RecordBatch, StringArray, TimestampMicrosecondArray, UInt64Array};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use lancedb::query::QueryBase;
+use shared::ImageId;
 use tracing::instrument;
 
 use super::arrow::{micros_to_datetime, typed_column};
 use super::decode::decode_rows;
 use super::query::{col_in_micros_range, execute_query};
 use super::schema::{TableName, prune_stats_v1_schema};
-use crate::{PruneStats, SkeetStore, Statistics, StoreError};
+use crate::{ModelVersion, PruneStats, SkeetStore, Statistics, StoreError};
 
 /// The `PruneStats` ⟷ Arrow mapping for the `prune_stats` table, both
 /// directions kept together: [`to_batch`](Self::to_batch) encodes one record for
@@ -64,7 +66,7 @@ impl<'a> PruneStatsColumns<'a> {
 #[async_trait]
 impl Statistics for SkeetStore {
     #[instrument(skip(self, stats))]
-    async fn record(&self, stats: &PruneStats) -> Result<(), StoreError> {
+    async fn record_prune_stats(&self, stats: &PruneStats) -> Result<(), StoreError> {
         self.table(TableName::PruneStats)
             .add(vec![PruneStatsColumns::to_batch(stats)?])
             .write_options(self.write_options())
@@ -74,12 +76,14 @@ impl Statistics for SkeetStore {
     }
 
     #[instrument(skip(self))]
-    async fn latest_interval_end(&self) -> Result<Option<DateTime<Utc>>, StoreError> {
+    async fn latest_prune_stats_interval_end(
+        &self,
+    ) -> Result<Option<DateTime<Utc>>, StoreError> {
         let query = self
             .table(TableName::PruneStats)
             .query()
             .select(lancedb::query::Select::columns(&["interval_end"]));
-        let batches = execute_query(&query, "latest_interval_end").await?;
+        let batches = execute_query(&query, "latest_prune_stats_interval_end").await?;
         let ends = decode_rows(
             &batches,
             |batch| typed_column::<TimestampMicrosecondArray>(batch, "interval_end"),
@@ -89,7 +93,7 @@ impl Statistics for SkeetStore {
     }
 
     #[instrument(skip(self))]
-    async fn interval_counts(
+    async fn prune_stats_for_interval(
         &self,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
@@ -102,7 +106,7 @@ impl Statistics for SkeetStore {
                 start.timestamp_micros(),
                 end.timestamp_micros(),
             ));
-        let batches = execute_query(&query, "interval_counts").await?;
+        let batches = execute_query(&query, "prune_stats_for_interval").await?;
 
         let rows = decode_rows(&batches, PruneStatsColumns::extract, |cols, i| {
             Ok(cols.row(i))
@@ -122,5 +126,90 @@ impl Statistics for SkeetStore {
                 interval_end: end,
                 ..PruneStats::default()
             }))
+    }
+
+    #[instrument(skip(self))]
+    async fn count_images(&self) -> Result<usize, StoreError> {
+        Ok(self.table(TableName::Images).count_rows(None).await?)
+    }
+
+    #[instrument(skip(self))]
+    async fn count_images_in_interval(
+        &self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Result<u64, StoreError> {
+        let query = self
+            .table(TableName::Images)
+            .query()
+            .select(lancedb::query::Select::columns(&["discovered_at"]))
+            .only_if_expr(col_in_micros_range(
+                "discovered_at",
+                start.timestamp_micros(),
+                end.timestamp_micros(),
+            ));
+        let batches = execute_query(&query, "count_images_in_interval").await?;
+        Ok(batches.iter().map(|b| b.num_rows() as u64).sum())
+    }
+
+    /// Scans the scores table fresh rather than reading the scores cache: callers
+    /// want the current total, and the cache may lag the live table.
+    #[instrument(skip(self, known_versions))]
+    async fn count_scored_images(
+        &self,
+        known_versions: &HashSet<ModelVersion>,
+    ) -> Result<usize, StoreError> {
+        let query = self
+            .table(TableName::Scores)
+            .query()
+            .select(lancedb::query::Select::columns(&[
+                "image_id",
+                "model_version",
+            ]));
+        let batches = execute_query(&query, "count_scored_images").await?;
+
+        // Dedupe by image id (last row wins) so an image scored more than once is
+        // counted once, with its latest model version deciding known-ness.
+        let latest_version: HashMap<ImageId, ModelVersion> = decode_rows(
+            &batches,
+            |batch| {
+                Ok((
+                    typed_column::<StringArray>(batch, "image_id")?,
+                    typed_column::<StringArray>(batch, "model_version")?,
+                ))
+            },
+            |(image_ids, model_versions), i| {
+                Ok((
+                    image_ids.value(i).parse::<ImageId>()?,
+                    ModelVersion::from(model_versions.value(i)),
+                ))
+            },
+        )?
+        .into_iter()
+        .collect();
+
+        Ok(latest_version
+            .values()
+            .filter(|mv| known_versions.contains(mv))
+            .count())
+    }
+
+    #[instrument(skip(self))]
+    async fn count_scores_by_model_version(&self) -> Result<HashMap<String, usize>, StoreError> {
+        let query = self
+            .table(TableName::Scores)
+            .query()
+            .select(lancedb::query::Select::columns(&["model_version"]));
+        let batches = execute_query(&query, "count_scores_by_model_version").await?;
+
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for model_version in decode_rows(
+            &batches,
+            |batch| typed_column::<StringArray>(batch, "model_version"),
+            |col, i| Ok(col.value(i).to_string()),
+        )? {
+            *counts.entry(model_version).or_insert(0) += 1;
+        }
+        Ok(counts)
     }
 }

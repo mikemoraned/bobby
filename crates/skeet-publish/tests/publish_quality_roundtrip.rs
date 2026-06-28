@@ -196,7 +196,7 @@ async fn list_statistics_published_and_read_back_docker() {
     // One recorded interval inside the 48h window contributes the examined count.
     let now = Utc::now();
     store
-        .record(&PruneStats {
+        .record_prune_stats(&PruneStats {
             interval_start: now - chrono::Duration::hours(1),
             interval_end: now,
             skeets_seen: 5000,

@@ -26,7 +26,7 @@ async fn roundtrip_store_and_retrieve() {
     let dir = tempfile::tempdir().unwrap();
     let store = open_temp_store(&dir).await;
 
-    assert_eq!(store.count().await.unwrap(), 0);
+    assert_eq!(store.count_images().await.unwrap(), 0);
 
     let record = ImageRecord {
         image_id: ImageId::from_image(&test_image()),
@@ -43,7 +43,7 @@ async fn roundtrip_store_and_retrieve() {
     };
 
     store.add(&record).await.unwrap();
-    assert_eq!(store.count().await.unwrap(), 1);
+    assert_eq!(store.count_images().await.unwrap(), 1);
 
     let stored = store.get_by_id(&record.image_id).await.unwrap().unwrap();
     assert_eq!(stored.summary.image_id, record.image_id);
@@ -78,7 +78,7 @@ async fn multiple_images_per_skeet() {
         store.add(&record).await.unwrap();
     }
 
-    assert_eq!(store.count().await.unwrap(), 3);
+    assert_eq!(store.count_images().await.unwrap(), 3);
 
     let unique_skeets = store.unique_skeet_ids().await.unwrap();
     assert_eq!(unique_skeets.len(), 1);
@@ -137,7 +137,7 @@ async fn reopening_store_preserves_data() {
     }
 
     let store = open_temp_store(&dir).await;
-    assert_eq!(store.count().await.unwrap(), 1);
+    assert_eq!(store.count_images().await.unwrap(), 1);
 }
 
 fn make_record(skeet_suffix: &str) -> ImageRecord {
@@ -417,7 +417,7 @@ async fn writes_from_one_store_visible_to_another() {
         store2.exists(&record.image_id).await.unwrap(),
         "store2 should see record written by store1"
     );
-    assert_eq!(store2.count().await.unwrap(), 1);
+    assert_eq!(store2.count_images().await.unwrap(), 1);
 }
 
 #[tokio::test]
@@ -995,7 +995,7 @@ async fn delete_removes_record() {
 
     store.delete_by_id(&record.image_id).await.unwrap();
     assert!(!store.exists(&record.image_id).await.unwrap());
-    assert_eq!(store.count().await.unwrap(), 0);
+    assert_eq!(store.count_images().await.unwrap(), 0);
 }
 
 #[tokio::test]
@@ -1316,7 +1316,7 @@ async fn optimise_preserves_data() {
 
     store.optimise().await.unwrap();
 
-    assert_eq!(store.count().await.unwrap(), 1);
+    assert_eq!(store.count_images().await.unwrap(), 1);
     assert!(store.exists(&record.image_id).await.unwrap());
     let score = store.get_score(&record.image_id).await.unwrap();
     assert_eq!(
@@ -1356,7 +1356,7 @@ async fn prune_old_versions_preserves_data() {
 
     store.prune_old_versions().await.unwrap();
 
-    assert_eq!(store.count().await.unwrap(), 1);
+    assert_eq!(store.count_images().await.unwrap(), 1);
     assert!(store.exists(&record.image_id).await.unwrap());
     let score = store.get_score(&record.image_id).await.unwrap();
     assert_eq!(
@@ -1399,7 +1399,7 @@ async fn prune_old_versions_walks_all_tables() {
         .await
         .unwrap();
     store
-        .record(&PruneStats {
+        .record_prune_stats(&PruneStats {
             interval_start: Utc::now(),
             interval_end: Utc::now(),
             skeets_seen: 3,
@@ -1457,14 +1457,14 @@ async fn prune_statistics_record_and_sum_interval_counts() {
     };
 
     // Three consecutive one-hour intervals starting at 0h, 1h, 2h.
-    store.record(&interval(0, 10)).await.unwrap();
-    store.record(&interval(1, 20)).await.unwrap();
-    store.record(&interval(2, 30)).await.unwrap();
+    store.record_prune_stats(&interval(0, 10)).await.unwrap();
+    store.record_prune_stats(&interval(1, 20)).await.unwrap();
+    store.record_prune_stats(&interval(2, 30)).await.unwrap();
 
     // `end` is exclusive on `interval_start`: [0h, 2h) covers the 0h and 1h
     // records only, and the window's own bounds are echoed back.
     let first_two = store
-        .interval_counts(base, base + Duration::hours(2))
+        .prune_stats_for_interval(base, base + Duration::hours(2))
         .await
         .unwrap();
     assert_eq!(
@@ -1481,14 +1481,14 @@ async fn prune_statistics_record_and_sum_interval_counts() {
     // Half-open boundary: a window aligned exactly to the 1h record's start
     // includes it (start inclusive) and excludes the 2h record (end exclusive).
     let only_second = store
-        .interval_counts(base + Duration::hours(1), base + Duration::hours(2))
+        .prune_stats_for_interval(base + Duration::hours(1), base + Duration::hours(2))
         .await
         .unwrap();
     assert_eq!(only_second.images_examined, 20);
 
     // The full window sums all three.
     let all = store
-        .interval_counts(base, base + Duration::hours(3))
+        .prune_stats_for_interval(base, base + Duration::hours(3))
         .await
         .unwrap();
     assert_eq!(all.images_examined, 60);
@@ -1496,7 +1496,7 @@ async fn prune_statistics_record_and_sum_interval_counts() {
 
     // A window with no records sums to zero.
     let empty = store
-        .interval_counts(base + Duration::hours(10), base + Duration::hours(11))
+        .prune_stats_for_interval(base + Duration::hours(10), base + Duration::hours(11))
         .await
         .unwrap();
     assert_eq!(empty.skeets_seen, 0);
@@ -1531,10 +1531,10 @@ async fn prune_statistics_interval_counts_sums_overlapping_records() {
         images_examined: 30,
         images_saved: 2,
     };
-    store.record(&interval1).await.unwrap();
-    store.record(&interval2).await.unwrap();
+    store.record_prune_stats(&interval1).await.unwrap();
+    store.record_prune_stats(&interval2).await.unwrap();
 
-    let summed = store.interval_counts(at(0), at(3)).await.unwrap();
+    let summed = store.prune_stats_for_interval(at(0), at(3)).await.unwrap();
     assert_eq!(
         summed,
         PruneStats {
@@ -1554,7 +1554,7 @@ async fn prune_statistics_latest_interval_end() {
     let dir = tempfile::tempdir().unwrap();
     let store = open_temp_store(&dir).await;
 
-    assert_eq!(store.latest_interval_end().await.unwrap(), None);
+    assert_eq!(store.latest_prune_stats_interval_end().await.unwrap(), None);
 
     let base = Utc.with_ymd_and_hms(2026, 6, 1, 0, 0, 0).unwrap();
     let record = |start_h: i64| PruneStats {
@@ -1565,11 +1565,11 @@ async fn prune_statistics_latest_interval_end() {
         images_saved: 0,
     };
     // Record out of order to confirm the max, not the last write, is returned.
-    store.record(&record(2)).await.unwrap();
-    store.record(&record(0)).await.unwrap();
+    store.record_prune_stats(&record(2)).await.unwrap();
+    store.record_prune_stats(&record(0)).await.unwrap();
 
     assert_eq!(
-        store.latest_interval_end().await.unwrap(),
+        store.latest_prune_stats_interval_end().await.unwrap(),
         Some(base + Duration::hours(3))
     );
 }

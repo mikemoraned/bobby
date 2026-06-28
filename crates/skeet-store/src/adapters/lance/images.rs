@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use arrow_array::{LargeBinaryArray, RecordBatch, StringArray, TimestampMicrosecondArray};
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use lancedb::query::QueryBase;
 use shared::{DiscoveredAt, ImageId, SkeetId};
 use tracing::instrument;
@@ -13,7 +12,7 @@ use super::decode::{
     batches_to_original_images, batches_to_stored_images, batches_to_summaries, decode_rows,
 };
 use super::query::{
-    col_at_or_after_micros, col_before_micros, col_eq, col_in, col_in_micros_range, execute_query,
+    col_at_or_after_micros, col_before_micros, col_eq, col_in, execute_query,
 };
 use super::schema::{TableName, images_v6_schema};
 use crate::{
@@ -156,11 +155,6 @@ impl Images for SkeetStore {
     }
 
     #[instrument(skip(self))]
-    async fn count(&self) -> Result<usize, StoreError> {
-        Ok(self.table(TableName::Images).count_rows(None).await?)
-    }
-
-    #[instrument(skip(self))]
     async fn oldest_discovered_at(&self) -> Result<Option<DiscoveredAt>, StoreError> {
         Ok(self
             .discovered_at_micros()
@@ -178,25 +172,6 @@ impl Images for SkeetStore {
             .into_iter()
             .max()
             .map(|m| DiscoveredAt::new(micros_to_datetime(m))))
-    }
-
-    #[instrument(skip(self))]
-    async fn count_in_interval(
-        &self,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-    ) -> Result<u64, StoreError> {
-        let query = self
-            .table(TableName::Images)
-            .query()
-            .select(lancedb::query::Select::columns(&["discovered_at"]))
-            .only_if_expr(col_in_micros_range(
-                "discovered_at",
-                start.timestamp_micros(),
-                end.timestamp_micros(),
-            ));
-        let batches = execute_query(&query, "count_in_interval").await?;
-        Ok(batches.iter().map(|b| b.num_rows() as u64).sum())
     }
 
     #[instrument(skip(self))]
@@ -329,7 +304,7 @@ mod tests {
     use chrono::{Duration, Utc};
     use shared::DiscoveredAt;
 
-    use crate::Images;
+    use crate::{Images, Statistics};
     use crate::test_utils::{make_record_at, open_temp_store};
 
     fn at_minutes_ago(minutes: i64) -> DiscoveredAt {
@@ -368,21 +343,21 @@ mod tests {
         // Half-open window [0h, 2h) covers the 0h and 1h images only.
         assert_eq!(
             store
-                .count_in_interval(base, base + Duration::hours(2))
+                .count_images_in_interval(base, base + Duration::hours(2))
                 .await
                 .unwrap(),
             2
         );
         assert_eq!(
             store
-                .count_in_interval(base, base + Duration::hours(3))
+                .count_images_in_interval(base, base + Duration::hours(3))
                 .await
                 .unwrap(),
             3
         );
         assert_eq!(
             store
-                .count_in_interval(base + Duration::hours(10), base + Duration::hours(11))
+                .count_images_in_interval(base + Duration::hours(10), base + Duration::hours(11))
                 .await
                 .unwrap(),
             0
