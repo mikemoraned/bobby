@@ -6,6 +6,8 @@ As of 27th June we say "(22,223,000 images checked so far)" on https://bobby.hou
 
 We'd like to change this to say something like "(400,000 images checked over past 2 days, of which 46 (0.01%) match what we are looking for)". This should show human-readable numbers and days e.g. time rounded to nearest hour/day/week/month/year multiple, and percentages shown to a round two decimal places.
 
+I'd also like to give a better experience when they get to the end of the page e.g. show something like "You've reached the end of the images found so far! Next one expected to be found in X hours" and then make it so that the page automatically reloads. Perhaps add a small JS countdown timer.
+
 ### Tasks
 
 We'll get there in gradual steps:
@@ -50,3 +52,7 @@ We'll get there in gradual steps:
     * add a **publisher-side** consistency test: the `exists` written into a list's statistics equals the number of `is_live` items in the list it just wrote
     * note: `replace` + `write_statistics` aren't atomic, so a reader can briefly see a list and stats from different cycles (same self-healing race as `refreshed-at`) — acceptable
 * [ ] once `skeet-feed` deployed and not using it anymore stop creating/publishing `v3-examined-count` — also retire `estimate_processed`/`SAVE_RATE_PERCENT`, the `saved × 500` guess the real measured count replaces.
+* implement the end of page experience in steps:
+    1. [ ] Implement the "You've reached the end of the images found so far! Next one expected to be found in X hours" first in the simplest way, by doing a feed-side calculation of what X hours is predicted to be, based on assuming a uniform arrival time over the period. Make there be a JS countdown timer which reloads the page when this time is reached.
+    2. [ ] Then, in the publisher, do the proper maths i.e. treat this as a Poisson process and calculate confidence intervals of when, for each bucket of time (48h, 7d, 1y) and given current time, over what period of time we have a 95% chance of seeing another example of what we are looking for. Add this to the `:statistics` JSON as a few keys showing lower,middle,upper timepoints predicted. This prediction should take account of all arrival times seen during the period of interest. This should extend the `Statistics` port to implement these stats as needed.
+    3. [ ] Update the feed website to use the middle timepoint as it's predicted time of next arrival, and to show the 95% confidence range (in text)
