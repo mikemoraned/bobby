@@ -288,6 +288,20 @@ impl<S: ScoredView + AppraisalsSource + TableVersions + Statistics> FeedPublishe
             .collect();
         let results = self.checker.check(&items).await;
 
+        // Only a spec's `Limit` (window) affects its prune-stats read; the
+        // `Order` doesn't. Specs sharing a `Limit` therefore share a read, so
+        // query the store once per distinct `Limit` rather than once per spec.
+        let unique_limits: HashSet<Limit> = self.specs.iter().map(|(_, limit)| *limit).collect();
+        let mut examined_by_limit: HashMap<Limit, u64> = HashMap::new();
+        for limit in unique_limits {
+            let examined = self
+                .store
+                .prune_stats_for_interval(now - limit.window(), now)
+                .await?
+                .images_examined;
+            examined_by_limit.insert(limit, examined);
+        }
+
         for ((order, limit), mut pairs) in per_spec {
             for pair in &mut pairs {
                 enrich(pair, &results);
@@ -296,11 +310,7 @@ impl<S: ScoredView + AppraisalsSource + TableVersions + Statistics> FeedPublishe
             list.replace(conn, &pairs, now).await?;
 
             let interval_start = now - limit.window();
-            let examined = self
-                .store
-                .prune_stats_for_interval(interval_start, now)
-                .await?
-                .images_examined;
+            let examined = examined_by_limit.get(&limit).copied().unwrap_or_default();
             let exists = pairs.iter().filter(|p| p.is_live()).count() as u64;
             let stats =
                 ListStatistics::new(interval_start, now, examined, pairs.len() as u64, exists);
