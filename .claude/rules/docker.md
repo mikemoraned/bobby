@@ -24,13 +24,17 @@ BuildKit reuses the cached `builder` across `--target` invocations.
   `-p <crate> --bin <bin>` repeated (e.g. `cloudflare-exporter` ships two bins, so
   `--bin sync_operations --bin sync_storage`). Keep `--bin` — a bare `-p` builds
   every bin in the crate (`skeet-prune` has 6, `skeet-refine` has 5).
-- Three cache mounts: cargo registry, cargo git, and a **per-service-set** `target/`
-  (`id=bobby-target-cluster-amd64` / `-fly-amd64`, `sharing=locked`). The `target/`
-  mount keeps cargo incremental: a source-only edit re-runs the builder RUN (BuildKit
-  invalidates it because `COPY . .` changed), but cargo reuses every dep from the mount
-  and recompiles only the changed first-party crate(s). The two sets build disjoint bin
-  sets into the same `target/release/` paths, so each needs its own mount id — they must
-  never share one.
+- Three cache mounts: cargo registry, cargo git, and `target/`, **all three shared by
+  both Dockerfiles** (`id=bobby-target-amd64` for the target mount, `sharing=locked`).
+  The `target/` mount keeps cargo incremental: a source-only edit re-runs the builder
+  RUN (BuildKit invalidates it because `COPY . .` changed), but cargo reuses every dep
+  from the mount and recompiles only the changed first-party crate(s). Both sets build
+  `linux/amd64` with the same toolchain, rustflags, and `release` profile, so their
+  artifacts are interchangeable — sharing one mount lets common deps compile once across
+  both sets and halves the cache footprint (less BuildKit GC eviction, the main cause of
+  spurious from-scratch rebuilds). Cargo's target dir is fingerprint-keyed, so the two
+  sets' disjoint bins coexist safely; keep `sharing=locked` so concurrent fly+cluster
+  builds serialise rather than letting two cargo processes corrupt the shared dir.
 - Build artifacts live in the ephemeral mount, so copy what the runners need out to
   `/build/out/` **inside the RUN** (every binary; for the cluster builder also the
   `.bpk`/`.rten` files baked from `target/` for pruner). `dash` (the default RUN
