@@ -56,4 +56,28 @@ We'll get there in gradual steps:
 * implement the end of page experience in steps:
     1. [ ] Implement the "You've reached the end of the images found so far! Next one expected to be found in X hours" first in the simplest way, by doing a feed-side calculation of what X hours is predicted to be, based on assuming a uniform arrival time over the period. Make there be a JS countdown timer which reloads the page when this time is reached. This countdown timer should probably be at the top as well, as a new sentence after "match what we are looking for"
     2. [ ] Then, in the publisher, do the proper maths i.e. treat this as a Poisson process and calculate confidence intervals of when, for each bucket of time (48h, 7d, 1y) and given current time, over what period of time we have a 95% chance of seeing another example of what we are looking for. Add this to the `:statistics` JSON as a few keys showing lower,middle,upper timepoints predicted. This prediction should take account of all arrival times seen during the period of interest. This should extend the `Statistics` port to implement these stats as needed.
-    3. [ ] Update the feed website to use the middle timepoint as it's predicted time of next arrival, and to show the 95% confidence range (in text)
+
+        **The model (deliberately kept simple — plain Poisson, no Bayesian/Lomax).** Throughout this step `now` means the **end of the current interval** (`interval_end`), not wall-clock call time — that's the origin we predict forward from. Treat matches as a homogeneous Poisson process with rate `λ = count / window`. The only fact needed: the time from *now* to the next match is `Exponential(λ)` (memoryless — independent of how long since the last one). The exponential CDF is `P(seen within t) = 1 − e^(−λt)`; invert it for "time by which there's a probability `p` of a match":
+
+        ```
+        T(p) = −ln(1 − p) / λ
+        ```
+
+        Everything we publish is this one formula at different `p`:
+        * `lower`  = `T(0.025)` = `−ln(0.975)/λ` ≈ `0.025/λ`
+        * `middle` = `T(0.5)`   = `ln(2)/λ`      ≈ `0.69/λ`  (the median wait)
+        * `upper`  = `T(0.975)` = `−ln(0.025)/λ` ≈ `3.69/λ`
+
+        Emit these as `now + T(p)` absolute timepoints (or the waiting durations — pick one and be consistent). Step 1's `window/count` is the **mean** wait `1/λ`, which is slightly longer than the `middle` median — same model, different summary, not a bug.
+
+        Decisions baked in:
+        * **Drop parameter uncertainty in λ** (the ~15% from N≈46) and anything needing a conjugate prior. Process randomness (the exponential above) is the dominant, honest uncertainty; the rest is what required the scary distribution.
+        * **Zero-count fallback** (replaces what the prior bought us): if a window has 0 matches `λ = 0` → infinite/undefined wait, so don't predict — emit `None` and let the feed say "not enough recent data" rather than show a countdown.
+        * **Clock:** estimate `λ` from `discovered_at` of items that survive the `is_live` filter, *not* `original_at` (post time). `discovered_at`→classify→`is_live`→publish-cadence is what actually drives a new image appearing on reload; the wrong clock makes the countdown systematically under-run reality (and the publish cadence is a floor on "next visible arrival").
+        * **Library:** `T(p) = −ln(1−p)/λ` is a one-line `f64` (comment it as "exponential inverse-CDF"); that's more transparent than reaching into a crate and isn't really hand-rolling an algorithm. `statrs::Exp::inverse_cdf` is a fine alternative if preferred.
+
+        Known limitations (acceptable for now, don't chase):
+        * **Night-time bias on the 48h bucket.** Real arrivals follow day/night and weekly cycles, not a constant rate. At ~3am the flat-rate model over-promises and the countdown can expire with nothing new; the 7d/1y buckets average this out. The fix (a time-of-day / inhomogeneous rate) is real work — defer unless the 48h countdown proves annoying in practice.
+        * **1y rate is stale.** Most data but the rate drifts as Bluesky grows; the year-window rate is the least relevant to "right now".
+        * Optional sanity check: compare variance-to-mean of per-hour counts; if `≫ 1`, arrivals are clustered (a festival/burst breaks independence) and the intervals should be read as too narrow.
+    3. [ ] Update the feed website to use the middle timepoint as it's predicted time of next arrival, and to show the 95% confidence range (in text). Phrase the `upper` bound as the "95% chance by" point. When the publisher emitted no prediction (zero-count fallback above), show "not enough recent data" instead of a countdown.
