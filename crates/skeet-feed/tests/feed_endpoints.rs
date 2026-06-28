@@ -60,10 +60,6 @@ impl PublishedImagesSource for StubPublishedImagesSource {
             statistics: self.statistics.clone(),
         })
     }
-
-    async fn examined_count(&self) -> Result<Option<u64>, FeedSourceError> {
-        Ok(None)
-    }
 }
 
 fn test_params() -> FeedParams {

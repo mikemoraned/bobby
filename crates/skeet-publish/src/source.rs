@@ -8,7 +8,6 @@ use shared::SkeetId;
 use skeet_store::StoreError;
 use tracing::warn;
 
-use crate::examined_count::ExaminedCount;
 use crate::limit::Limit;
 use crate::list_statistics::ListStatistics;
 use crate::order::Order;
@@ -57,10 +56,6 @@ pub struct PublishedImages {
 #[async_trait]
 pub trait PublishedImagesSource: Send + Sync {
     async fn published_images(&self) -> Result<PublishedImages, FeedSourceError>;
-
-    /// The precalculated "images examined" count for the banner, or `None` if the
-    /// publisher hasn't written it yet (a fresh deploy).
-    async fn examined_count(&self) -> Result<Option<u64>, FeedSourceError>;
 }
 
 /// A redis access right after a Fly suspend/resume can hit a transient
@@ -178,23 +173,6 @@ impl PublishedImagesSource for RedisFeedSource {
             refreshed_at,
             statistics,
         })
-    }
-
-    async fn examined_count(&self) -> Result<Option<u64>, FeedSourceError> {
-        (|| async {
-            let mut conn = connect(&self.url).await.map_err(PublishedListError::from)?;
-            Ok(ExaminedCount::read(&mut conn).await?)
-        })
-        .retry(retry_policy())
-        .when(is_transient)
-        .notify(|e, dur| {
-            warn!(
-                error = %e,
-                retry_in_ms = dur.as_millis() as u64,
-                "transient redis failure reading examined count; will retry",
-            );
-        })
-        .await
     }
 }
 

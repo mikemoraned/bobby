@@ -1191,52 +1191,6 @@ async fn list_scored_summaries_published_since_windows_by_original_at_and_requir
 }
 
 #[tokio::test]
-async fn count_scored_images_counts_distinct_known_version_scores() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = open_temp_store(&dir).await;
-    let now = Utc::now();
-
-    let known_mv = test_model_version();
-    let unknown_mv = ModelVersion::from("unregistered_staging");
-    let registered = known(&[&known_mv]);
-
-    // No scores yet → nothing examined.
-    assert_eq!(store.count_scored_images(&registered).await.unwrap(), 0);
-
-    // Two distinct images scored on the known model.
-    for (rkey, hue) in [("a", (10, 0, 0)), ("b", (0, 10, 0))] {
-        let rec = scored_record(rkey, hue, OriginalAt::new(now));
-        store.add(&rec).await.unwrap();
-        store
-            .upsert_score(
-                &rec.image_id,
-                ModelScore {
-                    score: Score::new(0.9).expect("valid"),
-                    model_version: known_mv.clone(),
-                },
-            )
-            .await
-            .unwrap();
-    }
-
-    // One image scored on an unregistered model — excluded from the count.
-    let unknown = scored_record("c", (0, 0, 10), OriginalAt::new(now));
-    store.add(&unknown).await.unwrap();
-    store
-        .upsert_score(
-            &unknown.image_id,
-            ModelScore {
-                score: Score::new(0.9).expect("valid"),
-                model_version: unknown_mv.clone(),
-            },
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(store.count_scored_images(&registered).await.unwrap(), 2);
-}
-
-#[tokio::test]
 async fn score_reads_discard_unknown_model_versions() {
     let dir = tempfile::tempdir().unwrap();
     let store = open_temp_store(&dir).await;

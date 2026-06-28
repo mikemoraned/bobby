@@ -114,13 +114,6 @@ mod tests {
             unreachable!("not used in these tests")
         }
 
-        async fn count_scored_images(
-            &self,
-            _known_versions: &std::collections::HashSet<skeet_store::ModelVersion>,
-        ) -> Result<usize, StoreError> {
-            unreachable!("not used in these tests")
-        }
-
         async fn count_scores_by_model_version(
             &self,
         ) -> Result<std::collections::HashMap<String, usize>, StoreError> {

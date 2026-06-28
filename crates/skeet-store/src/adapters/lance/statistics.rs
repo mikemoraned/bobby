@@ -1,18 +1,17 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use arrow_array::{RecordBatch, StringArray, TimestampMicrosecondArray, UInt64Array};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use lancedb::query::QueryBase;
-use shared::ImageId;
 use tracing::instrument;
 
 use super::arrow::{micros_to_datetime, typed_column};
 use super::decode::decode_rows;
 use super::query::{col_in_micros_range, execute_query};
 use super::schema::{TableName, prune_stats_v1_schema};
-use crate::{ModelVersion, PruneStats, SkeetStore, Statistics, StoreError};
+use crate::{PruneStats, SkeetStore, Statistics, StoreError};
 
 /// The `PruneStats` ⟷ Arrow mapping for the `prune_stats` table, both
 /// directions kept together: [`to_batch`](Self::to_batch) encodes one record for
@@ -150,48 +149,6 @@ impl Statistics for SkeetStore {
             ));
         let batches = execute_query(&query, "count_images_in_interval").await?;
         Ok(batches.iter().map(|b| b.num_rows() as u64).sum())
-    }
-
-    /// Scans the scores table fresh rather than reading the scores cache: callers
-    /// want the current total, and the cache may lag the live table.
-    #[instrument(skip(self, known_versions))]
-    async fn count_scored_images(
-        &self,
-        known_versions: &HashSet<ModelVersion>,
-    ) -> Result<usize, StoreError> {
-        let query = self
-            .table(TableName::Scores)
-            .query()
-            .select(lancedb::query::Select::columns(&[
-                "image_id",
-                "model_version",
-            ]));
-        let batches = execute_query(&query, "count_scored_images").await?;
-
-        // Dedupe by image id (last row wins) so an image scored more than once is
-        // counted once, with its latest model version deciding known-ness.
-        let latest_version: HashMap<ImageId, ModelVersion> = decode_rows(
-            &batches,
-            |batch| {
-                Ok((
-                    typed_column::<StringArray>(batch, "image_id")?,
-                    typed_column::<StringArray>(batch, "model_version")?,
-                ))
-            },
-            |(image_ids, model_versions), i| {
-                Ok((
-                    image_ids.value(i).parse::<ImageId>()?,
-                    ModelVersion::from(model_versions.value(i)),
-                ))
-            },
-        )?
-        .into_iter()
-        .collect();
-
-        Ok(latest_version
-            .values()
-            .filter(|mv| known_versions.contains(mv))
-            .count())
     }
 
     #[instrument(skip(self))]

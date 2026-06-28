@@ -47,27 +47,17 @@ trait FallbackReader: Send + Sync {
         &self,
         spec: (Order, Limit),
     ) -> Result<PublishedImages, FeedSourceError>;
-    async fn examined_count(&self) -> Result<Option<u64>, FeedSourceError>;
 }
 
 /// Redis-backed [`FallbackReader`]: reads the catalog over a fresh connection and
 /// reuses [`RedisFeedSource`] (with its transient-retry) to read each list.
 struct RedisFallbackReader {
     url: String,
-    /// A reader used only for [`PublishedImagesSource::examined_count`], which
-    /// reads a single global key independent of any list — so the spec it carries
-    /// is irrelevant to that read.
-    examined_count_reader: RedisFeedSource,
 }
 
 impl RedisFallbackReader {
-    fn new(url: impl Into<String>, preferred: (Order, Limit)) -> Self {
-        let url = url.into();
-        let examined_count_reader = RedisFeedSource::new(url.clone(), preferred.0, preferred.1);
-        Self {
-            url,
-            examined_count_reader,
-        }
+    fn new(url: impl Into<String>) -> Self {
+        Self { url: url.into() }
     }
 }
 
@@ -97,10 +87,6 @@ impl FallbackReader for RedisFallbackReader {
             .published_images()
             .await
     }
-
-    async fn examined_count(&self) -> Result<Option<u64>, FeedSourceError> {
-        self.examined_count_reader.examined_count().await
-    }
 }
 
 /// A [`FeedSource`]/[`PublishedImagesSource`] that degrades to older data when the
@@ -120,9 +106,8 @@ pub struct FallbackFeedSource {
 
 impl FallbackFeedSource {
     pub fn new(url: impl Into<String>, order: Order, limit: Limit) -> Self {
-        let url = url.into();
         Self {
-            reader: Box::new(RedisFallbackReader::new(url, (order, limit))),
+            reader: Box::new(RedisFallbackReader::new(url)),
             preferred: (order, limit),
         }
     }
@@ -171,10 +156,6 @@ impl PublishedImagesSource for FallbackFeedSource {
             refreshed_at: None,
             statistics: None,
         }))
-    }
-
-    async fn examined_count(&self) -> Result<Option<u64>, FeedSourceError> {
-        self.reader.examined_count().await
     }
 }
 
@@ -326,10 +307,6 @@ mod tests {
             _spec: (Order, Limit),
         ) -> Result<PublishedImages, FeedSourceError> {
             unimplemented!("not exercised by these tests")
-        }
-
-        async fn examined_count(&self) -> Result<Option<u64>, FeedSourceError> {
-            Ok(Some(7))
         }
     }
 

@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
-use crate::{ModelVersion, PruneStats, StoreError};
+use crate::{PruneStats, StoreError};
 
 /// Store statistics: per-interval tallies of what the pruner saw on the firehose
 /// and aggregate queries over the recorded intervals, plus the aggregate row
@@ -40,16 +40,6 @@ pub trait Statistics: Send + Sync {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> Result<u64, StoreError>;
-
-    /// Count the distinct images that have a score from a *known* model version —
-    /// the "images examined" total, i.e. images that made it through refine
-    /// scoring. Each image is counted once; scores from unregistered model
-    /// versions are excluded, mirroring the feed read path (see
-    /// `docs/versioning.md`).
-    async fn count_scored_images(
-        &self,
-        known_versions: &HashSet<ModelVersion>,
-    ) -> Result<usize, StoreError>;
 
     /// Scan all scores and return a count per distinct `model_version`.
     async fn count_scores_by_model_version(&self) -> Result<HashMap<String, usize>, StoreError>;

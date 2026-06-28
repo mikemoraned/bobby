@@ -15,8 +15,8 @@ use deadpool_redis::redis::{self, AsyncCommands};
 use shared::SkeetId;
 use shared::{BlueskyCid, ImageId};
 use skeet_publish::{
-    ExaminedCount, FeedSource, Limit, ListStatistics, Order, PublishedImage, PublishedImagesSource,
-    PublishedList, PublishedListCatalog, RedisFeedSource,
+    FeedSource, Limit, ListStatistics, Order, PublishedImage, PublishedImagesSource, PublishedList,
+    PublishedListCatalog, RedisFeedSource,
 };
 use testcontainers::ContainerAsync;
 use testcontainers::runners::AsyncRunner;
@@ -218,23 +218,6 @@ async fn readers_filter_missing_items_but_published_keeps_them_docker() {
     assert_eq!(image_rkeys, ["present"]);
 }
 
-#[tokio::test]
-async fn examined_count_roundtrips_and_is_absent_before_first_write_docker() {
-    let (_container, mut conn) = start_redis().await;
-
-    // Absent before the first write — a reader on a fresh deploy sees None.
-    assert_eq!(ExaminedCount::read(&mut conn).await.expect("read"), None);
-
-    ExaminedCount::write(&mut conn, 42).await.expect("write");
-    assert_eq!(
-        ExaminedCount::read(&mut conn).await.expect("read"),
-        Some(42)
-    );
-
-    // It lives under the version-prefixed key.
-    let exists: bool = conn.exists("v3-examined-count").await.expect("exists");
-    assert!(exists);
-}
 
 #[tokio::test]
 async fn list_statistics_roundtrip_and_absent_before_first_write_docker() {
