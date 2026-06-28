@@ -358,6 +358,14 @@ async fn feed_and_homepage_fall_back_to_older_lists_when_preferred_empty_docker(
         home.contains("123,456 images checked over the past year"),
         "the statistics banner should reflect the older list actually served during degradation"
     );
+    assert!(
+        home.contains("You've reached the end of the images found so far!"),
+        "homepage should show the end-of-feed message once a next arrival can be predicted"
+    );
+    assert!(
+        home.contains("class=\"js-countdown\""),
+        "homepage should include the countdown spans the auto-reload script drives"
+    );
 }
 
 /// Seed the grid's preferred window with three candidates, one of which the

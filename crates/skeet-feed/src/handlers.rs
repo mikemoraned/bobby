@@ -206,9 +206,23 @@ struct HomeTemplate {
     /// The pre-formatted statistics banner line (examined/found over the served
     /// window), or `None` when the publisher hasn't written statistics yet.
     stats_banner: Option<String>,
+    /// The predicted next-match arrival driving the countdown, or `None` when
+    /// there's no live match to extrapolate from (see [`predicted_wait`]).
+    next_arrival: Option<NextArrival>,
     /// Site-specific Plausible analytics script URL; `Some` renders the
     /// tracking script, `None` omits it.
     plausible_script_url: Option<String>,
+}
+
+/// The predicted time the next match will appear, in the two forms the page
+/// needs: an absolute target for the live JS countdown and a server-rendered ETA
+/// phrase so the no-JS initial paint still reads sensibly.
+struct NextArrival {
+    /// Target arrival time as Unix epoch milliseconds — the origin the JS
+    /// countdown ticks down to (and reloads at).
+    target_epoch_ms: i64,
+    /// Human ETA phrase rendered before the JS takes over, e.g. "in 2 hours".
+    eta_text: String,
 }
 
 /// Group a non-negative integer with comma thousands separators, e.g.
@@ -275,6 +289,27 @@ fn humanize_window(window: chrono::Duration) -> String {
         .to_string()
 }
 
+/// Predicted wait until the next match, assuming matches arrive uniformly over
+/// the window: `window / exists`, the mean inter-arrival time. `None` when the
+/// window holds no live match to extrapolate from, or is empty — so the caller
+/// shows no countdown rather than dividing by zero.
+///
+/// This is the deliberately-simple feed-side estimate; the mean wait it returns
+/// runs slightly longer than the Poisson median the publisher computes later.
+fn predicted_wait(stats: &ListStatistics) -> Option<chrono::Duration> {
+    let seconds = (stats.interval_end - stats.interval_start).num_seconds();
+    if stats.exists == 0 || seconds <= 0 {
+        return None;
+    }
+    Some(chrono::Duration::seconds(seconds / stats.exists as i64))
+}
+
+/// Humanise a positive wait as a future ETA phrase (see [`chrono_humanize`]),
+/// e.g. "in 2 hours", "in a minute" — slots after "expected to be found".
+fn humanize_eta(wait: chrono::Duration) -> String {
+    HumanTime::from(wait).to_text_en(Accuracy::Rough, Tense::Future)
+}
+
 /// Build the banner line from a served list's statistics, e.g.
 /// "(400,000 images checked over the past 2 days, of which 46 (0.01%) match what
 /// we are looking for)".
@@ -319,7 +354,14 @@ pub async fn home(
 
     // The banner reflects the list actually served (the fallback-resolved window),
     // so its statistics ride along with the images rather than being read apart.
-    let stats_banner = published.statistics.as_ref().map(statistics_banner);
+    let stats = published.statistics.as_ref();
+    let stats_banner = stats.map(statistics_banner);
+    let next_arrival = stats.and_then(|stats| {
+        predicted_wait(stats).map(|wait| NextArrival {
+            target_epoch_ms: (chrono::Utc::now() + wait).timestamp_millis(),
+            eta_text: humanize_eta(wait),
+        })
+    });
 
     let cards: Vec<GridCard> = published
         .images
@@ -341,6 +383,7 @@ pub async fn home(
         feed_bsky_url: config.feed_bsky_url(),
         qr_svg: config.site_qr_svg.clone(),
         stats_banner,
+        next_arrival,
         plausible_script_url: config.plausible_script_url.clone(),
     }
     .render()?;
@@ -414,6 +457,82 @@ mod tests {
         // renders (as zeros) rather than producing an unbounded string.
         let formatted = format_match_percent(0.000_000_001);
         assert_eq!(formatted.len() - "0.".len(), MAX_PERCENT_DECIMALS);
+    }
+
+    #[test]
+    fn predicted_wait_is_window_divided_by_live_count() {
+        use chrono::{Duration, Utc};
+        let end = Utc::now();
+        // 48h window, 24 live matches → a 2h mean inter-arrival time.
+        let stats = ListStatistics::new(end - Duration::hours(48), end, 400_000, 48, 24);
+        assert_eq!(predicted_wait(&stats), Some(Duration::hours(2)));
+    }
+
+    #[test]
+    fn predicted_wait_is_none_without_a_live_match() {
+        use chrono::{Duration, Utc};
+        let end = Utc::now();
+        let stats = ListStatistics::new(end - Duration::hours(48), end, 400_000, 0, 0);
+        assert_eq!(predicted_wait(&stats), None);
+    }
+
+    #[test]
+    fn predicted_wait_is_none_for_an_empty_window() {
+        use chrono::Utc;
+        let end = Utc::now();
+        let stats = ListStatistics::new(end, end, 0, 5, 5);
+        assert_eq!(predicted_wait(&stats), None);
+    }
+
+    #[test]
+    fn humanize_eta_reads_as_a_future_phrase() {
+        use chrono::Duration;
+        assert_eq!(humanize_eta(Duration::hours(2)), "in 2 hours");
+    }
+
+    #[test]
+    fn home_template_renders_countdown_when_a_next_arrival_is_predicted() {
+        let rendered = HomeTemplate {
+            cards: vec![GridCard {
+                bsky_url: "https://bsky.app/profile/x/post/1".to_string(),
+                thumb_url: "https://cdn.example/x.jpg".to_string(),
+                alt: "x".to_string(),
+                aspect_ratio: None,
+            }],
+            blurb: "blurb",
+            feed_bsky_url: "https://bsky.app/feed".to_string(),
+            qr_svg: None,
+            stats_banner: Some("(stats)".to_string()),
+            next_arrival: Some(NextArrival {
+                target_epoch_ms: 1_700_000_000_000,
+                eta_text: "in 2 hours".to_string(),
+            }),
+            plausible_script_url: None,
+        }
+        .render()
+        .expect("render");
+        assert!(rendered.contains("You've reached the end of the images found so far!"));
+        assert!(rendered.contains("class=\"js-countdown\""));
+        assert!(rendered.contains("in 2 hours"));
+        // The JS countdown's reload target is embedded for the client to tick to.
+        assert!(rendered.contains("1700000000000"));
+    }
+
+    #[test]
+    fn home_template_omits_countdown_without_a_predicted_arrival() {
+        let rendered = HomeTemplate {
+            cards: vec![],
+            blurb: "blurb",
+            feed_bsky_url: "https://bsky.app/feed".to_string(),
+            qr_svg: None,
+            stats_banner: None,
+            next_arrival: None,
+            plausible_script_url: None,
+        }
+        .render()
+        .expect("render");
+        assert!(!rendered.contains("js-countdown"));
+        assert!(!rendered.contains("You've reached the end"));
     }
 
     #[test]
