@@ -227,14 +227,41 @@ fn group_thousands(n: u64) -> String {
     out
 }
 
-/// The percentage of examined images that matched, to two decimal places. Zero
-/// when nothing was examined (avoids a divide-by-zero on a fresh window).
+/// The percentage of examined images that matched. Zero when nothing was
+/// examined (avoids a divide-by-zero on a fresh window).
 fn match_percent(examined: u64, found: u64) -> f64 {
     if examined == 0 {
         0.0
     } else {
         found as f64 / examined as f64 * 100.0
     }
+}
+
+/// Cap on the decimal places [`format_match_percent`] will extend to, so a
+/// vanishingly small ratio can't produce an absurdly long string.
+const MAX_PERCENT_DECIMALS: usize = 8;
+
+/// Render a match percentage for display. Matches are rare, so a fixed precision
+/// either rounds tiny values to `0.00%` or over-shows larger ones; instead, below
+/// 1% the precision extends just far enough to reveal the first significant digit
+/// (`0.004077` → `"0.004"`, `0.0000279` → `"0.00003"`), and at/above 1% a fixed
+/// two places is used (`"1.50"`).
+fn format_match_percent(percent: f64) -> String {
+    if percent <= 0.0 {
+        return "0".to_string();
+    }
+    if percent >= 1.0 {
+        return format!("{percent:.2}");
+    }
+    // Count the ×10s needed to bring the first significant digit to the units
+    // place — that's how many decimals show it (one significant figure).
+    let mut decimals = 0;
+    let mut scaled = percent;
+    while scaled < 1.0 && decimals < MAX_PERCENT_DECIMALS {
+        scaled *= 10.0;
+        decimals += 1;
+    }
+    format!("{percent:.decimals$}")
 }
 
 /// Humanise a window duration to its largest round unit (see [`chrono_humanize`]),
@@ -253,11 +280,11 @@ fn humanize_window(window: chrono::Duration) -> String {
 /// we are looking for)".
 fn statistics_banner(stats: &ListStatistics) -> String {
     format!(
-        "({examined} images checked over the past {window}, of which {found} ({percent:.2}%) match what we are looking for)",
+        "({examined} images checked over the past {window}, of which {found} ({percent}%) match what we are looking for)",
         examined = group_thousands(stats.examined),
         window = humanize_window(stats.interval_end - stats.interval_start),
         found = group_thousands(stats.found),
-        percent = match_percent(stats.examined, stats.found),
+        percent = format_match_percent(match_percent(stats.examined, stats.found)),
     )
 }
 
@@ -349,10 +376,38 @@ mod tests {
     }
 
     #[test]
-    fn match_percent_rounds_to_two_places_and_guards_zero() {
+    fn match_percent_computes_ratio_and_guards_zero() {
         assert_eq!(match_percent(0, 5), 0.0);
         assert_eq!(match_percent(400_000, 46), 0.0115);
         assert_eq!(match_percent(200, 1), 0.5);
+    }
+
+    #[test]
+    fn format_match_percent_extends_to_the_first_significant_digit() {
+        // Below 1%: precision grows until the first significant digit shows.
+        assert_eq!(format_match_percent(match_percent(3_581_419, 146)), "0.004");
+        assert_eq!(format_match_percent(match_percent(400_000, 46)), "0.01");
+        assert_eq!(format_match_percent(match_percent(3_581_419, 1)), "0.00003");
+        assert_eq!(format_match_percent(0.5), "0.5");
+    }
+
+    #[test]
+    fn format_match_percent_uses_fixed_two_places_at_or_above_one_percent() {
+        assert_eq!(format_match_percent(1.5), "1.50");
+        assert_eq!(format_match_percent(100.0), "100.00");
+    }
+
+    #[test]
+    fn format_match_percent_renders_zero_plainly() {
+        assert_eq!(format_match_percent(0.0), "0");
+    }
+
+    #[test]
+    fn format_match_percent_caps_decimals_for_vanishing_ratios() {
+        // A ratio too small to reach a significant digit within the cap still
+        // renders (as zeros) rather than producing an unbounded string.
+        let formatted = format_match_percent(0.000_000_001);
+        assert_eq!(formatted.len() - "0.".len(), MAX_PERCENT_DECIMALS);
     }
 
     #[test]
