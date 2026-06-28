@@ -10,6 +10,7 @@ use tracing::warn;
 
 use crate::examined_count::ExaminedCount;
 use crate::limit::Limit;
+use crate::list_statistics::ListStatistics;
 use crate::order::Order;
 use crate::published::PublishedImage;
 use crate::published_list::{PublishedList, PublishedListError};
@@ -46,6 +47,7 @@ pub trait FeedSource: Send + Sync {
 pub struct PublishedImages {
     pub images: Vec<PublishedImage>,
     pub refreshed_at: Option<DateTime<Utc>>,
+    pub statistics: Option<ListStatistics>,
 }
 
 /// Source of the full published image list.
@@ -125,6 +127,24 @@ impl RedisFeedSource {
         })
         .await
     }
+
+    /// This list's published statistics, or `None` if none have been written yet.
+    pub async fn statistics(&self) -> Result<Option<ListStatistics>, FeedSourceError> {
+        (|| async {
+            let mut conn = connect(&self.url).await.map_err(PublishedListError::from)?;
+            Ok(self.list.read_statistics(&mut conn).await?)
+        })
+        .retry(retry_policy())
+        .when(is_transient)
+        .notify(|e, dur| {
+            warn!(
+                error = %e,
+                retry_in_ms = dur.as_millis() as u64,
+                "transient redis failure reading list statistics; will retry",
+            );
+        })
+        .await
+    }
 }
 
 /// Whether a published item should be shown to the public: both the skeet and
@@ -158,9 +178,11 @@ impl PublishedImagesSource for RedisFeedSource {
     async fn published_images(&self) -> Result<PublishedImages, FeedSourceError> {
         let (images, refreshed_at) = self.published().await?;
         let images = images.into_iter().filter(is_live).collect();
+        let statistics = self.statistics().await?;
         Ok(PublishedImages {
             images,
             refreshed_at,
+            statistics,
         })
     }
 

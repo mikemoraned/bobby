@@ -21,7 +21,9 @@ use std::time::Duration;
 use bluesky::ImageUrl;
 use chrono::Utc;
 use shared::{BlueskyCid, ImageId, SkeetId};
-use skeet_publish::{ExaminedCount, Limit, Order, PublishedImage, PublishedList, PublishedListCatalog};
+use skeet_publish::{
+    Limit, ListStatistics, Order, PublishedImage, PublishedList, PublishedListCatalog,
+};
 use testcontainers::ContainerAsync;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::redis::{REDIS_PORT, Redis};
@@ -259,7 +261,7 @@ fn published_image(rkey: &str) -> PublishedImage {
 }
 
 /// Seed the catalog with `specs`, write each populated list (one image with the
-/// given rkey), and record an examined count — the state skeet-feed reads per
+/// given rkey) plus that list's statistics — the state skeet-feed reads per
 /// request.
 async fn seed(redis_url: &str, specs: &[(Order, Limit)], populated: &[((Order, Limit), &str)]) {
     let mut conn = skeet_publish::connect(redis_url).await.expect("connect redis");
@@ -272,16 +274,19 @@ async fn seed(redis_url: &str, specs: &[(Order, Limit)], populated: &[((Order, L
         .await
         .expect("write catalog");
 
+    let now = Utc::now();
     for &((order, limit), rkey) in populated {
-        PublishedList::new(order, limit)
-            .replace(&mut conn, &[published_image(rkey)], Utc::now())
+        let list = PublishedList::new(order, limit);
+        list.replace(&mut conn, &[published_image(rkey)], now)
             .await
             .expect("replace list");
-    }
-
-    ExaminedCount::write(&mut conn, 123_456)
+        list.write_statistics(
+            &mut conn,
+            &ListStatistics::new(now - limit.window(), now, 123_456, 1),
+        )
         .await
-        .expect("write examined count");
+        .expect("write statistics");
+    }
 }
 
 async fn feed_post_rkeys(client: &reqwest::Client, base: &str, feed_uri: &str) -> Vec<String> {
@@ -348,8 +353,8 @@ async fn feed_and_homepage_fall_back_to_older_lists_when_preferred_empty_docker(
         "homepage should serve the older quality-1y list when quality-4w is empty"
     );
     assert!(
-        home.contains("123,456 images checked"),
-        "the examined-count banner should still render during degradation"
+        home.contains("123,456 images checked over the past year"),
+        "the statistics banner should reflect the older list actually served during degradation"
     );
 }
 

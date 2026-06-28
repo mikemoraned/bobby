@@ -1,3 +1,4 @@
+use chrono_humanize::{Accuracy, HumanTime, Tense};
 use cot::http::HeaderValue;
 use cot::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use cot::http::request::Parts as RequestHead;
@@ -5,6 +6,7 @@ use cot::request::extractors::UrlQuery;
 use cot::response::Response;
 use cot::{Body, StatusCode, Template};
 use serde::{Deserialize, Serialize};
+use skeet_publish::ListStatistics;
 use tracing::{info, instrument, warn};
 
 use crate::feed_config::FeedConfig;
@@ -201,9 +203,9 @@ struct HomeTemplate {
     /// Inline SVG QR code for the site URL; `None` if encoding failed (the
     /// banner then renders without it rather than failing the page).
     qr_svg: Option<String>,
-    /// The "images examined" banner stat, pre-formatted with thousands
-    /// separators (e.g. `"21,621,500"`) for display.
-    examined_count: Option<String>,
+    /// The pre-formatted statistics banner line (examined/found over the served
+    /// window), or `None` when the publisher hasn't written statistics yet.
+    stats_banner: Option<String>,
     /// Site-specific Plausible analytics script URL; `Some` renders the
     /// tracking script, `None` omits it.
     plausible_script_url: Option<String>,
@@ -223,6 +225,40 @@ fn group_thousands(n: u64) -> String {
         out.push(*b as char);
     }
     out
+}
+
+/// The percentage of examined images that matched, to two decimal places. Zero
+/// when nothing was examined (avoids a divide-by-zero on a fresh window).
+fn match_percent(examined: u64, found: u64) -> f64 {
+    if examined == 0 {
+        0.0
+    } else {
+        found as f64 / examined as f64 * 100.0
+    }
+}
+
+/// Humanise a window duration to its largest round unit (see [`chrono_humanize`]),
+/// dropping the leading article so it reads naturally after "the past": "2 days",
+/// "month", "year" — never "a month".
+fn humanize_window(window: chrono::Duration) -> String {
+    let text = HumanTime::from(window).to_text_en(Accuracy::Rough, Tense::Present);
+    text.strip_prefix("an ")
+        .or_else(|| text.strip_prefix("a "))
+        .unwrap_or(&text)
+        .to_string()
+}
+
+/// Build the banner line from a served list's statistics, e.g.
+/// "(400,000 images checked over the past 2 days, of which 46 (0.01%) match what
+/// we are looking for)".
+fn statistics_banner(stats: &ListStatistics) -> String {
+    format!(
+        "({examined} images checked over the past {window}, of which {found} ({percent:.2}%) match what we are looking for)",
+        examined = group_thousands(stats.examined),
+        window = humanize_window(stats.interval_end - stats.interval_start),
+        found = group_thousands(stats.found),
+        percent = match_percent(stats.examined, stats.found),
+    )
 }
 
 /// Home page: a server-rendered grid of the published `quality-7d` images, each
@@ -250,6 +286,10 @@ pub async fn home(
         return Ok(not_modified);
     }
 
+    // The banner reflects the list actually served (the fallback-resolved window),
+    // so its statistics ride along with the images rather than being read apart.
+    let stats_banner = published.statistics.as_ref().map(statistics_banner);
+
     let cards: Vec<GridCard> = published
         .images
         .into_iter()
@@ -263,24 +303,13 @@ pub async fn home(
         })
         .collect();
 
-    // The banner stat is best-effort: a missing or unreadable count must not
-    // fail the page, so fold any error into "no number shown".
-    let examined_count = source
-        .examined_count()
-        .await
-        .unwrap_or_else(|e| {
-            warn!(error = %e, "failed to read examined count; rendering without it");
-            None
-        })
-        .map(group_thousands);
-
     info!(count = cards.len(), "serving home grid");
     let rendered = HomeTemplate {
         cards,
         blurb: crate::FEED_BLURB,
         feed_bsky_url: config.feed_bsky_url(),
         qr_svg: config.site_qr_svg.clone(),
-        examined_count,
+        stats_banner,
         plausible_script_url: config.plausible_script_url.clone(),
     }
     .render()?;
@@ -306,6 +335,24 @@ mod tests {
         assert_eq!(group_thousands(999), "999");
         assert_eq!(group_thousands(1_000), "1,000");
         assert_eq!(group_thousands(21_621_500), "21,621,500");
+    }
+
+    #[test]
+    fn statistics_banner_renders_examined_found_percent_and_window() {
+        use chrono::{Duration, Utc};
+        let end = Utc::now();
+        let stats = ListStatistics::new(end - Duration::hours(48), end, 400_000, 46);
+        assert_eq!(
+            statistics_banner(&stats),
+            "(400,000 images checked over the past 2 days, of which 46 (0.01%) match what we are looking for)"
+        );
+    }
+
+    #[test]
+    fn match_percent_rounds_to_two_places_and_guards_zero() {
+        assert_eq!(match_percent(0, 5), 0.0);
+        assert_eq!(match_percent(400_000, 46), 0.0115);
+        assert_eq!(match_percent(200, 1), 0.5);
     }
 
     #[test]

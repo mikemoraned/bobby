@@ -110,8 +110,8 @@
         <div class="banner-text">
             <p class="blurb">{{ blurb }}</p>
             <p class="subscribe"><a href="{{ feed_bsky_url }}">Subscribe to this feed on Bluesky</a></p>
-            {% if let Some(examined) = examined_count %}
-            <p class="examined">({{ examined }} images checked so far)</p>
+            {% if let Some(banner) = stats_banner %}
+            <p class="examined">{{ banner }}</p>
             {% endif %}
         </div>
         {% if let Some(qr_svg) = qr_svg %}

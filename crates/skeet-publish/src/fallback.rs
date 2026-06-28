@@ -169,6 +169,7 @@ impl PublishedImagesSource for FallbackFeedSource {
         Ok(last.unwrap_or(PublishedImages {
             images: vec![],
             refreshed_at: None,
+            statistics: None,
         }))
     }
 
