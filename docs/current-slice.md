@@ -81,3 +81,44 @@ We'll get there in gradual steps:
         * **1y rate is stale.** Most data but the rate drifts as Bluesky grows; the year-window rate is the least relevant to "right now".
         * Optional sanity check: compare variance-to-mean of per-hour counts; if `≫ 1`, arrivals are clustered (a festival/burst breaks independence) and the intervals should be read as too narrow.
     3. [ ] Update the feed website to use the middle timepoint as it's predicted time of next arrival, and to show the 95% confidence range (in text). Phrase the `upper` bound as the "95% chance by" point. When the publisher emitted no prediction (zero-count fallback above), show "not enough recent data" instead of a countdown.
+
+### Observation (2026-06-28): R2 Class B operations rose noticeably after adding Statistics storage
+
+Since this slice added the `prune_stats_v1` table — written once per minute by the pruner (`StatisticsPersister`) and read by the publisher to compute the banner — R2 class B (read) operations went up noticeably.
+
+The diagnostic data is already collected: the `r2.operations` OTel counter (`R2MetricsWrapper`) is labelled by `table`, `kind` (`data`/`manifest`/`_versions`/`_indices`), `operation`, `r2_class`, and `cli`. Confirm/attribute each hypothesis with, in Grafana/Mimir:
+* `sum by (table, r2_class) (rate(r2_operations[…]))` — should show `prune_stats_v1.lance` as the new class-B contributor.
+* add `kind`: `data` spiking ⇒ Hypothesis A (fragment scans); `manifest`/`_versions` ⇒ Hypothesis B/C (manifest churn).
+* split by `cli`: `skeet-publish` dominating ⇒ A/B; `pruner` ⇒ C.
+* the `prune_stats` `fragment_counts` gauge — a sawtooth peaking ~60 each hour corroborates A.
+
+The root cause in all cases is the **minute-ly single-row append**, but the dominant spend is read-side amplification, not the writes themselves. Hypotheses below are ranked by suspected impact and are **unconfirmed** pending the metric split above.
+
+##### Hypothesis A: Publisher re-scans `prune_stats` 7× per publish over un-compacted single-row fragments — UNCONFIRMED (suspected primary)
+
+**Background:** `publish()` calls `prune_stats_for_interval(...)` once per spec (`publisher.rs:301`); production publishes 7 specs (`infra/k8s/skeet-publish-deployment.yaml`). The pruner appends one row/minute, each its own single-row Lance fragment. The optimise CronJob runs hourly (`infra/k8s/optimise-cronjob.yaml`: `0 * * * *`), so up to ~60 single-row fragments accumulate between compactions. The BTree index on `interval_start` (`schema.rs:72`) only covers fragments as of the last optimise run, so the fresh tail — exactly what recent-window queries need — is flat-scanned, one class B `get` per fragment data file. Publishes are frequent because the gate (`RELEVANT_TABLES`) fires on `scores`/appraisal changes and `live-refine` writes scores continuously. Cost ≈ `(publishes/hour) × 7 × (fragments accumulated)`.
+
+**How to prove/disprove:** the `kind="data"`, `table="prune_stats_v1.lance"`, `cli="skeet-publish"` slice of `r2.operations` should dominate the increase and track the `fragment_counts` sawtooth.
+
+##### Hypothesis B: `version_snapshot()` reads the new table's manifest every tick — UNCONFIRMED (constant floor)
+
+**Background:** `publish_if_changed` calls `version_snapshot()` every `interval_secs` (default 60), which calls `table.version()` for *every* table including `prune_stats` (`versions.rs:18-25`). With store-wide `read_consistency_interval(Duration::ZERO)` (`open.rs:25`) each `version()` forces a fresh manifest resolve (class B `get` of the latest manifest + class A list). Adding the table costs a flat ~1,440 extra class B/day independent of whether anything publishes.
+
+**How to prove/disprove:** `kind="manifest"`/`_versions`, `cli="skeet-publish"` should show a steady ~1/min baseline even across idle ticks (no publish).
+
+##### Hypothesis C: The minute-ly appends' own manifest resolves — UNCONFIRMED (smallest)
+
+**Background:** each `add()` (`statistics.rs:68`) under strong consistency does a checkout-latest (class B manifest read) before writing fragment/txn/manifest (class A). ~1,440 class B/day from the pruner. Modest next to A.
+
+**How to prove/disprove:** `cli="pruner"`, `table="prune_stats_v1.lance"` class B ≈ writes/day.
+
+##### Considered and rejected: eagerly optimise the `prune_stats` BTree index after each append
+
+Mechanically trivial (`OptimizeAction::Index` is incremental and already runs per-table in `maintenance.rs`), but it doesn't address the bottleneck and likely makes it worse. A scalar BTree narrows *which rows* but doesn't avoid reading them: `prune_stats_for_interval` sums `skeets_seen`/`images_examined`/`images_saved` (`statistics.rs:110-127`), so execution still *takes* those column values from the data files — with single-row fragments every matching row is its own `get` regardless of the index. The recent-window queries match nearly all the fresh fragments anyway (index pruning only skips *old*, already-compacted, already-cheap fragments). On top of that, reading the index adds `_indices/` class-B gets and optimising every minute adds class-A index-delta churn (a second small-files problem). The lever is fragment count, not index coverage.
+
+##### Tasks to fix
+
+* [ ] **Collapse the publisher's 7 per-spec reads into 1.** Read the widest window (`quality-1y`) once and aggregate the narrower windows in memory (rows are already per-interval), instead of 7 independent scans (`publisher.rs:291-308`). Drops A by ~7×. Optionally cache for the tick.
+* [ ] **Batch / coarsen the appends (addresses the root cause).** Buffer per-minute `ContentCounts` in `StatisticsPersister` and flush a single multi-row batch much less often (e.g. hourly), or record coarser (hourly) buckets at source. One fragment + one manifest bump per flush instead of ~60. Cuts A's fragment count and C's write churn proportionally; no query/data-model change.
+* [ ] (stretch) **Relax consistency for the stats read path.** `read_consistency_interval(Duration::ZERO)` is store-wide and forces a manifest resolve on every op (drives B). Stats tolerate minutes of staleness; making this read path eventually-consistent would remove B's per-tick manifest reads — but the setting is store-wide today, so this needs a way to scope it.
+* [ ] (consider) **Question the store choice.** These counts are already emitted as OTel counters to Mimir, and the publisher already writes a per-spec `:statistics` JSON to redis. Serving the examined-count from redis (or folding it into that JSON) would avoid LanceDB entirely for this hot path. Larger change — only if batching + read-collapse don't bring it down enough.
