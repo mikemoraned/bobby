@@ -40,7 +40,13 @@ We'll get there in gradual steps:
 * within `skeet-feed`:
     * [x] Get the counts of images examined and shown, and the interval given, and use these to create the "(400,000 images checked over past 2 days, of which 46 (0.01%) match what we are looking for)" text. (With the firehose-slice fallback, read stats for the list fallback actually served — the served window, e.g. website `quality-4w` widening on degrade — not a fixed `quality-7d`/"2 days".)
 * [x] refactor any existing `count` methods in other `skeet-store` traits to live in the `Statistics` trait
-* [ ] add a small internal consistency sanity-check test which can run locally and also as an integ test against staging and production which checks:
+* [x] add a small internal consistency sanity-check test which can run locally and also as an integ test against staging and production which checks:
     1. for the "of which X (Y%) match" text, from which we extract X
     2. there are X images shown in page i.e. there are X `img` elements in the page under `<div class="grid">`
+    * (committed deliberately red: the banner reports `stats.found` = the published list length, which still counts candidates the publisher's existence probe found deleted, while the grid renders only the live-filtered images, so `found > shown`.)
+* [ ] make the banner/grid consistency a publisher-owned invariant (keeps `skeet-feed` a dumb formatter), turning the red test above green:
+    * add an `exists` count to `ListStatistics` alongside `found` = the number of *live* items (`image_url_exists && skeet_id_exists`, same meaning as in the published list) in the list the publisher writes, computed at publish time via the **shared `is_live` predicate** in `skeet-publish` (reuse the one in `source.rs` so the publisher's count and the feed's render filter can't drift)
+    * `skeet-feed` displays `stats.exists` (and the percentage `exists / examined`) verbatim instead of deriving a count — the feed keeps filtering `is_live` to render (the list stays a superset for appraise), but no longer does any banner arithmetic
+    * add a **publisher-side** consistency test: the `exists` written into a list's statistics equals the number of `is_live` items in the list it just wrote
+    * note: `replace` + `write_statistics` aren't atomic, so a reader can briefly see a list and stats from different cycles (same self-healing race as `refreshed-at`) — acceptable
 * [ ] once `skeet-feed` deployed and not using it anymore stop creating/publishing `v3-examined-count` — also retire `estimate_processed`/`SAVE_RATE_PERCENT`, the `saved × 500` guess the real measured count replaces.
