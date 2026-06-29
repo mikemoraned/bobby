@@ -311,8 +311,8 @@ fn humanize_eta(wait: chrono::Duration) -> String {
 }
 
 /// Build the banner line from a served list's statistics, e.g.
-/// "(400,000 images checked over the past 2 days, of which 46 (0.01%) match what
-/// we are looking for)".
+/// "400,000 images checked over the past 2 days, of which 46 (0.01%) match what
+/// we are looking for.".
 ///
 /// The match count is `exists` — the live items the publisher counted with the
 /// same predicate the feed filters on — so it always agrees with the grid. The
@@ -420,7 +420,7 @@ mod tests {
         let stats = ListStatistics::new(end - Duration::hours(48), end, 400_000, 48, 46);
         assert_eq!(
             statistics_banner(&stats),
-            "(400,000 images checked over the past 2 days, of which 46 (0.01%) match what we are looking for)"
+            "400,000 images checked over the past 2 days, of which 46 (0.01%) match what we are looking for."
         );
     }
 

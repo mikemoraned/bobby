@@ -336,7 +336,7 @@ async fn home_shows_statistics_banner_when_present() {
     assert_eq!(status, 200);
     assert!(
         body.contains(
-            "(400,000 images checked over the past 2 days, of which 46 (0.01%) match what we are looking for)"
+            "400,000 images checked over the past 2 days, of which 46 (0.01%) match what we are looking for."
         ),
         "the statistics banner should render examined/exists/percent over the served window"
     );

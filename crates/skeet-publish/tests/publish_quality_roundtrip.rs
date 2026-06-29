@@ -199,6 +199,10 @@ async fn list_statistics_published_and_read_back_docker() {
     assert_eq!(stats.found, 3); // all three seeded skeets are visible within 48h
     // The existence checker reports all present, so every candidate is live.
     assert_eq!(stats.exists, 3);
+
+    // The prediction is produced and rides the statistics through redis; its
+    // quantile maths is covered by the `prediction` unit tests.
+    assert!(stats.next_match_prediction.is_some());
 }
 
 /// Publisher-side consistency invariant: the `exists` it records equals the number

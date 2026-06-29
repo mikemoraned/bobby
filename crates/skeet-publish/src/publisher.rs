@@ -17,6 +17,7 @@ use crate::image_url_resolver::ImageUrlResolver;
 use crate::limit::Limit;
 use crate::list_statistics::ListStatistics;
 use crate::order::Order;
+use crate::prediction::predict_next_match;
 use crate::published::PublishedImage;
 use crate::published_list::{PublishedList, PublishedListError};
 use crate::table_watch::relevant;
@@ -312,8 +313,10 @@ impl<S: ScoredView + AppraisalsSource + TableVersions + Statistics> FeedPublishe
             let interval_start = now - limit.window();
             let examined = examined_by_limit.get(&limit).copied().unwrap_or_default();
             let exists = pairs.iter().filter(|p| p.is_live()).count() as u64;
+            let prediction = predict_next_match(now, interval_start, exists);
             let stats =
-                ListStatistics::new(interval_start, now, examined, pairs.len() as u64, exists);
+                ListStatistics::new(interval_start, now, examined, pairs.len() as u64, exists)
+                    .with_next_match_prediction(prediction);
             list.write_statistics(conn, &stats).await?;
         }
 
