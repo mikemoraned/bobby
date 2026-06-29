@@ -12,7 +12,7 @@ ENV BUILD_GIT_HASH=${BUILD_GIT_HASH}
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,target=/build/target,id=bobby-target-amd64,sharing=locked \
-    cargo build --release \
+    cargo build -v --release \
       -p skeet-prune --bin pruner \
       -p skeet-refine --bin live-refine \
       -p skeet-publish --bin skeet-publish \

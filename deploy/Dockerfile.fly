@@ -11,7 +11,7 @@ ENV BUILD_GIT_HASH=${BUILD_GIT_HASH}
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,target=/build/target,id=bobby-target-amd64,sharing=locked \
-    cargo build --release \
+    cargo build -v --release \
       -p skeet-feed --bin skeet-feed \
       -p skeet-appraise --bin skeet-appraise \
     && mkdir -p /build/out \
