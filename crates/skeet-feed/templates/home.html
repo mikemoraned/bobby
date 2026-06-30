@@ -125,7 +125,7 @@
             <p class="examined">{{ banner }}</p>
             {% endif %}
             {% if let Some(na) = next_arrival %}
-            <p class="next-arrival">Next one expected <span class="js-countdown">{{ na.eta_text }}</span>.</p>
+            <p class="next-arrival">Next one expected between {{ na.lower_text }} and {{ na.upper_text }} from now.</p>
             {% endif %}
         </div>
         {% if let Some(qr_svg) = qr_svg %}
@@ -142,8 +142,12 @@
         {% endfor %}
     </div>
     {% if let Some(na) = next_arrival %}
-    <p class="end-of-feed">You've reached the end of the images found so far! Next one expected to be found
-        <span class="js-countdown">{{ na.eta_text }}</span>.</p>
+    <p class="end-of-feed">You've reached the end of the images found so far! The next one is expected sometime
+        between {{ na.lower_text }} and {{ na.upper_text }} from now (95% confidence) — reloading
+        <span class="js-countdown">{{ na.countdown_text }}</span>.</p>
+    {% else %}
+    <p class="end-of-feed">You've reached the end of the images found so far! There isn't enough recent data to predict
+        the next one yet.</p>
     {% endif %}
     {% endif %}
     {% if let Some(na) = next_arrival %}

@@ -206,23 +206,29 @@ struct HomeTemplate {
     /// The pre-formatted statistics banner line (examined/found over the served
     /// window), or `None` when the publisher hasn't written statistics yet.
     stats_banner: Option<String>,
-    /// The predicted next-match arrival driving the countdown, or `None` when
-    /// there's no live match to extrapolate from (see [`predicted_wait`]).
+    /// The predicted next-match arrival driving the range text and countdown, or
+    /// `None` when the publisher emitted no prediction (see [`build_next_arrival`]);
+    /// the populated end-of-feed then reads "not enough recent data" instead.
     next_arrival: Option<NextArrival>,
     /// Site-specific Plausible analytics script URL; `Some` renders the
     /// tracking script, `None` omits it.
     plausible_script_url: Option<String>,
 }
 
-/// The predicted time the next match will appear, in the two forms the page
-/// needs: an absolute target for the live JS countdown and a server-rendered ETA
-/// phrase so the no-JS initial paint still reads sensibly.
+/// The predicted next-match arrival the page shows: the 95% range as human
+/// durations from now, plus the median as both a JS countdown reload target and
+/// an initial ETA phrase for the no-JS paint.
 struct NextArrival {
-    /// Target arrival time as Unix epoch milliseconds — the origin the JS
-    /// countdown ticks down to (and reloads at).
+    /// Median arrival as Unix epoch milliseconds — the origin the JS countdown
+    /// ticks down to (and reloads at).
     target_epoch_ms: i64,
-    /// Human ETA phrase rendered before the JS takes over, e.g. "in 2 hours".
-    eta_text: String,
+    /// Median ETA phrase shown until the JS countdown takes over, e.g.
+    /// "in 2 hours".
+    countdown_text: String,
+    /// Lower 2.5% bound as a duration from now, e.g. "18 minutes".
+    lower_text: String,
+    /// Upper 97.5% bound as a duration from now, e.g. "2 days".
+    upper_text: String,
 }
 
 /// Group a non-negative integer with comma thousands separators, e.g.
@@ -289,25 +295,38 @@ fn humanize_window(window: chrono::Duration) -> String {
         .to_string()
 }
 
-/// Predicted wait until the next match, assuming matches arrive uniformly over
-/// the window: `window / exists`, the mean inter-arrival time. `None` when the
-/// window holds no live match to extrapolate from, or is empty — so the caller
-/// shows no countdown rather than dividing by zero.
-///
-/// This is the deliberately-simple feed-side estimate; the mean wait it returns
-/// runs slightly longer than the Poisson median the publisher computes later.
-fn predicted_wait(stats: &ListStatistics) -> Option<chrono::Duration> {
-    let seconds = (stats.interval_end - stats.interval_start).num_seconds();
-    if stats.exists == 0 || seconds <= 0 {
-        return None;
-    }
-    Some(chrono::Duration::seconds(seconds / stats.exists as i64))
-}
-
 /// Humanise a positive wait as a future ETA phrase (see [`chrono_humanize`]),
-/// e.g. "in 2 hours", "in a minute" — slots after "expected to be found".
+/// e.g. "in 2 hours", "in a minute" — the countdown's initial, pre-JS content.
 fn humanize_eta(wait: chrono::Duration) -> String {
     HumanTime::from(wait).to_text_en(Accuracy::Rough, Tense::Future)
+}
+
+/// Humanise a duration as a bare present-tense span (see [`chrono_humanize`]),
+/// e.g. "2 hours", "a month" — reads naturally inside "between X and Y from now".
+fn humanize_span(span: chrono::Duration) -> String {
+    HumanTime::from(span).to_text_en(Accuracy::Rough, Tense::Present)
+}
+
+/// Build the page's next-match countdown from a served list's published
+/// prediction, re-anchored to render time `now`.
+///
+/// The publisher measures its quantiles forward from the interval end; by the
+/// Poisson memorylessness the wait from `now` has the same distribution, so each
+/// wait is re-added to `now`. This keeps the countdown from starting already
+/// expired when the page is served some time after the publish. `None` when the
+/// publisher emitted no prediction (a zero-match window).
+fn build_next_arrival(
+    stats: &ListStatistics,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<NextArrival> {
+    let prediction = stats.next_match_prediction.as_ref()?;
+    let wait = |at: chrono::DateTime<chrono::Utc>| at - stats.interval_end;
+    Some(NextArrival {
+        target_epoch_ms: (now + wait(prediction.middle)).timestamp_millis(),
+        countdown_text: humanize_eta(wait(prediction.middle)),
+        lower_text: humanize_span(wait(prediction.lower)),
+        upper_text: humanize_span(wait(prediction.upper)),
+    })
 }
 
 /// Build the banner line from a served list's statistics, e.g.
@@ -356,12 +375,7 @@ pub async fn home(
     // so its statistics ride along with the images rather than being read apart.
     let stats = published.statistics.as_ref();
     let stats_banner = stats.map(statistics_banner);
-    let next_arrival = stats.and_then(|stats| {
-        predicted_wait(stats).map(|wait| NextArrival {
-            target_epoch_ms: (chrono::Utc::now() + wait).timestamp_millis(),
-            eta_text: humanize_eta(wait),
-        })
-    });
+    let next_arrival = stats.and_then(|stats| build_next_arrival(stats, chrono::Utc::now()));
 
     let cards: Vec<GridCard> = published
         .images
@@ -460,62 +474,101 @@ mod tests {
     }
 
     #[test]
-    fn predicted_wait_is_window_divided_by_live_count() {
-        use chrono::{Duration, Utc};
-        let end = Utc::now();
-        // 48h window, 24 live matches → a 2h mean inter-arrival time.
-        let stats = ListStatistics::new(end - Duration::hours(48), end, 400_000, 48, 24);
-        assert_eq!(predicted_wait(&stats), Some(Duration::hours(2)));
-    }
-
-    #[test]
-    fn predicted_wait_is_none_without_a_live_match() {
-        use chrono::{Duration, Utc};
-        let end = Utc::now();
-        let stats = ListStatistics::new(end - Duration::hours(48), end, 400_000, 0, 0);
-        assert_eq!(predicted_wait(&stats), None);
-    }
-
-    #[test]
-    fn predicted_wait_is_none_for_an_empty_window() {
-        use chrono::Utc;
-        let end = Utc::now();
-        let stats = ListStatistics::new(end, end, 0, 5, 5);
-        assert_eq!(predicted_wait(&stats), None);
-    }
-
-    #[test]
     fn humanize_eta_reads_as_a_future_phrase() {
         use chrono::Duration;
         assert_eq!(humanize_eta(Duration::hours(2)), "in 2 hours");
     }
 
     #[test]
-    fn home_template_renders_countdown_when_a_next_arrival_is_predicted() {
+    fn humanize_span_reads_as_a_bare_present_phrase() {
+        use chrono::Duration;
+        assert_eq!(humanize_span(Duration::minutes(10)), "10 minutes");
+        assert_eq!(humanize_span(Duration::hours(5)), "5 hours");
+    }
+
+    #[test]
+    fn build_next_arrival_reanchors_the_published_prediction_to_now() {
+        use chrono::{Duration, TimeZone, Utc};
+        use skeet_publish::NextMatchPrediction;
+        let interval_end = Utc.with_ymd_and_hms(2026, 6, 1, 0, 0, 0).unwrap();
+        let stats =
+            ListStatistics::new(interval_end - Duration::hours(48), interval_end, 400_000, 48, 24)
+                .with_next_match_prediction(Some(NextMatchPrediction {
+                    lower: interval_end + Duration::minutes(10),
+                    middle: interval_end + Duration::hours(1),
+                    upper: interval_end + Duration::hours(5),
+                }));
+        // Render well after the interval end: the waits are re-anchored to `now`.
+        let now = Utc.with_ymd_and_hms(2026, 6, 2, 12, 0, 0).unwrap();
+        let na = build_next_arrival(&stats, now).expect("prediction present");
+        assert_eq!(na.lower_text, "10 minutes");
+        assert_eq!(na.upper_text, "5 hours");
+        assert_eq!(na.countdown_text, "in an hour");
+        // Median wait (1h) from `now`, not interval_end + 1h.
+        assert_eq!(
+            na.target_epoch_ms,
+            (now + Duration::hours(1)).timestamp_millis()
+        );
+    }
+
+    #[test]
+    fn build_next_arrival_is_none_without_a_published_prediction() {
+        use chrono::Utc;
+        let end = Utc::now();
+        let stats = ListStatistics::new(end - chrono::Duration::hours(48), end, 400_000, 0, 0);
+        assert!(build_next_arrival(&stats, end).is_none());
+    }
+
+    fn one_card() -> GridCard {
+        GridCard {
+            bsky_url: "https://bsky.app/profile/x/post/1".to_string(),
+            thumb_url: "https://cdn.example/x.jpg".to_string(),
+            alt: "x".to_string(),
+            aspect_ratio: None,
+        }
+    }
+
+    #[test]
+    fn home_template_renders_range_and_countdown_when_predicted() {
         let rendered = HomeTemplate {
-            cards: vec![GridCard {
-                bsky_url: "https://bsky.app/profile/x/post/1".to_string(),
-                thumb_url: "https://cdn.example/x.jpg".to_string(),
-                alt: "x".to_string(),
-                aspect_ratio: None,
-            }],
+            cards: vec![one_card()],
             blurb: "blurb",
             feed_bsky_url: "https://bsky.app/feed".to_string(),
             qr_svg: None,
             stats_banner: Some("(stats)".to_string()),
             next_arrival: Some(NextArrival {
                 target_epoch_ms: 1_700_000_000_000,
-                eta_text: "in 2 hours".to_string(),
+                countdown_text: "in 2 hours".to_string(),
+                lower_text: "10 minutes".to_string(),
+                upper_text: "5 hours".to_string(),
             }),
             plausible_script_url: None,
         }
         .render()
         .expect("render");
         assert!(rendered.contains("You've reached the end of the images found so far!"));
+        assert!(rendered.contains("between 10 minutes and 5 hours from now"));
         assert!(rendered.contains("class=\"js-countdown\""));
-        assert!(rendered.contains("in 2 hours"));
+        assert!(rendered.contains("in 2 hours")); // countdown's pre-JS content
         // The JS countdown's reload target is embedded for the client to tick to.
         assert!(rendered.contains("1700000000000"));
+    }
+
+    #[test]
+    fn home_template_shows_not_enough_data_when_prediction_absent() {
+        let rendered = HomeTemplate {
+            cards: vec![one_card()],
+            blurb: "blurb",
+            feed_bsky_url: "https://bsky.app/feed".to_string(),
+            qr_svg: None,
+            stats_banner: Some("(stats)".to_string()),
+            next_arrival: None,
+            plausible_script_url: None,
+        }
+        .render()
+        .expect("render");
+        assert!(rendered.contains("isn't enough recent data to predict"));
+        assert!(!rendered.contains("class=\"js-countdown\""));
     }
 
     #[test]

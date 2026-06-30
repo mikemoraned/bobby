@@ -22,7 +22,8 @@ use bluesky::ImageUrl;
 use chrono::Utc;
 use shared::{BlueskyCid, ImageId, SkeetId};
 use skeet_publish::{
-    Limit, ListStatistics, Order, PublishedImage, PublishedList, PublishedListCatalog,
+    Limit, ListStatistics, NextMatchPrediction, Order, PublishedImage, PublishedList,
+    PublishedListCatalog,
 };
 use testcontainers::ContainerAsync;
 use testcontainers::runners::AsyncRunner;
@@ -282,12 +283,15 @@ async fn seed(redis_url: &str, specs: &[(Order, Limit)], populated: &[((Order, L
         list.replace(&mut conn, &[published_image(rkey)], now)
             .await
             .expect("replace list");
-        list.write_statistics(
-            &mut conn,
-            &ListStatistics::new(now - limit.window(), now, 123_456, 1, 1),
-        )
-        .await
-        .expect("write statistics");
+        let stats = ListStatistics::new(now - limit.window(), now, 123_456, 1, 1)
+            .with_next_match_prediction(Some(NextMatchPrediction {
+                lower: now + chrono::Duration::hours(1),
+                middle: now + chrono::Duration::hours(12),
+                upper: now + chrono::Duration::hours(48),
+            }));
+        list.write_statistics(&mut conn, &stats)
+            .await
+            .expect("write statistics");
     }
 }
 
@@ -361,6 +365,10 @@ async fn feed_and_homepage_fall_back_to_older_lists_when_preferred_empty_docker(
     assert!(
         home.contains("You've reached the end of the images found so far!"),
         "homepage should show the end-of-feed message once a next arrival can be predicted"
+    );
+    assert!(
+        home.contains("from now"),
+        "homepage should show the predicted 95% arrival range as durations from now"
     );
     assert!(
         home.contains("class=\"js-countdown\""),
