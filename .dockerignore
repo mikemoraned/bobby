@@ -1,16 +1,18 @@
-target/
-store/
-store.old1/
-fallback-store/
-logs/
-.git/
-.claude/
-docs/
-infra/
-just/
-deploy/
-model-conversion/
-examples/
-blocklist/
-*.md
-*.env
+# Allowlist, not denylist: ignore the whole context, then re-include only what the
+# build actually needs. A denylist is fragile — any new or churning root file (logs,
+# mutants.out, editor temp) silently enters `COPY . .`, changes the context hash, and
+# busts the builder layer cache, forcing a full recompile. Ignoring everything by
+# default means only the paths below can ever affect the build.
+*
+
+# Rust workspace
+!Cargo.toml
+!Cargo.lock
+!.cargo
+!rust-toolchain.toml
+!crates
+
+# config/ is baked into runner images (COPY config/*.toml); models/ is baked into the
+# binaries at build time (face-detection/text-detection build.rs read ../../models).
+!config
+!models
