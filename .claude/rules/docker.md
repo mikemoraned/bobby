@@ -51,10 +51,13 @@ BuildKit reuses the cached `builder` across `--target` invocations.
   recompiles only the leaf bins that bake the hash — deps stay cached.
 - `.cargo/config.toml` (rustflags) and `rust-toolchain.toml` (pinned toolchain)
   arrive via `COPY . .` before the single build; no `cargo chef`.
-- Base image is the official `rust:1.94-bookworm`, with its tag kept equal to
-  `rust-toolchain.toml`'s `channel`. `rust-toolchain.toml` stays the source of truth;
-  matching the image tag to it means rustup finds the pinned toolchain already
-  installed and skips the ~243s "syncing channel updates" re-download at build time.
+- Base image is the official `rust:1.94.1-bookworm`, its tag kept equal to
+  `rust-toolchain.toml`'s `channel`. **Both pin the exact patch (`1.94.1`), not a
+  floating minor (`1.94`).** `rust-toolchain.toml` stays the source of truth; matching
+  the image tag to an exact version means rustup finds that toolchain already installed
+  and skips the "syncing channel updates" re-sync at build time. A floating `1.94`
+  channel does *not* skip it — rustup treats the minor as "latest 1.94.x" and re-syncs
+  on every builder run even when the image already ships 1.94.1. Bump both in lockstep.
   (Bookworm matches the `debian:bookworm-slim` runner's glibc.)
 
 ### Runner stages
