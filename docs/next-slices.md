@@ -1,5 +1,39 @@
 # Next Slices
 
+## Slice: re-train refine model with a new eval snapshot
+
+### Target
+
+We've now amassed 1292 Image Appraisals so we'd probably benefit from capturing a new eval snapshot, and improved prompt. We've got bigger work planned later (see "try using embeddings for classification/scoring in refine") so we just want to focus this slice on allowing existing OpenAI model to be tuned based on a more up-to-date and complete set of image appraisals.
+
+### Decisions / groundwork
+
+- **The machinery already exists** — this is mostly an operational slice driving the bins built in earlier slices (`capture-appraisals`, `refine-eval`, `sample-costs`, `train`, `promote`) against the grown dataset. The checked-in config registries (`config/eval-splits.toml`, `config/eval-results.toml`, `config/refine.toml`) are the inputs/outputs; each step commits the registry it writes.
+- **Stay on the existing OpenAI model.** Train keeps `gpt-4o` as both scorer and rewriter; the only thing changing is the prompt, tuned against a fresher/larger appraisal set. Embeddings and cheaper-model exploration stay out of scope (their own slices).
+- **A fresh snapshot needs a fresh baseline.** `train`'s `pick_baseline` selects the best-F1 run carrying the production `model_version` **and the same `split_id`**. A newly captured snapshot has a new `split_id`, so no run qualifies until the deployed model is re-evaluated on it — hence the explicit re-baseline step before training.
+- **`default` moves to the new snapshot** (capture's existing behaviour): the old phase-2–4 143-image split keeps its registry entry but loses the label, so `train`/`refine-eval` pick up the fresh snapshot automatically. This supersedes the "frozen 143-image split" the embeddings slice references — that slice should pin the old `split_id` explicitly rather than rely on `default`.
+
+### Tasks
+
+* [ ] **Capture the fresh snapshot.** Run `capture-appraisals` against the shared store to write a new `default` split from all current image appraisals (~1292) into `config/eval-splits.toml`. Sanity-check the train/test counts and per-band stratification look right; commit the registry.
+* [ ] **Re-baseline the deployed model on the new split.** Run `refine-eval` with the current production `config/refine.toml` against the new `default` split, appending a baseline run (new `split_id`) to `config/eval-results.toml` — this is what `train` gates against. Commit the log.
+* [ ] **Cost pre-flight.** Run `sample-costs` over a small stratified sample to confirm `gpt-4o`'s empirical per-image cost under current prices before committing a training budget.
+* [ ] **Train an improved prompt.** Run `train` (`gpt-4o`, gated against the re-baseline run). On acceptance it writes the new prompt/model + `decision_threshold` to `config/refine.toml` and appends the run to the log; on rejection the incumbent stands. A single run is noisy — if the candidate lands borderline against the gate, re-run before trusting it (full variance-aware gating is the later "improving prune and refine quality" slice).
+* [ ] **Promote + deploy** (only if a candidate is accepted). Repoint the `production` label via the `promote` bin and do the k8s image cutover (per `docs/versioning.md` + `docs/remote-setup.md`) so the new model serves in prod. If rejected, record that the fresh snapshot reaffirmed the incumbent and skip the flip.
+* [ ] **Verify + document.** `just clippy` + `just test-no-docker`. Record the snapshot `split_id`, baseline run-id, candidate run-id, and outcome (accepted+promoted, or rejected) so the comparison is reproducible.
+
+## Slice: dynamic social-media preview image for the feed
+
+### Target
+
+A [social media preview image](https://support.metropublisher.com/hc/en-us/articles/31523564070420-Preview-Image-Settings-for-Social-Media) for `bobby.houseofmoran.io` which can be shown on facebook, twitter etc.
+
+* This should be calculated dynamically based on the same `quality-7d` content, and cached using the same last-modified caching from elsewhere.
+* We can use something like the layout algorithms used in [linzer](https://github.com/mikemoraned/geo/blob/main/apps/linzer/backend/layout/src/bin/layout.rs) e.g. `Guillotine` from the `binpack2d` crate.
+* We shouldn't use the full feed content for this but instead select the first 9 or 10 best and then in the created image put a fade effect on the bottom. This way we get a nice legible image which gives a taste of the content but doesn't take an algorithmically long time to layout.
+
+This is a genuine server-side image-composition feature (compose a montage, render it, wire up the OG/Twitter meta tags, cache it), which is why it's its own slice rather than part of the 1.0 feed polish.
+
 ## Slice: drain the pipeline on SIGTERM (close the restart in-flight loss)
 
 ### Target
@@ -162,16 +196,23 @@ Retire the central risk in an afternoon before building anything, reusing the sl
 * [ ] Evaluate on the held-out test set and compare **recall-at-pinned-precision** against the deployed LLM baseline (0.870 @ P=0.800) — same gate as phase 4, so directly comparable
 * [ ] Caveat: the split has only ~88 positive training examples (~16%), thin for a learned head — if logreg underperforms, try kNN/one-class before concluding the embedding can't see the distinction. This is where the label-growth bullet (refine slice) pays off most.
 
-## Slice: dynamic social-media preview image for the feed
+## Slice: speed-up pruner to increase coverage
 
 ### Target
 
-A [social media preview image](https://support.metropublisher.com/hc/en-us/articles/31523564070420-Preview-Image-Settings-for-Social-Media) for `bobby.houseofmoran.io` which can be shown on facebook, twitter etc.
+As of 29th June, based on recent attempts to improve performance, it seems like the main bottleneck is cpu performance in the image filtering stage. This already maxes out the cores, so additional parallelism doesn't help. This bottleneck probably means we can't consume as much of the bluesky feed as we like. This slice is about trying out different optimisations that could help.
 
-* this should be calculated dynamically based on the same `quality-7d` content, and cached using the same last-modified caching from elsewhere.
-* We can use something like the layout algorithms used in [linzer](https://github.com/mikemoraned/geo/blob/main/apps/linzer/backend/layout/src/bin/layout.rs) e.g. `Guillotine` from the `binpack2d` crate.
+#### Establish Baseline
 
-This is a genuine server-side image-composition feature (compose a montage, render it, wire up the OG/Twitter meta tags, cache it), which is why it's its own slice rather than part of the 1.0 feed polish.
+We don't know for sure what the upper limit is, so change the pruner so that it can run in different modes where it only enables subsets of the pipeline. So, for example, if we want to see what speed would be like if we didn't check any images, we can run it in a mode where it only enables the firehose (Ingest) and metadata stages. We'd have to make sure we don't accidentally save outcomes from this + make sure we don't pollute any metrics; it probably should still emit metrics, just under a different name e.g. `pruner-firehose,meta` (for enable stages).
+
+We also may want to consider running this on laptop and in cluster, to assess impact of network speed, perhaps temporarily disabling the main pruner and other services so to avoid contention.
+
+#### Try fail early / lazily evaluate based on specificity
+
+We don't let an image through if it fails any the rejection reasons. We could perhaps save time by finding which of the checks has highest specificity (catches most items) and running that first, and running rest when these fail.
+
+We can effectively have a fast path (lazy evaluate, stop early) and a slow path (evaluate all). We may want to keep both available so we can retest later.
 
 ## Slice: passkey + fingerprint-allowlist auth for `skeet-appraise`
 
@@ -277,96 +318,6 @@ The `refine_image_resilient` wrapper's `is_transient` treats **every** `RefineEr
 - [ ] Add unit tests: a permanent 4xx is not retried; a 429/5xx/network error is retried up to the bound
 
 ...
-
-
-## Slice: Expose `skeet-appraise` as a service inside hetzner via tailscale
-
-Use the [Tailscale Kubernetes Operator](https://tailscale.com/kb/1236/kubernetes-operator). It spins up a proxy pod per exposed resource that joins the tailnet and forwards to the backing `Service`. No public ingress, no per-service load balancer cost.
-
-This means we can now use tailscale to expose `skeet-appraise` running as a local k8s Service inside the cluster but still have it accessible from my phone and my laptop. As part of this we need to introduce a new type of identity of appraiser based on tailscale identity.
-
-We can do this like in Phase 3 where we run new/old alongside each other for a little while before we delete the fly.io website for `skeet-appraise`.
-
-At end of this we can probably do a code and infra cleanup/simplification as we should no-longer need the github app / redis auth / oauth login stuff.
-
-### Use `Ingress`, not `Service`, for identity
-
-Of the operator's exposure modes, only [`Ingress`](https://tailscale.com/kb/1439/kubernetes-operator-cluster-ingress) injects Tailscale identity headers, which is the whole point here. Every request gets:
-
-* `Tailscale-User-Login` — caller's login (e.g. `mike@example.com`)
-* `Tailscale-User-Name` — display name
-* `Tailscale-User-Profile-Pic` — profile image URL
-
-The proxy strips incoming versions of these headers before forwarding, so they can't be spoofed from the tailnet. Anything else in-cluster reaching the backend `Service` directly could spoof them, so add a `NetworkPolicy` restricting the `Service` to only the Tailscale proxy pod.
-
-[tailscale/tailscale#15657](https://github.com/tailscale/tailscale/issues/15657) tracks identity headers for bare `Service` resources but is open and unmoving — `Ingress` is the only option today.
-
-### Constraints of `Ingress` mode
-
-* HTTPS-only, port 443 only; certs auto-provisioned from Let's Encrypt.
-* Requires HTTPS and MagicDNS enabled on the tailnet ([docs](https://tailscale.com/kb/1153/enabling-https)).
-* Reachable only by the full MagicDNS FQDN (e.g. `bobby-appraisals-staging.<tailnet>.ts.net`) so the cert matches.
-* First connection after deploy can be slow while the cert is provisioned.
-
-### Prerequisite
-
-OAuth client created in the Tailscale admin console for the operator — see the operator [setup section](https://tailscale.com/kb/1236/kubernetes-operator#setup). Needs **`Devices Core` + `Auth Keys` + `Services`** write scopes and the `tag:k8s-operator` tag (which must already exist in the tailnet policy file). MagicDNS + HTTPS must be enabled on the tailnet for `Ingress` mode to provision certs.
-
-### Tasks
-
-Spike first, then groups A–E. As in Phase 3, run the new (hetzner + tailscale) deployment alongside the old (fly + GitHub OAuth) one, verify, then cut over and clean up. Local dev keeps `--local-admin` throughout.
-
-#### Spike (do this first): prove the Tailscale operator + `Ingress` path with a dummy service
-
-This is the first time using Tailscale this way, so isolate the Tailscale dependency *before* touching `skeet-appraise`. Stand up the whole operator → `Ingress` → identity-header path with a throwaway workload and nothing of ours on the line. The operator and tailnet config that this sets up are **kept** and reused by group C; only the dummy workload is torn down.
-
-* [ ] **Install the operator + enable the tailnet features** (the riskiest, least-familiar bits). Order matters — do these in sequence:
-    1. **Add the operator tags to the tailnet policy file** *before* creating the OAuth client (the client must be tagged with one): `"tagOwners": { "tag:k8s-operator": [], "tag:k8s": ["tag:k8s-operator"] }`.
-    2. **Create the operator OAuth client** in the admin console (see Phase 4 Prerequisite) with **`Devices Core` + `Auth Keys` + `Services`** write scopes (the `Services` scope is newer and now required), tagged `tag:k8s-operator`; store id/secret in 1Password.
-    3. **Enable MagicDNS + HTTPS** on the tailnet.
-    4. **`helm install` the operator** (add a `cluster-install-tailscale-operator` recipe alongside the other addon installers in `just/cluster.just`, feeding `oauth.clientId`/`oauth.clientSecret` via inline `op read` like `cluster-ghcr-secret-install` does).
-* [ ] **Deploy a trivial header-echo service** — no code/build of ours: a stock multi-arch image like `traefik/whoami` (it echoes request headers, which is exactly what we need to *see* the injected identity). Give it a `Deployment` + `Service` and a tailscale-`ingressClassName` `Ingress` named e.g. `bobby-ts-spike`. Use the current Ingress shape — `spec.ingressClassName: tailscale` + `spec.defaultBackend.service` + `spec.tls.hosts` (only the **first label** of the host is used → `<label>.<tailnet>.ts.net`), *not* `rules`/`host`. **Do not set `tailscale.com/funnel: "true"`** — Funnel makes the service public *and* drops the identity headers this whole phase depends on; we want tailnet-only Serve traffic.
-* [ ] **Verify the unknowns, in order:**
-    * the `Ingress` provisions a Let's Encrypt cert and the service appears at `bobby-ts-spike.<tailnet>.ts.net` (first hit may be slow while the cert provisions);
-    * it's reachable from **phone and laptop** over the tailnet (and *not* publicly);
-    * the echo shows `Tailscale-User-Login` / `-Name` / `-Profile-Pic` populated with your identity — this is the make-or-break proof for group A;
-    * a request that *sends its own* `Tailscale-User-Login` still comes back with the proxy's value (inbound copies are stripped), confirming the header can be trusted behind the ingress.
-* [ ] **Prove the `NetworkPolicy`** (run it once here — group C depends on it, and NetworkPolicy enforcement is worth confirming on this hetzner-k3s cluster): restrict the dummy `Service` to the proxy pod and confirm a direct in-cluster curl is blocked while the ingress path still works — this de-risks the anti-spoofing control before group C relies on it.
-* [ ] **Tear down the dummy workload** (Deployment/Service/Ingress); keep the operator, OAuth client, and MagicDNS/HTTPS settings.
-
-#### A. Tailscale-based appraiser identity
-
-* [ ] **Add `Appraiser::Tailscale { login }`** in `shared/src/appraiser.rs`: extend the `provider:identifier` parse/display (`tailscale:mike@example.com`), a validated `new_tailscale` constructor, and round-trip + unknown-provider tests. Mirrors the existing `GitHub`/`LocalAdmin` variants.
-* [ ] **Add a header-based extractor path** for `skeet-appraise`: read `Tailscale-User-Login` from the request head and produce `Appraiser::Tailscale` (optionally surface `Tailscale-User-Name` / `-Profile-Pic` for display). This is a third source alongside the existing extensions (local-admin) and session (OAuth) paths in `AppraiserExtractor`.
-* [ ] **Gate header-trust on an explicit auth-mode flag**, not header presence (the header is only trustworthy behind the Tailscale ingress; on the fly deployment it could be spoofed). Add `--auth-mode tailscale|github|local-admin` (enablement separate from config, per the rust rule). Only `tailscale` mode reads the identity headers; never auto-detect from header presence.
-* [ ] **Authorization = tailnet ACLs + a required login allowlist** (decided — the allowlist is *not* optional). Tailnet ACLs gate who can reach the service; on top of that, an explicit allowlist of permitted `Tailscale-User-Login` values (the analogue of `BOBBY_ADMIN_USERS`, now holding tailscale logins/emails instead of GitHub usernames) gates who is accepted as an appraiser. Defense in depth: a tailnet identity that can reach the service but isn't on the allowlist gets `403`. The allowlist is required config in `tailscale` mode (startup fails if unset).
-* [ ] **Simplify the admin guard for tailscale mode**: every request through the ingress is already identified, so there's no login/logout redirect — a missing identity header is a `403` (shouldn't happen behind the proxy). The public/admin (`is_admin`) split on the homepage collapses, since `skeet-appraise` is now a private tool; decide whether to drop it.
-* [ ] **Test**: with a `Tailscale-User-Login` header in `tailscale` mode the extractor yields `Appraiser::Tailscale` and an appraisal round-trips; without it the request is denied; `github`/`local-admin` modes are unaffected.
-
-#### B. Deploy `skeet-appraise` into the hetzner cluster
-
-* [ ] **No separate arch build needed** — the cluster now runs `linux/amd64` (CX33), the same arch `skeet-appraise` already ships for fly, so the existing amd64 image runs on cluster nodes as-is. Just push it under the cluster's tag/registry the way `pruner`/`live-refine` are pushed.
-* [ ] **k8s Deployment + Service** (`infra/k8s/skeet-appraise-deployment.yaml`): unlike the `live-refine` worker this is a long-running HTTP server, so it needs a `Service` (port 8080) fronting the Deployment. Args: `--store-path`, `--model-path`, feed-shape params, `--auth-mode tailscale`, `--bind 0.0.0.0:8080`. Env: R2 + SSE-C + OTEL only — **no GitHub/session/redis**: tailscale mode has no OAuth and no sessions, so the redis-for-sessions dependency drops out here.
-* [ ] **`just/cluster-deploy.just` recipes**: `cluster-deploy-skeet-appraise`, logs, enable/disable, rollback, and add to the `cluster-*-all` aggregates (mirroring `live-refine`). Reuse the existing R2/SSE-C/OTEL `OnePasswordItem`s — no new secrets needed for the app itself.
-
-#### C. Expose it over tailscale via the operator (`Ingress`)
-
-The operator, OAuth client, and MagicDNS/HTTPS are already stood up and proven by the Spike — this group just applies the same, now-known-good pattern to the real service.
-
-* [ ] **`Ingress` (not `Service`) for identity** — only `Ingress` mode injects the `Tailscale-User-*` headers (see the "Use `Ingress`" notes above). Add an `Ingress` with the tailscale `ingressClassName` for `skeet-appraise`; it provisions the cert and publishes at `bobby-appraisals-staging.<tailnet>.ts.net` (HTTPS/443 only) — exactly the path validated by the spike.
-* [ ] **`NetworkPolicy` to prevent header spoofing** — the proxy strips inbound `Tailscale-User-*` headers, but anything in-cluster hitting the backend `Service` directly could forge them. Restrict the `Service` to accept traffic only from the Tailscale proxy pod (same control proven in the spike).
-
-#### D. Parallel run + verify
-
-* [ ] Reach `bobby-appraisals-staging.<tailnet>.ts.net` from phone and laptop over the tailnet; confirm the identity headers yield the right `Appraiser::Tailscale`, and that appraisals set/clear and the homepage + admin paging all work end-to-end (first connection may be slow while the cert provisions).
-* [ ] Leave it running alongside the fly site for a while; sanity-check that appraisals made via either reach the same store and behave identically.
-
-#### E. Cut over + cleanup
-
-* [ ] **Decommission the fly site**: `fly apps destroy bobby-appraisals-staging`; remove `fly.appraise-staging.toml`, the `deploy_appraise_staging_*` fly recipes, and the GitHub-OAuth / session / redis secrets for that app.
-* [ ] **Rip out the now-dead auth stack** from `skeet-appraise` (the cleanup the phase intro calls for): delete `auth.rs`, `auth_config.rs` (`OAuthConfig`), the `/auth/{login,callback,logout}` routes, the cot session middleware + `deadpool-redis` dep, and the `BOBBY_GITHUB_*` / `BOBBY_SESSION_SECRET` / sessions-redis config + 1Password items. Drop the `github` arm of `--auth-mode` (leaving `tailscale` + `local-admin`). Remove the GitHub OAuth app.
-* [ ] **Verify post-cleanup**: `just clippy`, `just test-no-docker`; `skeet-appraise` still builds without the oauth/session deps; the relocated integration tests (now tailscale-header based) pass; drop the amd64 image build.
-* [ ] Update docs (`docs/architecture.md`, any auth notes) to reflect tailscale identity replacing GitHub OAuth.
 
 ## Slice: reducing unintentional bias
 

@@ -19,6 +19,7 @@ pub enum TableName {
     Validate,
     SkeetAppraisal,
     ImageAppraisal,
+    PruneStats,
 }
 
 impl TableName {
@@ -30,6 +31,7 @@ impl TableName {
             Self::Validate => "validate_v1",
             Self::SkeetAppraisal => "manual_skeet_appraisal_v1",
             Self::ImageAppraisal => "manual_image_appraisal_v1",
+            Self::PruneStats => "prune_stats_v1",
         }
     }
 
@@ -64,6 +66,10 @@ impl TableName {
             Self::ImageAppraisal => TableSpec {
                 schema: manual_image_appraisal_v1_schema,
                 indexed_columns: &["image_id"],
+            },
+            Self::PruneStats => TableSpec {
+                schema: prune_stats_v1_schema,
+                indexed_columns: &["interval_start"],
             },
         }
     }
@@ -121,6 +127,19 @@ pub fn manual_skeet_appraisal_v1_schema() -> Arc<Schema> {
 
 pub fn manual_image_appraisal_v1_schema() -> Arc<Schema> {
     appraisal_schema("image_id")
+}
+
+pub fn prune_stats_v1_schema() -> Arc<Schema> {
+    let timestamp = || {
+        DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into()))
+    };
+    Arc::new(Schema::new(vec![
+        Field::new("interval_start", timestamp(), false),
+        Field::new("interval_end", timestamp(), false),
+        Field::new("skeets_seen", DataType::UInt64, false),
+        Field::new("images_examined", DataType::UInt64, false),
+        Field::new("images_saved", DataType::UInt64, false),
+    ]))
 }
 
 pub fn images_v6_schema() -> Arc<Schema> {

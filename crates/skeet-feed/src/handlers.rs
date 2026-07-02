@@ -1,3 +1,4 @@
+use chrono_humanize::{Accuracy, HumanTime, Tense};
 use cot::http::HeaderValue;
 use cot::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use cot::http::request::Parts as RequestHead;
@@ -5,6 +6,7 @@ use cot::request::extractors::UrlQuery;
 use cot::response::Response;
 use cot::{Body, StatusCode, Template};
 use serde::{Deserialize, Serialize};
+use skeet_publish::ListStatistics;
 use tracing::{info, instrument, warn};
 
 use crate::feed_config::FeedConfig;
@@ -201,12 +203,32 @@ struct HomeTemplate {
     /// Inline SVG QR code for the site URL; `None` if encoding failed (the
     /// banner then renders without it rather than failing the page).
     qr_svg: Option<String>,
-    /// The "images examined" banner stat, pre-formatted with thousands
-    /// separators (e.g. `"21,621,500"`) for display.
-    examined_count: Option<String>,
+    /// The pre-formatted statistics banner line (examined/found over the served
+    /// window), or `None` when the publisher hasn't written statistics yet.
+    stats_banner: Option<String>,
+    /// The predicted next-match arrival driving the range text and countdown, or
+    /// `None` when the publisher emitted no prediction (see [`build_next_arrival`]);
+    /// the populated end-of-feed then reads "not enough recent data" instead.
+    next_arrival: Option<NextArrival>,
     /// Site-specific Plausible analytics script URL; `Some` renders the
     /// tracking script, `None` omits it.
     plausible_script_url: Option<String>,
+}
+
+/// The predicted next-match arrival the page shows: the 95% range as human
+/// durations from now, plus the median as both a JS countdown reload target and
+/// an initial ETA phrase for the no-JS paint.
+struct NextArrival {
+    /// Median arrival as Unix epoch milliseconds — the origin the JS countdown
+    /// ticks down to (and reloads at).
+    target_epoch_ms: i64,
+    /// Median ETA phrase shown until the JS countdown takes over, e.g.
+    /// "in 2 hours".
+    countdown_text: String,
+    /// Lower 2.5% bound as a duration from now, e.g. "18 minutes".
+    lower_text: String,
+    /// Upper 97.5% bound as a duration from now, e.g. "2 days".
+    upper_text: String,
 }
 
 /// Group a non-negative integer with comma thousands separators, e.g.
@@ -223,6 +245,105 @@ fn group_thousands(n: u64) -> String {
         out.push(*b as char);
     }
     out
+}
+
+/// The percentage of examined images that matched. Zero when nothing was
+/// examined (avoids a divide-by-zero on a fresh window).
+fn match_percent(examined: u64, matched: u64) -> f64 {
+    if examined == 0 {
+        0.0
+    } else {
+        matched as f64 / examined as f64 * 100.0
+    }
+}
+
+/// Cap on the decimal places [`format_match_percent`] will extend to, so a
+/// vanishingly small ratio can't produce an absurdly long string.
+const MAX_PERCENT_DECIMALS: usize = 8;
+
+/// Render a match percentage for display. Matches are rare, so a fixed precision
+/// either rounds tiny values to `0.00%` or over-shows larger ones; instead, below
+/// 1% the precision extends just far enough to reveal the first significant digit
+/// (`0.004077` → `"0.004"`, `0.0000279` → `"0.00003"`), and at/above 1% a fixed
+/// two places is used (`"1.50"`).
+fn format_match_percent(percent: f64) -> String {
+    if percent <= 0.0 {
+        return "0".to_string();
+    }
+    if percent >= 1.0 {
+        return format!("{percent:.2}");
+    }
+    // Count the ×10s needed to bring the first significant digit to the units
+    // place — that's how many decimals show it (one significant figure).
+    let mut decimals = 0;
+    let mut scaled = percent;
+    while scaled < 1.0 && decimals < MAX_PERCENT_DECIMALS {
+        scaled *= 10.0;
+        decimals += 1;
+    }
+    format!("{percent:.decimals$}")
+}
+
+/// Humanise a window duration to its largest round unit (see [`chrono_humanize`]),
+/// dropping the leading article so it reads naturally after "the past": "2 days",
+/// "month", "year" — never "a month".
+fn humanize_window(window: chrono::Duration) -> String {
+    let text = HumanTime::from(window).to_text_en(Accuracy::Rough, Tense::Present);
+    text.strip_prefix("an ")
+        .or_else(|| text.strip_prefix("a "))
+        .unwrap_or(&text)
+        .to_string()
+}
+
+/// Humanise a positive wait as a future ETA phrase (see [`chrono_humanize`]),
+/// e.g. "in 2 hours", "in a minute" — the countdown's initial, pre-JS content.
+fn humanize_eta(wait: chrono::Duration) -> String {
+    HumanTime::from(wait).to_text_en(Accuracy::Rough, Tense::Future)
+}
+
+/// Humanise a duration as a bare present-tense span (see [`chrono_humanize`]),
+/// e.g. "2 hours", "a month" — reads naturally inside "between X and Y from now".
+fn humanize_span(span: chrono::Duration) -> String {
+    HumanTime::from(span).to_text_en(Accuracy::Rough, Tense::Present)
+}
+
+/// Build the page's next-match countdown from a served list's published
+/// prediction, re-anchored to render time `now`.
+///
+/// The publisher measures its quantiles forward from the interval end; by the
+/// Poisson memorylessness the wait from `now` has the same distribution, so each
+/// wait is re-added to `now`. This keeps the countdown from starting already
+/// expired when the page is served some time after the publish. `None` when the
+/// publisher emitted no prediction (a zero-match window).
+fn build_next_arrival(
+    stats: &ListStatistics,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<NextArrival> {
+    let prediction = stats.next_match_prediction.as_ref()?;
+    let wait = |at: chrono::DateTime<chrono::Utc>| at - stats.interval_end;
+    Some(NextArrival {
+        target_epoch_ms: (now + wait(prediction.middle)).timestamp_millis(),
+        countdown_text: humanize_eta(wait(prediction.middle)),
+        lower_text: humanize_span(wait(prediction.lower)),
+        upper_text: humanize_span(wait(prediction.upper)),
+    })
+}
+
+/// Build the banner line from a served list's statistics, e.g.
+/// "400,000 images checked over the past 2 days, of which 46 (0.01%) match what
+/// we are looking for.".
+///
+/// The match count is `exists` — the live items the publisher counted with the
+/// same predicate the feed filters on — so it always agrees with the grid. The
+/// feed does no arithmetic of its own here beyond formatting.
+fn statistics_banner(stats: &ListStatistics) -> String {
+    format!(
+        "{examined} images checked over the past {window}, of which {exists} ({percent}%) match what we are looking for.",
+        examined = group_thousands(stats.examined),
+        window = humanize_window(stats.interval_end - stats.interval_start),
+        exists = group_thousands(stats.exists),
+        percent = format_match_percent(match_percent(stats.examined, stats.exists)),
+    )
 }
 
 /// Home page: a server-rendered grid of the published `quality-7d` images, each
@@ -250,6 +371,12 @@ pub async fn home(
         return Ok(not_modified);
     }
 
+    // The banner reflects the list actually served (the fallback-resolved window),
+    // so its statistics ride along with the images rather than being read apart.
+    let stats = published.statistics.as_ref();
+    let stats_banner = stats.map(statistics_banner);
+    let next_arrival = stats.and_then(|stats| build_next_arrival(stats, chrono::Utc::now()));
+
     let cards: Vec<GridCard> = published
         .images
         .into_iter()
@@ -263,24 +390,14 @@ pub async fn home(
         })
         .collect();
 
-    // The banner stat is best-effort: a missing or unreadable count must not
-    // fail the page, so fold any error into "no number shown".
-    let examined_count = source
-        .examined_count()
-        .await
-        .unwrap_or_else(|e| {
-            warn!(error = %e, "failed to read examined count; rendering without it");
-            None
-        })
-        .map(group_thousands);
-
     info!(count = cards.len(), "serving home grid");
     let rendered = HomeTemplate {
         cards,
         blurb: crate::FEED_BLURB,
         feed_bsky_url: config.feed_bsky_url(),
         qr_svg: config.site_qr_svg.clone(),
-        examined_count,
+        stats_banner,
+        next_arrival,
         plausible_script_url: config.plausible_script_url.clone(),
     }
     .render()?;
@@ -306,6 +423,169 @@ mod tests {
         assert_eq!(group_thousands(999), "999");
         assert_eq!(group_thousands(1_000), "1,000");
         assert_eq!(group_thousands(21_621_500), "21,621,500");
+    }
+
+    #[test]
+    fn statistics_banner_renders_examined_exists_percent_and_window() {
+        use chrono::{Duration, Utc};
+        let end = Utc::now();
+        // `found` (48) is larger than `exists` (46): the banner reports the live
+        // `exists` count, not the full candidate count.
+        let stats = ListStatistics::new(end - Duration::hours(48), end, 400_000, 48, 46);
+        assert_eq!(
+            statistics_banner(&stats),
+            "400,000 images checked over the past 2 days, of which 46 (0.01%) match what we are looking for."
+        );
+    }
+
+    #[test]
+    fn match_percent_computes_ratio_and_guards_zero() {
+        assert_eq!(match_percent(0, 5), 0.0);
+        assert_eq!(match_percent(400_000, 46), 0.0115);
+        assert_eq!(match_percent(200, 1), 0.5);
+    }
+
+    #[test]
+    fn format_match_percent_extends_to_the_first_significant_digit() {
+        // Below 1%: precision grows until the first significant digit shows.
+        assert_eq!(format_match_percent(match_percent(3_581_419, 146)), "0.004");
+        assert_eq!(format_match_percent(match_percent(400_000, 46)), "0.01");
+        assert_eq!(format_match_percent(match_percent(3_581_419, 1)), "0.00003");
+        assert_eq!(format_match_percent(0.5), "0.5");
+    }
+
+    #[test]
+    fn format_match_percent_uses_fixed_two_places_at_or_above_one_percent() {
+        assert_eq!(format_match_percent(1.5), "1.50");
+        assert_eq!(format_match_percent(100.0), "100.00");
+    }
+
+    #[test]
+    fn format_match_percent_renders_zero_plainly() {
+        assert_eq!(format_match_percent(0.0), "0");
+    }
+
+    #[test]
+    fn format_match_percent_caps_decimals_for_vanishing_ratios() {
+        // A ratio too small to reach a significant digit within the cap still
+        // renders (as zeros) rather than producing an unbounded string.
+        let formatted = format_match_percent(0.000_000_001);
+        assert_eq!(formatted.len() - "0.".len(), MAX_PERCENT_DECIMALS);
+    }
+
+    #[test]
+    fn humanize_eta_reads_as_a_future_phrase() {
+        use chrono::Duration;
+        assert_eq!(humanize_eta(Duration::hours(2)), "in 2 hours");
+    }
+
+    #[test]
+    fn humanize_span_reads_as_a_bare_present_phrase() {
+        use chrono::Duration;
+        assert_eq!(humanize_span(Duration::minutes(10)), "10 minutes");
+        assert_eq!(humanize_span(Duration::hours(5)), "5 hours");
+    }
+
+    #[test]
+    fn build_next_arrival_reanchors_the_published_prediction_to_now() {
+        use chrono::{Duration, TimeZone, Utc};
+        use skeet_publish::NextMatchPrediction;
+        let interval_end = Utc.with_ymd_and_hms(2026, 6, 1, 0, 0, 0).unwrap();
+        let stats =
+            ListStatistics::new(interval_end - Duration::hours(48), interval_end, 400_000, 48, 24)
+                .with_next_match_prediction(Some(NextMatchPrediction {
+                    lower: interval_end + Duration::minutes(10),
+                    middle: interval_end + Duration::hours(1),
+                    upper: interval_end + Duration::hours(5),
+                }));
+        // Render well after the interval end: the waits are re-anchored to `now`.
+        let now = Utc.with_ymd_and_hms(2026, 6, 2, 12, 0, 0).unwrap();
+        let na = build_next_arrival(&stats, now).expect("prediction present");
+        assert_eq!(na.lower_text, "10 minutes");
+        assert_eq!(na.upper_text, "5 hours");
+        assert_eq!(na.countdown_text, "in an hour");
+        // Median wait (1h) from `now`, not interval_end + 1h.
+        assert_eq!(
+            na.target_epoch_ms,
+            (now + Duration::hours(1)).timestamp_millis()
+        );
+    }
+
+    #[test]
+    fn build_next_arrival_is_none_without_a_published_prediction() {
+        use chrono::Utc;
+        let end = Utc::now();
+        let stats = ListStatistics::new(end - chrono::Duration::hours(48), end, 400_000, 0, 0);
+        assert!(build_next_arrival(&stats, end).is_none());
+    }
+
+    fn one_card() -> GridCard {
+        GridCard {
+            bsky_url: "https://bsky.app/profile/x/post/1".to_string(),
+            thumb_url: "https://cdn.example/x.jpg".to_string(),
+            alt: "x".to_string(),
+            aspect_ratio: None,
+        }
+    }
+
+    #[test]
+    fn home_template_renders_range_and_countdown_when_predicted() {
+        let rendered = HomeTemplate {
+            cards: vec![one_card()],
+            blurb: "blurb",
+            feed_bsky_url: "https://bsky.app/feed".to_string(),
+            qr_svg: None,
+            stats_banner: Some("(stats)".to_string()),
+            next_arrival: Some(NextArrival {
+                target_epoch_ms: 1_700_000_000_000,
+                countdown_text: "in 2 hours".to_string(),
+                lower_text: "10 minutes".to_string(),
+                upper_text: "5 hours".to_string(),
+            }),
+            plausible_script_url: None,
+        }
+        .render()
+        .expect("render");
+        assert!(rendered.contains("You've reached the end of the images found so far!"));
+        assert!(rendered.contains("between 10 minutes and 5 hours from now"));
+        assert!(rendered.contains("class=\"js-countdown\""));
+        assert!(rendered.contains("in 2 hours")); // countdown's pre-JS content
+        // The JS countdown's reload target is embedded for the client to tick to.
+        assert!(rendered.contains("1700000000000"));
+    }
+
+    #[test]
+    fn home_template_shows_not_enough_data_when_prediction_absent() {
+        let rendered = HomeTemplate {
+            cards: vec![one_card()],
+            blurb: "blurb",
+            feed_bsky_url: "https://bsky.app/feed".to_string(),
+            qr_svg: None,
+            stats_banner: Some("(stats)".to_string()),
+            next_arrival: None,
+            plausible_script_url: None,
+        }
+        .render()
+        .expect("render");
+        assert!(rendered.contains("isn't enough recent data to predict"));
+        assert!(!rendered.contains("class=\"js-countdown\""));
+    }
+
+    #[test]
+    fn home_template_omits_countdown_without_a_predicted_arrival() {
+        let rendered = HomeTemplate {
+            cards: vec![],
+            blurb: "blurb",
+            feed_bsky_url: "https://bsky.app/feed".to_string(),
+            qr_svg: None,
+            stats_banner: None,
+            next_arrival: None,
+            plausible_script_url: None,
+        }
+        .render()
+        .expect("render");
+        assert!(!rendered.contains("js-countdown"));
+        assert!(!rendered.contains("You've reached the end"));
     }
 
     #[test]

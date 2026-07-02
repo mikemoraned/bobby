@@ -9,9 +9,9 @@ COPY . .
 COPY models/ models/
 ARG BUILD_GIT_HASH=unknown
 ENV BUILD_GIT_HASH=${BUILD_GIT_HASH}
-RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
-    --mount=type=cache,target=/build/target,id=bobby-target-cluster-amd64,sharing=locked \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=shared \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=shared \
+    --mount=type=cache,target=/build/target,id=bobby-target-amd64,sharing=shared \
     cargo build --release \
       -p skeet-prune --bin pruner \
       -p skeet-refine --bin live-refine \

@@ -1,6 +1,12 @@
-use crate::status::Status;
 use skeet_store::{ImageRecord, Images};
 use tracing::{info, instrument, warn};
+
+/// Whether a `save` call persisted a fresh record, or skipped it (the image
+/// already existed, or the write failed and was logged).
+pub enum SaveOutcome {
+    Saved,
+    Skipped,
+}
 
 /// Returns `true` if the image already exists (caller should skip saving).
 async fn already_exists(store: &impl Images, record: &ImageRecord) -> bool {
@@ -17,24 +23,17 @@ async fn already_exists(store: &impl Images, record: &ImageRecord) -> bool {
     }
 }
 
-#[instrument(skip(store, record, status), fields(image_id = %record.image_id, skeet_id = %record.skeet_id))]
-pub async fn save(store: &impl Images, record: &ImageRecord, status: &mut Status) {
+#[instrument(skip(store, record), fields(image_id = %record.image_id, skeet_id = %record.skeet_id))]
+pub async fn save(store: &impl Images, record: &ImageRecord) -> SaveOutcome {
     if already_exists(store, record).await {
-        return;
+        return SaveOutcome::Skipped;
     }
 
     match store.add(record).await {
-        Ok(()) => {
-            status.record_saved();
-            info!(
-                saved = status.saved_count(),
-                skeet_id = %record.skeet_id,
-                zone = %record.zone,
-                "saved image"
-            );
-        }
+        Ok(()) => SaveOutcome::Saved,
         Err(e) => {
             warn!(error = %e, "failed to save image to store");
+            SaveOutcome::Skipped
         }
     }
 }

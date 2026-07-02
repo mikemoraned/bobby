@@ -21,7 +21,10 @@ pub trait Images: Send + Sync {
     ) -> Result<HashMap<ImageId, StoredOriginal>, StoreError>;
     async fn exists(&self, image_id: &ImageId) -> Result<bool, StoreError>;
     async fn delete_by_id(&self, image_id: &ImageId) -> Result<(), StoreError>;
-    async fn count(&self) -> Result<usize, StoreError>;
+    /// The earliest `discovered_at` over all stored images, or `None` when empty.
+    async fn oldest_discovered_at(&self) -> Result<Option<DiscoveredAt>, StoreError>;
+    /// The latest `discovered_at` over all stored images, or `None` when empty.
+    async fn newest_discovered_at(&self) -> Result<Option<DiscoveredAt>, StoreError>;
     async fn list_all_summaries(&self) -> Result<Vec<StoredImageSummary>, StoreError>;
     /// Up to `limit` summaries ordered by `discovered_at` desc, starting strictly
     /// before `before` (or the newest row if `before` is `None`). The returned

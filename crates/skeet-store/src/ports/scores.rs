@@ -1,12 +1,13 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use async_trait::async_trait;
 use shared::ImageId;
 
-use crate::{ModelScore, ModelVersion, StoreError};
+use crate::{ModelScore, StoreError};
 
 /// Refine scores: the per-image [`ModelScore`] (a score paired with the
-/// `ModelVersion` that produced it), plus aggregate counts over the scores table.
+/// `ModelVersion` that produced it). Aggregate counts over the scores table live
+/// on the [`Statistics`](crate::Statistics) port.
 #[async_trait]
 pub trait Scores: Send + Sync {
     async fn batch_upsert_scores(&self, scores: &[(ImageId, ModelScore)])
@@ -24,9 +25,4 @@ pub trait Scores: Send + Sync {
         &self,
         image_ids: &[ImageId],
     ) -> Result<HashMap<ImageId, ModelScore>, StoreError>;
-    async fn count_scored_images(
-        &self,
-        known_versions: &HashSet<ModelVersion>,
-    ) -> Result<usize, StoreError>;
-    async fn count_scores_by_model_version(&self) -> Result<HashMap<String, usize>, StoreError>;
 }

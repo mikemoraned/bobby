@@ -20,11 +20,13 @@ pub use adapters::lance::{SkeetStore, TableName};
 pub use adapters::object_store::StoreArgs;
 pub use error::StoreError;
 pub use model::{
-    ImageRecord, ModelScore, ScoredSummary, StoredImage, StoredImageSummary, StoredOriginal,
-    Version,
+    ImageRecord, ModelScore, PruneStats, ScoredSummary, StoredImage, StoredImageSummary,
+    StoredOriginal, Version,
 };
 pub use observability::StoreMetrics;
-pub use ports::{Appraisals, AppraisalsSource, Images, ScoredView, Scores, TableVersions};
+pub use ports::{
+    Appraisals, AppraisalsSource, Images, ScoredView, Scores, Statistics, TableVersions,
+};
 pub use shared::{Appraiser, Band, ImageId, ModelVersion, Score};
 pub use versioned_cache::VersionedCache;
 

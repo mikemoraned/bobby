@@ -57,6 +57,12 @@ impl PublishedImage {
             image_url_dimensions: None,
         }
     }
+
+    /// Whether this item should be shown to the public: both the skeet and its
+    /// image must still exist (per the publisher's last existence probe).
+    pub const fn is_live(&self) -> bool {
+        self.image_url_exists && self.skeet_id_exists
+    }
 }
 
 #[cfg(test)]

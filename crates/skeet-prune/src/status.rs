@@ -2,10 +2,12 @@ use std::fmt::Write as _;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use async_trait::async_trait;
 use shared::RejectionCategory;
 use tracing::info;
 
 use crate::metrics::PruneMetrics;
+use crate::pipeline::content_counts_recorder::ContentCountsRecorder;
 use crate::pipeline::{
     ChannelMonitors, ContentCounts, PipelineCounters, PipelineSnapshot, PipelineStages, StageStats,
 };
@@ -52,23 +54,6 @@ impl Status {
             channels,
             metrics: PruneMetrics::new(&opentelemetry::global::meter("skeet_prune")),
         }
-    }
-
-    /// Fold one candidate's content delta (posts/images) into the running total
-    /// and advance the log cadence once per observed post.
-    pub fn record_counts(&mut self, counts: &ContentCounts) {
-        self.content += counts;
-        if counts.posts > 0 {
-            self.maybe_log();
-        }
-    }
-
-    pub fn record_saved(&mut self) {
-        self.content += &ContentCounts::saved();
-    }
-
-    pub const fn saved_count(&self) -> u64 {
-        self.content.saved
     }
 
     fn maybe_log(&mut self) {
@@ -212,5 +197,17 @@ impl Status {
             content: self.content.clone(),
         };
         self.metrics.emit(&snapshot);
+    }
+}
+
+#[async_trait]
+impl ContentCountsRecorder for Status {
+    /// Fold one candidate's content delta (posts/images) into the running total
+    /// and advance the log cadence once per observed post.
+    async fn record_counts(&mut self, counts: &ContentCounts) {
+        self.content += counts;
+        if counts.posts > 0 {
+            self.maybe_log();
+        }
     }
 }

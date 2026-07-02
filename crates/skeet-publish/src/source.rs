@@ -8,8 +8,8 @@ use shared::SkeetId;
 use skeet_store::StoreError;
 use tracing::warn;
 
-use crate::examined_count::ExaminedCount;
 use crate::limit::Limit;
+use crate::list_statistics::ListStatistics;
 use crate::order::Order;
 use crate::published::PublishedImage;
 use crate::published_list::{PublishedList, PublishedListError};
@@ -46,6 +46,7 @@ pub trait FeedSource: Send + Sync {
 pub struct PublishedImages {
     pub images: Vec<PublishedImage>,
     pub refreshed_at: Option<DateTime<Utc>>,
+    pub statistics: Option<ListStatistics>,
 }
 
 /// Source of the full published image list.
@@ -55,10 +56,6 @@ pub struct PublishedImages {
 #[async_trait]
 pub trait PublishedImagesSource: Send + Sync {
     async fn published_images(&self) -> Result<PublishedImages, FeedSourceError>;
-
-    /// The precalculated "images examined" count for the banner, or `None` if the
-    /// publisher hasn't written it yet (a fresh deploy).
-    async fn examined_count(&self) -> Result<Option<u64>, FeedSourceError>;
 }
 
 /// A redis access right after a Fly suspend/resume can hit a transient
@@ -110,27 +107,42 @@ impl RedisFeedSource {
     pub async fn published(
         &self,
     ) -> Result<(Vec<PublishedImage>, Option<DateTime<Utc>>), FeedSourceError> {
-        (|| async {
+        read_with_retry("reading published list", || async {
             let mut conn = connect(&self.url).await.map_err(PublishedListError::from)?;
             Ok(self.list.read_with_refreshed_at(&mut conn).await?)
         })
-        .retry(retry_policy())
-        .when(is_transient)
-        .notify(|e, dur| {
-            warn!(
-                error = %e,
-                retry_in_ms = dur.as_millis() as u64,
-                "transient redis failure reading published list; will retry",
-            );
+        .await
+    }
+
+    /// This list's published statistics, or `None` if none have been written yet.
+    pub async fn statistics(&self) -> Result<Option<ListStatistics>, FeedSourceError> {
+        read_with_retry("reading list statistics", || async {
+            let mut conn = connect(&self.url).await.map_err(PublishedListError::from)?;
+            Ok(self.list.read_statistics(&mut conn).await?)
         })
         .await
     }
 }
 
-/// Whether a published item should be shown to the public: both the skeet and
-/// its image must still exist (per the publisher's last existence probe).
-const fn is_live(item: &PublishedImage) -> bool {
-    item.image_url_exists && item.skeet_id_exists
+/// Run a redis read with the shared transient-failure retry policy, logging
+/// `what` is being retried on each transient failure (see [`is_transient`]).
+async fn read_with_retry<T, Fut>(
+    what: &'static str,
+    op: impl Fn() -> Fut,
+) -> Result<T, FeedSourceError>
+where
+    Fut: std::future::Future<Output = Result<T, FeedSourceError>>,
+{
+    op.retry(retry_policy())
+        .when(is_transient)
+        .notify(|e, dur| {
+            warn!(
+                error = %e,
+                retry_in_ms = dur.as_millis() as u64,
+                "transient redis failure {what}; will retry",
+            );
+        })
+        .await
 }
 
 #[async_trait]
@@ -141,7 +153,7 @@ impl FeedSource for RedisFeedSource {
         let mut seen = HashSet::new();
         let skeet_ids = published
             .into_iter()
-            .filter(is_live)
+            .filter(PublishedImage::is_live)
             .map(|item| item.skeet_id)
             .filter(|skeet_id| seen.insert(skeet_id.clone()))
             .collect();
@@ -157,28 +169,13 @@ impl FeedSource for RedisFeedSource {
 impl PublishedImagesSource for RedisFeedSource {
     async fn published_images(&self) -> Result<PublishedImages, FeedSourceError> {
         let (images, refreshed_at) = self.published().await?;
-        let images = images.into_iter().filter(is_live).collect();
+        let images = images.into_iter().filter(PublishedImage::is_live).collect();
+        let statistics = self.statistics().await?;
         Ok(PublishedImages {
             images,
             refreshed_at,
+            statistics,
         })
-    }
-
-    async fn examined_count(&self) -> Result<Option<u64>, FeedSourceError> {
-        (|| async {
-            let mut conn = connect(&self.url).await.map_err(PublishedListError::from)?;
-            Ok(ExaminedCount::read(&mut conn).await?)
-        })
-        .retry(retry_policy())
-        .when(is_transient)
-        .notify(|e, dur| {
-            warn!(
-                error = %e,
-                retry_in_ms = dur.as_millis() as u64,
-                "transient redis failure reading examined count; will retry",
-            );
-        })
-        .await
     }
 }
 

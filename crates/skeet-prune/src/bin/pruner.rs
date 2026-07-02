@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use clap::Parser;
 use shared::{PruneConfig, RejectionCategory};
-use skeet_prune::{ChannelMonitors, ImageMessage, MetaMessage, PipelineCounters, SkeetCandidate};
+use skeet_prune::{
+    ChannelMonitors, ImageMessage, MetaMessage, PipelineCounters, SkeetCandidate, StatsMessage,
+};
 use skeet_store::StoreArgs;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -22,6 +24,12 @@ struct Args {
     /// Status log interval in seconds (default: 30)
     #[arg(long, default_value = "30")]
     status_interval_secs: u64,
+
+    /// How often, in seconds, buffered prune statistics are written to the store
+    /// as one batch (default: 600). Larger values cut store write churn at the
+    /// cost of a longer window of unwritten stats on crash.
+    #[arg(long, default_value = "600")]
+    statistics_flush_secs: u64,
 
     /// Number of parallel meta stage workers (default: 4). The meta stage is
     /// network-I/O-bound (one `getPostThread` round-trip per candidate), so a
@@ -90,13 +98,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let store = args.store.open_store("pruner").await?;
     store.validate().await?;
     info!("storage validation passed");
+    // Shared between the save stage (writes images) and the stats stage (records
+    // per-interval PruneStats).
+    let store = Arc::new(store);
 
-    // Pipeline: firehose → meta prune → image prune → save. The firehose→meta
-    // and meta→image channels are MPMC so each stage's worker pool shares one
-    // input; image→save has a single consumer but uses the same channel type.
+    // Pipeline: firehose → meta prune → image prune → save → stats. The
+    // firehose→meta and meta→image channels are MPMC so each stage's worker pool
+    // shares one input; the image→save and save→stats channels each have a
+    // single consumer but use the same channel type.
     let (firehose_tx, firehose_rx) = async_channel::bounded::<SkeetCandidate>(16);
     let (meta_tx, meta_rx) = async_channel::bounded::<MetaMessage>(16);
     let (image_tx, image_rx) = async_channel::bounded::<ImageMessage>(100);
+    let (stats_tx, stats_rx) = async_channel::bounded::<StatsMessage>(100);
 
     let counters = Arc::new(PipelineCounters::default());
     let channels = ChannelMonitors::new(firehose_tx.clone(), meta_tx.clone(), image_tx.clone());
@@ -148,8 +161,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await;
     });
 
+    let save_token = token.clone();
+    let save_store = Arc::clone(&store);
+    tokio::spawn(async move {
+        skeet_prune::save_stage::run(&image_rx, save_store.as_ref(), stats_tx, save_token).await;
+    });
+
     let log_interval = std::time::Duration::from_secs(args.status_interval_secs);
-    skeet_prune::save_stage::run(&image_rx, &store, counters, channels, log_interval, token).await;
+    let flush_interval = std::time::Duration::from_secs(args.statistics_flush_secs);
+    skeet_prune::content_statistics_stage::run(
+        &stats_rx,
+        store.as_ref(),
+        counters,
+        channels,
+        log_interval,
+        flush_interval,
+        token,
+    )
+    .await;
 
     Ok(())
 }

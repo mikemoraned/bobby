@@ -7,16 +7,17 @@ use chrono::{DateTime, Utc};
 use deadpool_redis::redis;
 use shared::{Appraisal, Band, ImageId, NormalizedScore, OriginalAt, RefineModels, SkeetId};
 use skeet_store::{
-    AppraisalsSource, ModelScore, ScoredSummary, ScoredView, Scores, StoreError, TableVersions,
+    AppraisalsSource, ModelScore, ScoredSummary, ScoredView, Statistics, StoreError, TableVersions,
     Version, VersionedCache,
 };
 use tokio::sync::RwLock;
 
 use crate::effective_band::{image_effective_band, image_normalized_score, skeet_effective_band};
-use crate::examined_count::ExaminedCount;
 use crate::image_url_resolver::ImageUrlResolver;
 use crate::limit::Limit;
+use crate::list_statistics::ListStatistics;
 use crate::order::Order;
+use crate::prediction::predict_next_match;
 use crate::published::PublishedImage;
 use crate::published_list::{PublishedList, PublishedListError};
 use crate::table_watch::relevant;
@@ -183,16 +184,6 @@ fn recency_rank(entry: &ScoredSummary) -> RecencyRank {
     }
 }
 
-/// Of the images the pruner sees, roughly this percentage pass scoring and are
-/// saved to the store.
-const SAVE_RATE_PERCENT: f64 = 0.2;
-
-/// Estimate how many images the pruner has processed from the number that were
-/// scored and saved, by inverting the save rate (see [`SAVE_RATE_PERCENT`]).
-fn estimate_processed(scored: usize) -> u64 {
-    (scored as f64 * 100.0 / SAVE_RATE_PERCENT).round() as u64
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum PublishError {
     #[error("store error: {0}")]
@@ -225,7 +216,7 @@ pub struct FeedPublisher<S> {
     last_relevant: RwLock<VersionedCache<HashSet<Version>, ()>>,
 }
 
-impl<S: ScoredView + AppraisalsSource + Scores + TableVersions> FeedPublisher<S> {
+impl<S: ScoredView + AppraisalsSource + TableVersions + Statistics> FeedPublisher<S> {
     pub fn new(
         store: Arc<S>,
         models: Arc<RefineModels>,
@@ -298,20 +289,36 @@ impl<S: ScoredView + AppraisalsSource + Scores + TableVersions> FeedPublisher<S>
             .collect();
         let results = self.checker.check(&items).await;
 
+        // Only a spec's `Limit` (window) affects its prune-stats read; the
+        // `Order` doesn't. Specs sharing a `Limit` therefore share a read, so
+        // query the store once per distinct `Limit` rather than once per spec.
+        let unique_limits: HashSet<Limit> = self.specs.iter().map(|(_, limit)| *limit).collect();
+        let mut examined_by_limit: HashMap<Limit, u64> = HashMap::new();
+        for limit in unique_limits {
+            let examined = self
+                .store
+                .prune_stats_for_interval(now - limit.window(), now)
+                .await?
+                .images_examined;
+            examined_by_limit.insert(limit, examined);
+        }
+
         for ((order, limit), mut pairs) in per_spec {
             for pair in &mut pairs {
                 enrich(pair, &results);
             }
-            PublishedList::new(order, limit)
-                .replace(conn, &pairs, now)
-                .await?;
-        }
+            let list = PublishedList::new(order, limit);
+            list.replace(conn, &pairs, now).await?;
 
-        let scored = self
-            .store
-            .count_scored_images(&self.models.versions().cloned().collect())
-            .await?;
-        ExaminedCount::write(conn, estimate_processed(scored)).await?;
+            let interval_start = now - limit.window();
+            let examined = examined_by_limit.get(&limit).copied().unwrap_or_default();
+            let exists = pairs.iter().filter(|p| p.is_live()).count() as u64;
+            let prediction = predict_next_match(now, interval_start, exists);
+            let stats =
+                ListStatistics::new(interval_start, now, examined, pairs.len() as u64, exists)
+                    .with_next_match_prediction(prediction);
+            list.write_statistics(conn, &stats).await?;
+        }
 
         Ok(())
     }
@@ -408,14 +415,6 @@ mod tests {
             .iter()
             .map(|p| p.skeet_id.rkey().as_str().to_string())
             .collect()
-    }
-
-    #[test]
-    fn estimate_processed_inverts_the_save_rate() {
-        // 0.2% save rate ⇒ multiply the saved count by 500.
-        assert_eq!(estimate_processed(43243), 21_621_500);
-        assert_eq!(estimate_processed(0), 0);
-        assert_eq!(estimate_processed(1), 500);
     }
 
     #[test]

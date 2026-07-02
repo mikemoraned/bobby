@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 async-channel = { workspace = true }
+async-trait = { workspace = true }
 atrium-api = { version = "0.25", default-features = false, features = ["namespace-appbsky"] }
 backon = { workspace = true }
 bluesky = { workspace = true }

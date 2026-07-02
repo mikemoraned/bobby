@@ -11,6 +11,7 @@ build-support = { path = "crates/build-support" }
 eval = { path = "crates/eval" }
 test-support = { path = "crates/test-support" }
 chrono = "0.4"
+chrono-humanize = "0.2"
 bluesky = { path = "crates/bluesky" }
 clap = { version = "4", features = ["derive", "env"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }

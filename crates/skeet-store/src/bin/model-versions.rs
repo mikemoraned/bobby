@@ -1,5 +1,5 @@
 use clap::Parser;
-use skeet_store::{Scores, StoreArgs};
+use skeet_store::{Statistics, StoreArgs};
 use tracing::info;
 
 #[derive(Parser)]

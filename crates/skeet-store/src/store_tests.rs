@@ -5,7 +5,7 @@ use shared::{Appraisal, DiscoveredAt, OriginalAt, SkeetId, Zone};
 use crate::test_utils::{make_record_at, open_temp_store, test_image, test_image_with_color};
 use crate::{
     AppraisalsSource, Appraiser, Band, ImageId, ImageRecord, Images, ModelScore, ModelVersion,
-    Score, ScoredView, Scores, SkeetStore, TableName,
+    PruneStats, Score, ScoredView, Scores, SkeetStore, Statistics, TableName,
 };
 
 /// The scores table's numeric LanceDB version counter, via the public
@@ -26,7 +26,7 @@ async fn roundtrip_store_and_retrieve() {
     let dir = tempfile::tempdir().unwrap();
     let store = open_temp_store(&dir).await;
 
-    assert_eq!(store.count().await.unwrap(), 0);
+    assert_eq!(store.count_images().await.unwrap(), 0);
 
     let record = ImageRecord {
         image_id: ImageId::from_image(&test_image()),
@@ -43,7 +43,7 @@ async fn roundtrip_store_and_retrieve() {
     };
 
     store.add(&record).await.unwrap();
-    assert_eq!(store.count().await.unwrap(), 1);
+    assert_eq!(store.count_images().await.unwrap(), 1);
 
     let stored = store.get_by_id(&record.image_id).await.unwrap().unwrap();
     assert_eq!(stored.summary.image_id, record.image_id);
@@ -78,7 +78,7 @@ async fn multiple_images_per_skeet() {
         store.add(&record).await.unwrap();
     }
 
-    assert_eq!(store.count().await.unwrap(), 3);
+    assert_eq!(store.count_images().await.unwrap(), 3);
 
     let unique_skeets = store.unique_skeet_ids().await.unwrap();
     assert_eq!(unique_skeets.len(), 1);
@@ -137,7 +137,7 @@ async fn reopening_store_preserves_data() {
     }
 
     let store = open_temp_store(&dir).await;
-    assert_eq!(store.count().await.unwrap(), 1);
+    assert_eq!(store.count_images().await.unwrap(), 1);
 }
 
 fn make_record(skeet_suffix: &str) -> ImageRecord {
@@ -417,7 +417,7 @@ async fn writes_from_one_store_visible_to_another() {
         store2.exists(&record.image_id).await.unwrap(),
         "store2 should see record written by store1"
     );
-    assert_eq!(store2.count().await.unwrap(), 1);
+    assert_eq!(store2.count_images().await.unwrap(), 1);
 }
 
 #[tokio::test]
@@ -995,7 +995,7 @@ async fn delete_removes_record() {
 
     store.delete_by_id(&record.image_id).await.unwrap();
     assert!(!store.exists(&record.image_id).await.unwrap());
-    assert_eq!(store.count().await.unwrap(), 0);
+    assert_eq!(store.count_images().await.unwrap(), 0);
 }
 
 #[tokio::test]
@@ -1191,52 +1191,6 @@ async fn list_scored_summaries_published_since_windows_by_original_at_and_requir
 }
 
 #[tokio::test]
-async fn count_scored_images_counts_distinct_known_version_scores() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = open_temp_store(&dir).await;
-    let now = Utc::now();
-
-    let known_mv = test_model_version();
-    let unknown_mv = ModelVersion::from("unregistered_staging");
-    let registered = known(&[&known_mv]);
-
-    // No scores yet → nothing examined.
-    assert_eq!(store.count_scored_images(&registered).await.unwrap(), 0);
-
-    // Two distinct images scored on the known model.
-    for (rkey, hue) in [("a", (10, 0, 0)), ("b", (0, 10, 0))] {
-        let rec = scored_record(rkey, hue, OriginalAt::new(now));
-        store.add(&rec).await.unwrap();
-        store
-            .upsert_score(
-                &rec.image_id,
-                ModelScore {
-                    score: Score::new(0.9).expect("valid"),
-                    model_version: known_mv.clone(),
-                },
-            )
-            .await
-            .unwrap();
-    }
-
-    // One image scored on an unregistered model — excluded from the count.
-    let unknown = scored_record("c", (0, 0, 10), OriginalAt::new(now));
-    store.add(&unknown).await.unwrap();
-    store
-        .upsert_score(
-            &unknown.image_id,
-            ModelScore {
-                score: Score::new(0.9).expect("valid"),
-                model_version: unknown_mv.clone(),
-            },
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(store.count_scored_images(&registered).await.unwrap(), 2);
-}
-
-#[tokio::test]
 async fn score_reads_discard_unknown_model_versions() {
     let dir = tempfile::tempdir().unwrap();
     let store = open_temp_store(&dir).await;
@@ -1316,7 +1270,7 @@ async fn optimise_preserves_data() {
 
     store.optimise().await.unwrap();
 
-    assert_eq!(store.count().await.unwrap(), 1);
+    assert_eq!(store.count_images().await.unwrap(), 1);
     assert!(store.exists(&record.image_id).await.unwrap());
     let score = store.get_score(&record.image_id).await.unwrap();
     assert_eq!(
@@ -1356,7 +1310,7 @@ async fn prune_old_versions_preserves_data() {
 
     store.prune_old_versions().await.unwrap();
 
-    assert_eq!(store.count().await.unwrap(), 1);
+    assert_eq!(store.count_images().await.unwrap(), 1);
     assert!(store.exists(&record.image_id).await.unwrap());
     let score = store.get_score(&record.image_id).await.unwrap();
     assert_eq!(
@@ -1398,10 +1352,20 @@ async fn prune_old_versions_walks_all_tables() {
         .set(&record.image_id, Band::MediumLow, &test_appraiser())
         .await
         .unwrap();
+    store
+        .record_prune_stats(&[PruneStats {
+            interval_start: Utc::now(),
+            interval_end: Utc::now(),
+            skeets_seen: 3,
+            images_examined: 2,
+            images_saved: 1,
+        }])
+        .await
+        .unwrap();
 
-    // Sanity: registry covers all five tables.
+    // Sanity: registry covers all six tables.
     let versions = store.table_versions().await.unwrap();
-    assert_eq!(versions.len(), 5);
+    assert_eq!(versions.len(), 6);
 
     store.prune_old_versions().await.unwrap();
 
@@ -1428,4 +1392,138 @@ async fn prune_old_versions_walks_all_tables() {
         .unwrap()
         .expect("image appraisal preserved");
     assert_eq!(image_appraisal.band, Band::MediumLow);
+}
+
+#[tokio::test]
+async fn prune_statistics_record_and_sum_interval_counts() {
+    use chrono::{Duration, TimeZone};
+
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let base = Utc.with_ymd_and_hms(2026, 6, 1, 0, 0, 0).unwrap();
+    let interval = |start_h: i64, examined: u64| PruneStats {
+        interval_start: base + Duration::hours(start_h),
+        interval_end: base + Duration::hours(start_h + 1),
+        skeets_seen: examined * 2,
+        images_examined: examined,
+        images_saved: 1,
+    };
+
+    // Three consecutive one-hour intervals starting at 0h, 1h, 2h.
+    store.record_prune_stats(&[interval(0, 10)]).await.unwrap();
+    store.record_prune_stats(&[interval(1, 20)]).await.unwrap();
+    store.record_prune_stats(&[interval(2, 30)]).await.unwrap();
+
+    // `end` is exclusive on `interval_start`: [0h, 2h) covers the 0h and 1h
+    // records only, and the window's own bounds are echoed back.
+    let first_two = store
+        .prune_stats_for_interval(base, base + Duration::hours(2))
+        .await
+        .unwrap();
+    assert_eq!(
+        first_two,
+        PruneStats {
+            interval_start: base,
+            interval_end: base + Duration::hours(2),
+            skeets_seen: 60,
+            images_examined: 30,
+            images_saved: 2,
+        }
+    );
+
+    // Half-open boundary: a window aligned exactly to the 1h record's start
+    // includes it (start inclusive) and excludes the 2h record (end exclusive).
+    let only_second = store
+        .prune_stats_for_interval(base + Duration::hours(1), base + Duration::hours(2))
+        .await
+        .unwrap();
+    assert_eq!(only_second.images_examined, 20);
+
+    // The full window sums all three.
+    let all = store
+        .prune_stats_for_interval(base, base + Duration::hours(3))
+        .await
+        .unwrap();
+    assert_eq!(all.images_examined, 60);
+    assert_eq!(all.images_saved, 3);
+
+    // A window with no records sums to zero.
+    let empty = store
+        .prune_stats_for_interval(base + Duration::hours(10), base + Duration::hours(11))
+        .await
+        .unwrap();
+    assert_eq!(empty.skeets_seen, 0);
+    assert_eq!(empty.images_examined, 0);
+    assert_eq!(empty.images_saved, 0);
+}
+
+#[tokio::test]
+async fn prune_statistics_interval_counts_sums_overlapping_records() {
+    use chrono::{Duration, TimeZone};
+
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    let base = Utc.with_ymd_and_hms(2026, 6, 1, 0, 0, 0).unwrap();
+    let at = |h: i64| base + Duration::hours(h);
+
+    // Two records whose spans overlap: T1<T3<T2<T4, so interval2 starts before
+    // interval1 ends. Membership keys on `interval_start`, so overlap is
+    // irrelevant — a query over [T1, T4) sums both.
+    let interval1 = PruneStats {
+        interval_start: at(0), // T1
+        interval_end: at(2),   // T2
+        skeets_seen: 20,
+        images_examined: 10,
+        images_saved: 1,
+    };
+    let interval2 = PruneStats {
+        interval_start: at(1), // T3 (< T2)
+        interval_end: at(3),   // T4 (> T2)
+        skeets_seen: 40,
+        images_examined: 30,
+        images_saved: 2,
+    };
+    store.record_prune_stats(&[interval1]).await.unwrap();
+    store.record_prune_stats(&[interval2]).await.unwrap();
+
+    let summed = store.prune_stats_for_interval(at(0), at(3)).await.unwrap();
+    assert_eq!(
+        summed,
+        PruneStats {
+            interval_start: at(0),
+            interval_end: at(3),
+            skeets_seen: 60,
+            images_examined: 40,
+            images_saved: 3,
+        }
+    );
+}
+
+#[tokio::test]
+async fn prune_statistics_latest_interval_end() {
+    use chrono::{Duration, TimeZone};
+
+    let dir = tempfile::tempdir().unwrap();
+    let store = open_temp_store(&dir).await;
+
+    assert_eq!(store.latest_prune_stats_interval_end().await.unwrap(), None);
+
+    let base = Utc.with_ymd_and_hms(2026, 6, 1, 0, 0, 0).unwrap();
+    let record = |start_h: i64| PruneStats {
+        interval_start: base + Duration::hours(start_h),
+        interval_end: base + Duration::hours(start_h + 1),
+        skeets_seen: 1,
+        images_examined: 1,
+        images_saved: 0,
+    };
+    // Record out of order to confirm the max, not the last write, is returned.
+    store.record_prune_stats(&[record(2)]).await.unwrap();
+    store.record_prune_stats(&[record(0)]).await.unwrap();
+
+    assert_eq!(
+        store.latest_prune_stats_interval_end().await.unwrap(),
+        Some(base + Duration::hours(3))
+    );
 }

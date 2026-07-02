@@ -24,13 +24,23 @@ BuildKit reuses the cached `builder` across `--target` invocations.
   `-p <crate> --bin <bin>` repeated (e.g. `cloudflare-exporter` ships two bins, so
   `--bin sync_operations --bin sync_storage`). Keep `--bin` — a bare `-p` builds
   every bin in the crate (`skeet-prune` has 6, `skeet-refine` has 5).
-- Three cache mounts: cargo registry, cargo git, and a **per-service-set** `target/`
-  (`id=bobby-target-cluster-amd64` / `-fly-amd64`, `sharing=locked`). The `target/`
-  mount keeps cargo incremental: a source-only edit re-runs the builder RUN (BuildKit
-  invalidates it because `COPY . .` changed), but cargo reuses every dep from the mount
-  and recompiles only the changed first-party crate(s). The two sets build disjoint bin
-  sets into the same `target/release/` paths, so each needs its own mount id — they must
-  never share one.
+- Three cache mounts: cargo registry, cargo git, and `target/`, **all three shared by
+  both Dockerfiles** (`id=bobby-target-amd64` for the target mount, `sharing=shared`).
+  The `target/` mount keeps cargo incremental: a source-only edit re-runs the builder
+  RUN (BuildKit invalidates it because `COPY . .` changed), but cargo reuses every dep
+  from the mount and recompiles only the changed first-party crate(s). Both sets build
+  `linux/amd64` with the same toolchain, rustflags, and `release` profile, so their
+  artifacts are interchangeable — sharing one mount lets common deps compile once across
+  both sets. Cargo's target dir is fingerprint-keyed, so the two sets' disjoint bins
+  coexist safely.
+- **Use `sharing=shared`, never `locked`/`private`.** These are `--push` builds run
+  back-to-back by `cluster-deploy-all` (or similar); pushing an emulated-amd64 image is slow, so the previous build still holds the mount ref when the next starts. With `locked` (or
+  `private`) BuildKit hands the next build a *second, empty* mount instance rather than
+  waiting — the instances then ping-pong and every other build recompiles from scratch
+  (observed: `runner-skeet-publish`/`runner-cloudflare-exporter` doing full 839-crate
+  cold builds while the interleaved targets were fully cached). `shared` keeps a single
+  instance every build reuses. It's safe: `just` runs the builds sequentially, and even
+  concurrent cargo processes serialise via cargo's own `.cargo-lock` on the target dir.
 - Build artifacts live in the ephemeral mount, so copy what the runners need out to
   `/build/out/` **inside the RUN** (every binary; for the cluster builder also the
   `.bpk`/`.rten` files baked from `target/` for pruner). `dash` (the default RUN

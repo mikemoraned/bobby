@@ -19,6 +19,10 @@ impl DiscoveredAt {
         self.0.timestamp_micros()
     }
 
+    pub const fn as_datetime(&self) -> DateTime<Utc> {
+        self.0
+    }
+
     pub fn format_short(&self) -> String {
         self.0.format("%Y-%m-%d %H:%M").to_string()
     }

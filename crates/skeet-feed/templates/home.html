@@ -56,6 +56,17 @@
             color: #888;
         }
 
+        .banner .next-arrival {
+            margin: 0.4rem 0 0;
+            color: #888;
+        }
+
+        .end-of-feed {
+            text-align: center;
+            color: #666;
+            margin: 2.5rem 0 1rem;
+        }
+
         .banner .qr {
             flex: 0 0 auto;
             line-height: 0;
@@ -110,8 +121,11 @@
         <div class="banner-text">
             <p class="blurb">{{ blurb }}</p>
             <p class="subscribe"><a href="{{ feed_bsky_url }}">Subscribe to this feed on Bluesky</a></p>
-            {% if let Some(examined) = examined_count %}
-            <p class="examined">({{ examined }} images checked so far)</p>
+            {% if let Some(banner) = stats_banner %}
+            <p class="examined">{{ banner }}</p>
+            {% endif %}
+            {% if let Some(na) = next_arrival %}
+            <p class="next-arrival">Next one expected between {{ na.lower_text }} and {{ na.upper_text }} from now.</p>
             {% endif %}
         </div>
         {% if let Some(qr_svg) = qr_svg %}
@@ -127,6 +141,40 @@
                 Some(ratio)=card.aspect_ratio %} style="aspect-ratio: {{ ratio }}" {% endif %}></a>
         {% endfor %}
     </div>
+    {% if let Some(na) = next_arrival %}
+    <p class="end-of-feed">You've reached the end of the images found so far! The next one is expected sometime
+        between {{ na.lower_text }} and {{ na.upper_text }} from now (95% confidence) — reloading
+        <span class="js-countdown">{{ na.countdown_text }}</span>.</p>
+    {% else %}
+    <p class="end-of-feed">You've reached the end of the images found so far! There isn't enough recent data to predict
+        the next one yet.</p>
+    {% endif %}
+    {% endif %}
+    {% if let Some(na) = next_arrival %}
+    <script>
+        (function () {
+            var target = {{ na.target_epoch_ms }};
+            var spans = document.querySelectorAll('.js-countdown');
+            function fmt(ms) {
+                var s = Math.max(0, Math.floor(ms / 1000));
+                var h = Math.floor(s / 3600); s -= h * 3600;
+                var m = Math.floor(s / 60); s -= m * 60;
+                var parts = [];
+                if (h) { parts.push(h + 'h'); }
+                if (m) { parts.push(m + 'm'); }
+                parts.push(s + 's');
+                return 'in ' + parts.join(' ');
+            }
+            function tick() {
+                var remaining = target - Date.now();
+                if (remaining <= 0) { location.reload(); return; }
+                var text = fmt(remaining);
+                spans.forEach(function (sp) { sp.textContent = text; });
+            }
+            tick();
+            setInterval(tick, 1000);
+        })();
+    </script>
     {% endif %}
 </body>
 

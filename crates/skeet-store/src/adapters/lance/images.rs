@@ -7,11 +7,13 @@ use lancedb::query::QueryBase;
 use shared::{DiscoveredAt, ImageId, SkeetId};
 use tracing::instrument;
 
-use super::arrow::{encode_image_as_png, typed_column};
+use super::arrow::{encode_image_as_png, micros_to_datetime, typed_column};
 use super::decode::{
     batches_to_original_images, batches_to_stored_images, batches_to_summaries, decode_rows,
 };
-use super::query::{col_at_or_after_micros, col_before_micros, col_eq, col_in, execute_query};
+use super::query::{
+    col_at_or_after_micros, col_before_micros, col_eq, col_in, execute_query,
+};
 use super::schema::{TableName, images_v6_schema};
 use crate::{
     ImageRecord, Images, SkeetStore, StoreError, StoredImage, StoredImageSummary, StoredOriginal,
@@ -153,8 +155,23 @@ impl Images for SkeetStore {
     }
 
     #[instrument(skip(self))]
-    async fn count(&self) -> Result<usize, StoreError> {
-        Ok(self.table(TableName::Images).count_rows(None).await?)
+    async fn oldest_discovered_at(&self) -> Result<Option<DiscoveredAt>, StoreError> {
+        Ok(self
+            .discovered_at_micros()
+            .await?
+            .into_iter()
+            .min()
+            .map(|m| DiscoveredAt::new(micros_to_datetime(m))))
+    }
+
+    #[instrument(skip(self))]
+    async fn newest_discovered_at(&self) -> Result<Option<DiscoveredAt>, StoreError> {
+        Ok(self
+            .discovered_at_micros()
+            .await?
+            .into_iter()
+            .max()
+            .map(|m| DiscoveredAt::new(micros_to_datetime(m))))
     }
 
     #[instrument(skip(self))]
@@ -265,16 +282,86 @@ impl Images for SkeetStore {
     }
 }
 
+impl SkeetStore {
+    /// Every image's `discovered_at` as epoch micros — the shared scan behind the
+    /// oldest/newest extremes.
+    async fn discovered_at_micros(&self) -> Result<Vec<i64>, StoreError> {
+        let query = self
+            .table(TableName::Images)
+            .query()
+            .select(lancedb::query::Select::columns(&["discovered_at"]));
+        let batches = execute_query(&query, "discovered_at_micros").await?;
+        decode_rows(
+            &batches,
+            |batch| typed_column::<TimestampMicrosecondArray>(batch, "discovered_at"),
+            |col, i| Ok(col.value(i)),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::{Duration, Utc};
     use shared::DiscoveredAt;
 
-    use crate::Images;
+    use crate::{Images, Statistics};
     use crate::test_utils::{make_record_at, open_temp_store};
 
     fn at_minutes_ago(minutes: i64) -> DiscoveredAt {
         DiscoveredAt::new(Utc::now() - Duration::minutes(minutes))
+    }
+
+    #[tokio::test]
+    async fn discovered_at_extremes_and_interval_count() {
+        use chrono::TimeZone;
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = open_temp_store(&dir).await;
+
+        assert_eq!(store.oldest_discovered_at().await.unwrap(), None);
+        assert_eq!(store.newest_discovered_at().await.unwrap(), None);
+
+        let base = Utc.with_ymd_and_hms(2026, 6, 1, 0, 0, 0).unwrap();
+        // Distinct colours give distinct image ids; discovered at 0h, 1h, 2h.
+        for (colour, hour) in [(10u8, 0i64), (20, 1), (30, 2)] {
+            let at = DiscoveredAt::new(base + Duration::hours(hour));
+            store
+                .add(&make_record_at("disc", colour, 0, 0, at))
+                .await
+                .unwrap();
+        }
+
+        assert_eq!(
+            store.oldest_discovered_at().await.unwrap().unwrap().as_datetime(),
+            base
+        );
+        assert_eq!(
+            store.newest_discovered_at().await.unwrap().unwrap().as_datetime(),
+            base + Duration::hours(2)
+        );
+
+        // Half-open window [0h, 2h) covers the 0h and 1h images only.
+        assert_eq!(
+            store
+                .count_images_in_interval(base, base + Duration::hours(2))
+                .await
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            store
+                .count_images_in_interval(base, base + Duration::hours(3))
+                .await
+                .unwrap(),
+            3
+        );
+        assert_eq!(
+            store
+                .count_images_in_interval(base + Duration::hours(10), base + Duration::hours(11))
+                .await
+                .unwrap(),
+            0
+        );
     }
 
     #[tokio::test]

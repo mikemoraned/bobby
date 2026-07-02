@@ -20,9 +20,11 @@ use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
 use skeet_feed::project::FeedProject;
 use skeet_feed::{FeedSourceLayer, PublishedImagesSourceLayer};
 use skeet_publish::{
-    FeedSkeleton, FeedSource, FeedSourceError, PublishedImage, PublishedImages,
+    FeedSkeleton, FeedSource, FeedSourceError, ListStatistics, PublishedImage, PublishedImages,
     PublishedImagesSource,
 };
+
+mod common;
 
 /// A `FeedSource` that returns a fixed skeleton — stands in for the redis-backed
 /// `RedisFeedSource` so the handler tests need no redis.
@@ -46,7 +48,7 @@ impl FeedSource for StubFeedSource {
 struct StubPublishedImagesSource {
     images: Vec<PublishedImage>,
     refreshed_at: Option<DateTime<Utc>>,
-    examined_count: Option<u64>,
+    statistics: Option<ListStatistics>,
 }
 
 #[async_trait]
@@ -55,11 +57,8 @@ impl PublishedImagesSource for StubPublishedImagesSource {
         Ok(PublishedImages {
             images: self.images.clone(),
             refreshed_at: self.refreshed_at,
+            statistics: self.statistics.clone(),
         })
-    }
-
-    async fn examined_count(&self) -> Result<Option<u64>, FeedSourceError> {
-        Ok(self.examined_count)
     }
 }
 
@@ -95,7 +94,7 @@ async fn client_for(params: FeedParams, source: StubFeedSource) -> Client {
     let empty_images = Arc::new(StubPublishedImagesSource {
         images: vec![],
         refreshed_at: None,
-        examined_count: None,
+        statistics: None,
     });
     let project = project_for(params, Arc::new(source), empty_images);
     Client::new(project).await
@@ -117,13 +116,13 @@ async fn client_with_images_refreshed(
     let images_source = Arc::new(StubPublishedImagesSource {
         images,
         refreshed_at,
-        examined_count: None,
+        statistics: None,
     });
     let project = project_for(params, empty_feed, images_source);
     Client::new(project).await
 }
 
-async fn client_with_examined_count(params: FeedParams, examined_count: Option<u64>) -> Client {
+async fn client_with_statistics(params: FeedParams, statistics: Option<ListStatistics>) -> Client {
     const CID: &str = "bafkreiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     let empty_feed = Arc::new(StubFeedSource {
         skeet_ids: vec![],
@@ -132,7 +131,7 @@ async fn client_with_examined_count(params: FeedParams, examined_count: Option<u
     let images_source = Arc::new(StubPublishedImagesSource {
         images: vec![published_image("p", CID)],
         refreshed_at: None,
-        examined_count,
+        statistics,
     });
     let project = project_for(params, empty_feed, images_source);
     Client::new(project).await
@@ -328,26 +327,58 @@ async fn home_renders_grid_of_cards_in_order() {
 }
 
 #[tokio::test]
-async fn home_shows_examined_count_when_present() {
-    let mut client = client_with_examined_count(test_params(), Some(21_621_500)).await;
+async fn home_shows_statistics_banner_when_present() {
+    let end = Utc::now();
+    let stats = ListStatistics::new(end - chrono::Duration::hours(48), end, 400_000, 48, 46);
+    let mut client = client_with_statistics(test_params(), Some(stats)).await;
 
     let (status, body) = get_body(&mut client, "/").await;
     assert_eq!(status, 200);
     assert!(
-        body.contains("(21,621,500 images checked so far)"),
-        "the examined count should render inline, with thousands separators, when present"
+        body.contains(
+            "400,000 images checked over the past 2 days, of which 46 (0.01%) match what we are looking for."
+        ),
+        "the statistics banner should render examined/exists/percent over the served window"
     );
 }
 
 #[tokio::test]
-async fn home_omits_examined_count_when_absent() {
-    let mut client = client_with_examined_count(test_params(), None).await;
+async fn home_banner_match_count_equals_grid_image_count() {
+    const CID: &str = "bafkreiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    // The source has dropped the one non-live candidate, so it yields two images;
+    // the statistics still count all three as `found`, but `exists` (2) tracks the
+    // live count. The banner reports `exists`, so it must match the grid.
+    let end = Utc::now();
+    let stats = ListStatistics::new(end - chrono::Duration::weeks(4), end, 400_000, 3, 2);
+    let images_source = Arc::new(StubPublishedImagesSource {
+        images: vec![published_image("a", CID), published_image("b", CID)],
+        refreshed_at: None,
+        statistics: Some(stats),
+    });
+    let empty_feed = Arc::new(StubFeedSource {
+        skeet_ids: vec![],
+        refreshed_at: None,
+    });
+    let mut client = Client::new(project_for(test_params(), empty_feed, images_source)).await;
+
+    let (status, body) = get_body(&mut client, "/").await;
+    assert_eq!(status, 200);
+    let (claimed, shown) = common::banner_count_and_grid_size(&body);
+    assert_eq!(
+        claimed, shown,
+        "banner claims {claimed} match but the grid renders {shown} images"
+    );
+}
+
+#[tokio::test]
+async fn home_omits_statistics_banner_when_absent() {
+    let mut client = client_with_statistics(test_params(), None).await;
 
     let (status, body) = get_body(&mut client, "/").await;
     assert_eq!(status, 200);
     assert!(
         !body.contains("images checked"),
-        "no examined-count line when the publisher hasn't written it"
+        "no statistics line when the publisher hasn't written it"
     );
 }
 

@@ -12,11 +12,14 @@ use bluesky::StaticExistenceChecker;
 use chrono::Utc;
 use shared::{BlueskyCid, DiscoveredAt, ImageId, OriginalAt, Zone};
 use skeet_publish::{
-    CdnImageUrlResolver, FeedPublisher, FeedSource, Limit, Order, PublishedImagesSource,
-    RedisFeedSource, connect,
+    CdnImageUrlResolver, FeedPublisher, FeedSource, Limit, Order, PublishedList, RedisFeedSource,
+    connect,
 };
 use skeet_store::test_utils::{open_temp_store, test_image};
-use skeet_store::{ImageRecord, Images, ModelScore, ModelVersion, Score, Scores, SkeetStore};
+use skeet_store::{
+    ImageRecord, Images, ModelScore, ModelVersion, PruneStats, Score, Scores, SkeetStore,
+    Statistics,
+};
 use testcontainers::ContainerAsync;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::redis::{REDIS_PORT, Redis};
@@ -149,15 +152,28 @@ async fn quality_list_roundtrips_publisher_to_reader_docker() {
     assert_eq!(rkeys(&reader).await, ["b_high", "a_med", "c_med"]);
 }
 
-/// The publisher precalculates the "images examined" estimate during a publish
-/// cycle and a `RedisFeedSource` reads it back. The estimate scales the saved
-/// count (three seeded `test`-model scores, regardless of the feed window) up by
-/// the inverse of the hard-coded save rate (0.2% ⇒ ×500).
+
+/// The publisher writes per-list statistics during a publish cycle: the absolute
+/// window it covers, the images examined over that window (summed from recorded
+/// prune stats), and how many it ended up showing (the list length).
 #[tokio::test]
-async fn examined_count_published_and_read_back_docker() {
+async fn list_statistics_published_and_read_back_docker() {
     let dir = tempfile::tempdir().expect("tempdir");
     let store = Arc::new(open_temp_store(&dir).await);
-    seed_quality(&store).await; // three scored images on the `test` model
+    seed_quality(&store).await; // three visible scored images, all published "now"
+
+    // One recorded interval inside the 48h window contributes the examined count.
+    let now = Utc::now();
+    store
+        .record_prune_stats(&[PruneStats {
+            interval_start: now - chrono::Duration::hours(1),
+            interval_end: now,
+            skeets_seen: 5000,
+            images_examined: 5000,
+            images_saved: 3,
+        }])
+        .await
+        .expect("record stats");
 
     let (_container, url) = start_redis().await;
 
@@ -169,16 +185,64 @@ async fn examined_count_published_and_read_back_docker() {
         vec![(Order::Quality, Limit::hours(48))],
     );
     let mut conn = connect(&url).await.expect("connect");
-    publisher
-        .publish(&mut conn, Utc::now())
-        .await
-        .expect("publish");
+    publisher.publish(&mut conn, now).await.expect("publish");
 
-    let reader = RedisFeedSource::new(url, Order::Quality, Limit::hours(48));
-    assert_eq!(
-        reader.examined_count().await.expect("examined count"),
-        Some(1500) // 3 saved ÷ 0.2% save rate
+    let stats = PublishedList::new(Order::Quality, Limit::hours(48))
+        .read_statistics(&mut conn)
+        .await
+        .expect("read statistics")
+        .expect("statistics present");
+    // Window is the list's absolute span, ending at the publish time.
+    assert_eq!(stats.interval_start, now - chrono::Duration::hours(48));
+    assert_eq!(stats.interval_end, now);
+    assert_eq!(stats.examined, 5000);
+    assert_eq!(stats.found, 3); // all three seeded skeets are visible within 48h
+    // The existence checker reports all present, so every candidate is live.
+    assert_eq!(stats.exists, 3);
+
+    // The prediction is produced and rides the statistics through redis; its
+    // quantile maths is covered by the `prediction` unit tests.
+    assert!(stats.next_match_prediction.is_some());
+}
+
+/// Publisher-side consistency invariant: the `exists` it records equals the number
+/// of live items in the list it just wrote. With one candidate's skeet probed
+/// missing, `found` counts all three but `exists` counts only the two live ones —
+/// and that matches what re-reading the list and applying `is_live` yields.
+#[tokio::test]
+async fn published_exists_matches_live_items_in_the_written_list_docker() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = Arc::new(open_temp_store(&dir).await);
+    seed_quality(&store).await; // a_med, b_high, c_med — all visible within 48h
+
+    let (_container, url) = start_redis().await;
+
+    // Probe c_med's skeet as deleted, so it stays in the list but is not live.
+    let missing_skeet = "at://did:plc:abc/app.bsky.feed.post/c_med"
+        .parse()
+        .expect("valid skeet id");
+    let publisher = FeedPublisher::new(
+        Arc::clone(&store),
+        test_support::test_models(),
+        Arc::new(CdnImageUrlResolver),
+        Arc::new(StaticExistenceChecker::all_present().with_missing_skeets([missing_skeet])),
+        vec![(Order::Quality, Limit::hours(48))],
     );
+    let mut conn = connect(&url).await.expect("connect");
+    publisher.publish(&mut conn, Utc::now()).await.expect("publish");
+
+    let list = PublishedList::new(Order::Quality, Limit::hours(48));
+    let written = list.read(&mut conn).await.expect("read list");
+    let stats = list
+        .read_statistics(&mut conn)
+        .await
+        .expect("read statistics")
+        .expect("statistics present");
+
+    let live_in_list = written.iter().filter(|p| p.is_live()).count() as u64;
+    assert_eq!(stats.found, written.len() as u64); // all candidates kept in the list
+    assert_eq!(stats.exists, live_in_list); // exists tracks exactly the live ones
+    assert_eq!(stats.exists, 2); // c_med dropped, a_med + b_high remain
 }
 
 /// The wider `quality-7d` window includes a High-band skeet published 4 days ago

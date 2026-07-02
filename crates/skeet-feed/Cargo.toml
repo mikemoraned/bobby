@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 chrono = { workspace = true }
+chrono-humanize = { workspace = true }
 clap = { workspace = true }
 cot = { workspace = true }
 qrcode = { workspace = true }

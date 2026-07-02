@@ -1,5 +1,5 @@
-//! The four ordered pipeline stages — firehose → meta → image → save — and the
-//! message types, counters, and shutdown seam they share.
+//! The ordered pipeline stages — firehose → meta → image → save → stats — and
+//! the message types, counters, and shutdown seam they share.
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::ops::{Add, AddAssign};
@@ -13,10 +13,13 @@ use tracing::warn;
 
 use crate::firehose::SkeetCandidate;
 
+pub mod content_counts_recorder;
+pub mod content_statistics_stage;
 pub mod firehose_stage;
 pub mod prune_image_stage;
 pub mod prune_meta_stage;
 pub mod save_stage;
+pub mod statistics_persister;
 
 /// A stage should stop: either the downstream receiver was dropped or shutdown
 /// was requested on the shared [`CancellationToken`].
@@ -198,6 +201,13 @@ pub type MetaMessage = (MetaResult, ContentCounts);
 /// for a metadata-rejected post) paired with the single content-count delta the
 /// candidate contributes — rejections already folded in upstream.
 pub type ImageMessage = (Vec<ImageRecord>, ContentCounts);
+
+/// A `save_stage` → `content_statistics_stage` message.
+///
+/// One candidate's content-count delta with the save stage's `saved` decision
+/// now folded in. The work half is exhausted by the time it reaches the final
+/// stage, so only the tally rides on.
+pub type StatsMessage = ContentCounts;
 
 /// Per-stage item counters for throughput monitoring.
 #[derive(Default)]
