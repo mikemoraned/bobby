@@ -14,6 +14,27 @@ refine-promote-set version:
 train purpose model="gpt-4o":
     op run --env-file deploy/bobby-local.env -- cargo run --quiet --release --bin train -- --store-path {{ R2_STORE }} --purpose "{{ purpose }}" --model "{{ model }}"
 
+# Variance-aware replication: run `train` at three seeds against a single pinned
+# baseline, each candidate written to its own scratch copy of refine.toml so the
+# production config is left untouched. All runs append to config/eval-results.toml;
+# decide across the three afterwards (majority gate + median recall). The scratch
+# copy of a passing run is a complete, deployable refine.toml.
+train-replicated purpose baseline_run_id model="gpt-4o":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p /tmp/bobby-retrain
+    for seed in 42 43 44; do
+        echo "=== train seed=$seed ==="
+        cp config/refine.toml /tmp/bobby-retrain/refine-seed-$seed.toml
+        op run --env-file deploy/bobby-local.env -- cargo run --quiet --release --bin train -- \
+            --store-path {{ R2_STORE }} \
+            --purpose "{{ purpose }} (seed=$seed)" \
+            --model "{{ model }}" \
+            --seed "$seed" \
+            --model-output /tmp/bobby-retrain/refine-seed-$seed.toml \
+            --baseline-run-id {{ baseline_run_id }}
+    done
+
 refine-eval purpose split_label="default":
     op run --env-file deploy/bobby-local.env -- cargo run --quiet --release --bin refine-eval -- --store-path {{ R2_STORE }} --purpose "{{ purpose }}" --split-label {{ split_label }}
 
