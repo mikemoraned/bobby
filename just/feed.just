@@ -6,6 +6,10 @@ PUBLISHER_DID := "did:plc:cjvdzmk4iapi5p5orrasehxp"
 feed:
     RUST_BACKTRACE=1 OTEL_SERVICE_NAME=skeet-feed {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file deploy/bobby-publish-local.env -- cargo run --release --bin skeet-feed -- --hostname {{ STAGING_HOSTNAME }} --publisher-did {{ PUBLISHER_DID }}
 
+# Render a sample social-media preview montage (synthetic tiles) to eyeball layout
+sample-montage OUT="sample-montage.png":
+    cargo run -p skeet-feed --example sample_montage -- {{ OUT }}
+
 deploy_feed_staging: deploy_feed_staging_secrets deploy_feed_staging_app end_to_end_test_feed_staging
 
 deploy_feed_staging_secrets:
