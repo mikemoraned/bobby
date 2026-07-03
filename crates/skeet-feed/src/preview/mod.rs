@@ -4,6 +4,8 @@
 //! page's Open Graph / Twitter Card meta tags so a shared link unfurls with a
 //! montage of the feed.
 
+pub mod selection;
+
 use std::io::Cursor;
 
 use cot::http::HeaderValue;
