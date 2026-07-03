@@ -196,8 +196,15 @@ struct GridCard {
 #[template(path = "home.html")]
 struct HomeTemplate {
     cards: Vec<GridCard>,
-    /// The shared explanatory blurb shown in the banner.
+    /// Page title, shared by `<title>` and the `og:title` meta tag.
+    title: &'static str,
+    /// The shared explanatory blurb shown in the banner; also the
+    /// `og:description` / `twitter:description`.
     blurb: &'static str,
+    /// Absolute URL of the social-media preview image (`og:image`).
+    preview_image_url: String,
+    /// The page's own canonical URL (`og:url`).
+    site_url: String,
     /// `bsky.app` URL for subscribing to the feed.
     feed_bsky_url: String,
     /// Inline SVG QR code for the site URL; `None` if encoding failed (the
@@ -393,7 +400,10 @@ pub async fn home(
     info!(count = cards.len(), "serving home grid");
     let rendered = HomeTemplate {
         cards,
+        title: crate::SITE_TITLE,
         blurb: crate::FEED_BLURB,
+        preview_image_url: config.preview_image_url(),
+        site_url: config.site_url(),
         feed_bsky_url: config.feed_bsky_url(),
         qr_svg: config.site_qr_svg.clone(),
         stats_banner,
@@ -532,7 +542,10 @@ mod tests {
     fn home_template_renders_range_and_countdown_when_predicted() {
         let rendered = HomeTemplate {
             cards: vec![one_card()],
+            title: "title",
             blurb: "blurb",
+            preview_image_url: "https://example.com/preview.png".to_string(),
+            site_url: "https://example.com/".to_string(),
             feed_bsky_url: "https://bsky.app/feed".to_string(),
             qr_svg: None,
             stats_banner: Some("(stats)".to_string()),
@@ -558,7 +571,10 @@ mod tests {
     fn home_template_shows_not_enough_data_when_prediction_absent() {
         let rendered = HomeTemplate {
             cards: vec![one_card()],
+            title: "title",
             blurb: "blurb",
+            preview_image_url: "https://example.com/preview.png".to_string(),
+            site_url: "https://example.com/".to_string(),
             feed_bsky_url: "https://bsky.app/feed".to_string(),
             qr_svg: None,
             stats_banner: Some("(stats)".to_string()),
@@ -575,7 +591,10 @@ mod tests {
     fn home_template_omits_countdown_without_a_predicted_arrival() {
         let rendered = HomeTemplate {
             cards: vec![],
+            title: "title",
             blurb: "blurb",
+            preview_image_url: "https://example.com/preview.png".to_string(),
+            site_url: "https://example.com/".to_string(),
             feed_bsky_url: "https://bsky.app/feed".to_string(),
             qr_svg: None,
             stats_banner: None,

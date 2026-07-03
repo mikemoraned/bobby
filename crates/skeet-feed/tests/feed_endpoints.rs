@@ -275,6 +275,58 @@ async fn rejects_unknown_feed() {
 }
 
 #[tokio::test]
+async fn preview_route_exists_and_serves_a_png_image() {
+    let mut client = client_with_images(test_params(), vec![]).await;
+
+    let response = client
+        .get(skeet_feed::preview::PREVIEW_ROUTE_PATH)
+        .await
+        .expect("GET preview route");
+    assert_eq!(
+        response.status().as_u16(),
+        200,
+        "the preview route should exist and respond successfully"
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get("content-type")
+            .expect("content-type header")
+            .to_str()
+            .expect("valid header"),
+        "image/png"
+    );
+    let body = response.into_body().into_bytes().await.expect("read body");
+    assert_eq!(&body[..8], b"\x89PNG\r\n\x1a\n", "body is a PNG");
+}
+
+#[tokio::test]
+async fn home_head_carries_open_graph_and_twitter_preview_tags() {
+    let mut client = client_with_images(test_params(), vec![]).await;
+
+    let (status, body) = get_body(&mut client, "/").await;
+    assert_eq!(status, 200);
+    // The og:image / twitter:image resolve to the absolute preview URL built from
+    // the configured site hostname.
+    assert!(
+        body.contains(r#"property="og:image" content="https://test.example.com/preview.png""#),
+        "og:image should point at the absolute preview URL"
+    );
+    assert!(
+        body.contains(r#"name="twitter:image" content="https://test.example.com/preview.png""#),
+        "twitter:image should point at the absolute preview URL"
+    );
+    assert!(
+        body.contains(r#"name="twitter:card" content="summary_large_image""#),
+        "twitter:card should request a large-image unfurl"
+    );
+    assert!(
+        body.contains(r#"property="og:url" content="https://test.example.com/""#),
+        "og:url should be the canonical site URL"
+    );
+}
+
+#[tokio::test]
 async fn home_renders_banner_with_blurb_subscribe_link_and_qr() {
     let mut client = client_with_images(test_params(), vec![]).await;
 
