@@ -14,8 +14,8 @@ refine-promote-set version:
 train purpose model="gpt-4o":
     op run --env-file deploy/bobby-local.env -- cargo run --quiet --release --bin train -- --store-path {{ R2_STORE }} --purpose "{{ purpose }}" --model "{{ model }}"
 
-refine-eval purpose:
-    op run --env-file deploy/bobby-local.env -- cargo run --quiet --release --bin refine-eval -- --store-path {{ R2_STORE }} --purpose "{{ purpose }}"
+refine-eval purpose split_label="default":
+    op run --env-file deploy/bobby-local.env -- cargo run --quiet --release --bin refine-eval -- --store-path {{ R2_STORE }} --purpose "{{ purpose }}" --split-label {{ split_label }}
 
 sample-costs sample_size="10":
     op run --env-file deploy/bobby-local.env -- cargo run --quiet --release --bin sample-costs -- --store-path {{ R2_STORE }} --sample-size {{ sample_size }}

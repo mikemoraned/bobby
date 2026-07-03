@@ -352,3 +352,32 @@ cost_usd = 0.0757
 input_tokens = 10303192
 output_tokens = 6143056
 cost_usd = 2.9724
+
+[[runs]]
+run_id = "019f282e-1e34-7baf-aa21-f3a971eae08a"
+run_at = "2026-07-03T13:32:18.868726Z"
+model_version = "v2:34d8bec0"
+split_id = "3ad0a0b279a2415cf5e5c4c598b9f17a"
+price_snapshot_id = "2026-05-24T16:55:51.154384Z"
+purpose = "re-baseline production gpt-4o on new default split 3ad0a0b (retrain slice)"
+
+[runs.evaluation]
+precision = 0.5878378378378378
+recall = 0.9666666666666667
+f1 = 0.73109243697479
+roc_auc = 0.8911467617349971
+
+[runs.evaluation.pinned_precision]
+threshold = 0.5
+recall = 0.9666666666666667
+
+[runs.evaluation.confusion]
+true_pos = 87
+false_pos = 61
+true_neg = 126
+false_neg = 3
+
+[runs.resources]
+input_tokens = 310736
+output_tokens = 2216
+cost_usd = 0.799
