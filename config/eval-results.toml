@@ -381,3 +381,32 @@ false_neg = 3
 input_tokens = 310736
 output_tokens = 2216
 cost_usd = 0.799
+
+[[runs]]
+run_id = "019f283f-6c4b-739d-95d2-77d18221c4a6"
+run_at = "2026-07-03T13:51:12.971898Z"
+model_version = "v2:34d8bec0"
+split_id = "a746519149bafd1f9505f0869e04c8d3"
+price_snapshot_id = "2026-05-24T16:55:51.154384Z"
+purpose = "control: production gpt-4o v2:34d8bec0 on old frozen-143 split to isolate distribution shift from API/eval drift"
+
+[runs.evaluation]
+precision = 0.7916666666666666
+recall = 0.8260869565217391
+f1 = 0.8085106382978724
+roc_auc = 0.8963768115942029
+
+[runs.evaluation.pinned_precision]
+threshold = 0.6499999761581421
+recall = 0.8260869565217391
+
+[runs.evaluation.confusion]
+true_pos = 19
+false_pos = 5
+true_neg = 115
+false_neg = 4
+
+[runs.resources]
+input_tokens = 154374
+output_tokens = 1144
+cost_usd = 0.3974
