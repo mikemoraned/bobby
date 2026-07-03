@@ -11,9 +11,6 @@ refine-promote-show:
 refine-promote-set version:
     cargo run --quiet --release --bin promote -- set {{ version }}
 
-capture-appraisals:
-    op run --env-file deploy/bobby-local.env -- cargo run --quiet --release --bin capture-appraisals -- --store-path {{ R2_STORE }}
-
 train purpose model="gpt-4o":
     op run --env-file deploy/bobby-local.env -- cargo run --quiet --release --bin train -- --store-path {{ R2_STORE }} --purpose "{{ purpose }}" --model "{{ model }}"
 
