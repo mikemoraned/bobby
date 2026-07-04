@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use crate::{AppraiseStore, Store};
 use shared::{Appraisal, Appraiser, Band, DiscoveredAt, ImageId, RefineModels, SkeetId};
-use skeet_publish::effective_band::{image_effective_band, skeet_effective_band};
+use skeet_publish::{image_effective_band, skeet_effective_band};
 use skeet_store::{ModelScore, StoredImageSummary};
 use tracing::{info, instrument};
 

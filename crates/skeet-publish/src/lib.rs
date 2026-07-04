@@ -1,23 +1,24 @@
 #![warn(clippy::all, clippy::nursery)]
 
-pub mod effective_band;
-pub mod fallback;
-pub mod image_url_resolver;
-pub mod limit;
-pub mod list_statistics;
-pub mod metrics;
-pub mod order;
-pub mod prediction;
-pub mod published;
-pub mod published_list;
-pub mod published_list_catalog;
-pub mod publisher;
-pub mod redis_client;
-pub mod source;
-pub mod spec;
-pub mod table_watch;
-pub mod visibility;
+mod effective_band;
+mod fallback;
+mod image_url_resolver;
+mod limit;
+mod list_statistics;
+mod metrics;
+mod order;
+mod prediction;
+mod published;
+mod published_list;
+mod published_list_catalog;
+mod publisher;
+mod redis_client;
+mod source;
+mod spec;
+mod table_watch;
+mod visibility;
 
+pub use effective_band::{image_effective_band, skeet_effective_band};
 pub use fallback::{FallbackFeedSource, fallback_chain};
 pub use image_url_resolver::{CdnImageUrlResolver, ImageUrlResolver};
 pub use limit::{InvalidLimit, Limit};

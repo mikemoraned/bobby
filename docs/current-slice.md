@@ -11,7 +11,7 @@ The general bias is to refactor towards patterns and structures that are the bes
 
 #### Tasks
 
-* [ ] **Publishing** — `skeet-publish`.** The firehose → classify → score → publish chain.
+* [x] **Publishing** — `skeet-publish`.** The firehose → classify → score → publish chain.
     * **From the patterns review:** tighten over-broad `pub mod` → `mod` + selective `pub use` (most modules are `pub mod` today). Low-priority; do while already in the crate.
 * [ ] **Web services — `skeet-feed`, `skeet-appraise`.** The two HTTP-facing crates (banner/feed + auth-gated appraisals).
     * **From the patterns review:** `skeet-feed/src/feed_config.rs` `did()`/`feed_uri()`/`service_endpoint()` return raw `String` → return domain types (`Did`, etc.). Also tighten over-broad `pub mod` → `mod` + `pub use` in both crates (`skeet-appraise/src/lib.rs` ≈12 `pub mod`; `skeet-feed` most modules `pub mod`) — low-priority, do while touching them.
