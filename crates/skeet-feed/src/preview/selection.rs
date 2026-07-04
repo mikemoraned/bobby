@@ -30,6 +30,13 @@ impl ContentSignature {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Build a signature from a raw string, for tests that need arbitrary
+    /// signatures without constructing a full published list.
+    #[cfg(test)]
+    pub(crate) fn from_raw(raw: impl Into<String>) -> Self {
+        Self(raw.into())
+    }
 }
 
 /// The tiles selected for the montage: their thumbnail URLs in best-first order,

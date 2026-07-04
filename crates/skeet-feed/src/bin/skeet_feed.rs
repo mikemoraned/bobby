@@ -1,14 +1,18 @@
 #![warn(clippy::all, clippy::nursery)]
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use clap::Parser;
 use cot::project::Bootstrapper;
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
+use skeet_feed::preview::selection::select_tiles;
+use skeet_feed::preview::state::{PreviewState, PreviewStateLayer};
+use skeet_feed::preview::{PREVIEW_HEIGHT, PREVIEW_WIDTH, generate_montage};
 use skeet_feed::project::FeedProject;
 use skeet_feed::{FeedSourceLayer, PublishedImagesSourceLayer};
 use skeet_publish::{FallbackFeedSource, FeedSource, Limit, Order, PublishedImagesSource};
-use tracing::info;
+use tracing::{info, warn};
 
 #[derive(Parser)]
 struct Args {
@@ -93,10 +97,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Limit::weeks(4),
     ));
 
+    let preview_state = Arc::new(PreviewState::new(
+        reqwest::Client::new(),
+        (PREVIEW_WIDTH, PREVIEW_HEIGHT),
+    ));
+    // Warm the montage cache before serving so the first scraper sees a real
+    // image, but cap the wait so a slow CDN can't stall startup. Non-fatal: on
+    // failure or timeout we start with an empty cache and the first request
+    // regenerates.
+    let warm_up = warm_preview_cache(&preview_state, published_images_source.as_ref());
+    if tokio::time::timeout(WARM_UP_TIMEOUT, warm_up).await.is_err() {
+        warn!(
+            timeout_secs = WARM_UP_TIMEOUT.as_secs(),
+            "preview cache warm-up timed out; starting with an empty cache"
+        );
+    }
+
     let project = FeedProject {
         feed_source_layer: FeedSourceLayer::new(feed_source),
         published_images_source_layer: PublishedImagesSourceLayer::new(published_images_source),
         feed_config_layer: FeedConfigLayer::new(feed_params),
+        preview_state_layer: PreviewStateLayer::new(preview_state),
     };
     let bootstrapper = Bootstrapper::new(project)
         .with_config_name("dev")?
@@ -104,4 +125,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     cot::run(bootstrapper, &args.bind).await?;
     Ok(())
+}
+
+/// How long startup waits for the montage cache to warm before serving anyway.
+const WARM_UP_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Generate the montage once at startup and populate the cache. Non-fatal: a
+/// read or generation failure leaves the cache empty and serving continues.
+async fn warm_preview_cache(state: &PreviewState, source: &dyn PublishedImagesSource) {
+    match source.published_images().await {
+        Ok(published) => {
+            let selection = select_tiles(&published.images);
+            state
+                .cache
+                .warm(selection.signature, || async {
+                    generate_montage(&state.fetcher, selection.tile_urls, state.size).await
+                })
+                .await;
+            info!("preview montage cache warmed");
+        }
+        Err(error) => {
+            warn!(%error, "preview cache warm-up skipped; starting with an empty cache");
+        }
+    }
 }

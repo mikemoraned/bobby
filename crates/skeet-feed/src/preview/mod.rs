@@ -4,11 +4,15 @@
 //! page's Open Graph / Twitter Card meta tags so a shared link unfurls with a
 //! montage of the feed.
 
+pub mod montage;
 pub mod selection;
+pub mod state;
 pub mod tiles;
 
 use std::io::Cursor;
+use std::sync::Arc;
 
+use bluesky::ImageUrl;
 use cot::http::HeaderValue;
 use cot::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use cot::response::Response;
@@ -17,6 +21,12 @@ use image::imageops::{self, FilterType};
 use image::{DynamicImage, ImageFormat, Rgb, RgbImage, Rgba, RgbaImage};
 use thiserror::Error;
 use tracing::{info, instrument};
+
+use self::montage::MontagePng;
+use self::selection::select_tiles;
+use self::state::PreviewStateExtractor;
+use self::tiles::{HttpTileSource, TileFetcher};
+use crate::PublishedImagesSourceExtractor;
 
 /// Standard Open Graph / Twitter `summary_large_image` size (1.91:1): unfurls
 /// large on Facebook, X, LinkedIn and Slack.
@@ -197,19 +207,59 @@ pub fn compose(
     encode_png(&DynamicImage::ImageRgba8(canvas))
 }
 
-/// A solid-fill 1200×630 PNG standing in for the composed montage until dynamic
-/// composition exists, so the Open Graph plumbing can be verified end-to-end.
+/// A solid-fill background PNG served when there's no montage to show yet (an
+/// empty cache still regenerating). The zero-tile case gets a branded fallback
+/// elsewhere; this just keeps the route returning a valid image meanwhile.
 fn placeholder_png() -> std::result::Result<Vec<u8>, PreviewError> {
     let image = RgbImage::from_pixel(PREVIEW_WIDTH, PREVIEW_HEIGHT, Rgb([24, 24, 33]));
     encode_png(&DynamicImage::ImageRgb8(image))
 }
 
+/// Fetch the selected tiles and compose them into a montage PNG. The unit of
+/// work a cache regeneration runs; fails only if composition does.
+pub async fn generate_montage(
+    fetcher: &TileFetcher<HttpTileSource>,
+    urls: Vec<ImageUrl>,
+    size: (u32, u32),
+) -> std::result::Result<MontagePng, PreviewError> {
+    let fetched = fetcher.fetch(&urls).await;
+    // Realign fetched tiles to the selection order, dropping any that failed.
+    let tiles: Vec<DynamicImage> = urls
+        .iter()
+        .filter_map(|url| fetched.get(url))
+        .map(|tile| tile.as_ref().clone())
+        .collect();
+    Ok(Arc::new(compose(&tiles, size)?))
+}
+
 #[instrument(skip_all)]
-pub async fn preview() -> Result<Response> {
+pub async fn preview(
+    PublishedImagesSourceExtractor(source): PublishedImagesSourceExtractor,
+    PreviewStateExtractor(state): PreviewStateExtractor,
+) -> Result<Response> {
     info!("serving {PREVIEW_ROUTE_PATH}");
-    let png = placeholder_png()
-        .map_err(|e| cot::Error::internal(format!("failed to render preview image: {e}")))?;
-    let mut response = Response::new(Body::fixed(png));
+    let published = source
+        .published_images()
+        .await
+        .map_err(|e| cot::Error::internal(format!("failed to read published images: {e}")))?;
+
+    let selection = select_tiles(&published.images);
+    let urls = selection.tile_urls;
+    let size = state.size;
+    let generator_state = state.clone();
+    let montage = state
+        .cache
+        .get_or_revalidate(selection.signature, move || async move {
+            generate_montage(&generator_state.fetcher, urls, size).await
+        })
+        .await;
+
+    let body = match montage {
+        Some(png) => (*png).clone(),
+        None => placeholder_png()
+            .map_err(|e| cot::Error::internal(format!("failed to render preview image: {e}")))?,
+    };
+    let mut response = Response::new(Body::fixed(body));
     let headers = response.headers_mut();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("image/png"));
     headers.insert(CACHE_CONTROL, HeaderValue::from_static(PREVIEW_CACHE_CONTROL));

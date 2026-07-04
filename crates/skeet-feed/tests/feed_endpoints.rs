@@ -17,6 +17,8 @@ use cot::test::Client;
 use shared::SkeetId;
 use shared::{BlueskyCid, ImageId};
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
+use skeet_feed::preview::state::{PreviewState, PreviewStateLayer};
+use skeet_feed::preview::{PREVIEW_HEIGHT, PREVIEW_WIDTH};
 use skeet_feed::project::FeedProject;
 use skeet_feed::{FeedSourceLayer, PublishedImagesSourceLayer};
 use skeet_publish::{
@@ -87,6 +89,10 @@ fn project_for(
         feed_source_layer: FeedSourceLayer::new(feed_source),
         published_images_source_layer: PublishedImagesSourceLayer::new(images_source),
         feed_config_layer: FeedConfigLayer::new(params),
+        preview_state_layer: PreviewStateLayer::new(Arc::new(PreviewState::new(
+            reqwest::Client::new(),
+            (PREVIEW_WIDTH, PREVIEW_HEIGHT),
+        ))),
     }
 }
 
