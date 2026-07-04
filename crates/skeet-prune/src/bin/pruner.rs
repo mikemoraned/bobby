@@ -9,8 +9,9 @@ use skeet_prune::{
     ChannelMonitors, ImageMessage, MetaMessage, PipelineCounters, SkeetCandidate, StatsMessage,
 };
 use skeet_store::StoreArgs;
+use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{info, warn};
 
 #[derive(Parser)]
 struct Args {
@@ -59,10 +60,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // `jetstream_oxide` logs the underlying WebSocket disconnect reason (and the
     // server close code) via the `log` crate, bridged into tracing; surface it at
     // `warn` so reconnect causes land in `pruner.log` without needing `RUST_LOG`.
-    let _guard = shared::tracing::init_with_file(
-        "skeet_prune=info,shared=info,skeet_store=info,lance_io=warn,object_store=warn,jetstream_oxide=warn",
-        "pruner.log",
+    let default_filter = format!(
+        "{bin}=info,skeet_prune=info,shared=info,skeet_store=info,lance_io=warn,object_store=warn,jetstream_oxide=warn",
+        bin = env!("CARGO_CRATE_NAME"),
     );
+    let _guard = shared::tracing::init_with_file(&default_filter, "pruner.log");
 
     info!(git_hash = env!("BUILD_GIT_HASH"), "pruner starting");
 
@@ -115,8 +117,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let channels = ChannelMonitors::new(firehose_tx.clone(), meta_tx.clone(), image_tx.clone());
 
     // Shared shutdown signal: any stage whose downstream closes cancels the
-    // token, so every other stage unwinds through the same seam.
+    // token, so every other stage unwinds through the same seam. A received
+    // SIGTERM/SIGINT trips the same token, turning a k8s redeploy or Ctrl-C into
+    // a deliberate unwind through the seam rather than a hard SIGKILL.
     let token = CancellationToken::new();
+
+    let signal_token = token.clone();
+    tokio::spawn(async move {
+        match wait_for_shutdown_signal().await {
+            Ok(signal) => {
+                info!(%signal, "shutdown signal received, cancelling pipeline");
+                signal_token.cancel();
+            }
+            Err(e) => {
+                warn!(error = %e, "failed to install signal handlers; SIGTERM will fall back to SIGKILL");
+            }
+        }
+    });
 
     let meta_http = http.clone();
     let firehose_counters = Arc::clone(&counters);
@@ -181,4 +198,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await;
 
     Ok(())
+}
+
+/// Wait for the first process-termination signal, resolving to which one
+/// arrived. SIGTERM is what k8s sends on redeploy (before the grace-period
+/// SIGKILL); SIGINT is Ctrl-C during local iteration.
+async fn wait_for_shutdown_signal() -> std::io::Result<&'static str> {
+    let mut sigterm = signal(SignalKind::terminate())?;
+    let mut sigint = signal(SignalKind::interrupt())?;
+    tokio::select! {
+        _ = sigterm.recv() => Ok("SIGTERM"),
+        _ = sigint.recv() => Ok("SIGINT"),
+    }
 }
