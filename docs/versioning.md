@@ -193,10 +193,17 @@ the same reason.
 The CLI does **not** touch k8s. After `just refine-promote-set <version>`:
 
 1. Commit the `config/refine.toml` change.
-2. Build & push the images for the affected writers (`live-refine`, and
-   `pruner` if its config changed) — see `just/container.just`.
-3. Roll the production deployment to the new image, e.g.
-   `just cluster-rollback-live-refine <image_tag>`.
+2. Build & push the images for **every service that bakes `config/refine.toml`**,
+   not just the writer — see `just/container.just`:
+   - `live-refine` (the score **writer** — starts emitting the new `model_version`);
+   - `skeet-publish` (a score **reader**: it filters scores to the version set in
+     its baked `refine.toml`, so until it carries the new version it will **discard**
+     the newly-written scores and the feed stops getting fresh matches);
+   - `pruner` if its config changed.
+3. Roll the production deployments, e.g. `just cluster-rollback-live-refine <image_tag>`
+   / `just cluster-rollback-skeet-publish <image_tag>`. Roll the reader
+   (`skeet-publish`) **first or together** with the writer so there is no window
+   where new scores are written but not yet recognised.
 4. Confirm with `just cluster-status` / `just cluster-logs-live-refine`.
 
 ## Compute isolation: the `production` k8s namespace

@@ -352,3 +352,163 @@ cost_usd = 0.0757
 input_tokens = 10303192
 output_tokens = 6143056
 cost_usd = 2.9724
+
+[[runs]]
+run_id = "019f282e-1e34-7baf-aa21-f3a971eae08a"
+run_at = "2026-07-03T13:32:18.868726Z"
+model_version = "v2:34d8bec0"
+split_id = "3ad0a0b279a2415cf5e5c4c598b9f17a"
+price_snapshot_id = "2026-05-24T16:55:51.154384Z"
+purpose = "re-baseline production gpt-4o on new default split 3ad0a0b (retrain slice)"
+
+[runs.evaluation]
+precision = 0.5878378378378378
+recall = 0.9666666666666667
+f1 = 0.73109243697479
+roc_auc = 0.8911467617349971
+
+[runs.evaluation.pinned_precision]
+threshold = 0.5
+recall = 0.9666666666666667
+
+[runs.evaluation.confusion]
+true_pos = 87
+false_pos = 61
+true_neg = 126
+false_neg = 3
+
+[runs.resources]
+input_tokens = 310736
+output_tokens = 2216
+cost_usd = 0.799
+
+[[runs]]
+run_id = "019f283f-6c4b-739d-95d2-77d18221c4a6"
+run_at = "2026-07-03T13:51:12.971898Z"
+model_version = "v2:34d8bec0"
+split_id = "a746519149bafd1f9505f0869e04c8d3"
+price_snapshot_id = "2026-05-24T16:55:51.154384Z"
+purpose = "control: production gpt-4o v2:34d8bec0 on old frozen-143 split to isolate distribution shift from API/eval drift"
+
+[runs.evaluation]
+precision = 0.7916666666666666
+recall = 0.8260869565217391
+f1 = 0.8085106382978724
+roc_auc = 0.8963768115942029
+
+[runs.evaluation.pinned_precision]
+threshold = 0.6499999761581421
+recall = 0.8260869565217391
+
+[runs.evaluation.confusion]
+true_pos = 19
+false_pos = 5
+true_neg = 115
+false_neg = 4
+
+[runs.resources]
+input_tokens = 154374
+output_tokens = 1144
+cost_usd = 0.3974
+
+[[runs]]
+run_id = "019f285e-398b-7d62-982d-2d27bbca800d"
+run_at = "2026-07-03T14:24:51.595798Z"
+model_version = "v2:ac1dde52"
+split_id = "3ad0a0b279a2415cf5e5c4c598b9f17a"
+price_snapshot_id = "2026-05-24T16:55:51.154384Z"
+purpose = "retrain gpt-4o prompt on new default split 3ad0a0b (seed=42)"
+
+[runs.evaluation]
+precision = 0.6027397260273972
+recall = 0.9777777777777777
+f1 = 0.7457627118644068
+roc_auc = 0.8878193701723114
+
+[runs.evaluation.pinned_precision]
+threshold = 0.6000000238418579
+recall = 0.9777777777777777
+
+[runs.evaluation.confusion]
+true_pos = 88
+false_pos = 58
+true_neg = 129
+false_neg = 2
+
+[runs.resources]
+input_tokens = 298262
+output_tokens = 2208
+cost_usd = 0.7677
+
+[runs.training]
+input_tokens = 1436078
+output_tokens = 11584
+cost_usd = 3.706
+
+[[runs]]
+run_id = "019f28d3-065e-7c79-bdd0-089a34217402"
+run_at = "2026-07-03T16:32:26.206707Z"
+model_version = "v2:1835e655"
+split_id = "3ad0a0b279a2415cf5e5c4c598b9f17a"
+price_snapshot_id = "2026-05-24T16:55:51.154384Z"
+purpose = "retrain gpt-4o prompt on new default split 3ad0a0b (seed=43)"
+
+[runs.evaluation]
+precision = 0.577922077922078
+recall = 0.9888888888888889
+f1 = 0.7295081967213115
+roc_auc = 0.872192513368984
+
+[runs.evaluation.pinned_precision]
+threshold = 0.6499999761581421
+recall = 0.9888888888888889
+
+[runs.evaluation.confusion]
+true_pos = 89
+false_pos = 65
+true_neg = 122
+false_neg = 1
+
+[runs.resources]
+input_tokens = 286637
+output_tokens = 2216
+cost_usd = 0.7388
+
+[runs.training]
+input_tokens = 1474270
+output_tokens = 11600
+cost_usd = 3.8017
+
+[[runs]]
+run_id = "019f2a61-78a3-705c-ac01-4102734ee7b6"
+run_at = "2026-07-03T23:47:38.787482Z"
+model_version = "v2:4ff58310"
+split_id = "3ad0a0b279a2415cf5e5c4c598b9f17a"
+price_snapshot_id = "2026-05-24T16:55:51.154384Z"
+purpose = "retrain gpt-4o prompt on new default split 3ad0a0b (seed=44)"
+
+[runs.evaluation]
+precision = 0.6666666666666666
+recall = 0.8444444444444444
+f1 = 0.7450980392156862
+roc_auc = 0.8836898395721925
+
+[runs.evaluation.pinned_precision]
+threshold = 0.30000001192092896
+recall = 0.8777777777777778
+
+[runs.evaluation.confusion]
+true_pos = 76
+false_pos = 38
+true_neg = 149
+false_neg = 14
+
+[runs.resources]
+input_tokens = 293562
+output_tokens = 2216
+cost_usd = 0.7561
+
+[runs.training]
+input_tokens = 1592970
+output_tokens = 11600
+cost_usd = 4.0984
