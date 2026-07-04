@@ -436,12 +436,20 @@ async fn homepage_banner_match_count_equals_grid_image_count_docker() {
 
 #[tokio::test]
 async fn preview_image_serves_a_png_and_revalidates_docker() {
-    let (server, redis_url) = spawn_local_server().await;
-    let base = &server.url;
     let client = reqwest::Client::new();
-
-    // Populate the grid's preferred window so the preview has content to compose.
-    seed(&redis_url, &[GRID_PREFERRED], &[(GRID_PREFERRED, "grid1")]).await;
+    // Runs locally against a seeded server, and against staging/production via
+    // `TEST_BASE_URL` (over whatever real data is live) — a real montage or the
+    // zero-tile fallback are both valid 1200x630 PNGs, and the ETag is
+    // content-based, so the assertions hold either way.
+    let server = if std::env::var("TEST_BASE_URL").is_ok() {
+        spawn_server().await
+    } else {
+        let (server, redis_url) = spawn_local_server().await;
+        // Populate the grid's preferred window so the preview has content to compose.
+        seed(&redis_url, &[GRID_PREFERRED], &[(GRID_PREFERRED, "grid1")]).await;
+        server
+    };
+    let base = &server.url;
 
     let resp = client
         .get(format!("{base}/preview.png"))
