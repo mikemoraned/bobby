@@ -57,8 +57,10 @@ const TILE_GUTTER: u32 = 6;
 /// Height of the bottom fade-to-background band, in pixels.
 const FADE_HEIGHT: u32 = 220;
 
-/// The montage background, and the colour the bottom fade resolves to.
-const BACKGROUND: Rgba<u8> = Rgba([24, 24, 33, 255]);
+/// The montage background, and the colour the bottom fade resolves to. A light
+/// neutral so the image sits cleanly on both light and dark chat/card surfaces
+/// (an opaque colour renders identically everywhere, unlike transparency).
+const BACKGROUND: Rgba<u8> = Rgba([243, 244, 246, 255]);
 
 #[derive(Debug, Error)]
 pub enum PreviewError {
@@ -211,7 +213,8 @@ pub fn compose(
 /// empty cache still regenerating). The zero-tile case gets a branded fallback
 /// elsewhere; this just keeps the route returning a valid image meanwhile.
 fn placeholder_png() -> std::result::Result<Vec<u8>, PreviewError> {
-    let image = RgbImage::from_pixel(PREVIEW_WIDTH, PREVIEW_HEIGHT, Rgb([24, 24, 33]));
+    let background = Rgb([BACKGROUND[0], BACKGROUND[1], BACKGROUND[2]]);
+    let image = RgbImage::from_pixel(PREVIEW_WIDTH, PREVIEW_HEIGHT, background);
     encode_png(&DynamicImage::ImageRgb8(image))
 }
 
