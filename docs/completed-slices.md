@@ -235,3 +235,15 @@ A maintenance-and-robustness slice on `skeet-prune`: a full human pass over the 
 - **Live diagnosis**: a flapping symptom traced to a `jetstream-oxide` defect — it silently swallows a decode error, tears down the connection, and leaks the ping task; the cursor turned one poison message into a fatal replay loop. Contained with a `REPLAY_MAX_AGE` cap (`replay_cursor` live-tails past an over-aged gap), confirmed self-healing live.
 - **Performance**: parallelised the meta stage (`--meta-workers`, default 4), which moved the bottleneck to the image stage; measured the image stage as CPU-bound (classify-CPU, not concurrency), so `spawn_blocking` landed as a runtime-responsiveness fix and `--image-workers` stayed at 2.
 - **Fallback feeds**: `FallbackFeedSource` in `skeet-publish` degrades to successively older same-`Order` lists when a preferred feed is empty (e.g. `quality-48h` → `quality-7d`), discovered per-request via the catalog; `skeet-feed` wired onto it.
+
+## Slice: dynamic social-media preview image for the feed
+
+Added an Open Graph / Twitter Card preview image for the public feed: a 1200×630 PNG montage composed on demand in `skeet-feed` at `GET /preview.png`, referenced by meta tags in the home `<head>` so a shared link unfurls with a taste of the content. New workspace deps: `moka` (async cache) and `futures`; `image` added to the crate. `binpack2d` was specced for layout but rejected.
+
+- **Composition**: a pure `compose(tiles, size)` scales each thumbnail to a common column width (over-tall portraits centre-cropped), lays them out in shelf rows on a light background, fades the bottom, and PNG-encodes. A bespoke shelf layout replaced the planned `binpack2d` Guillotine, whose unconditional rectangle rotation would render sideways selfies with no opt-out; no masonry/justified-layout crate exists for Rust.
+- **Content selection**: reuses the same live, best-first list `home()` renders via `published_images()`, taking the first 10; a `ContentSignature` (md5 of the ordered image ids) fingerprints the selection and doubles as cache key and ETag.
+- **Tile fetching**: selected CDN thumbnails are downloaded (bounded concurrency) and decoded through a bounded `moka` cache keyed by URL, so repeats skip download and decode; a failed tile is skipped and never cached.
+- **Stale-while-revalidate cache**: a signature-keyed montage cache serves a hit immediately, else single-flight regenerates (dedup delegated to moka's `try_get_with`), waits ~200ms, and otherwise serves the previous montage while regeneration finishes; non-fatal startup warm-up capped at 30s.
+- **HTTP caching**: new `set_etag` / `not_modified_by_etag` helpers in `web-support`; the route sets `ETag` = signature and returns `304` before fetch/compose on a matching `If-None-Match`.
+- **Fallback**: a committed fallback PNG (served on zero usable tiles so `og:image` always resolves) plus a `generate-fallback-preview` CLI that regenerates it from live data — re-run when styles change.
+- **Verification**: a dual-mode docker integ test drives `/preview.png` locally and against staging via `TEST_BASE_URL`, asserting a valid 1200×630 PNG and ETag→304.
