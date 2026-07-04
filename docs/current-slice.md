@@ -14,7 +14,9 @@ This is the other half of restart-loss the firehose slice deliberately deferred 
 
 ### Tasks
 
-* [ ] SIGTERM/SIGINT handler that trips the shared `CancellationToken` to stop the firehose source.
-* [ ] Supervise the stages (`JoinSet` or equivalent) so `main` awaits their completion rather than only awaiting the sink; on shutdown, let the channels drain into the store before exit, bounded by a drain deadline shorter than the k8s grace period.
-* [ ] Update `docs/skeet-prune-pipeline.md` "Shutdown" to describe deliberate drain alongside the reactive close.
-* [ ] Verify `just clippy` + `just test-no-docker`. A deterministic loop test is awkward (signal/time-bound); a live SIGTERM smoke-check (observe the channels drain, no lost in-flight items) is the human/CI step.
+* [x] SIGTERM/SIGINT handler that trips the shared `CancellationToken` to stop the firehose source.
+* [x] Supervise the stages (`JoinSet` or equivalent) so `main` awaits their completion rather than only awaiting the sink; on shutdown, let the channels drain into the store before exit, bounded by a drain deadline shorter than the k8s grace period.
+  * Deviation from "trip the shared token": the shared token means *abort now* at every `recv`/`forward`, which drops buffered work — wrong for a drain. So it kept that role (renamed `abort`) and a **separate `drain` token** stops only the source; the channels then close-cascade. That cascade required `ChannelMonitors` to hold *weak* senders — strong clones there were pinning the channels open, which is why the token had been the only viable shutdown path. Second signal escalates drain → abort; deadline is `--drain-timeout-secs` (default 25).
+* [x] Update `docs/skeet-prune-pipeline.md` "Shutdown" to describe deliberate drain alongside the reactive close.
+* [x] Verify `just clippy` + `just test-no-docker` — both green (606 passed, 33 docker-skipped). The live SIGTERM smoke-check (observe the channels drain, no lost in-flight items) remains a by-hand step.
+* [ ] `crates/skeet-prune/src/bin/pruner.rs` has grown large — the pipeline assembly (channel creation, per-stage spawns into the `JoinSet`, signal + drain wiring) could move into a `pipeline` submodule (e.g. `pipeline::assemble`/`run`), leaving the bin as arg-parsing + config + a single call.

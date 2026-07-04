@@ -9,7 +9,8 @@ use skeet_prune::{
     ChannelMonitors, ImageMessage, MetaMessage, PipelineCounters, SkeetCandidate, StatsMessage,
 };
 use skeet_store::StoreArgs;
-use tokio::signal::unix::{SignalKind, signal};
+use tokio::signal::unix::{Signal, SignalKind, signal};
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
@@ -41,6 +42,12 @@ struct Args {
     /// Number of parallel image stage workers (default: 2)
     #[arg(long, default_value = "2")]
     image_workers: usize,
+
+    /// Seconds to let the pipeline drain into the store after a shutdown signal
+    /// before forcing exit (default: 25). Keep below the k8s
+    /// terminationGracePeriodSeconds so the drain finishes ahead of SIGKILL.
+    #[arg(long, default_value = "25")]
+    drain_timeout_secs: u64,
 
     /// Permit writing to a remote, shared object store (e.g. R2). Off by
     /// default: the pruner is the one writer to the shared `images_vN` table
@@ -114,20 +121,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (stats_tx, stats_rx) = async_channel::bounded::<StatsMessage>(100);
 
     let counters = Arc::new(PipelineCounters::default());
-    let channels = ChannelMonitors::new(firehose_tx.clone(), meta_tx.clone(), image_tx.clone());
+    let channels = ChannelMonitors::new(&firehose_tx, &meta_tx, &image_tx);
 
-    // Shared shutdown signal: any stage whose downstream closes cancels the
-    // token, so every other stage unwinds through the same seam. A received
-    // SIGTERM/SIGINT trips the same token, turning a k8s redeploy or Ctrl-C into
-    // a deliberate unwind through the seam rather than a hard SIGKILL.
-    let token = CancellationToken::new();
+    // Two shutdown signals with distinct intent:
+    // - `abort` (reactive): a stage whose downstream closes cancels it, so every
+    //   other stage unwinds at once through the same seam — in-flight work is
+    //   dropped because there's nowhere for it to go.
+    // - `drain` (deliberate): a shutdown signal trips this to stop *only* the
+    //   firehose source. The bounded channels then close-cascade so buffered and
+    //   in-flight items finish into the idempotent store before exit.
+    let abort = CancellationToken::new();
+    let drain = CancellationToken::new();
 
-    let signal_token = token.clone();
+    let signal_abort = abort.clone();
+    let signal_drain = drain.clone();
     tokio::spawn(async move {
-        match wait_for_shutdown_signal().await {
-            Ok(signal) => {
-                info!(%signal, "shutdown signal received, cancelling pipeline");
-                signal_token.cancel();
+        match install_shutdown_signals() {
+            Ok((mut sigterm, mut sigint)) => {
+                wait_either(&mut sigterm, &mut sigint).await;
+                info!("shutdown signal received, draining pipeline (signal again to abort)");
+                signal_drain.cancel();
+                wait_either(&mut sigterm, &mut sigint).await;
+                warn!("second shutdown signal received, aborting drain");
+                signal_abort.cancel();
             }
             Err(e) => {
                 warn!(error = %e, "failed to install signal handlers; SIGTERM will fall back to SIGKILL");
@@ -140,74 +156,121 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let meta_counters = Arc::clone(&counters);
     let image_counters = Arc::clone(&counters);
 
-    let firehose_token = token.clone();
-    tokio::spawn(async move {
-        skeet_prune::firehose_stage::run(firehose_tx, firehose_counters, firehose_token).await;
+    // Supervise every stage so shutdown awaits their completion, not just the
+    // sink's: the drain finishes only once the sink stage returns, which happens
+    // after everything upstream has drained through it into the store.
+    let mut stages = JoinSet::new();
+
+    let firehose_abort = abort.clone();
+    let firehose_drain = drain.clone();
+    stages.spawn(async move {
+        skeet_prune::firehose_stage::run(
+            firehose_tx,
+            firehose_counters,
+            firehose_abort,
+            firehose_drain,
+        )
+        .await;
     });
 
     let meta_workers = args.meta_workers;
-    let meta_token = token.clone();
-    tokio::spawn(async move {
+    let meta_abort = abort.clone();
+    stages.spawn(async move {
         skeet_prune::prune_meta_stage::run_workers(
             firehose_rx,
             meta_tx,
             meta_http,
             meta_counters,
             meta_workers,
-            meta_token,
+            meta_abort,
         )
         .await;
     });
 
     let image_workers = args.image_workers;
-    let image_token = token.clone();
+    let image_abort = abort.clone();
     let classify_config = skeet_prune::prune_image_stage::ClassifyConfig {
         http,
         prune_config,
         config_version,
     };
-    tokio::spawn(async move {
+    stages.spawn(async move {
         skeet_prune::prune_image_stage::run_workers(
             meta_rx,
             image_tx,
             classify_config,
             image_counters,
             image_workers,
-            image_token,
+            image_abort,
         )
         .await;
     });
 
-    let save_token = token.clone();
+    let save_abort = abort.clone();
     let save_store = Arc::clone(&store);
-    tokio::spawn(async move {
-        skeet_prune::save_stage::run(&image_rx, save_store.as_ref(), stats_tx, save_token).await;
+    stages.spawn(async move {
+        skeet_prune::save_stage::run(&image_rx, save_store.as_ref(), stats_tx, save_abort).await;
     });
 
     let log_interval = std::time::Duration::from_secs(args.status_interval_secs);
     let flush_interval = std::time::Duration::from_secs(args.statistics_flush_secs);
-    skeet_prune::content_statistics_stage::run(
-        &stats_rx,
-        store.as_ref(),
-        counters,
-        channels,
-        log_interval,
-        flush_interval,
-        token,
-    )
-    .await;
+    let stats_store = Arc::clone(&store);
+    let stats_abort = abort.clone();
+    stages.spawn(async move {
+        skeet_prune::content_statistics_stage::run(
+            &stats_rx,
+            stats_store.as_ref(),
+            counters,
+            channels,
+            log_interval,
+            flush_interval,
+            stats_abort,
+        )
+        .await;
+    });
+
+    let drain_timeout = std::time::Duration::from_secs(args.drain_timeout_secs);
+    tokio::select! {
+        () = await_stages(&mut stages) => info!("pipeline stages completed, exiting"),
+        () = drain_deadline(&drain, drain_timeout) => {
+            warn!(
+                timeout_secs = args.drain_timeout_secs,
+                "drain deadline exceeded; exiting with items possibly still in flight"
+            );
+        }
+    }
 
     Ok(())
 }
 
-/// Wait for the first process-termination signal, resolving to which one
-/// arrived. SIGTERM is what k8s sends on redeploy (before the grace-period
-/// SIGKILL); SIGINT is Ctrl-C during local iteration.
-async fn wait_for_shutdown_signal() -> std::io::Result<&'static str> {
-    let mut sigterm = signal(SignalKind::terminate())?;
-    let mut sigint = signal(SignalKind::interrupt())?;
+/// Install the process-termination signal streams: SIGTERM (k8s redeploy, sent
+/// before the grace-period SIGKILL) and SIGINT (Ctrl-C during local iteration).
+fn install_shutdown_signals() -> std::io::Result<(Signal, Signal)> {
+    Ok((signal(SignalKind::terminate())?, signal(SignalKind::interrupt())?))
+}
+
+/// Resolve when either signal stream next fires.
+async fn wait_either(sigterm: &mut Signal, sigint: &mut Signal) {
     tokio::select! {
-        _ = sigterm.recv() => Ok("SIGTERM"),
-        _ = sigint.recv() => Ok("SIGINT"),
+        _ = sigterm.recv() => {}
+        _ = sigint.recv() => {}
     }
+}
+
+/// Await every supervised stage to completion, logging any that failed to join.
+async fn await_stages(stages: &mut JoinSet<()>) {
+    while let Some(res) = stages.join_next().await {
+        if let Err(e) = res {
+            warn!(error = %e, "pipeline stage task failed");
+        }
+    }
+}
+
+/// Bound the post-signal drain: resolves `timeout` after `drain` is tripped, and
+/// never before. Normal running and reactive abort leave `drain` untripped, so
+/// this future stays pending and `main` waits on the stages with no timer —
+/// only a deliberate drain is deadline-bounded.
+async fn drain_deadline(drain: &CancellationToken, timeout: std::time::Duration) {
+    drain.cancelled().await;
+    tokio::time::sleep(timeout).await;
 }
