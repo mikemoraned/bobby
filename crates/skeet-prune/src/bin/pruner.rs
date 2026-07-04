@@ -60,11 +60,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // `jetstream_oxide` logs the underlying WebSocket disconnect reason (and the
     // server close code) via the `log` crate, bridged into tracing; surface it at
     // `warn` so reconnect causes land in `pruner.log` without needing `RUST_LOG`.
-    let default_filter = format!(
-        "{bin}=info,skeet_prune=info,shared=info,skeet_store=info,lance_io=warn,object_store=warn,jetstream_oxide=warn",
-        bin = env!("CARGO_CRATE_NAME"),
+    let _guard = shared::tracing::init_with_file(
+        env!("CARGO_CRATE_NAME"),
+        "skeet_prune=info,shared=info,skeet_store=info,lance_io=warn,object_store=warn,jetstream_oxide=warn",
+        "pruner.log",
     );
-    let _guard = shared::tracing::init_with_file(&default_filter, "pruner.log");
 
     info!(git_hash = env!("BUILD_GIT_HASH"), "pruner starting");
 

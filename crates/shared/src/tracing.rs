@@ -21,6 +21,21 @@ fn targets_filter(default_filter: &str) -> Targets {
         .expect("valid filter")
 }
 
+/// Ensure the binary's own log target is captured by the shipped default filter.
+///
+/// A `Targets` filter with specific `crate=level` directives drops every target
+/// it doesn't list, and a binary's log target is its crate name — trivially
+/// omitted (and then silently lost) because it differs from the library crates
+/// the directives usually name. Prepending `{bin_target}=info` guarantees the
+/// binary's own logs survive regardless of what it's named. Prepended (not
+/// appended) so an explicit later directive for the same target still wins.
+///
+/// Only applied to the compiled-in default; an explicit `RUST_LOG` stays a full
+/// override so a developer can still narrow or silence everything on purpose.
+fn with_bin_target(bin_target: &str, default_filter: &str) -> String {
+    format!("{bin_target}=info,{default_filter}")
+}
+
 /// Guard that shuts down the OpenTelemetry tracer provider on drop.
 pub struct OtelGuard {
     provider: SdkTracerProvider,
@@ -121,12 +136,16 @@ pub fn init(default_filter: &str) {
 /// Initialize tracing with a daily rolling file appender, stderr output,
 /// and optional OpenTelemetry (traces + metrics).
 ///
+/// `bin_target` is the calling binary's log target — pass `env!("CARGO_CRATE_NAME")`
+/// so it tracks the crate name automatically — and is always captured at `info`
+/// (see [`with_bin_target`]) so a binary can't silently filter out its own logs.
+///
 /// The returned guards must be held for the lifetime of the program.
-pub fn init_with_file(default_filter: &str, filename: &str) -> TracingGuard {
+pub fn init_with_file(bin_target: &str, default_filter: &str, filename: &str) -> TracingGuard {
     let file_appender = tracing_appender::rolling::daily("logs", filename);
     let (non_blocking, file_guard) = tracing_appender::non_blocking(file_appender);
 
-    let filter = targets_filter(default_filter);
+    let filter = targets_filter(&with_bin_target(bin_target, default_filter));
     let (otel_layer, otel_guard) = match try_otel_layer() {
         Some((layer, guard)) => (Some(layer.with_filter(filter.clone())), Some(guard)),
         None => (None, None),
@@ -164,4 +183,34 @@ pub struct TracingGuard {
     _file_guard: Option<WorkerGuard>,
     _otel_guard: Option<OtelGuard>,
     _metrics_guard: Option<MetricsGuard>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tracing::Level;
+
+    /// The bin target is captured at info even when the default directives — the
+    /// library crates a binary usually names — omit it entirely.
+    #[test]
+    fn bin_target_is_captured_when_absent_from_default() {
+        let filter: Targets = with_bin_target("some_bin", "shared=info,skeet_store=info")
+            .parse()
+            .expect("valid filter");
+        assert!(filter.would_enable("some_bin", &Level::INFO));
+        // An unrelated, unlisted target stays filtered out — we widened the filter
+        // by exactly the binary's own target, nothing more.
+        assert!(!filter.would_enable("some_other_crate", &Level::INFO));
+    }
+
+    /// A later explicit directive for the same target overrides the prepended
+    /// default, so a binary can still raise or lower its own level.
+    #[test]
+    fn explicit_directive_overrides_prepended_default() {
+        let filter: Targets = with_bin_target("some_bin", "some_bin=warn")
+            .parse()
+            .expect("valid filter");
+        assert!(!filter.would_enable("some_bin", &Level::INFO));
+        assert!(filter.would_enable("some_bin", &Level::WARN));
+    }
 }

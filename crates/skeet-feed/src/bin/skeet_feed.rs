@@ -54,6 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let _guard = shared::tracing::init_with_file(
+        env!("CARGO_CRATE_NAME"),
         "skeet_feed=info,skeet_publish=info,shared=info",
         "feed.log",
     );
