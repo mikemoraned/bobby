@@ -15,6 +15,7 @@ use std::sync::Arc;
 use bluesky::ImageUrl;
 use cot::http::HeaderValue;
 use cot::http::header::{CACHE_CONTROL, CONTENT_TYPE};
+use cot::http::request::Parts as RequestHead;
 use cot::response::Response;
 use cot::{Body, Result};
 use image::imageops::{self, FilterType};
@@ -237,6 +238,7 @@ pub async fn generate_montage(
 
 #[instrument(skip_all)]
 pub async fn preview(
+    head: RequestHead,
     PublishedImagesSourceExtractor(source): PublishedImagesSourceExtractor,
     PreviewStateExtractor(state): PreviewStateExtractor,
 ) -> Result<Response> {
@@ -247,12 +249,23 @@ pub async fn preview(
         .map_err(|e| cot::Error::internal(format!("failed to read published images: {e}")))?;
 
     let selection = select_tiles(&published.images);
+    let signature = selection.signature;
+
+    // Conditional GET: the ETag is the content signature, so a revalidation hit
+    // skips the fetch + compose entirely.
+    if let Some(not_modified) =
+        web_support::not_modified_by_etag(&head, signature.as_str(), Some(PREVIEW_CACHE_CONTROL))
+    {
+        info!("preview unchanged since client's copy — 304");
+        return Ok(not_modified);
+    }
+
     let urls = selection.tile_urls;
     let size = state.size;
     let generator_state = state.clone();
     let montage = state
         .cache
-        .get_or_revalidate(selection.signature, move || async move {
+        .get_or_revalidate(signature.clone(), move || async move {
             generate_montage(&generator_state.fetcher, urls, size).await
         })
         .await;
@@ -263,6 +276,7 @@ pub async fn preview(
             .map_err(|e| cot::Error::internal(format!("failed to render preview image: {e}")))?,
     };
     let mut response = Response::new(Body::fixed(body));
+    web_support::set_etag(&mut response, signature.as_str());
     let headers = response.headers_mut();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("image/png"));
     headers.insert(CACHE_CONTROL, HeaderValue::from_static(PREVIEW_CACHE_CONTROL));

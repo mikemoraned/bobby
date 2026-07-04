@@ -307,6 +307,43 @@ async fn preview_route_exists_and_serves_a_png_image() {
 }
 
 #[tokio::test]
+async fn preview_sets_an_etag_and_returns_304_on_a_matching_if_none_match() {
+    let mut client = client_with_images(test_params(), vec![]).await;
+
+    let first = client.get("/preview.png").await.expect("GET /preview.png");
+    assert_eq!(first.status().as_u16(), 200);
+    let etag = first
+        .headers()
+        .get("etag")
+        .expect("etag header")
+        .to_str()
+        .expect("valid header")
+        .to_string();
+
+    // Re-request with the ETag the client now holds: unchanged content → 304.
+    let request = cot::http::Request::builder()
+        .uri("/preview.png")
+        .header("if-none-match", &etag)
+        .body(cot::Body::empty())
+        .expect("build request");
+    let response = client.request(request).await.expect("conditional GET");
+    assert_eq!(
+        response.status().as_u16(),
+        304,
+        "a matching If-None-Match should return 304"
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get("etag")
+            .expect("304 echoes etag")
+            .to_str()
+            .expect("valid header"),
+        etag
+    );
+}
+
+#[tokio::test]
 async fn home_head_carries_open_graph_and_twitter_preview_tags() {
     let mut client = client_with_images(test_params(), vec![]).await;
 
