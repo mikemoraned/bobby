@@ -435,6 +435,58 @@ async fn homepage_banner_match_count_equals_grid_image_count_docker() {
 }
 
 #[tokio::test]
+async fn preview_image_serves_a_png_and_revalidates_docker() {
+    let (server, redis_url) = spawn_local_server().await;
+    let base = &server.url;
+    let client = reqwest::Client::new();
+
+    // Populate the grid's preferred window so the preview has content to compose.
+    seed(&redis_url, &[GRID_PREFERRED], &[(GRID_PREFERRED, "grid1")]).await;
+
+    let resp = client
+        .get(format!("{base}/preview.png"))
+        .send()
+        .await
+        .expect("GET /preview.png");
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers()
+            .get("content-type")
+            .expect("content-type")
+            .to_str()
+            .expect("valid header"),
+        "image/png"
+    );
+    let etag = resp
+        .headers()
+        .get("etag")
+        .expect("etag header")
+        .to_str()
+        .expect("valid header")
+        .to_string();
+    let bytes = resp.bytes().await.expect("read body");
+    let image = image::load_from_memory(&bytes).expect("a valid PNG");
+    assert_eq!(
+        (image.width(), image.height()),
+        (1200, 630),
+        "preview is the Open Graph 1200x630 size"
+    );
+
+    // Revalidate with the ETag the client now holds: unchanged content → 304.
+    let revalidated = client
+        .get(format!("{base}/preview.png"))
+        .header("if-none-match", &etag)
+        .send()
+        .await
+        .expect("conditional GET");
+    assert_eq!(
+        revalidated.status(),
+        304,
+        "a matching If-None-Match should return 304"
+    );
+}
+
+#[tokio::test]
 async fn feed_serves_preferred_list_when_populated_docker() {
     let (server, redis_url) = spawn_local_server().await;
     let base = &server.url;
