@@ -17,7 +17,7 @@ fn load_refine_models_and_resolve_production() {
 
     assert_eq!(
         version.to_string(),
-        "v2:34d8bec0",
+        "v2:ac1dde52",
         "production model version mismatch: got \"{version}\". \
          If refine.toml changed intentionally, update both the production label and this test",
     );
