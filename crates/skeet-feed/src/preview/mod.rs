@@ -5,6 +5,7 @@
 //! montage of the feed.
 
 pub mod selection;
+pub mod tiles;
 
 use std::io::Cursor;
 

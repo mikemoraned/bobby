@@ -7,13 +7,16 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+async-trait = { workspace = true }
 bluesky = { workspace = true }
 chrono = { workspace = true }
 chrono-humanize = { workspace = true }
 clap = { workspace = true }
 cot = { workspace = true }
+futures = { workspace = true }
 image = { workspace = true }
 md5 = { workspace = true }
+moka = { workspace = true }
 qrcode = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
@@ -31,7 +34,6 @@ web-support = { workspace = true }
 build-support = { workspace = true }
 
 [dev-dependencies]
-async-trait = { workspace = true }
 skeet-store = { path = "../skeet-store" }
 testcontainers = { workspace = true }
 testcontainers-modules = { workspace = true }
