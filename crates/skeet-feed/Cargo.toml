@@ -52,5 +52,5 @@ name = "register-feed"
 path = "src/bin/register_feed.rs"
 
 [[bin]]
-name = "gen-fallback-preview"
-path = "src/bin/gen_fallback_preview.rs"
+name = "generate-fallback-preview"
+path = "src/bin/generate_fallback_preview.rs"

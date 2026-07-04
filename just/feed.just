@@ -12,8 +12,8 @@ sample-montage OUT="sample-montage.png":
 
 # Regenerate the committed preview fallback image from current published data.
 # Re-run whenever the montage styles change so the committed image stays in sync.
-gen-fallback-preview:
-    op run --env-file deploy/bobby-publish-local.env -- cargo run --release --bin gen-fallback-preview
+generate-fallback-preview:
+    op run --env-file deploy/bobby-publish-local.env -- cargo run --release --bin generate-fallback-preview
 
 deploy_feed_staging: deploy_feed_staging_secrets deploy_feed_staging_app end_to_end_test_feed_staging
 
