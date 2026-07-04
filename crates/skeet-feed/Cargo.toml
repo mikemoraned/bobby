@@ -50,3 +50,7 @@ path = "src/bin/skeet_feed.rs"
 [[bin]]
 name = "register-feed"
 path = "src/bin/register_feed.rs"
+
+[[bin]]
+name = "gen-fallback-preview"
+path = "src/bin/gen_fallback_preview.rs"

@@ -307,6 +307,22 @@ async fn preview_route_exists_and_serves_a_png_image() {
 }
 
 #[tokio::test]
+async fn preview_serves_the_committed_fallback_when_there_are_no_tiles() {
+    // No live tiles → the route serves the committed fallback asset verbatim.
+    const FALLBACK: &[u8] = include_bytes!("../assets/preview-fallback.png");
+    let mut client = client_with_images(test_params(), vec![]).await;
+
+    let response = client.get("/preview.png").await.expect("GET /preview.png");
+    assert_eq!(response.status().as_u16(), 200);
+    let body = response.into_body().into_bytes().await.expect("read body");
+    assert_eq!(
+        body.as_ref(),
+        FALLBACK,
+        "zero tiles should serve the committed fallback image"
+    );
+}
+
+#[tokio::test]
 async fn preview_sets_an_etag_and_returns_304_on_a_matching_if_none_match() {
     let mut client = client_with_images(test_params(), vec![]).await;
 

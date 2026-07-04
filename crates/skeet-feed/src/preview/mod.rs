@@ -210,9 +210,14 @@ pub fn compose(
     encode_png(&DynamicImage::ImageRgba8(canvas))
 }
 
+/// The committed fallback montage, embedded so it always resolves. Served when
+/// there are no usable tiles. Regenerated from live data by the fallback
+/// generator CLI whenever the montage styles change.
+const FALLBACK_PNG: &[u8] = include_bytes!("../../assets/preview-fallback.png");
+
 /// A solid-fill background PNG served when there's no montage to show yet (an
-/// empty cache still regenerating). The zero-tile case gets a branded fallback
-/// elsewhere; this just keeps the route returning a valid image meanwhile.
+/// empty cache still regenerating). The zero-tile case gets the committed
+/// fallback instead; this just keeps the route returning a valid image meanwhile.
 fn placeholder_png() -> std::result::Result<Vec<u8>, PreviewError> {
     let background = Rgb([BACKGROUND[0], BACKGROUND[1], BACKGROUND[2]]);
     let image = RgbImage::from_pixel(PREVIEW_WIDTH, PREVIEW_HEIGHT, background);
@@ -260,20 +265,26 @@ pub async fn preview(
         return Ok(not_modified);
     }
 
-    let urls = selection.tile_urls;
-    let size = state.size;
-    let generator_state = state.clone();
-    let montage = state
-        .cache
-        .get_or_revalidate(signature.clone(), move || async move {
-            generate_montage(&generator_state.fetcher, urls, size).await
-        })
-        .await;
-
-    let body = match montage {
-        Some(png) => (*png).clone(),
-        None => placeholder_png()
-            .map_err(|e| cot::Error::internal(format!("failed to render preview image: {e}")))?,
+    let body = if selection.tile_urls.is_empty() {
+        // No usable tiles: serve the committed fallback so og:image always resolves.
+        info!("no usable tiles — serving the committed fallback montage");
+        FALLBACK_PNG.to_vec()
+    } else {
+        let urls = selection.tile_urls;
+        let size = state.size;
+        let generator_state = state.clone();
+        let montage = state
+            .cache
+            .get_or_revalidate(signature.clone(), move || async move {
+                generate_montage(&generator_state.fetcher, urls, size).await
+            })
+            .await;
+        match montage {
+            Some(png) => (*png).clone(),
+            None => placeholder_png().map_err(|e| {
+                cot::Error::internal(format!("failed to render preview image: {e}"))
+            })?,
+        }
     };
     let mut response = Response::new(Body::fixed(body));
     web_support::set_etag(&mut response, signature.as_str());
