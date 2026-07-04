@@ -75,9 +75,31 @@ matters.
 
 ## Shutdown
 
-All stages share one cancellation signal. If any stage's downstream goes away,
-that signal is tripped and every other stage unwinds through the same seam,
-rather than each stage detecting a closed channel its own way.
+Shutdown has two shapes, distinguished by intent.
+
+**Reactive abort.** All stages share one *abort* cancellation signal. If any
+stage's downstream goes away, that signal is tripped and every other stage
+unwinds at once through the same seam, rather than each stage detecting a closed
+channel its own way. In-flight and buffered work is dropped — there is nowhere
+for it to go once the pipeline is torn down.
+
+**Deliberate drain.** A process-termination signal (SIGTERM on a k8s redeploy,
+SIGINT on Ctrl-C) trips a *separate* drain signal that stops only the **source**
+— the firehose stops pulling new events and drops its output sender. Because the
+depth monitors hold only *weak* handles onto the channels, that dropped sender
+closes the firehose channel, and closure cascades downstream: each stage drains
+the items already buffered ahead of it, finishes, and drops its own output
+sender, closing the next channel in turn. Everything already in the pipeline
+finishes into the store, which is safe to do precisely because the sink is
+content-hash idempotent. This narrows — but does not eliminate — restart loss:
+the in-memory resume cursor still resumes at live-tail after a restart, so the
+gap while the process is down is still lost; only what was already in the
+pipeline at signal time is saved.
+
+The stages are supervised (a `JoinSet`) and awaited, so shutdown waits for the
+whole pipeline to drain rather than only for the sink. Two guards bound the
+wait: a drain deadline (kept under the k8s grace period) forces exit if a stage
+gets stuck, and a second termination signal escalates to a reactive abort.
 
 ## Why this shape
 

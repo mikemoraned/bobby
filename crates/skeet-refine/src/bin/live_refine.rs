@@ -81,6 +81,7 @@ async fn dispatch(
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _guard = shared::tracing::init_with_file(
+        env!("CARGO_CRATE_NAME"),
         "skeet_refine=info,shared=info,skeet_store=info,lance_io=warn,object_store=warn",
         "live-refine.log",
     );

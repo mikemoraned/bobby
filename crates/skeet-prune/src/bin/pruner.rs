@@ -2,14 +2,12 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use clap::Parser;
 use shared::{PruneConfig, RejectionCategory};
-use skeet_prune::{
-    ChannelMonitors, ImageMessage, MetaMessage, PipelineCounters, SkeetCandidate, StatsMessage,
-};
+use skeet_prune::Pipeline;
 use skeet_store::StoreArgs;
-use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 #[derive(Parser)]
@@ -41,6 +39,12 @@ struct Args {
     #[arg(long, default_value = "2")]
     image_workers: usize,
 
+    /// Seconds to let the pipeline drain into the store after a shutdown signal
+    /// before forcing exit (default: 25). Keep below the k8s
+    /// terminationGracePeriodSeconds so the drain finishes ahead of SIGKILL.
+    #[arg(long, default_value = "25")]
+    drain_timeout_secs: u64,
+
     /// Permit writing to a remote, shared object store (e.g. R2). Off by
     /// default: the pruner is the one writer to the shared `images_vN` table
     /// keyed by content hash *without* a per-owner discriminator, so a staging
@@ -60,6 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // server close code) via the `log` crate, bridged into tracing; surface it at
     // `warn` so reconnect causes land in `pruner.log` without needing `RUST_LOG`.
     let _guard = shared::tracing::init_with_file(
+        env!("CARGO_CRATE_NAME"),
         "skeet_prune=info,shared=info,skeet_store=info,lance_io=warn,object_store=warn,jetstream_oxide=warn",
         "pruner.log",
     );
@@ -102,82 +107,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // per-interval PruneStats).
     let store = Arc::new(store);
 
-    // Pipeline: firehose → meta prune → image prune → save → stats. The
-    // firehose→meta and meta→image channels are MPMC so each stage's worker pool
-    // shares one input; the image→save and save→stats channels each have a
-    // single consumer but use the same channel type.
-    let (firehose_tx, firehose_rx) = async_channel::bounded::<SkeetCandidate>(16);
-    let (meta_tx, meta_rx) = async_channel::bounded::<MetaMessage>(16);
-    let (image_tx, image_rx) = async_channel::bounded::<ImageMessage>(100);
-    let (stats_tx, stats_rx) = async_channel::bounded::<StatsMessage>(100);
-
-    let counters = Arc::new(PipelineCounters::default());
-    let channels = ChannelMonitors::new(firehose_tx.clone(), meta_tx.clone(), image_tx.clone());
-
-    // Shared shutdown signal: any stage whose downstream closes cancels the
-    // token, so every other stage unwinds through the same seam.
-    let token = CancellationToken::new();
-
-    let meta_http = http.clone();
-    let firehose_counters = Arc::clone(&counters);
-    let meta_counters = Arc::clone(&counters);
-    let image_counters = Arc::clone(&counters);
-
-    let firehose_token = token.clone();
-    tokio::spawn(async move {
-        skeet_prune::firehose_stage::run(firehose_tx, firehose_counters, firehose_token).await;
-    });
-
-    let meta_workers = args.meta_workers;
-    let meta_token = token.clone();
-    tokio::spawn(async move {
-        skeet_prune::prune_meta_stage::run_workers(
-            firehose_rx,
-            meta_tx,
-            meta_http,
-            meta_counters,
-            meta_workers,
-            meta_token,
-        )
-        .await;
-    });
-
-    let image_workers = args.image_workers;
-    let image_token = token.clone();
-    let classify_config = skeet_prune::prune_image_stage::ClassifyConfig {
+    Pipeline {
+        store,
         http,
         prune_config,
         config_version,
-    };
-    tokio::spawn(async move {
-        skeet_prune::prune_image_stage::run_workers(
-            meta_rx,
-            image_tx,
-            classify_config,
-            image_counters,
-            image_workers,
-            image_token,
-        )
-        .await;
-    });
-
-    let save_token = token.clone();
-    let save_store = Arc::clone(&store);
-    tokio::spawn(async move {
-        skeet_prune::save_stage::run(&image_rx, save_store.as_ref(), stats_tx, save_token).await;
-    });
-
-    let log_interval = std::time::Duration::from_secs(args.status_interval_secs);
-    let flush_interval = std::time::Duration::from_secs(args.statistics_flush_secs);
-    skeet_prune::content_statistics_stage::run(
-        &stats_rx,
-        store.as_ref(),
-        counters,
-        channels,
-        log_interval,
-        flush_interval,
-        token,
-    )
+        meta_workers: args.meta_workers,
+        image_workers: args.image_workers,
+        status_interval: Duration::from_secs(args.status_interval_secs),
+        statistics_flush_interval: Duration::from_secs(args.statistics_flush_secs),
+        drain_timeout: Duration::from_secs(args.drain_timeout_secs),
+    }
+    .run()
     .await;
 
     Ok(())

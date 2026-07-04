@@ -7,7 +7,9 @@ use shared::{ModelVersion, PruneConfig};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
-use crate::pipeline::{self, ContentCounts, ImageMessage, MetaMessage, MetaResult, PipelineCounters};
+use crate::pipeline::{
+    self, ContentCounts, ImageMessage, MetaMessage, MetaResult, PipelineCounters,
+};
 
 // The text-detection models are compile-time-bundled assets; a load failure is an
 // unrecoverable startup error for the worker, so panicking the spawned task is intended.
