@@ -17,6 +17,8 @@ use cot::test::Client;
 use shared::SkeetId;
 use shared::{BlueskyCid, ImageId};
 use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
+use skeet_feed::preview::state::{PreviewState, PreviewStateLayer};
+use skeet_feed::preview::{PREVIEW_HEIGHT, PREVIEW_WIDTH};
 use skeet_feed::project::FeedProject;
 use skeet_feed::{FeedSourceLayer, PublishedImagesSourceLayer};
 use skeet_publish::{
@@ -87,6 +89,10 @@ fn project_for(
         feed_source_layer: FeedSourceLayer::new(feed_source),
         published_images_source_layer: PublishedImagesSourceLayer::new(images_source),
         feed_config_layer: FeedConfigLayer::new(params),
+        preview_state_layer: PreviewStateLayer::new(Arc::new(PreviewState::new(
+            reqwest::Client::new(),
+            (PREVIEW_WIDTH, PREVIEW_HEIGHT),
+        ))),
     }
 }
 
@@ -272,6 +278,111 @@ async fn rejects_unknown_feed() {
     assert_eq!(status, 400);
     let json: serde_json::Value = serde_json::from_str(&body).expect("valid JSON");
     assert_eq!(json["error"], "UnknownFeed");
+}
+
+#[tokio::test]
+async fn preview_route_exists_and_serves_a_png_image() {
+    let mut client = client_with_images(test_params(), vec![]).await;
+
+    let response = client
+        .get(skeet_feed::preview::PREVIEW_ROUTE_PATH)
+        .await
+        .expect("GET preview route");
+    assert_eq!(
+        response.status().as_u16(),
+        200,
+        "the preview route should exist and respond successfully"
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get("content-type")
+            .expect("content-type header")
+            .to_str()
+            .expect("valid header"),
+        "image/png"
+    );
+    let body = response.into_body().into_bytes().await.expect("read body");
+    assert_eq!(&body[..8], b"\x89PNG\r\n\x1a\n", "body is a PNG");
+}
+
+#[tokio::test]
+async fn preview_serves_the_committed_fallback_when_there_are_no_tiles() {
+    // No live tiles → the route serves the committed fallback asset verbatim.
+    const FALLBACK: &[u8] = include_bytes!("../assets/preview-fallback.png");
+    let mut client = client_with_images(test_params(), vec![]).await;
+
+    let response = client.get("/preview.png").await.expect("GET /preview.png");
+    assert_eq!(response.status().as_u16(), 200);
+    let body = response.into_body().into_bytes().await.expect("read body");
+    assert_eq!(
+        body.as_ref(),
+        FALLBACK,
+        "zero tiles should serve the committed fallback image"
+    );
+}
+
+#[tokio::test]
+async fn preview_sets_an_etag_and_returns_304_on_a_matching_if_none_match() {
+    let mut client = client_with_images(test_params(), vec![]).await;
+
+    let first = client.get("/preview.png").await.expect("GET /preview.png");
+    assert_eq!(first.status().as_u16(), 200);
+    let etag = first
+        .headers()
+        .get("etag")
+        .expect("etag header")
+        .to_str()
+        .expect("valid header")
+        .to_string();
+
+    // Re-request with the ETag the client now holds: unchanged content → 304.
+    let request = cot::http::Request::builder()
+        .uri("/preview.png")
+        .header("if-none-match", &etag)
+        .body(cot::Body::empty())
+        .expect("build request");
+    let response = client.request(request).await.expect("conditional GET");
+    assert_eq!(
+        response.status().as_u16(),
+        304,
+        "a matching If-None-Match should return 304"
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get("etag")
+            .expect("304 echoes etag")
+            .to_str()
+            .expect("valid header"),
+        etag
+    );
+}
+
+#[tokio::test]
+async fn home_head_carries_open_graph_and_twitter_preview_tags() {
+    let mut client = client_with_images(test_params(), vec![]).await;
+
+    let (status, body) = get_body(&mut client, "/").await;
+    assert_eq!(status, 200);
+    // The og:image / twitter:image resolve to the absolute preview URL built from
+    // the configured site hostname.
+    assert!(
+        body.contains(r#"property="og:image" content="https://test.example.com/preview.png""#),
+        "og:image should point at the absolute preview URL"
+    );
+    assert!(
+        body.contains(r#"name="twitter:image" content="https://test.example.com/preview.png""#),
+        "twitter:image should point at the absolute preview URL"
+    );
+    assert!(
+        body.contains(r#"name="twitter:card" content="summary_large_image""#),
+        "twitter:card should request a large-image unfurl"
+    );
+    assert!(
+        body.contains(r#"property="og:url" content="https://test.example.com/""#),
+        "og:url should be the canonical site URL"
+    );
 }
 
 #[tokio::test]
