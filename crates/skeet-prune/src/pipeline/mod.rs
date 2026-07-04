@@ -18,6 +18,7 @@ pub mod content_statistics_stage;
 pub mod firehose_stage;
 pub mod prune_image_stage;
 pub mod prune_meta_stage;
+pub mod runner;
 pub mod save_stage;
 pub mod statistics_persister;
 
@@ -150,7 +151,10 @@ impl AddAssign<&Self> for ContentCounts {
         self.saved = self.saved.saturating_add(rhs.saved);
         self.rejected = self.rejected.saturating_add(rhs.rejected);
         merge_counts(&mut self.rejections.by_reason, &rhs.rejections.by_reason);
-        merge_counts(&mut self.rejections.by_category, &rhs.rejections.by_category);
+        merge_counts(
+            &mut self.rejections.by_category,
+            &rhs.rejections.by_category,
+        );
         merge_counts(
             &mut self.rejections.by_sole_category,
             &rhs.rejections.by_sole_category,

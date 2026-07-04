@@ -92,7 +92,10 @@ async fn run_session(
         let cursor = crate::firehose::replay_cursor(t, now);
         if cursor.is_none() {
             let gap_s = (now.timestamp_micros() - t as i64) / 1_000_000;
-            warn!(gap_s, "resume gap exceeds replay cap; live-tailing past it (gap events skipped)");
+            warn!(
+                gap_s,
+                "resume gap exceeds replay cap; live-tailing past it (gap events skipped)"
+            );
         }
         cursor
     });

@@ -78,7 +78,10 @@ mod tests {
             // A: meta-rejected (no images examined).
             ContentCounts::post(0) + reject(BlockedByMetadata),
             // B: passed, 3 images, one fresh save, two rejections of varied category.
-            ContentCounts::post(3) + ContentCounts::saved() + reject(FaceTooSmall) + reject(TooMuchText),
+            ContentCounts::post(3)
+                + ContentCounts::saved()
+                + reject(FaceTooSmall)
+                + reject(TooMuchText),
             // C: passed, 2 images, all reject.
             ContentCounts::post(2) + reject(FaceTooSmall) + reject(FaceTooSmall),
             // D: passed, 1 image, fresh save.
