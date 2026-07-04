@@ -20,4 +20,6 @@ user-invocable: true
      - No individual checkbox items — summarise by outcome
    - Append this summary to the end of `docs/completed-slices.md`.
 
-3. **Report** what you did: which slice was archived and any other special steps taken not mentioned above
+3. **Clear `docs/current-slice.md`** (leave the file existing): replace its entire contents with a placeholder indicating no active slice, e.g. a `# Current Slice` heading plus a line noting there is none.
+
+4. **Report** what you did: which slice was archived and any other special steps taken not mentioned above
