@@ -6,6 +6,15 @@ PUBLISHER_DID := "did:plc:cjvdzmk4iapi5p5orrasehxp"
 feed:
     RUST_BACKTRACE=1 OTEL_SERVICE_NAME=skeet-feed {{ LOCAL_OTEL_RESOURCE_ATTRS }} op run --env-file deploy/bobby-publish-local.env -- cargo run --release --bin skeet-feed -- --hostname {{ STAGING_HOSTNAME }} --publisher-did {{ PUBLISHER_DID }}
 
+# Render a sample social-media preview montage (synthetic tiles) to eyeball layout
+sample-montage OUT="sample-montage.png":
+    cargo run -p skeet-feed --example sample_montage -- {{ OUT }}
+
+# Regenerate the committed preview fallback image from current published data.
+# Re-run whenever the montage styles change so the committed image stays in sync.
+generate-fallback-preview:
+    op run --env-file deploy/bobby-publish-local.env -- cargo run --release --bin generate-fallback-preview
+
 deploy_feed_staging: deploy_feed_staging_secrets deploy_feed_staging_app end_to_end_test_feed_staging
 
 deploy_feed_staging_secrets:

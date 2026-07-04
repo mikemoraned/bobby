@@ -3,6 +3,7 @@
 pub mod feed_config;
 pub mod feed_source;
 pub mod handlers;
+pub mod preview;
 pub mod project;
 pub mod published_images_source;
 pub mod qr;
@@ -14,3 +15,7 @@ pub use published_images_source::{PublishedImagesSourceExtractor, PublishedImage
 /// registration (`register-feed`'s `--description`) and the website banner so
 /// the two can't drift.
 pub const FEED_BLURB: &str = "Selfies people take with landmarks — famous buildings, monuments and places — found on Bluesky.";
+
+/// The site's title, shared by the HTML `<title>` and the `og:title` meta tag so
+/// the browser tab and a shared link's unfurl can't drift.
+pub const SITE_TITLE: &str = "Bobby — selfies with landmarks";

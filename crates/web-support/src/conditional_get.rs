@@ -1,6 +1,6 @@
 use chrono::{DateTime, NaiveDateTime, Timelike, Utc};
 use cot::http::HeaderValue;
-use cot::http::header::{CACHE_CONTROL, IF_MODIFIED_SINCE, LAST_MODIFIED};
+use cot::http::header::{CACHE_CONTROL, ETAG, IF_MODIFIED_SINCE, IF_NONE_MATCH, LAST_MODIFIED};
 use cot::http::request::Parts as RequestHead;
 use cot::response::Response;
 use cot::{Body, StatusCode};
@@ -72,6 +72,67 @@ pub fn not_modified_since(
     if let Ok(value) = HeaderValue::from_str(&http_date(last_modified)) {
         response.headers_mut().insert(LAST_MODIFIED, value);
     }
+    if let Some(cc) = cache_control
+        && let Ok(value) = HeaderValue::from_str(cc)
+    {
+        response.headers_mut().insert(CACHE_CONTROL, value);
+    }
+    Some(response)
+}
+
+/// Set a response's strong `ETag` to `etag` (quoted as the wire format requires).
+///
+/// The companion of [`not_modified_by_etag`] for the full-render (`200`) path, so
+/// both the `200` and the `304` carry the same validator from one place. A no-op
+/// in the impossible case that the value can't be made into a header.
+pub fn set_etag(response: &mut Response, etag: &str) {
+    if let Ok(value) = HeaderValue::from_str(&format!("\"{etag}\"")) {
+        response.headers_mut().insert(ETAG, value);
+    }
+}
+
+/// The inner value of one `If-None-Match` entry: its optional weak `W/` prefix
+/// and surrounding quotes stripped, so `W/"abc"` and `"abc"` both yield `abc`.
+fn etag_value(entry: &str) -> &str {
+    entry
+        .trim()
+        .strip_prefix("W/")
+        .unwrap_or_else(|| entry.trim())
+        .trim_matches('"')
+}
+
+/// A `304 Not Modified` response when the client's `If-None-Match` already holds
+/// this `etag`, otherwise `None` (the caller renders in full).
+///
+/// `If-None-Match` may be `*` (matches any existing representation) or a
+/// comma-separated list of entries; a match uses weak comparison (the `W/` prefix
+/// is ignored), per HTTP semantics for conditional GET.
+///
+/// Because the `etag` is the content's own signature, it can be computed cheaply
+/// and checked *before* the expensive work, so a
+/// revalidation hit skips that work entirely — which a response-rewriting
+/// middleware could not. The `304` echoes `ETag` (and `Cache-Control`, when
+/// given) so a cache can refresh its freshness without a body.
+pub fn not_modified_by_etag(
+    head: &RequestHead,
+    etag: &str,
+    cache_control: Option<&str>,
+) -> Option<Response> {
+    let if_none_match = head
+        .headers
+        .get(IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())?;
+
+    let matches = if_none_match
+        .split(',')
+        .any(|entry| entry.trim() == "*" || etag_value(entry) == etag);
+    if !matches {
+        return None; // the client's copy differs — render it
+    }
+
+    let mut response = Response::new(Body::empty());
+    *response.status_mut() = StatusCode::NOT_MODIFIED;
+    set_etag(&mut response, etag);
     if let Some(cc) = cache_control
         && let Ok(value) = HeaderValue::from_str(cc)
     {
@@ -155,5 +216,74 @@ mod tests {
     fn absent_or_unparseable_if_modified_since_renders() {
         assert!(not_modified_since(&head_with(None), at(9, 30, 0), None).is_none());
         assert!(not_modified_since(&head_with(Some("whenever")), at(9, 30, 0), None).is_none());
+    }
+
+    fn head_with_if_none_match(if_none_match: Option<&str>) -> RequestHead {
+        let mut builder = cot::http::Request::builder().uri("/");
+        if let Some(inm) = if_none_match {
+            builder = builder.header(IF_NONE_MATCH, inm);
+        }
+        builder
+            .body(Body::empty())
+            .expect("build request")
+            .into_parts()
+            .0
+    }
+
+    #[test]
+    fn set_etag_quotes_the_value() {
+        let mut response = Response::new(Body::empty());
+        set_etag(&mut response, "abc123");
+        assert_eq!(response.headers().get(ETAG).expect("etag"), "\"abc123\"");
+    }
+
+    #[test]
+    fn matching_if_none_match_is_not_modified() {
+        let head = head_with_if_none_match(Some("\"abc123\""));
+        let response =
+            not_modified_by_etag(&head, "abc123", Some("public, max-age=60")).expect("304");
+        assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+        assert_eq!(response.headers().get(ETAG).expect("etag"), "\"abc123\"");
+        assert_eq!(
+            response
+                .headers()
+                .get(CACHE_CONTROL)
+                .expect("cache-control"),
+            "public, max-age=60"
+        );
+    }
+
+    #[test]
+    fn weak_and_wildcard_if_none_match_match() {
+        assert!(
+            not_modified_by_etag(
+                &head_with_if_none_match(Some("W/\"abc123\"")),
+                "abc123",
+                None
+            )
+            .is_some()
+        );
+        assert!(
+            not_modified_by_etag(&head_with_if_none_match(Some("*")), "abc123", None).is_some()
+        );
+    }
+
+    #[test]
+    fn matching_entry_within_a_list_is_not_modified() {
+        let head = head_with_if_none_match(Some("\"other\", \"abc123\""));
+        assert!(not_modified_by_etag(&head, "abc123", None).is_some());
+    }
+
+    #[test]
+    fn different_or_absent_if_none_match_renders() {
+        assert!(
+            not_modified_by_etag(
+                &head_with_if_none_match(Some("\"different\"")),
+                "abc123",
+                None
+            )
+            .is_none()
+        );
+        assert!(not_modified_by_etag(&head_with_if_none_match(None), "abc123", None).is_none());
     }
 }

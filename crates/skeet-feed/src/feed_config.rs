@@ -64,6 +64,19 @@ impl FeedParams {
         format!("https://{}", self.hostname)
     }
 
+    /// The site's own public URL — the canonical page a shared link points at
+    /// (`og:url`).
+    pub fn site_url(&self) -> String {
+        site_url(&self.hostname)
+    }
+
+    /// Absolute URL of the social-media preview image, for the `og:image` /
+    /// `twitter:image` meta tags. Built from the preview route so the two stay
+    /// in step.
+    pub fn preview_image_url(&self) -> String {
+        format!("https://{}{}", self.hostname, crate::preview::PREVIEW_ROUTE_PATH)
+    }
+
     /// The `bsky.app` URL where a user can view and subscribe to this feed.
     pub fn feed_bsky_url(&self) -> String {
         format!(

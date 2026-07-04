@@ -1,3 +1,3 @@
 # Current Slice
 
-_No active slice. Run `/choose-slice` to promote the next one from `docs/next-slices.md`._
+There is no active slice. Pick the next one from `docs/next-slices.md` (e.g. via the `choose-slice` skill) to populate this file.

@@ -5,6 +5,8 @@ use cot::{App, AppBuilder, Project};
 
 use crate::feed_config::FeedConfigLayer;
 use crate::handlers::{describe_feed_generator, did_document, get_feed_skeleton, home};
+use crate::preview::state::PreviewStateLayer;
+use crate::preview::{PREVIEW_ROUTE_PATH, preview};
 use crate::{FeedSourceLayer, PublishedImagesSourceLayer};
 
 pub struct FeedApp;
@@ -17,6 +19,7 @@ impl App for FeedApp {
     fn router(&self) -> Router {
         Router::with_urls([
             Route::with_handler_and_name("/", home, "home"),
+            Route::with_handler_and_name(PREVIEW_ROUTE_PATH, preview, "preview"),
             Route::with_handler_and_name("/.well-known/did.json", did_document, "did_document"),
             Route::with_handler_and_name(
                 "/xrpc/app.bsky.feed.describeFeedGenerator",
@@ -36,6 +39,7 @@ pub struct FeedProject {
     pub feed_source_layer: FeedSourceLayer,
     pub published_images_source_layer: PublishedImagesSourceLayer,
     pub feed_config_layer: FeedConfigLayer,
+    pub preview_state_layer: PreviewStateLayer,
 }
 
 impl Project for FeedProject {
@@ -58,6 +62,7 @@ impl Project for FeedProject {
             .middleware(self.feed_source_layer.clone())
             .middleware(self.published_images_source_layer.clone())
             .middleware(self.feed_config_layer.clone())
+            .middleware(self.preview_state_layer.clone())
             .build()
     }
 }
