@@ -62,4 +62,7 @@ tower-sessions = "0.14"
 async-trait = "0.1"
 async-channel = "2"
 backon = "1.6"
+atrium-api = { version = "0.25", default-features = false, features = ["namespace-appbsky"] }
+jetstream-oxide = "0.1"
+fastrand = "2"
 

@@ -1566,7 +1566,11 @@ name = "bluesky"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "atrium-api",
+ "chrono",
+ "fastrand",
  "image",
+ "jetstream-oxide",
  "reqwest 0.13.2",
  "serde",
  "serde_json",

@@ -23,7 +23,7 @@ impl ImageUrlResolver for CdnImageUrlResolver {
         let ImageId::V3(cid) = image_id else {
             return None;
         };
-        bsky_cdn_thumbnail_url(skeet_id.did().as_str(), &cid.to_string()).ok()
+        bsky_cdn_thumbnail_url(skeet_id.did(), cid).ok()
     }
 }
 

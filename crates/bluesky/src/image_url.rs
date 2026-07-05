@@ -2,6 +2,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use shared::{BlueskyCid, Did};
 use url::Url;
 
 /// A resolved, publicly fetchable image URL
@@ -27,7 +28,7 @@ pub enum InvalidImageUrl {
 /// `https://cdn.bsky.app/img/feed_thumbnail/plain/{did}/{cid}@jpeg`.
 ///
 /// Fails if `did`/`cid` produce a string that isn't a valid `https` URL.
-pub fn bsky_cdn_thumbnail_url(did: &str, cid: &str) -> Result<ImageUrl, InvalidImageUrl> {
+pub fn bsky_cdn_thumbnail_url(did: &Did, cid: &BlueskyCid) -> Result<ImageUrl, InvalidImageUrl> {
     ImageUrl::new(format!(
         "https://cdn.bsky.app/img/feed_thumbnail/plain/{did}/{cid}@jpeg"
     ))
@@ -126,7 +127,13 @@ mod tests {
 
     #[test]
     fn cdn_thumbnail_url_builds_expected_image_url() {
-        let url = bsky_cdn_thumbnail_url("did:plc:abc", "bafyfakecid").expect("valid");
-        assert_eq!(url.as_str(), SAMPLE);
+        let did = Did::new("did:plc:abc").expect("valid did");
+        let cid = BlueskyCid::new("bafkreibme22gw2h7y2h7tg2fhqotaqjucnbc24deqo72b6mkl2egezxhvy")
+            .expect("valid cid");
+        let url = bsky_cdn_thumbnail_url(&did, &cid).expect("valid");
+        assert_eq!(
+            url.as_str(),
+            "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc/bafkreibme22gw2h7y2h7tg2fhqotaqjucnbc24deqo72b6mkl2egezxhvy@jpeg"
+        );
     }
 }

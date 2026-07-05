@@ -45,6 +45,9 @@ fn main() {
                     MetaFilterOutcome::Pass => {
                         Err(format!("{at_uri} should be blocked by meta filter but was not").into())
                     }
+                    MetaFilterOutcome::FetchFailed(e) => {
+                        Err(format!("unexpected fetch failure for {at_uri}: {e}").into())
+                    }
                 }
             },
         ));

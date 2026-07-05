@@ -55,19 +55,44 @@ impl std::fmt::Display for RunId {
     }
 }
 
-/// Free-text describing why a run was made (e.g. `"phase-3 baseline"`,
-/// `"phase-4 gpt-4o-mini #1"`).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Free-text describing why a run was made (e.g. `"gpt-4o-mini baseline"`).
+///
+/// Always non-empty: a blank purpose carries no information and is rejected on
+/// construction and on deserialization.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
 pub struct Purpose(String);
 
+#[derive(Debug, thiserror::Error)]
+#[error("purpose must not be empty")]
+pub struct EmptyPurpose;
+
 impl Purpose {
-    pub fn new(s: impl Into<String>) -> Self {
-        Self(s.into())
+    pub fn new(s: impl Into<String>) -> Result<Self, EmptyPurpose> {
+        let s = s.into();
+        if s.trim().is_empty() {
+            return Err(EmptyPurpose);
+        }
+        Ok(Self(s))
     }
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl FromStr for Purpose {
+    type Err = EmptyPurpose;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::new(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for Purpose {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        Self::new(s).map_err(serde::de::Error::custom)
     }
 }
 
@@ -265,7 +290,7 @@ mod tests {
             model_version: ModelVersion::from(mv),
             split_id: SplitId::new("00112233445566778899aabbccddeeff").expect("valid"),
             price_snapshot_id: snapshot_id(),
-            purpose: Purpose::new("test"),
+            purpose: Purpose::new("test").expect("non-empty"),
             evaluation: Evaluation {
                 precision: Precision::new(0.85).expect("valid"),
                 recall: Recall::new(0.72).expect("valid"),
@@ -289,6 +314,15 @@ mod tests {
             },
             training: None,
         }
+    }
+
+    #[test]
+    fn purpose_rejects_blank() {
+        assert!(Purpose::new("baseline").is_ok());
+        assert!(Purpose::new("").is_err());
+        assert!(Purpose::new("   ").is_err());
+        // deserialization enforces the same invariant
+        assert!(serde_json::from_str::<Purpose>("\"\"").is_err());
     }
 
     #[test]

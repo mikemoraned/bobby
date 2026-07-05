@@ -1,9 +1,12 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use async_channel::{Receiver, Sender};
+use bluesky::BlueskyError;
 use serde_json::Value;
 use shared::Rejection;
+use shared::labels::ModerationLabel;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, trace, warn};
 
@@ -12,9 +15,10 @@ use crate::pipeline::{self, ContentCounts, MetaMessage, MetaResult, PipelineCoun
 
 pub enum MetaFilterOutcome {
     Pass,
-    /// Blocked, carrying a human-readable reason for the trace log. A failed
-    /// `getPostThread` fetch is treated the same way.
-    Blocked(String),
+    /// Blocked by moderation labels on the post, its author, or a quoted record.
+    Blocked(HashSet<ModerationLabel>),
+    /// The `getPostThread` fetch failed; the post is rejected fail-closed.
+    FetchFailed(BlueskyError),
 }
 
 /// Build the single meta→image message for a candidate from its metadata
@@ -28,7 +32,7 @@ fn meta_message(candidate: SkeetCandidate, outcome: MetaFilterOutcome) -> MetaMe
             let images = candidate.images.len() as u64;
             (MetaResult::Candidate(candidate), ContentCounts::post(images))
         }
-        MetaFilterOutcome::Blocked(_) => (
+        MetaFilterOutcome::Blocked(_) | MetaFilterOutcome::FetchFailed(_) => (
             MetaResult::Rejected,
             ContentCounts::post(0) + ContentCounts::rejected(&[Rejection::BlockedByMetadata]),
         ),
@@ -41,11 +45,11 @@ fn meta_message(candidate: SkeetCandidate, outcome: MetaFilterOutcome) -> MetaMe
 /// excluded values (adult content, `!no-unauthenticated`, etc.).
 pub fn check_metadata(post_thread_json: &Value) -> MetaFilterOutcome {
     let blocked = bluesky::blocked_labels(post_thread_json);
-    if !blocked.is_empty() {
-        return MetaFilterOutcome::Blocked(format!("blocked labels: {}", blocked.join(", ")));
+    if blocked.is_empty() {
+        MetaFilterOutcome::Pass
+    } else {
+        MetaFilterOutcome::Blocked(blocked)
     }
-
-    MetaFilterOutcome::Pass
 }
 
 /// Pipeline stage: forward only candidates that pass the metadata check.
@@ -95,10 +99,21 @@ async fn run_single(
 
         let outcome = match bluesky::fetch_post_thread(http, &candidate.skeet_id).await {
             Ok(json) => check_metadata(&json),
-            Err(e) => MetaFilterOutcome::Blocked(format!("fetch failed: {e}")),
+            Err(e) => MetaFilterOutcome::FetchFailed(e),
         };
-        if let MetaFilterOutcome::Blocked(reason) = &outcome {
-            trace!(skeet_id = %candidate.skeet_id, reason, "blocked by metadata, rejecting");
+        match &outcome {
+            MetaFilterOutcome::Blocked(labels) => {
+                let labels = labels
+                    .iter()
+                    .map(ModerationLabel::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                trace!(skeet_id = %candidate.skeet_id, %labels, "blocked by moderation labels, rejecting");
+            }
+            MetaFilterOutcome::FetchFailed(err) => {
+                trace!(skeet_id = %candidate.skeet_id, %err, "getPostThread fetch failed, rejecting");
+            }
+            MetaFilterOutcome::Pass => {}
         }
 
         if pipeline::forward(tx, meta_message(candidate, outcome), token)
@@ -147,7 +162,7 @@ mod tests {
     fn blocked_tallies_the_rejection_into_its_counts() {
         let (result, counts) = meta_message(
             candidate_with_images(3),
-            MetaFilterOutcome::Blocked("blocked labels: porn".to_string()),
+            MetaFilterOutcome::Blocked(HashSet::from([ModerationLabel::new("porn")])),
         );
         assert!(matches!(result, MetaResult::Rejected));
         assert_eq!(

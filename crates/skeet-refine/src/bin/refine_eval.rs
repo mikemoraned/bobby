@@ -200,7 +200,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         model_version: model_version.clone(),
         split_id: *split_id,
         price_snapshot_id: prices_snapshot_id,
-        purpose: Purpose::new(args.purpose),
+        purpose: Purpose::new(args.purpose)?,
         evaluation: Evaluation {
             precision,
             recall,

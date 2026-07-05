@@ -16,7 +16,8 @@ pub use pricing::{
     InvalidSnapshotId, ModelPrice, PricesRegistry, PricingError, Snapshot, SnapshotId,
 };
 pub use results::{
-    EvalResultsLog, EvalResultsLogError, Evaluation, Purpose, Resources, RunId, RunRecord,
+    EmptyPurpose, EvalResultsLog, EvalResultsLogError, Evaluation, Purpose, Resources, RunId,
+    RunRecord,
 };
 pub use split::{
     EvalSplit, EvalSplits, EvalSplitsError, InvalidSplitId, SplitId, stratified_sample,

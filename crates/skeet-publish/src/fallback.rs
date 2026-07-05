@@ -166,7 +166,7 @@ mod tests {
 
     use chrono::{DateTime, TimeZone, Utc};
     use proptest::prelude::*;
-    use shared::SkeetId;
+    use shared::{Did, RecordKey, SkeetId};
 
     fn arbitrary_spec() -> impl Strategy<Value = (Order, Limit)> {
         let order = prop_oneof![Just(Order::Quality), Just(Order::Recency)];
@@ -292,7 +292,10 @@ mod tests {
 
         async fn skeleton(&self, spec: (Order, Limit)) -> Result<FeedSkeleton, FeedSourceError> {
             let skeet_ids = if self.populated.contains(&spec) {
-                vec![SkeetId::for_post("did:example:test", "rkey")]
+                vec![SkeetId::for_post(
+                    &Did::new("did:example:test").unwrap(),
+                    &RecordKey::new("rkey").unwrap(),
+                )]
             } else {
                 vec![]
             };
