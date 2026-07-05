@@ -15,6 +15,7 @@ use shared::{Appraisal, Appraiser, Band, DiscoveredAt, ImageId, RefineModels, Sk
 use skeet_publish::{image_effective_band, skeet_effective_band};
 use skeet_store::{ModelScore, StoredImageSummary};
 use tracing::{info, instrument};
+use url::Url;
 
 use crate::AppraiserExtractor;
 use crate::Models;
@@ -36,7 +37,7 @@ pub struct AdminRow {
     pub manual_appraiser: String,
     pub effective_band: String,
     pub appraise_kind: String,
-    pub web_url: String,
+    pub web_url: Url,
 }
 
 #[derive(Template)]

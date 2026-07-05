@@ -188,7 +188,7 @@ pub async fn get_feed_skeleton(
 /// property when the image's dimensions are known, so the tile reserves space
 /// and the grid doesn't reflow as images load.
 struct GridCard {
-    bsky_url: String,
+    bsky_url: Url,
     thumb_url: String,
     alt: String,
     aspect_ratio: Option<String>,
@@ -533,7 +533,7 @@ mod tests {
 
     fn one_card() -> GridCard {
         GridCard {
-            bsky_url: "https://bsky.app/profile/x/post/1".to_string(),
+            bsky_url: Url::parse("https://bsky.app/profile/x/post/1").expect("valid url"),
             thumb_url: "https://cdn.example/x.jpg".to_string(),
             alt: "x".to_string(),
             aspect_ratio: None,

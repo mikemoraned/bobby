@@ -1,4 +1,7 @@
 use serde::{Deserialize, Serialize};
+use url::Url;
+
+use crate::BaseUrl;
 
 #[derive(Debug, thiserror::Error)]
 #[error("invalid AT URI: {0}")]
@@ -53,8 +56,12 @@ impl SkeetId {
 
     /// The public Bluesky web URL for this post:
     /// `https://bsky.app/profile/{did}/post/{rkey}`.
-    pub fn bsky_post_url(&self) -> String {
-        format!("https://bsky.app/profile/{}/post/{}", self.did, self.rkey)
+    pub fn bsky_post_url(&self) -> Url {
+        #[allow(clippy::expect_used)] // const literal is a valid https base URL
+        let mut url = BaseUrl::parse("https://bsky.app").expect("const bsky.app base is valid");
+        url.path_segments_mut()
+            .extend(["profile", self.did.as_str(), "post", self.rkey.as_str()]);
+        url.into_url()
     }
 }
 
@@ -215,7 +222,7 @@ mod tests {
     fn bsky_post_url_from_components() {
         let id = SkeetId::for_post("did:plc:abc123", "xyz789");
         assert_eq!(
-            id.bsky_post_url(),
+            id.bsky_post_url().as_str(),
             "https://bsky.app/profile/did:plc:abc123/post/xyz789"
         );
     }

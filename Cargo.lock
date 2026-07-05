@@ -10835,6 +10835,7 @@ dependencies = [
  "tracing-appender",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "url",
  "uuid",
 ]
 
@@ -10962,6 +10963,7 @@ dependencies = [
  "tower",
  "tower-sessions 0.14.0",
  "tracing",
+ "url",
  "urlencoding",
  "web-support",
  "wiremock",
