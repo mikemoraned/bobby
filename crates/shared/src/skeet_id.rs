@@ -117,13 +117,39 @@ impl<'de> Deserialize<'de> for SkeetId {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("invalid DID: {0}")]
+pub struct ParseDidError(String);
+
 /// A Decentralized Identifier (DID), e.g. `did:plc:abc123`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Did(String);
 
 impl Did {
+    /// Validating constructor: a DID is `did:{method}:{identifier}` with a
+    /// non-empty method and identifier.
+    pub fn new(s: impl Into<String>) -> Result<Self, ParseDidError> {
+        let s = s.into();
+        let (method, identifier) = s
+            .strip_prefix("did:")
+            .and_then(|rest| rest.split_once(':'))
+            .ok_or_else(|| ParseDidError(s.clone()))?;
+        if method.is_empty() || identifier.is_empty() {
+            return Err(ParseDidError(s));
+        }
+        Ok(Self(s))
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl std::str::FromStr for Did {
+    type Err = ParseDidError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::new(s)
     }
 }
 

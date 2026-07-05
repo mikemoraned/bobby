@@ -16,9 +16,7 @@ use chrono::Utc;
 use common::{extract_query_param, extract_session_cookie, get_with_cookie, mount_github_mocks};
 use cot::test::Client;
 use rcgen::{CertificateParams, KeyPair};
-use skeet_appraise::auth_config::OAuthConfig;
-use skeet_appraise::available_feeds::PublishedListCatalogReader;
-use skeet_appraise::project::AppraiseProject;
+use skeet_appraise::{AppraiseProject, OAuthConfig, PublishedListCatalogReader};
 use skeet_appraise::{
     AppraiserLayer, ModelsLayer, OAuthConfigLayer, PublishedFeedLayer, StartedAtLayer, StoreLayer,
 };

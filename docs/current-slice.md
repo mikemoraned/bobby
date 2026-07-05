@@ -13,7 +13,7 @@ The general bias is to refactor towards patterns and structures that are the bes
 
 * [x] **Publishing** — `skeet-publish`.** The firehose → classify → score → publish chain.
     * **From the patterns review:** tighten over-broad `pub mod` → `mod` + selective `pub use` (most modules are `pub mod` today). Low-priority; do while already in the crate.
-* [ ] **Web services — `skeet-feed`, `skeet-appraise`.** The two HTTP-facing crates (banner/feed + auth-gated appraisals).
+* [x] **Web services — `skeet-feed`, `skeet-appraise`.** The two HTTP-facing crates (banner/feed + auth-gated appraisals).
     * **From the patterns review:** `skeet-feed/src/feed_config.rs` `did()`/`feed_uri()`/`service_endpoint()` return raw `String` → return domain types (`Did`, etc.). Also tighten over-broad `pub mod` → `mod` + `pub use` in both crates (`skeet-appraise/src/lib.rs` ≈12 `pub mod`; `skeet-feed` most modules `pub mod`) — low-priority, do while touching them.
 * [ ] **ML/detection libs, and related parent crate which uses them — `skeet-refine`, `face-detection`, `skin-detection`, `text-detection`.** Model loading/inference wrappers; confirm each model is still documented in `docs/`.
     * **Couple every score with its provenance — stop passing bare `Score`.** The store pass introduced `ModelScore { score, model_version }` (a model score carrying the version that produced it) and threaded it through the store ports/read-models. Extend that principle across the scoring pipeline: wherever a `Score` is coupled to *what produced it*, pass the paired type, not a bare `Score` + a sidecar field. A bare `Score` should appear only where code genuinely operates on scores generically (e.g. numeric comparison/sorting).

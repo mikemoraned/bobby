@@ -74,11 +74,11 @@ pub async fn did_document(FeedConfig(config): FeedConfig) -> cot::Result<Respons
     info!("serving /.well-known/did.json");
     let doc = DidDocument {
         context: vec!["https://www.w3.org/ns/did/v1".to_string()],
-        id: config.did(),
+        id: config.did().to_string(),
         service: vec![DidService {
             id: "#bsky_fg".to_string(),
             service_type: "BskyFeedGenerator".to_string(),
-            service_endpoint: config.service_endpoint(),
+            service_endpoint: config.service_endpoint().origin().ascii_serialization(),
         }],
     };
     json_response(&doc)
@@ -99,9 +99,9 @@ struct DescribeFeed {
 pub async fn describe_feed_generator(FeedConfig(config): FeedConfig) -> cot::Result<Response> {
     info!("serving describeFeedGenerator");
     let resp = DescribeResponse {
-        did: config.did(),
+        did: config.did().to_string(),
         feeds: vec![DescribeFeed {
-            uri: config.feed_uri(),
+            uri: config.feed_uri().to_string(),
         }],
     };
     json_response(&resp)
@@ -135,8 +135,9 @@ pub async fn get_feed_skeleton(
 ) -> cot::Result<Response> {
     info!(feed = %query.feed, cursor = ?query.cursor, limit = ?query.limit, "serving getFeedSkeleton");
 
-    if query.feed != config.feed_uri() {
-        warn!(requested = %query.feed, expected = %config.feed_uri(), "unknown feed requested");
+    let expected_feed = config.feed_uri();
+    if query.feed.as_str() != expected_feed.as_str() {
+        warn!(requested = %query.feed, expected = %expected_feed, "unknown feed requested");
         let mut response = Response::new(Body::fixed(
             r#"{"error":"UnknownFeed","message":"unknown feed"}"#,
         ));

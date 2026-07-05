@@ -3,14 +3,29 @@ use std::task::{Context, Poll};
 
 use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::FromRequestHead;
+use shared::{Did, FeedGeneratorUri, ParseDidError};
 use tower::{Layer, Service};
 use tracing::warn;
+use url::Url;
+
+#[derive(Debug, thiserror::Error)]
+pub enum FeedParamsError {
+    #[error("invalid publisher DID: {0}")]
+    PublisherDid(ParseDidError),
+    #[error("invalid did:web for hostname {hostname:?}: {source}")]
+    WebDid {
+        hostname: String,
+        source: ParseDidError,
+    },
+    #[error("invalid service endpoint URL: {0}")]
+    ServiceEndpoint(#[from] url::ParseError),
+}
 
 #[derive(Debug, Clone)]
 pub struct FeedParams {
     pub hostname: String,
-    pub publisher_did: String,
-    pub feed_name: String,
+    publisher_did: Did,
+    feed_name: String,
     pub max_entries: usize,
     /// Site-specific Plausible analytics script URL. `None` disables the
     /// tracking script entirely, so only deployments configured with a URL
@@ -20,6 +35,12 @@ pub struct FeedParams {
     /// it depends only on `hostname`. `None` if encoding failed (the banner
     /// then renders without it).
     pub site_qr_svg: Option<String>,
+    /// The feed generator's own `did:web:{hostname}` identity, validated once at
+    /// construction and served in the DID document.
+    web_did: Did,
+    /// The service's base URL (`https://{hostname}`), validated once at
+    /// construction and advertised in the DID document.
+    service_endpoint: Url,
 }
 
 /// The site's own public URL — the destination the home-page QR code encodes
@@ -35,33 +56,49 @@ impl FeedParams {
         feed_name: String,
         max_entries: usize,
         plausible_script_url: Option<String>,
-    ) -> Self {
+    ) -> Result<Self, FeedParamsError> {
+        let publisher_did = Did::new(publisher_did).map_err(FeedParamsError::PublisherDid)?;
+        let web_did =
+            Did::new(format!("did:web:{hostname}")).map_err(|source| FeedParamsError::WebDid {
+                hostname: hostname.clone(),
+                source,
+            })?;
+        let service_endpoint = Url::parse(&format!("https://{hostname}"))?;
         let site_qr_svg = crate::qr::qr_svg(&site_url(&hostname))
             .map_err(|e| warn!(error = %e, "failed to render site QR; banner will omit it"))
             .ok();
-        Self {
+        Ok(Self {
             hostname,
             publisher_did,
             feed_name,
             max_entries,
             plausible_script_url,
             site_qr_svg,
-        }
+            web_did,
+            service_endpoint,
+        })
     }
 
-    pub fn did(&self) -> String {
-        format!("did:web:{}", self.hostname)
+    /// Override the Plausible analytics script URL (test/config ergonomics).
+    #[must_use]
+    pub fn with_plausible_script_url(mut self, url: Option<String>) -> Self {
+        self.plausible_script_url = url;
+        self
     }
 
-    pub fn feed_uri(&self) -> String {
-        format!(
-            "at://{}/app.bsky.feed.generator/{}",
-            self.publisher_did, self.feed_name
-        )
+    /// The feed generator's `did:web` identity (DID document `id`).
+    pub const fn did(&self) -> &Did {
+        &self.web_did
     }
 
-    pub fn service_endpoint(&self) -> String {
-        format!("https://{}", self.hostname)
+    pub fn feed_uri(&self) -> FeedGeneratorUri {
+        FeedGeneratorUri::new(&self.publisher_did, &self.feed_name)
+    }
+
+    /// The service's base URL, advertised as the feed generator's
+    /// `serviceEndpoint` in the DID document.
+    pub const fn service_endpoint(&self) -> &Url {
+        &self.service_endpoint
     }
 
     /// The site's own public URL — the canonical page a shared link points at

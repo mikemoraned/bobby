@@ -10996,6 +10996,7 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
+ "url",
  "web-support",
 ]
 

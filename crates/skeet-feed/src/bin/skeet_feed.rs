@@ -5,11 +5,11 @@ use std::time::Duration;
 
 use clap::Parser;
 use cot::project::Bootstrapper;
-use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
+use skeet_feed::{FeedConfigLayer, FeedParams};
 use skeet_feed::preview::selection::select_tiles;
 use skeet_feed::preview::state::{PreviewState, PreviewStateLayer};
 use skeet_feed::preview::{PREVIEW_HEIGHT, PREVIEW_WIDTH, generate_montage};
-use skeet_feed::project::FeedProject;
+use skeet_feed::FeedProject;
 use skeet_feed::{FeedSourceLayer, PublishedImagesSourceLayer};
 use skeet_publish::{FallbackFeedSource, FeedSource, Limit, Order, PublishedImagesSource};
 use tracing::{info, warn};
@@ -69,7 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.feed_name,
         args.max_entries,
         args.plausible_script_url,
-    );
+    )?;
 
     info!(
         bind = %args.bind,

@@ -9,6 +9,7 @@ pub mod appraiser;
 pub mod band;
 mod blocklist;
 mod bluesky_cid;
+mod feed_generator_uri;
 mod image_id;
 pub mod labels;
 pub mod model_version;
@@ -26,6 +27,7 @@ pub use appraiser::{Appraiser, ParseAppraiserError};
 pub use band::{Band, ParseBandError};
 pub use blocklist::{BlockedEntry, BlocklistConfig};
 pub use bluesky_cid::{BlueskyCid, InvalidBlueskyCid};
+pub use feed_generator_uri::FeedGeneratorUri;
 pub use image_id::{ImageId, InvalidImageId};
 pub use model_version::{HashScheme, ModelVersion};
 pub use refine_model::{
@@ -36,7 +38,7 @@ pub use score::{
     InvalidNormalizedScore, InvalidScore, InvalidThreshold, NormalizedScore, Score, Threshold,
 };
 use serde::Deserialize;
-pub use skeet_id::SkeetId;
+pub use skeet_id::{Did, ParseDidError, SkeetId};
 pub use timestamps::{DiscoveredAt, OriginalAt};
 pub use zone::{ParseZoneError, Zone};
 
