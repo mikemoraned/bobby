@@ -7,6 +7,7 @@ use atrium_api::{
     types::{BlobRef, TypedBlobRef, Union},
 };
 use backon::ExponentialBuilder;
+use bluesky::ImageUrl;
 use chrono::{DateTime, Utc};
 use jetstream_oxide::{
     DefaultJetstreamEndpoints, JetstreamCompression, JetstreamConfig, JetstreamConnector,
@@ -151,7 +152,7 @@ pub async fn connect(
 /// One image of a post: its blob CID and the CDN URL to fetch it from.
 pub struct ImageCandidate {
     pub cid: BlueskyCid,
-    pub url: String,
+    pub url: ImageUrl,
 }
 
 /// A post that has images but hasn't been downloaded yet.
@@ -208,7 +209,13 @@ fn image_candidate(did: &str, blob_ref: &BlobRef) -> Option<ImageCandidate> {
         warn!("skipping image with unrecognized blob ref or CID");
         return None;
     };
-    let url = bluesky::bsky_cdn_thumbnail_url(did, &cid.to_string());
+    let url = match bluesky::bsky_cdn_thumbnail_url(did, &cid.to_string()) {
+        Ok(url) => url,
+        Err(e) => {
+            warn!(error = %e, "skipping image with unbuildable CDN URL");
+            return None;
+        }
+    };
     Some(ImageCandidate { cid, url })
 }
 
@@ -240,12 +247,12 @@ pub async fn download_candidate_images(
 
 async fn download_single_image(
     http: &reqwest::Client,
-    url: &str,
+    url: &ImageUrl,
     cid: BlueskyCid,
     skeet_id: SkeetId,
     original_at: chrono::DateTime<chrono::Utc>,
 ) -> Option<SkeetImage> {
-    let bytes = match http.get(url).send().await {
+    let bytes = match http.get(url.as_str()).send().await {
         Ok(resp) if resp.status().is_success() => match resp.bytes().await {
             Ok(b) => b,
             Err(e) => {
@@ -254,7 +261,7 @@ async fn download_single_image(
             }
         },
         Ok(resp) => {
-            warn!(status = %resp.status(), url, "image download failed");
+            warn!(status = %resp.status(), url = %url, "image download failed");
             return None;
         }
         Err(e) => {

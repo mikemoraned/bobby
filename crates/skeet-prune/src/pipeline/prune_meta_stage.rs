@@ -124,7 +124,7 @@ mod tests {
         let images = (0..n)
             .map(|_| ImageCandidate {
                 cid: BlueskyCid::new(VALID_CID).expect("valid cid"),
-                url: "https://example.com/img".to_string(),
+                url: bluesky::ImageUrl::new("https://example.com/img").expect("valid url"),
             })
             .collect();
         SkeetCandidate {

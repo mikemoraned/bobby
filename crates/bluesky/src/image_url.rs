@@ -25,8 +25,12 @@ pub enum InvalidImageUrl {
 /// The Bluesky CDN thumbnail URL for an image blob, from the post author's `did`
 /// and the blob's `cid`:
 /// `https://cdn.bsky.app/img/feed_thumbnail/plain/{did}/{cid}@jpeg`.
-pub fn bsky_cdn_thumbnail_url(did: &str, cid: &str) -> String {
-    format!("https://cdn.bsky.app/img/feed_thumbnail/plain/{did}/{cid}@jpeg")
+///
+/// Fails if `did`/`cid` produce a string that isn't a valid `https` URL.
+pub fn bsky_cdn_thumbnail_url(did: &str, cid: &str) -> Result<ImageUrl, InvalidImageUrl> {
+    ImageUrl::new(format!(
+        "https://cdn.bsky.app/img/feed_thumbnail/plain/{did}/{cid}@jpeg"
+    ))
 }
 
 impl ImageUrl {
@@ -118,5 +122,11 @@ mod tests {
     #[test]
     fn deserialize_rejects_non_https() {
         assert!(serde_json::from_str::<ImageUrl>("\"http://insecure\"").is_err());
+    }
+
+    #[test]
+    fn cdn_thumbnail_url_builds_expected_image_url() {
+        let url = bsky_cdn_thumbnail_url("did:plc:abc", "bafyfakecid").expect("valid");
+        assert_eq!(url.as_str(), SAMPLE);
     }
 }
