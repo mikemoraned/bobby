@@ -30,7 +30,10 @@ fn meta_message(candidate: SkeetCandidate, outcome: MetaFilterOutcome) -> MetaMe
     match outcome {
         MetaFilterOutcome::Pass => {
             let images = candidate.images.len() as u64;
-            (MetaResult::Candidate(candidate), ContentCounts::post(images))
+            (
+                MetaResult::Candidate(candidate),
+                ContentCounts::post(images),
+            )
         }
         MetaFilterOutcome::Blocked(_) | MetaFilterOutcome::FetchFailed(_) => (
             MetaResult::Rejected,

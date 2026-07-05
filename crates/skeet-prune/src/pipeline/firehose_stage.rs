@@ -25,15 +25,16 @@ enum SessionOutcome {
     /// A session that stayed up long enough to count as healthy ended; the
     /// reconnect backoff should reset to its base delay.
     Stable,
-    /// Shutdown was requested (token cancelled or downstream closed); the
-    /// stage should stop entirely.
+    /// Shutdown was requested — a deliberate drain, a reactive abort, or a
+    /// closed downstream; the source should stop pulling and return.
     ShutDown,
 }
 
 pub async fn run(
     tx: async_channel::Sender<SkeetCandidate>,
     counters: Arc<PipelineCounters>,
-    token: CancellationToken,
+    abort: CancellationToken,
+    drain: CancellationToken,
 ) {
     let recv_timeout = Duration::from_secs(30);
 
@@ -49,8 +50,9 @@ pub async fn run(
         let op = |last: Option<u64>| {
             let tx = tx.clone();
             let counters = counters.clone();
-            let token = token.clone();
-            async move { run_session(last, recv_timeout, tx, counters, token).await }
+            let abort = abort.clone();
+            let drain = drain.clone();
+            async move { run_session(last, recv_timeout, tx, counters, abort, drain).await }
         };
 
         let (last, outcome) = op
@@ -79,7 +81,8 @@ async fn run_session(
     recv_timeout: Duration,
     tx: async_channel::Sender<SkeetCandidate>,
     counters: Arc<PipelineCounters>,
-    token: CancellationToken,
+    abort: CancellationToken,
+    drain: CancellationToken,
 ) -> (Option<u64>, Result<SessionOutcome, ReconnectError>) {
     // First connect (nothing seen yet) live-tails silently; `replay_cursor`
     // returning `None` despite a known position means the replay window outgrew
@@ -89,7 +92,10 @@ async fn run_session(
         let cursor = crate::firehose::replay_cursor(t, now);
         if cursor.is_none() {
             let gap_s = (now.timestamp_micros() - t as i64) / 1_000_000;
-            warn!(gap_s, "resume gap exceeds replay cap; live-tailing past it (gap events skipped)");
+            warn!(
+                gap_s,
+                "resume gap exceeds replay cap; live-tailing past it (gap events skipped)"
+            );
         }
         cursor
     });
@@ -102,7 +108,11 @@ async fn run_session(
     let started = Instant::now();
     loop {
         let event = tokio::select! {
-            () = token.cancelled() => return (last_time_us, Ok(SessionOutcome::ShutDown)),
+            () = abort.cancelled() => return (last_time_us, Ok(SessionOutcome::ShutDown)),
+            // Deliberate drain: stop pulling new events so the downstream channels
+            // close-cascade and finish into the store. Any event already pulled in
+            // a prior iteration was forwarded before this branch is reached.
+            () = drain.cancelled() => return (last_time_us, Ok(SessionOutcome::ShutDown)),
             result = tokio::time::timeout(recv_timeout, receiver.recv_async()) => match result {
                 Ok(Ok(event)) => event,
                 Ok(Err(_)) => {
@@ -120,7 +130,7 @@ async fn run_session(
 
         if let Some(candidate) = crate::firehose::extract_skeet_candidate(&event) {
             counters.firehose.fetch_add(1, Ordering::Relaxed);
-            if pipeline::forward(&tx, candidate, &token).await.is_err() {
+            if pipeline::forward(&tx, candidate, &abort).await.is_err() {
                 return (last_time_us, Ok(SessionOutcome::ShutDown));
             }
         }

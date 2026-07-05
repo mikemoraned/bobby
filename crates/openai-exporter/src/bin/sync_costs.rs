@@ -45,7 +45,8 @@ fn start_of_day(dt: DateTime<Utc>) -> DateTime<Utc> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let _guard = shared::tracing::init_with_file("info", "openai-exporter");
+    let _guard =
+        shared::tracing::init_with_file(env!("CARGO_CRATE_NAME"), "info", "openai-exporter");
     info!(
         git_hash = env!("BUILD_GIT_HASH"),
         "openai-exporter sync_costs starting"

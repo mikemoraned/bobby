@@ -355,7 +355,10 @@ mod tests {
         // event 1s before now ⇒ replay window ~6s (1s + the 5s rewind), under the cap
         let now_us: i64 = 2_000_000_000_000_000;
         let event_us = (now_us - 1_000_000) as u64;
-        assert_eq!(replay_cursor(event_us, now_at(now_us)), cursor_from(event_us));
+        assert_eq!(
+            replay_cursor(event_us, now_at(now_us)),
+            cursor_from(event_us)
+        );
     }
 
     #[test]
@@ -405,7 +408,10 @@ mod tests {
             let delay = backoff.next().expect("backoff must never stop retrying");
             assert!(delay >= RECONNECT_MIN_DELAY, "below min delay: {delay:?}");
             // capped: jitter adds at most the (capped) base delay on top
-            assert!(delay <= RECONNECT_MAX_DELAY * 2, "above jittered cap: {delay:?}");
+            assert!(
+                delay <= RECONNECT_MAX_DELAY * 2,
+                "above jittered cap: {delay:?}"
+            );
             delays.push(delay);
         }
         // jitter: once saturated at the cap, delays vary rather than pinning to

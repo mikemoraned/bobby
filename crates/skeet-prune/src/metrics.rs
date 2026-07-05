@@ -95,7 +95,10 @@ impl PruneMetrics {
         let content = &snapshot.content;
 
         // Pipeline throughput — emit delta per stage
-        let firehose_delta = stages.firehose.throughput.saturating_sub(self.prev_firehose);
+        let firehose_delta = stages
+            .firehose
+            .throughput
+            .saturating_sub(self.prev_firehose);
         if firehose_delta > 0 {
             self.throughput
                 .add(firehose_delta, &[KeyValue::new("stage", "firehose")]);
@@ -121,8 +124,10 @@ impl PruneMetrics {
         );
         self.depth
             .record(stages.meta.depth as u64, &[KeyValue::new("stage", "meta")]);
-        self.depth
-            .record(stages.image.depth as u64, &[KeyValue::new("stage", "image")]);
+        self.depth.record(
+            stages.image.depth as u64,
+            &[KeyValue::new("stage", "image")],
+        );
 
         // Content counters — emit delta
         let skeets_delta = content.posts.saturating_sub(self.prev_skeets);

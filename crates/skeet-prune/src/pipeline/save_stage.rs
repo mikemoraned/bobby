@@ -59,7 +59,10 @@ mod tests {
 
         let fresh = make_record("fresh", 1, 0, 0);
         let existing = make_record("existing", 2, 0, 0);
-        store.add(&existing).await.expect("seed already-exists record");
+        store
+            .add(&existing)
+            .await
+            .expect("seed already-exists record");
 
         let (in_tx, in_rx) = async_channel::bounded(16);
         let (stats_tx, stats_rx) = async_channel::bounded::<StatsMessage>(16);

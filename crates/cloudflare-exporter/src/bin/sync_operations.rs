@@ -94,7 +94,8 @@ async fn sync(args: &Args) -> Result<u64, Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let _guard = shared::tracing::init_with_file("info", "cloudflare-exporter");
+    let _guard =
+        shared::tracing::init_with_file(env!("CARGO_CRATE_NAME"), "info", "cloudflare-exporter");
     info!(
         git_hash = env!("BUILD_GIT_HASH"),
         "cloudflare-exporter sync starting"

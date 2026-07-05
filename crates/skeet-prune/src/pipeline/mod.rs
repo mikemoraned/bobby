@@ -5,7 +5,7 @@ use std::hash::Hash;
 use std::ops::{Add, AddAssign};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use async_channel::{Receiver, Sender};
+use async_channel::{Receiver, Sender, WeakSender};
 use shared::{Rejection, RejectionCategory};
 use skeet_store::ImageRecord;
 use tokio_util::sync::CancellationToken;
@@ -18,6 +18,7 @@ pub mod content_statistics_stage;
 pub mod firehose_stage;
 pub mod prune_image_stage;
 pub mod prune_meta_stage;
+pub mod runner;
 pub mod save_stage;
 pub mod statistics_persister;
 
@@ -150,7 +151,10 @@ impl AddAssign<&Self> for ContentCounts {
         self.saved = self.saved.saturating_add(rhs.saved);
         self.rejected = self.rejected.saturating_add(rhs.rejected);
         merge_counts(&mut self.rejections.by_reason, &rhs.rejections.by_reason);
-        merge_counts(&mut self.rejections.by_category, &rhs.rejections.by_category);
+        merge_counts(
+            &mut self.rejections.by_category,
+            &rhs.rejections.by_category,
+        );
         merge_counts(
             &mut self.rejections.by_sole_category,
             &rhs.rejections.by_sole_category,
@@ -231,36 +235,42 @@ impl PipelineCounters {
     }
 }
 
-/// Handles to monitor channel depths from the save stage.
+/// Weak handles onto the pipeline's channels for depth (`len`) monitoring.
+///
+/// Deliberately *weak*: a strong `Sender` clone held here would keep each channel
+/// open for as long as the monitors live, defeating the shutdown drain — which
+/// relies on a stage dropping its output sender to close the channel and cascade
+/// completion downstream into the store. A `WeakSender` reads the queue depth
+/// without counting toward keeping the channel open.
 pub struct ChannelMonitors {
-    firehose_tx: Sender<SkeetCandidate>,
-    meta_tx: Sender<MetaMessage>,
-    image_tx: Sender<ImageMessage>,
+    firehose_tx: WeakSender<SkeetCandidate>,
+    meta_tx: WeakSender<MetaMessage>,
+    image_tx: WeakSender<ImageMessage>,
 }
 
 impl ChannelMonitors {
-    pub const fn new(
-        firehose_tx: Sender<SkeetCandidate>,
-        meta_tx: Sender<MetaMessage>,
-        image_tx: Sender<ImageMessage>,
+    pub fn new(
+        firehose_tx: &Sender<SkeetCandidate>,
+        meta_tx: &Sender<MetaMessage>,
+        image_tx: &Sender<ImageMessage>,
     ) -> Self {
         Self {
-            firehose_tx,
-            meta_tx,
-            image_tx,
+            firehose_tx: firehose_tx.downgrade(),
+            meta_tx: meta_tx.downgrade(),
+            image_tx: image_tx.downgrade(),
         }
     }
 
     pub fn firehose_depth(&self) -> usize {
-        self.firehose_tx.len()
+        self.firehose_tx.upgrade().map_or(0, |tx| tx.len())
     }
 
     pub fn meta_depth(&self) -> usize {
-        self.meta_tx.len()
+        self.meta_tx.upgrade().map_or(0, |tx| tx.len())
     }
 
     pub fn image_depth(&self) -> usize {
-        self.image_tx.len()
+        self.image_tx.upgrade().map_or(0, |tx| tx.len())
     }
 }
 

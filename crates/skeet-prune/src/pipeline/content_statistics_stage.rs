@@ -65,7 +65,7 @@ mod tests {
         let (firehose_tx, _f) = async_channel::bounded(1);
         let (meta_tx, _m) = async_channel::bounded::<MetaMessage>(1);
         let (image_tx, _i) = async_channel::bounded::<ImageMessage>(1);
-        ChannelMonitors::new(firehose_tx, meta_tx, image_tx)
+        ChannelMonitors::new(&firehose_tx, &meta_tx, &image_tx)
     }
 
     /// The fixed stream of per-candidate `ContentCounts` the golden test merges:
@@ -78,7 +78,10 @@ mod tests {
             // A: meta-rejected (no images examined).
             ContentCounts::post(0) + reject(BlockedByMetadata),
             // B: passed, 3 images, one fresh save, two rejections of varied category.
-            ContentCounts::post(3) + ContentCounts::saved() + reject(FaceTooSmall) + reject(TooMuchText),
+            ContentCounts::post(3)
+                + ContentCounts::saved()
+                + reject(FaceTooSmall)
+                + reject(TooMuchText),
             // C: passed, 2 images, all reject.
             ContentCounts::post(2) + reject(FaceTooSmall) + reject(FaceTooSmall),
             // D: passed, 1 image, fresh save.
