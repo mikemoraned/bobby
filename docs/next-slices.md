@@ -105,6 +105,26 @@ current volume, revisit when the images table is big enough to hurt.
 > Iceberg was considered and rejected as a storage backend — that durable decision
 > now lives in `docs/architecture.md` (Constraints / Technology Choices), not here.
 
+## Slice: correct appraisal selection bias (rebalance sampling + low-band backfill)
+
+### Target
+
+Appraisals are drawn from the published feeds (the appraise homepage's feed dropdown — `recency-48h`, `quality-*`), which *are* the refine model's own top-ranked candidates. So the manual appraisal set skews to MediumHigh/High and feeds that skew back into training. The "re-train refine model with a new eval snapshot" slice already caught the symptom: on a fresh split, precision fell sharply at the deployed threshold while ROC-AUC held — discrimination intact, calibration/distribution the problem — because the queue enriches for hard negatives. The half that slice *didn't* name: the region the model **buries** (genuinely-good content it scores Low/MediumLow) is never queued at all, so the one signal that would reveal false negatives is structurally absent.
+
+This slice starts correcting the label distribution *going forward* (steady-state rebalance) and closes the historical gap (a one-off low-band backfill), while recording enough provenance on each appraisal to interpret — and later reweight — the mix. It deliberately does *not* try to statistically salvage the existing high-biased appraisals in place; see the IPS decision below.
+
+### Decisions / groundwork
+
+- **Rebalance mode on the appraise homepage, default on, self-throttling.** Alongside the selected feed, when the feed has N unappraised skeets, also surface N (total) randomly-drawn unappraised skeets from the MediumLow/Low `Band`s. Tying the count to the existing backlog keeps appraisal demand bounded — it corrects the distribution without piling on. This score-independent draw is the load-bearing part: it's the only mechanism here that breaks the feed→appraise→train feedback loop.
+
+- **Rebalance and backfill are one sampler at two tempos.** A single seedable "sample N unappraised skeets in bands {MediumLow, Low}, excluding already-appraised" capability on the store read port (`ScoredView`/`Scores`); the homepage consumes it throttled, and a dedicated `/backfill` endpoint consumes it unthrottled as a standalone queue. Both share the already-appraised exclusion set so they never double-serve. LanceDB has no native random sample; an in-memory shuffle of a band-filtered scan is fine at current volume — revisit if the scored table outgrows it. Seed the draw so it's reproducible in tests (matches the proptest habit).
+
+- **Richer appraisal context than a bare enum.** Record on each appraisal the selection *mechanism* (`FeedRanked` / `Rebalanced` / `Backfilled` / `Unknown`) plus the **band-at-selection** and the **`model_version`** that assigned it. Band is model-version-relative (`NormalizedScore` + `decision_threshold`), so "Low" only means "Low per that version" — without the version the draw can't be reconstructed later. Name by mechanism, not effect, since the bias is derivable from the mechanism but not vice versa. This provenance *is* the propensity information, so it keeps reweighting/IPS on the table as a fallback without committing to it now. New context column(s) on `manual_skeet_appraisal_v1`, read covariantly (existing rows → `Unknown`).
+
+- **Backfill over IPS, and adaptive rather than a blind quota.** Prefer collecting real MediumLow/Low labels to reweighting history: the buried region has ~zero/degenerate selection propensity, so IPS would be reweighting signal that was never collected — it can't recover exactly the region we care about. Don't pre-commit to matching the ~1400 existing appraisals; appraise a few hundred low-band first and read the buried-positive rate, which is itself the finding — low means the skew was mostly a calibration artefact (little to fix), high means a threshold move / retrain is warranted. `/backfill` only enqueues candidates; the labels still come from a human.
+
+- **Balanced ≠ representative — evaluation stays on a separate hold-out (or is reweighted).** The rebalanced/backfilled set is deliberately even across bands, but the true pruned population is Low-dominated. That's right for *training* coverage and for measuring per-band true-positive rate (how we surface buried positives), but precision-at-threshold — the metric that regressed — is base-rate-sensitive. So the eval path (`refine-eval`, the frozen splits) must use a separately-drawn representative/random audit slice, or reweight to true band frequencies, rather than the rebalanced pool. Otherwise we fix the training distribution while still measuring on the wrong one — the same trap one layer up.
+
 ## Slice: try using embeddings for classification/scoring in refine
 
 ### Target
