@@ -6,7 +6,8 @@
 
 use std::collections::HashMap;
 
-use shared::{ImageId, ModelVersion, Score};
+use shared::{ImageId, ModelVersion};
+use skeet_store::ModelScore;
 use tracing::{error, info};
 
 use crate::batch::ScoreOutcomes;
@@ -61,7 +62,7 @@ impl Default for RunningTotals {
 
 /// Mutable state accumulated within a single tick.
 pub struct TickAccumulator {
-    pub pending_scores: Vec<(ImageId, Score, ModelVersion)>,
+    pub pending_scores: Vec<(ImageId, ModelScore)>,
     pub errors: HashMap<String, u64>,
 }
 
@@ -86,7 +87,13 @@ impl TickAccumulator {
     ) {
         for (id, score) in outcomes.successes {
             info!(image_id = %id, %score, "refined");
-            self.pending_scores.push((id, score, model_version.clone()));
+            self.pending_scores.push((
+                id,
+                ModelScore {
+                    score,
+                    model_version: model_version.clone(),
+                },
+            ));
         }
         for (id, e) in outcomes.failures {
             error!(image_id = %id, error = %e, "scoring did not produce a saveable score");
@@ -98,14 +105,6 @@ impl TickAccumulator {
         for (reason, count) in &self.errors {
             *totals.entry(reason.clone()).or_default() += count;
         }
-    }
-
-    /// Extract scores as `f64` observations for the histogram.
-    pub fn scores(&self) -> Vec<f64> {
-        self.pending_scores
-            .iter()
-            .map(|(_, s, _)| f64::from(*s))
-            .collect()
     }
 
     /// Number of unscored images that did *not* receive a successful score
@@ -123,6 +122,8 @@ impl Default for TickAccumulator {
 
 #[cfg(test)]
 mod tests {
+    use shared::Score;
+
     use super::*;
 
     fn version(s: &str) -> ModelVersion {
@@ -131,6 +132,13 @@ mod tests {
 
     fn score(v: f32) -> Score {
         Score::new(v).expect("score in 0..1")
+    }
+
+    fn scored(v: f32, version: &str) -> ModelScore {
+        ModelScore {
+            score: score(v),
+            model_version: ModelVersion::from(version),
+        }
     }
 
     fn id(seed: u8) -> ImageId {
@@ -153,8 +161,8 @@ mod tests {
         };
         acc.record_outcomes(outcomes, &v);
         assert_eq!(acc.pending_scores.len(), 2);
-        for (_, _, mv) in &acc.pending_scores {
-            assert_eq!(*mv, v);
+        for (_, ms) in &acc.pending_scores {
+            assert_eq!(ms.model_version, v);
         }
         assert!(acc.errors.is_empty());
     }
@@ -205,24 +213,10 @@ mod tests {
     }
 
     #[test]
-    fn scores_returns_one_f64_per_pending_score() {
-        let mut acc = TickAccumulator::new();
-        let v = version("model@v1");
-        acc.pending_scores.push((id(1), score(0.25), v.clone()));
-        acc.pending_scores.push((id(2), score(0.75), v));
-        let scores = acc.scores();
-        // Kills `vec![]`, `vec![0.0]`, `vec![1.0]`, `vec![-1.0]` mutants.
-        assert_eq!(scores.len(), 2);
-        assert!((scores[0] - 0.25).abs() < 1e-6);
-        assert!((scores[1] - 0.75).abs() < 1e-6);
-    }
-
-    #[test]
     fn remaining_subtracts_successful_scores_from_unscored_count() {
         let mut acc = TickAccumulator::new();
-        let v = version("model@v1");
         for i in 0..3u8 {
-            acc.pending_scores.push((id(i), score(0.5), v.clone()));
+            acc.pending_scores.push((id(i), scored(0.5, "model@v1")));
         }
         // 10 - 3 = 7 — kills `- +` and `- /` mutants.
         assert_eq!(acc.remaining(10), 7);
@@ -243,9 +237,8 @@ mod tests {
         let mut totals = RunningTotals::new();
         totals.scored = 50;
         let mut acc = TickAccumulator::new();
-        let v = version("model@v1");
         for i in 0..4u8 {
-            acc.pending_scores.push((id(i), score(0.5), v.clone()));
+            acc.pending_scores.push((id(i), scored(0.5, "model@v1")));
         }
         totals.absorb_tick(0, &acc);
         // 50 + 4 = 54 — kills `+= -=` and `+= *=` on scored.

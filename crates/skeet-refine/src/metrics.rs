@@ -4,6 +4,8 @@ use opentelemetry::{
     KeyValue,
     metrics::{Counter, Histogram, Meter},
 };
+use shared::ImageId;
+use skeet_store::ModelScore;
 
 /// OTel metrics emitted by skeet-live-refine at the end of each poll tick.
 pub struct LiveRefineMetrics {
@@ -48,13 +50,13 @@ impl LiveRefineMetrics {
     }
 
     /// Emit metrics for one tick. Counters receive the delta since the last call;
-    /// the histogram receives direct observations from this tick.
+    /// the histogram receives one observation per score from this tick.
     pub fn emit(
         &mut self,
         unscored_total: u64,
         scored_total: u64,
         error_totals: &HashMap<String, u64>,
-        tick_scores: &[f64],
+        tick_scored: &[(ImageId, ModelScore)],
     ) {
         let unscored_delta = unscored_total.saturating_sub(self.prev_unscored);
         if unscored_delta > 0 {
@@ -78,8 +80,8 @@ impl LiveRefineMetrics {
             }
         }
 
-        for &score in tick_scores {
-            self.scores_hist.record(score, &[]);
+        for (_, scored) in tick_scored {
+            self.scores_hist.record(f64::from(scored.score), &[]);
         }
     }
 }
@@ -167,10 +169,23 @@ mod tests {
         );
     }
 
+    fn scored(v: f32) -> (ImageId, ModelScore) {
+        let id: ImageId = "v2:0123456789abcdef0123456789abcdef"
+            .parse()
+            .expect("valid id");
+        (
+            id,
+            ModelScore {
+                score: shared::Score::new(v).expect("valid score"),
+                model_version: shared::ModelVersion::from("m@v1"),
+            },
+        )
+    }
+
     #[test]
     fn histogram_records_one_observation_per_tick_score() {
         let (mut metrics, provider, exporter) = make_test_metrics();
-        metrics.emit(0, 0, &HashMap::new(), &[0.1, 0.5, 0.9]);
+        metrics.emit(0, 0, &HashMap::new(), &[scored(0.1), scored(0.5), scored(0.9)]);
         assert_eq!(
             histogram_observation_count(&provider, &exporter, "skeet_live_refine.scores", None),
             3
