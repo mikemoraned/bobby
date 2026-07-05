@@ -312,6 +312,15 @@ enum AppraiseTarget<'a> {
     Image(&'a ImageId),
 }
 
+impl std::fmt::Display for AppraiseTarget<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Skeet(id) => write!(f, "skeet {id}"),
+            Self::Image(id) => write!(f, "image {id}"),
+        }
+    }
+}
+
 async fn apply_appraisal(
     store: &dyn AppraiseStore,
     appraiser: Option<Arc<Appraiser>>,
@@ -324,45 +333,25 @@ async fn apply_appraisal(
 
     if band_str == "clear" {
         match &target {
-            AppraiseTarget::Skeet(id) => {
-                store
-                    .skeet_appraisals()
-                    .clear(id)
-                    .await
-                    .map_err(|e| cot::Error::internal(format!("failed to clear band: {e}")))?;
-                info!(%id, "cleared skeet band");
-            }
-            AppraiseTarget::Image(id) => {
-                store
-                    .image_appraisals()
-                    .clear(id)
-                    .await
-                    .map_err(|e| cot::Error::internal(format!("failed to clear band: {e}")))?;
-                info!(%id, "cleared image band");
-            }
+            AppraiseTarget::Skeet(id) => store.skeet_appraisals().clear(id).await,
+            AppraiseTarget::Image(id) => store.image_appraisals().clear(id).await,
         }
+        .map_err(|e| cot::Error::internal(format!("failed to clear band: {e}")))?;
+        info!(%target, "cleared band");
     } else {
         let band: Band = band_str
             .parse()
             .map_err(|e| cot::Error::internal(format!("invalid band: {e}")))?;
+        let appraisal = Appraisal {
+            band,
+            appraiser: (*appraiser).clone(),
+        };
         match &target {
-            AppraiseTarget::Skeet(id) => {
-                store
-                    .skeet_appraisals()
-                    .set(id, band, &appraiser)
-                    .await
-                    .map_err(|e| cot::Error::internal(format!("failed to set band: {e}")))?;
-                info!(%id, %band, "set skeet band");
-            }
-            AppraiseTarget::Image(id) => {
-                store
-                    .image_appraisals()
-                    .set(id, band, &appraiser)
-                    .await
-                    .map_err(|e| cot::Error::internal(format!("failed to set band: {e}")))?;
-                info!(%id, %band, "set image band");
-            }
+            AppraiseTarget::Skeet(id) => store.skeet_appraisals().set(id, &appraisal).await,
+            AppraiseTarget::Image(id) => store.image_appraisals().set(id, &appraisal).await,
         }
+        .map_err(|e| cot::Error::internal(format!("failed to set band: {e}")))?;
+        info!(%target, %band, "set band");
     }
     Ok(())
 }
