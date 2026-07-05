@@ -4,6 +4,7 @@ use prometheus_reqwest_remote_write::{
 };
 use reqwest::Client;
 use thiserror::Error;
+use url::Url;
 
 use crate::openai::CostEntry;
 
@@ -21,7 +22,7 @@ pub enum PromError {
 
 pub async fn push(
     client: &Client,
-    endpoint: &str,
+    endpoint: &Url,
     basic_auth: &str,
     entries: &[CostEntry],
     timestamp_ms: i64,
@@ -33,7 +34,7 @@ pub async fn push(
         .map_err(|e| PromError::Compression(e.to_string()))?;
 
     let response = client
-        .post(endpoint)
+        .post(endpoint.clone())
         .basic_auth(username, Some(password))
         .header(reqwest::header::CONTENT_TYPE, CONTENT_TYPE)
         .header(reqwest::header::CONTENT_ENCODING, "snappy")

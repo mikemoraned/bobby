@@ -4,6 +4,8 @@ use std::str::FromStr;
 
 use chrono::Utc;
 use clap::Parser;
+use url::Url;
+
 use cloudflare_exporter::{
     metrics::SyncMetrics,
     prom, r2_rest,
@@ -24,7 +26,7 @@ struct Args {
 
     /// Prometheus remote_write endpoint URL
     #[arg(long, env = "BOBBY_PROM_ENDPOINT")]
-    prom_endpoint: String,
+    prom_endpoint: Url,
 
     /// Basic auth credentials (instance_id:api_key)
     #[arg(long, env = "BOBBY_PROM_AUTH")]
