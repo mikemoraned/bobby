@@ -5,6 +5,7 @@ use std::str::FromStr;
 use chrono::{DateTime, ParseError, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use shared::refine_model::Label;
+use url::Url;
 
 use crate::usd::Usd;
 
@@ -90,7 +91,7 @@ pub struct ModelPrice {
 /// the `SnapshotId` rather than as a separate field.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Snapshot {
-    pub source_url: String,
+    pub source_url: Url,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
     pub prices: BTreeMap<String, ModelPrice>,
@@ -117,7 +118,7 @@ impl Snapshot {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PersistedSnapshot {
     snapshot_id: SnapshotId,
-    source_url: String,
+    source_url: Url,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     note: Option<String>,
     prices: BTreeMap<String, ModelPrice>,
@@ -303,7 +304,7 @@ mod tests {
             },
         );
         Snapshot {
-            source_url: "https://models.dev/api.json".into(),
+            source_url: Url::parse("https://models.dev/api.json").expect("valid url"),
             note: None,
             prices,
         }
