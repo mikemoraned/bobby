@@ -33,7 +33,8 @@ pub use feed_generator_uri::FeedGeneratorUri;
 pub use image_id::{ImageId, InvalidImageId};
 pub use model_version::{HashScheme, ModelVersion};
 pub use refine_model::{
-    Label, ModelName, ModelProvider, RefineModel, RefineModels, RefineModelsError, RefinePrompt,
+    Label, ModelName, ModelProvider, ParseModelProviderError, RefineModel, RefineModels,
+    RefineModelsError, RefinePrompt,
 };
 pub use rejection::{Rejection, RejectionCategories, RejectionCategory};
 pub use score::{
