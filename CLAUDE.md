@@ -44,6 +44,12 @@ Read whichever are relevant before starting work:
 
 Never re-issue a build or test command if one is already running or has just completed. If a command is taking a while, wait for it rather than spawning duplicates.
 
+## Committing
+
+- **Never `git commit` (or `git push`) without explicit approval.** Make the changes, then stop.
+- At a natural commit point (or when asked to stop), propose a **pithy** commit message — minimal, capturing intent plus any significant changes — and show it for review. Do not commit yet.
+- Commit only after the user says to. "Give me a commit message" / "what's the commit" means **show** the message, not run the commit.
+
 ## Security
 
 Never generate shell commands that capture secrets in a variable — always use `op run --env-file` patterns so credentials flow through the process environment without touching the LLM context.
