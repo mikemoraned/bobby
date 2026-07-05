@@ -30,6 +30,8 @@ enum Error {
     MissingEnv(&'static str),
     #[error("Tempo error: {0}")]
     Tempo(#[from] TempoError),
+    #[error("invalid TEMPO_URL: {0}")]
+    TempoUrl(#[from] shared::BaseUrlError),
 }
 
 #[tokio::main]
@@ -43,7 +45,7 @@ async fn main() -> Result<(), Error> {
     let user = std::env::var("TEMPO_USER").map_err(|_| Error::MissingEnv("TEMPO_USER"))?;
     let token = std::env::var("TEMPO_TOKEN").map_err(|_| Error::MissingEnv("TEMPO_TOKEN"))?;
 
-    let client = TempoClient::new(base_url, user, token);
+    let client = TempoClient::new(&base_url, user, token)?;
     let lookback_secs = args.lookback_minutes * 60;
 
     info!(

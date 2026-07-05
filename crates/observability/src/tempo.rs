@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use reqwest::Client;
 use serde::Deserialize;
+use shared::{BaseUrl, BaseUrlError};
 use thiserror::Error;
+use url::Url;
 
 #[derive(Debug, Error)]
 pub enum TempoError {
@@ -12,7 +14,7 @@ pub enum TempoError {
 
 pub struct TempoClient {
     client: Client,
-    base_url: String,
+    base_url: BaseUrl,
     user: String,
     token: String,
 }
@@ -167,16 +169,23 @@ pub struct Trace {
 
 impl TempoClient {
     pub fn new(
-        base_url: impl Into<String>,
+        base_url: &str,
         user: impl Into<String>,
         token: impl Into<String>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, BaseUrlError> {
+        Ok(Self {
             client: Client::new(),
-            base_url: base_url.into(),
+            base_url: BaseUrl::parse(base_url)?,
             user: user.into(),
             token: token.into(),
-        }
+        })
+    }
+
+    /// The base URL with `segments` appended to its path.
+    fn endpoint(&self, segments: &[&str]) -> Url {
+        let mut url = self.base_url.clone();
+        url.path_segments_mut().extend(segments.iter().copied());
+        url.into_url()
     }
 
     pub async fn search(
@@ -198,7 +207,7 @@ impl TempoClient {
 
         let resp: SearchResponse = self
             .client
-            .get(format!("{}/api/search", self.base_url))
+            .get(self.endpoint(&["api", "search"]))
             .basic_auth(&self.user, Some(&self.token))
             .query(&[
                 ("q", q.as_str()),
@@ -217,7 +226,7 @@ impl TempoClient {
     pub async fn fetch_trace(&self, info: &TraceInfo) -> Result<Trace, TempoError> {
         let resp: TraceResponse = self
             .client
-            .get(format!("{}/api/traces/{}", self.base_url, info.trace_id))
+            .get(self.endpoint(&["api", "traces", &info.trace_id]))
             .basic_auth(&self.user, Some(&self.token))
             .send()
             .await?
