@@ -146,13 +146,7 @@ fn image_candidate(did: &Did, blob_ref: &BlobRef) -> Option<ImageCandidate> {
         warn!("skipping image with unrecognized blob ref or CID");
         return None;
     };
-    let url = match bluesky::bsky_cdn_thumbnail_url(did, &cid) {
-        Ok(url) => url,
-        Err(e) => {
-            warn!(error = %e, "skipping image with unbuildable CDN URL");
-            return None;
-        }
-    };
+    let url = bluesky::bsky_cdn_thumbnail_url(did, &cid);
     Some(ImageCandidate { cid, url })
 }
 

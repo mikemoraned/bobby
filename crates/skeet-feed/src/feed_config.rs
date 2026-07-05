@@ -27,7 +27,6 @@ pub enum FeedParamsError {
 
 #[derive(Debug, Clone)]
 pub struct FeedParams {
-    pub hostname: String,
     publisher_did: Did,
     feed_name: String,
     pub max_entries: usize,
@@ -79,7 +78,6 @@ impl FeedParams {
             .map_err(|e| warn!(error = %e, "failed to render site QR; banner will omit it"))
             .ok();
         Ok(Self {
-            hostname,
             publisher_did,
             feed_name,
             max_entries,

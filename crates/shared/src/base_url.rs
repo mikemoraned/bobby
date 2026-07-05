@@ -47,12 +47,21 @@ impl BaseUrl {
     }
 
     /// Infallible: the constructor already verified this URL can be a base.
-    pub fn path_segments_mut(&mut self) -> PathSegmentsMut<'_> {
+    fn path_segments_mut(&mut self) -> PathSegmentsMut<'_> {
         #[allow(clippy::expect_used)]
         // BaseUrl invariant: constructor verified this URL can be a base
         self.0
             .path_segments_mut()
             .expect("BaseUrl invariant: URL can be a base")
+    }
+
+    /// A copy of this base URL with `segments` appended to its path.
+    ///
+    /// Infallible by the [`BaseUrl`] invariant, so callers never re-validate.
+    pub fn join_path(&self, segments: &[&str]) -> Url {
+        let mut url = self.clone();
+        url.path_segments_mut().extend(segments.iter().copied());
+        url.into_url()
     }
 
     pub const fn as_url(&self) -> &Url {
@@ -76,13 +85,9 @@ mod tests {
 
     #[test]
     fn https_can_be_a_base_and_appends_segments() {
-        let mut url = BaseUrl::parse("https://bsky.app").expect("valid https base");
-        url.path_segments_mut()
-            .extend(["profile", "did:plc:abc", "post", "r1"]);
-        assert_eq!(
-            url.as_url().as_str(),
-            "https://bsky.app/profile/did:plc:abc/post/r1"
-        );
+        let base = BaseUrl::parse("https://bsky.app").expect("valid https base");
+        let url = base.join_path(&["profile", "did:plc:abc", "post", "r1"]);
+        assert_eq!(url.as_str(), "https://bsky.app/profile/did:plc:abc/post/r1");
     }
 
     #[test]

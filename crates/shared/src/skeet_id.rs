@@ -1,7 +1,13 @@
+use std::sync::LazyLock;
+
 use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::BaseUrl;
+
+#[allow(clippy::expect_used)] // const literal is a valid https base URL
+static BSKY_APP_BASE: LazyLock<BaseUrl> =
+    LazyLock::new(|| BaseUrl::parse("https://bsky.app").expect("const bsky.app base is valid"));
 
 #[derive(Debug, thiserror::Error)]
 #[error("invalid AT URI: {0}")]
@@ -57,11 +63,7 @@ impl SkeetId {
     /// The public Bluesky web URL for this post:
     /// `https://bsky.app/profile/{did}/post/{rkey}`.
     pub fn bsky_post_url(&self) -> Url {
-        #[allow(clippy::expect_used)] // const literal is a valid https base URL
-        let mut url = BaseUrl::parse("https://bsky.app").expect("const bsky.app base is valid");
-        url.path_segments_mut()
-            .extend(["profile", self.did.as_str(), "post", self.rkey.as_str()]);
-        url.into_url()
+        BSKY_APP_BASE.join_path(&["profile", self.did.as_str(), "post", self.rkey.as_str()])
     }
 }
 

@@ -77,9 +77,7 @@ impl OAuthConfig {
 
     /// The GitHub API endpoint for the authenticated user (`{base}/user`).
     pub fn github_user_url(&self) -> Url {
-        let mut url = self.github_api_base_url.clone();
-        url.path_segments_mut().push("user");
-        url.into_url()
+        self.github_api_base_url.join_path(&["user"])
     }
 
     pub fn is_allowed(&self, username: &str) -> bool {

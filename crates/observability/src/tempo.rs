@@ -183,9 +183,7 @@ impl TempoClient {
 
     /// The base URL with `segments` appended to its path.
     fn endpoint(&self, segments: &[&str]) -> Url {
-        let mut url = self.base_url.clone();
-        url.path_segments_mut().extend(segments.iter().copied());
-        url.into_url()
+        self.base_url.join_path(segments)
     }
 
     pub async fn search(
