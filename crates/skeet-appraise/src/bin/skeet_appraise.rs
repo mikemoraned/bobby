@@ -105,7 +105,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|s| s.trim().to_string())
                 .collect();
             info!(admin_users = ?users, "GitHub OAuth configured");
-            Some(Arc::new(OAuthConfig::new(client_id, client_secret, users)))
+            Some(Arc::new(OAuthConfig::new(client_id, client_secret, users)?))
         }
         _ => {
             if !args.local_admin {

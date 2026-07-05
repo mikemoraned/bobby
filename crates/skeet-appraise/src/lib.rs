@@ -15,7 +15,7 @@ mod static_assets;
 mod store_middleware;
 
 pub use appraiser_config::{AppraiserExtractor, AppraiserLayer};
-pub use auth_config::{OAuthConfig, OAuthConfigExtractor, OAuthConfigLayer};
+pub use auth_config::{OAuthConfig, OAuthConfigError, OAuthConfigExtractor, OAuthConfigLayer};
 pub use available_feeds::PublishedListCatalogReader;
 pub use models_middleware::{Models, ModelsLayer};
 pub use project::AppraiseProject;

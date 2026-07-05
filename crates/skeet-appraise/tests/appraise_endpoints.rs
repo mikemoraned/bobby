@@ -800,7 +800,8 @@ async fn oauth_client(
         format!("{}/authorize", mock_server.uri()),
         format!("{}/token", mock_server.uri()),
         mock_server.uri().to_string(),
-    );
+    )
+    .expect("valid oauth config");
     let project = AppraiseProject {
         published_feed_layer: PublishedFeedLayer::new(test_feeds(DUMMY_REDIS_URL)),
         store_layer: StoreLayer::from_shared(store),

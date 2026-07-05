@@ -46,7 +46,8 @@ async fn oauth_client_with_redis(
         format!("{}/authorize", mock_server.uri()),
         format!("{}/token", mock_server.uri()),
         mock_server.uri().to_string(),
-    );
+    )
+    .expect("valid oauth config");
     let project = AppraiseProject {
         published_feed_layer: PublishedFeedLayer::new(Arc::new(PublishedListCatalogReader::new(
             DUMMY_PUBLISH_URL,
