@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use bluesky::ImageUrl;
 use chrono::Utc;
-use shared::{BlueskyCid, ImageId, SkeetId};
+use shared::{BlueskyCid, Did, ImageId, RecordKey, SkeetId};
 use skeet_publish::{
     Limit, ListStatistics, NextMatchPrediction, Order, PublishedImage, PublishedList,
     PublishedListCatalog,
@@ -259,7 +259,10 @@ fn published_image(rkey: &str) -> PublishedImage {
         ))
         .expect("valid url"),
         ImageId::V3(BlueskyCid::new(VALID_CID).expect("valid cid")),
-        SkeetId::for_post("did:plc:abc", rkey),
+        SkeetId::for_post(
+            &Did::new("did:plc:abc").expect("valid did"),
+            &RecordKey::new(rkey).expect("valid rkey"),
+        ),
     )
 }
 

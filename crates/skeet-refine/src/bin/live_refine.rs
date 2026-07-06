@@ -9,7 +9,7 @@ use skeet_refine::refining::{
     RefineAgent, ScoringOutcome, build_agent, create_client, refine_image_resilient,
 };
 use skeet_refine::tick::{RunningTotals, ScoringFailure, TickAccumulator};
-use skeet_store::{ModelScore, Scores, StoreArgs, StoreMetrics};
+use skeet_store::{Scores, StoreArgs, StoreMetrics};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::info;
@@ -128,36 +128,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         totals.absorb_tick(unscored_count, &acc);
 
-        let tick_scores = if acc.pending_scores.is_empty() {
-            vec![]
-        } else {
-            let scores = acc.scores();
-            // Adapt the accumulator's (id, score, version) triples to the store's
-            // ModelScore boundary; retyping `pending_scores` itself is a later slice.
-            let to_upsert: Vec<_> = acc
-                .pending_scores
-                .iter()
-                .map(|(id, score, model_version)| {
-                    (
-                        id.clone(),
-                        ModelScore {
-                            score: *score,
-                            model_version: model_version.clone(),
-                        },
-                    )
-                })
-                .collect();
-            store.batch_upsert_scores(&to_upsert).await?;
+        if !acc.pending_scores.is_empty() {
+            store.batch_upsert_scores(&acc.pending_scores).await?;
             info!(
                 scored = acc.pending_scores.len(),
                 remaining = acc.remaining(unscored_count),
                 "batch-saved scores"
             );
-            scores
-        };
+        }
         source.commit(candidates);
 
-        metrics.emit(totals.unscored, totals.scored, &totals.errors, &tick_scores);
+        metrics.emit(
+            totals.unscored,
+            totals.scored,
+            &totals.errors,
+            &acc.pending_scores,
+        );
 
         if let Ok(versions) = store.table_versions().await {
             store_metrics.record_table_versions(&versions);

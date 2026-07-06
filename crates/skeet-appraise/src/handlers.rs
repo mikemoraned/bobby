@@ -9,6 +9,7 @@ use cot::{Body, StatusCode, Template};
 use serde::Deserialize;
 use shared::{Band, ImageId};
 use tracing::{info, instrument, warn};
+use url::Url;
 
 use crate::AppraiserExtractor;
 use crate::Store;
@@ -23,7 +24,7 @@ pub struct HomeEntry {
     pub band: String,
     pub manual_skeet_band: String,
     pub manual_image_band: String,
-    pub web_url: String,
+    pub web_url: Url,
     /// A short note when the skeet or image has gone from Bluesky;
     /// `None` when both are present.
     pub missing_note: Option<String>,

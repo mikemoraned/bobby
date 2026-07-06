@@ -1,4 +1,13 @@
+use std::sync::LazyLock;
+
 use serde::{Deserialize, Serialize};
+use url::Url;
+
+use crate::BaseUrl;
+
+#[allow(clippy::expect_used)] // const literal is a valid https base URL
+static BSKY_APP_BASE: LazyLock<BaseUrl> =
+    LazyLock::new(|| BaseUrl::parse("https://bsky.app").expect("const bsky.app base is valid"));
 
 #[derive(Debug, thiserror::Error)]
 #[error("invalid AT URI: {0}")]
@@ -31,11 +40,11 @@ impl SkeetId {
     }
 
     /// Construct a SkeetId for a Bluesky post from its DID and rkey.
-    pub fn for_post(did: &str, rkey: &str) -> Self {
+    pub fn for_post(did: &Did, rkey: &RecordKey) -> Self {
         Self {
-            did: Did(did.to_string()),
+            did: did.clone(),
             collection: Nsid("app.bsky.feed.post".to_string()),
-            rkey: RecordKey(rkey.to_string()),
+            rkey: rkey.clone(),
         }
     }
 
@@ -53,8 +62,8 @@ impl SkeetId {
 
     /// The public Bluesky web URL for this post:
     /// `https://bsky.app/profile/{did}/post/{rkey}`.
-    pub fn bsky_post_url(&self) -> String {
-        format!("https://bsky.app/profile/{}/post/{}", self.did, self.rkey)
+    pub fn bsky_post_url(&self) -> Url {
+        BSKY_APP_BASE.join_path(&["profile", self.did.as_str(), "post", self.rkey.as_str()])
     }
 }
 
@@ -117,13 +126,39 @@ impl<'de> Deserialize<'de> for SkeetId {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("invalid DID: {0}")]
+pub struct ParseDidError(String);
+
 /// A Decentralized Identifier (DID), e.g. `did:plc:abc123`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Did(String);
 
 impl Did {
+    /// Validating constructor: a DID is `did:{method}:{identifier}` with a
+    /// non-empty method and identifier.
+    pub fn new(s: impl Into<String>) -> Result<Self, ParseDidError> {
+        let s = s.into();
+        let (method, identifier) = s
+            .strip_prefix("did:")
+            .and_then(|rest| rest.split_once(':'))
+            .ok_or_else(|| ParseDidError(s.clone()))?;
+        if method.is_empty() || identifier.is_empty() {
+            return Err(ParseDidError(s));
+        }
+        Ok(Self(s))
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl std::str::FromStr for Did {
+    type Err = ParseDidError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::new(s)
     }
 }
 
@@ -155,13 +190,39 @@ impl PartialEq<str> for Nsid {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("invalid record key: {0}")]
+pub struct ParseRecordKeyError(String);
+
 /// A record key (rkey) identifying a specific record within an AT Protocol collection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecordKey(String);
 
 impl RecordKey {
+    /// Validating constructor following the AT Protocol record-key syntax:
+    /// 1–512 characters from `[A-Za-z0-9.\-_:~]`, excluding `.` and `..`.
+    pub fn new(s: impl Into<String>) -> Result<Self, ParseRecordKeyError> {
+        let s = s.into();
+        let valid_len = (1..=512).contains(&s.chars().count());
+        let valid_chars = s
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ':' | '~'));
+        if s == "." || s == ".." || !valid_len || !valid_chars {
+            return Err(ParseRecordKeyError(s));
+        }
+        Ok(Self(s))
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl std::str::FromStr for RecordKey {
+    type Err = ParseRecordKeyError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::new(s)
     }
 }
 
@@ -178,7 +239,10 @@ mod tests {
 
     #[test]
     fn for_post_constructs_at_uri() {
-        let id = SkeetId::for_post("did:plc:abc123", "xyz789");
+        let id = SkeetId::for_post(
+            &Did::new("did:plc:abc123").unwrap(),
+            &RecordKey::new("xyz789").unwrap(),
+        );
         assert_eq!(
             id.to_string(),
             "at://did:plc:abc123/app.bsky.feed.post/xyz789"
@@ -187,11 +251,25 @@ mod tests {
 
     #[test]
     fn bsky_post_url_from_components() {
-        let id = SkeetId::for_post("did:plc:abc123", "xyz789");
+        let id = SkeetId::for_post(
+            &Did::new("did:plc:abc123").unwrap(),
+            &RecordKey::new("xyz789").unwrap(),
+        );
         assert_eq!(
-            id.bsky_post_url(),
+            id.bsky_post_url().as_str(),
             "https://bsky.app/profile/did:plc:abc123/post/xyz789"
         );
+    }
+
+    #[test]
+    fn record_key_validates_atproto_syntax() {
+        assert!(RecordKey::new("3jzfcijpj2z2a").is_ok());
+        assert!(RecordKey::new("self").is_ok());
+        assert!(RecordKey::new("").is_err());
+        assert!(RecordKey::new(".").is_err());
+        assert!(RecordKey::new("..").is_err());
+        assert!(RecordKey::new("has space").is_err());
+        assert!(RecordKey::new("has/slash").is_err());
     }
 
     #[test]

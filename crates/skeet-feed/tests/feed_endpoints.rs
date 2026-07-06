@@ -16,10 +16,10 @@ use chrono::{DateTime, TimeZone as _, Utc};
 use cot::test::Client;
 use shared::SkeetId;
 use shared::{BlueskyCid, ImageId};
-use skeet_feed::feed_config::{FeedConfigLayer, FeedParams};
+use skeet_feed::{FeedConfigLayer, FeedParams};
 use skeet_feed::preview::state::{PreviewState, PreviewStateLayer};
 use skeet_feed::preview::{PREVIEW_HEIGHT, PREVIEW_WIDTH};
-use skeet_feed::project::FeedProject;
+use skeet_feed::FeedProject;
 use skeet_feed::{FeedSourceLayer, PublishedImagesSourceLayer};
 use skeet_publish::{
     FeedSkeleton, FeedSource, FeedSourceError, ListStatistics, PublishedImage, PublishedImages,
@@ -72,6 +72,7 @@ fn test_params() -> FeedParams {
         10,
         None,
     )
+    .expect("valid test feed params")
 }
 
 fn skeet_id(rkey: &str) -> SkeetId {
@@ -203,14 +204,14 @@ async fn describe_returns_feed_list() {
         refreshed_at: None,
     };
     let params = test_params();
-    let feed_uri = params.feed_uri();
+    let feed_uri = params.feed_uri().to_string();
     let mut client = client_for(params, source).await;
 
     let (status, body) = get_body(&mut client, "/xrpc/app.bsky.feed.describeFeedGenerator").await;
     assert_eq!(status, 200);
     let json: serde_json::Value = serde_json::from_str(&body).expect("valid JSON");
     let feeds = json["feeds"].as_array().expect("feeds array");
-    assert_eq!(feeds[0]["uri"].as_str().expect("uri"), feed_uri);
+    assert_eq!(feeds[0]["uri"].as_str().expect("uri"), feed_uri.as_str());
 }
 
 #[tokio::test]
@@ -220,7 +221,7 @@ async fn serves_the_sources_skeet_ids_in_order() {
         refreshed_at: None,
     };
     let params = test_params();
-    let feed_uri = params.feed_uri();
+    let feed_uri = params.feed_uri().to_string();
     let mut client = client_for(params, source).await;
 
     let posts = feed_posts(&mut client, &feed_uri).await;
@@ -241,7 +242,7 @@ async fn returns_empty_feed_when_source_is_empty() {
         refreshed_at: None,
     };
     let params = test_params();
-    let feed_uri = params.feed_uri();
+    let feed_uri = params.feed_uri().to_string();
     let mut client = client_for(params, source).await;
 
     assert!(feed_posts(&mut client, &feed_uri).await.is_empty());
@@ -255,7 +256,7 @@ async fn applies_max_entries_limit() {
     };
     let mut params = test_params();
     params.max_entries = 2;
-    let feed_uri = params.feed_uri();
+    let feed_uri = params.feed_uri().to_string();
     let mut client = client_for(params, source).await;
 
     let posts = feed_posts(&mut client, &feed_uri).await;
@@ -496,10 +497,7 @@ async fn home_omits_statistics_banner_when_absent() {
 #[tokio::test]
 async fn home_loads_plausible_when_script_url_configured() {
     let script_url = "https://plausible.io/js/pa-test.js";
-    let params = FeedParams {
-        plausible_script_url: Some(script_url.to_string()),
-        ..test_params()
-    };
+    let params = test_params().with_plausible_script_url(Some(script_url.to_string()));
     let mut client = client_with_images(params, vec![]).await;
 
     let (status, body) = get_body(&mut client, "/").await;
@@ -634,7 +632,7 @@ async fn feed_skeleton_includes_last_modified_header() {
         refreshed_at: Some(Utc::now()),
     };
     let params = test_params();
-    let feed_uri = params.feed_uri();
+    let feed_uri = params.feed_uri().to_string();
     let mut client = client_for(params, source).await;
 
     let response = client

@@ -1,5 +1,13 @@
 use std::collections::HashSet;
 
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum ParseRejectionError {
+    #[error("unknown rejection: {0}")]
+    UnknownRejection(String),
+    #[error("unknown rejection category: {0}")]
+    UnknownCategory(String),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RejectionCategory {
     Face,
@@ -18,14 +26,14 @@ impl std::fmt::Display for RejectionCategory {
 }
 
 impl std::str::FromStr for RejectionCategory {
-    type Err = String;
+    type Err = ParseRejectionError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "Face" => Ok(Self::Face),
             "Text" => Ok(Self::Text),
             "Metadata" => Ok(Self::Metadata),
-            other => Err(format!("unknown rejection category: {other}")),
+            other => Err(ParseRejectionError::UnknownCategory(other.to_string())),
         }
     }
 }
@@ -88,7 +96,7 @@ impl std::fmt::Display for Rejection {
 }
 
 impl std::str::FromStr for Rejection {
-    type Err = String;
+    type Err = ParseRejectionError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
@@ -101,7 +109,7 @@ impl std::str::FromStr for Rejection {
             "TooMuchSkinOutsideFace" => Ok(Self::TooMuchSkinOutsideFace),
             "TooMuchText" => Ok(Self::TooMuchText),
             "BlockedByMetadata" => Ok(Self::BlockedByMetadata),
-            other => Err(format!("unknown rejection: {other}")),
+            other => Err(ParseRejectionError::UnknownRejection(other.to_string())),
         }
     }
 }

@@ -14,9 +14,20 @@ pub struct BlockedEntry {
     pub reason: String,
 }
 
+/// Failure reading or writing a [`BlocklistConfig`] TOML file.
+#[derive(Debug, thiserror::Error)]
+pub enum BlocklistError {
+    #[error("failed to read/write blocklist file: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("failed to parse blocklist TOML: {0}")]
+    Deserialize(#[from] toml::de::Error),
+    #[error("failed to serialize blocklist TOML: {0}")]
+    Serialize(#[from] toml::ser::Error),
+}
+
 impl BlocklistConfig {
     /// Load blocklist configuration from a TOML file at the given path.
-    pub fn from_file(path: &std::path::Path) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn from_file(path: &std::path::Path) -> Result<Self, BlocklistError> {
         let text = std::fs::read_to_string(path)?;
         let mut config: Self = toml::from_str(&text)?;
         config.sort();
@@ -24,7 +35,7 @@ impl BlocklistConfig {
     }
 
     /// Save the full blocklist to a TOML file at the given path.
-    pub fn save(&self, path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save(&self, path: &std::path::Path) -> Result<(), BlocklistError> {
         let text = toml::to_string_pretty(self)?;
         std::fs::write(path, text)?;
         Ok(())

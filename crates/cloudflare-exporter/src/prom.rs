@@ -6,6 +6,7 @@ use prometheus_reqwest_remote_write::{
 };
 use reqwest::Client;
 use thiserror::Error;
+use url::Url;
 
 use crate::cloudflare::R2Operations;
 use crate::r2_rest::{Bucket, R2BucketUsage};
@@ -25,7 +26,7 @@ pub enum PromError {
 
 pub async fn push_timeseries(
     client: &Client,
-    endpoint: &str,
+    endpoint: &Url,
     basic_auth: &str,
     timeseries: Vec<TimeSeries>,
 ) -> Result<(), PromError> {
@@ -37,7 +38,7 @@ pub async fn push_timeseries(
         .map_err(|e| PromError::Compression(e.to_string()))?;
 
     let response = client
-        .post(endpoint)
+        .post(endpoint.clone())
         .basic_auth(username, Some(password))
         .header(reqwest::header::CONTENT_TYPE, CONTENT_TYPE)
         .header(reqwest::header::CONTENT_ENCODING, "snappy")
@@ -60,7 +61,7 @@ pub async fn push_timeseries(
 
 pub async fn push_operations(
     client: &Client,
-    endpoint: &str,
+    endpoint: &Url,
     basic_auth: &str,
     operations: &R2Operations,
     timestamp_ms: i64,
@@ -108,7 +109,7 @@ fn build_operations_timeseries(operations: &R2Operations, timestamp_ms: i64) -> 
 
 pub async fn push_storage(
     client: &Client,
-    endpoint: &str,
+    endpoint: &Url,
     basic_auth: &str,
     usages: &[(Bucket, R2BucketUsage)],
     timestamp_ms: i64,

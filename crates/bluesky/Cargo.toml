@@ -8,7 +8,11 @@ workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
+atrium-api = { workspace = true }
+chrono = { workspace = true }
+fastrand = { workspace = true }
 image = { workspace = true }
+jetstream-oxide = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

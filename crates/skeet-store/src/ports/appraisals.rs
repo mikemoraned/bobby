@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use shared::{Appraisal, Appraiser, Band, ImageId, SkeetId};
+use shared::{Appraisal, ImageId, SkeetId};
 
 use crate::StoreError;
 
@@ -8,7 +8,7 @@ use crate::StoreError;
 #[async_trait]
 pub trait Appraisals<K: Send + Sync>: Send + Sync {
     /// Upsert the appraisal for `id`.
-    async fn set(&self, id: &K, band: Band, appraiser: &Appraiser) -> Result<(), StoreError>;
+    async fn set(&self, id: &K, appraisal: &Appraisal) -> Result<(), StoreError>;
     /// Remove any appraisal for `id`.
     async fn clear(&self, id: &K) -> Result<(), StoreError>;
     /// The appraisal for `id`, if one is stored.

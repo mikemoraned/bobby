@@ -4,6 +4,7 @@ use chrono::{DateTime, Datelike, DurationRound, TimeZone, Utc};
 use clap::Parser;
 use openai_exporter::{metrics::SyncMetrics, openai, prom};
 use tracing::info;
+use url::Url;
 
 #[derive(Parser)]
 #[command(about = "Sync OpenAI daily cost data to Grafana Cloud via Prometheus remote_write")]
@@ -14,7 +15,7 @@ struct Args {
 
     /// Prometheus remote_write endpoint URL
     #[arg(long, env = "BOBBY_PROM_ENDPOINT")]
-    prom_endpoint: String,
+    prom_endpoint: Url,
 
     /// Basic auth credentials (instance_id:api_key)
     #[arg(long, env = "BOBBY_PROM_AUTH")]

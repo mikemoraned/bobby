@@ -6,16 +6,56 @@ use serde::{Deserialize, Serialize};
 use crate::model_version::HashScheme;
 use crate::{ModelVersion, Score, Threshold};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// The model providers we know how to score with. A provider outside this set
+/// can't be served, so it's rejected at construction rather than left to fail
+/// (or silently mis-hash a `ModelVersion`) later.
+const KNOWN_MODEL_PROVIDERS: &[&str] = &["openai"];
+
+#[derive(Debug, thiserror::Error)]
+pub enum ParseModelProviderError {
+    #[error("model provider must not be empty")]
+    Empty,
+    #[error("unknown model provider {provider:?} (known: {})", KNOWN_MODEL_PROVIDERS.join(", "))]
+    Unknown { provider: String },
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct ModelProvider(String);
 
 impl ModelProvider {
+    /// Validating constructor: rejects empty and unknown providers.
+    pub fn new(s: impl Into<String>) -> Result<Self, ParseModelProviderError> {
+        let s = s.into();
+        if s.is_empty() {
+            return Err(ParseModelProviderError::Empty);
+        }
+        if !KNOWN_MODEL_PROVIDERS.contains(&s.as_str()) {
+            return Err(ParseModelProviderError::Unknown { provider: s });
+        }
+        Ok(Self(s))
+    }
+
     pub fn openai() -> Self {
         Self("openai".into())
     }
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl std::str::FromStr for ModelProvider {
+    type Err = ParseModelProviderError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::new(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ModelProvider {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        Self::new(s).map_err(serde::de::Error::custom)
     }
 }
 
@@ -355,6 +395,34 @@ mod tests {
             prompt: RefinePrompt::new(prompt),
             decision_threshold: threshold(thr),
         }
+    }
+
+    #[test]
+    fn model_provider_accepts_known_rejects_empty_and_unknown() {
+        assert_eq!(ModelProvider::new("openai").expect("known").as_str(), "openai");
+        assert!(matches!(
+            ModelProvider::new(""),
+            Err(ParseModelProviderError::Empty)
+        ));
+        assert!(matches!(
+            ModelProvider::new("opnai"),
+            Err(ParseModelProviderError::Unknown { .. })
+        ));
+    }
+
+    #[test]
+    fn model_provider_deserialize_rejects_unknown() {
+        // A typo'd provider in refine.toml must fail to load, not mis-hash silently.
+        assert!(toml::from_str::<PersistedEntry>(
+            r#"
+model_version = "v2:deadbeef"
+model_provider = "opnai"
+model_name = "gpt-4o"
+decision_threshold = 0.5
+prompt = "p"
+"#
+        )
+        .is_err());
     }
 
     #[test]

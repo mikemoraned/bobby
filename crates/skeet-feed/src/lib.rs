@@ -1,14 +1,16 @@
 #![warn(clippy::all, clippy::nursery)]
 
-pub mod feed_config;
-pub mod feed_source;
-pub mod handlers;
+mod feed_config;
+mod feed_source;
+mod handlers;
 pub mod preview;
-pub mod project;
-pub mod published_images_source;
-pub mod qr;
+mod project;
+mod published_images_source;
+mod qr;
 
+pub use feed_config::{FeedConfigLayer, FeedParams, FeedParamsError};
 pub use feed_source::{FeedSourceExtractor, FeedSourceLayer};
+pub use project::FeedProject;
 pub use published_images_source::{PublishedImagesSourceExtractor, PublishedImagesSourceLayer};
 
 /// The one canonical description of the feed, shared by the Bluesky feed

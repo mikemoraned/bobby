@@ -45,11 +45,11 @@ where
     StoreError: From<K::Err>,
 {
     #[instrument(skip_all, fields(table = self.id_column))]
-    async fn set(&self, id: &K, band: Band, appraiser: &Appraiser) -> Result<(), StoreError> {
+    async fn set(&self, id: &K, appraisal: &Appraisal) -> Result<(), StoreError> {
         let schema = appraisal_schema(self.id_column);
         let id_str = id.to_string();
-        let band_str = band.to_string();
-        let appraiser_str = appraiser.to_string();
+        let band_str = appraisal.band.to_string();
+        let appraiser_str = appraisal.appraiser.to_string();
         let now_us = Utc::now().timestamp_micros();
 
         let batch = RecordBatch::try_new(

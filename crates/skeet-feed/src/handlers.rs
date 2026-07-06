@@ -8,6 +8,7 @@ use cot::{Body, StatusCode, Template};
 use serde::{Deserialize, Serialize};
 use skeet_publish::ListStatistics;
 use tracing::{info, instrument, warn};
+use url::Url;
 
 use crate::feed_config::FeedConfig;
 use crate::{FeedSourceExtractor, PublishedImagesSourceExtractor};
@@ -74,11 +75,11 @@ pub async fn did_document(FeedConfig(config): FeedConfig) -> cot::Result<Respons
     info!("serving /.well-known/did.json");
     let doc = DidDocument {
         context: vec!["https://www.w3.org/ns/did/v1".to_string()],
-        id: config.did(),
+        id: config.did().to_string(),
         service: vec![DidService {
             id: "#bsky_fg".to_string(),
             service_type: "BskyFeedGenerator".to_string(),
-            service_endpoint: config.service_endpoint(),
+            service_endpoint: config.service_endpoint().origin().ascii_serialization(),
         }],
     };
     json_response(&doc)
@@ -99,9 +100,9 @@ struct DescribeFeed {
 pub async fn describe_feed_generator(FeedConfig(config): FeedConfig) -> cot::Result<Response> {
     info!("serving describeFeedGenerator");
     let resp = DescribeResponse {
-        did: config.did(),
+        did: config.did().to_string(),
         feeds: vec![DescribeFeed {
-            uri: config.feed_uri(),
+            uri: config.feed_uri().to_string(),
         }],
     };
     json_response(&resp)
@@ -135,8 +136,9 @@ pub async fn get_feed_skeleton(
 ) -> cot::Result<Response> {
     info!(feed = %query.feed, cursor = ?query.cursor, limit = ?query.limit, "serving getFeedSkeleton");
 
-    if query.feed != config.feed_uri() {
-        warn!(requested = %query.feed, expected = %config.feed_uri(), "unknown feed requested");
+    let expected_feed = config.feed_uri();
+    if query.feed.as_str() != expected_feed.as_str() {
+        warn!(requested = %query.feed, expected = %expected_feed, "unknown feed requested");
         let mut response = Response::new(Body::fixed(
             r#"{"error":"UnknownFeed","message":"unknown feed"}"#,
         ));
@@ -186,7 +188,7 @@ pub async fn get_feed_skeleton(
 /// property when the image's dimensions are known, so the tile reserves space
 /// and the grid doesn't reflow as images load.
 struct GridCard {
-    bsky_url: String,
+    bsky_url: Url,
     thumb_url: String,
     alt: String,
     aspect_ratio: Option<String>,
@@ -202,11 +204,11 @@ struct HomeTemplate {
     /// `og:description` / `twitter:description`.
     blurb: &'static str,
     /// Absolute URL of the social-media preview image (`og:image`).
-    preview_image_url: String,
+    preview_image_url: Url,
     /// The page's own canonical URL (`og:url`).
-    site_url: String,
+    site_url: Url,
     /// `bsky.app` URL for subscribing to the feed.
-    feed_bsky_url: String,
+    feed_bsky_url: Url,
     /// Inline SVG QR code for the site URL; `None` if encoding failed (the
     /// banner then renders without it rather than failing the page).
     qr_svg: Option<String>,
@@ -402,9 +404,9 @@ pub async fn home(
         cards,
         title: crate::SITE_TITLE,
         blurb: crate::FEED_BLURB,
-        preview_image_url: config.preview_image_url(),
-        site_url: config.site_url(),
-        feed_bsky_url: config.feed_bsky_url(),
+        preview_image_url: config.preview_image_url().clone(),
+        site_url: config.site_url().clone(),
+        feed_bsky_url: config.feed_bsky_url().clone(),
         qr_svg: config.site_qr_svg.clone(),
         stats_banner,
         next_arrival,
@@ -531,7 +533,7 @@ mod tests {
 
     fn one_card() -> GridCard {
         GridCard {
-            bsky_url: "https://bsky.app/profile/x/post/1".to_string(),
+            bsky_url: Url::parse("https://bsky.app/profile/x/post/1").expect("valid url"),
             thumb_url: "https://cdn.example/x.jpg".to_string(),
             alt: "x".to_string(),
             aspect_ratio: None,
@@ -544,9 +546,9 @@ mod tests {
             cards: vec![one_card()],
             title: "title",
             blurb: "blurb",
-            preview_image_url: "https://example.com/preview.png".to_string(),
-            site_url: "https://example.com/".to_string(),
-            feed_bsky_url: "https://bsky.app/feed".to_string(),
+            preview_image_url: Url::parse("https://example.com/preview.png").expect("valid url"),
+            site_url: Url::parse("https://example.com/").expect("valid url"),
+            feed_bsky_url: Url::parse("https://bsky.app/feed").expect("valid url"),
             qr_svg: None,
             stats_banner: Some("(stats)".to_string()),
             next_arrival: Some(NextArrival {
@@ -573,9 +575,9 @@ mod tests {
             cards: vec![one_card()],
             title: "title",
             blurb: "blurb",
-            preview_image_url: "https://example.com/preview.png".to_string(),
-            site_url: "https://example.com/".to_string(),
-            feed_bsky_url: "https://bsky.app/feed".to_string(),
+            preview_image_url: Url::parse("https://example.com/preview.png").expect("valid url"),
+            site_url: Url::parse("https://example.com/").expect("valid url"),
+            feed_bsky_url: Url::parse("https://bsky.app/feed").expect("valid url"),
             qr_svg: None,
             stats_banner: Some("(stats)".to_string()),
             next_arrival: None,
@@ -593,9 +595,9 @@ mod tests {
             cards: vec![],
             title: "title",
             blurb: "blurb",
-            preview_image_url: "https://example.com/preview.png".to_string(),
-            site_url: "https://example.com/".to_string(),
-            feed_bsky_url: "https://bsky.app/feed".to_string(),
+            preview_image_url: Url::parse("https://example.com/preview.png").expect("valid url"),
+            site_url: Url::parse("https://example.com/").expect("valid url"),
+            feed_bsky_url: Url::parse("https://bsky.app/feed").expect("valid url"),
             qr_svg: None,
             stats_banner: None,
             next_arrival: None,

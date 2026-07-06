@@ -9,7 +9,7 @@ workspace = true
 [dependencies]
 async-channel = { workspace = true }
 async-trait = { workspace = true }
-atrium-api = { version = "0.25", default-features = false, features = ["namespace-appbsky"] }
+atrium-api = { workspace = true }
 backon = { workspace = true }
 bluesky = { workspace = true }
 eval = { workspace = true }
@@ -17,9 +17,9 @@ chrono = { workspace = true }
 clap = { workspace = true }
 csv = "1"
 face-detection = { path = "../face-detection" }
-fastrand = "2"
+fastrand = { workspace = true }
 image = { workspace = true }
-jetstream-oxide = "0.1"
+jetstream-oxide = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

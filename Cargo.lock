@@ -1566,7 +1566,11 @@ name = "bluesky"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "atrium-api",
+ "chrono",
+ "fastrand",
  "image",
+ "jetstream-oxide",
  "reqwest 0.13.2",
  "serde",
  "serde_json",
@@ -2423,6 +2427,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -4709,6 +4714,7 @@ dependencies = [
  "toml 0.8.23",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
 ]
 
@@ -8300,6 +8306,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -8394,6 +8401,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -10835,6 +10843,7 @@ dependencies = [
  "tracing-appender",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "url",
  "uuid",
 ]
 
@@ -10962,6 +10971,7 @@ dependencies = [
  "tower",
  "tower-sessions 0.14.0",
  "tracing",
+ "url",
  "urlencoding",
  "web-support",
  "wiremock",
@@ -10996,6 +11006,7 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
+ "url",
  "web-support",
 ]
 

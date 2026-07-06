@@ -99,7 +99,7 @@ async fn run_session(
         }
         cursor
     });
-    let receiver = match crate::firehose::connect(cursor).await {
+    let receiver = match bluesky::firehose::connect(cursor).await {
         Ok(r) => r,
         Err(e) => return (last_time_us, Err(ReconnectError::Connect(e.to_string()))),
     };

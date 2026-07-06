@@ -7,6 +7,7 @@ use oauth2::{AuthorizationCode, CsrfToken, Scope, TokenResponse};
 use serde::Deserialize;
 use shared::Appraiser;
 use tracing::{info, warn};
+use url::Url;
 
 use crate::auth_config::OAuthConfigExtractor;
 
@@ -30,7 +31,7 @@ fn session_err(e: impl std::fmt::Display) -> cot::Error {
     cot::Error::internal(format!("session error: {e}"))
 }
 
-fn redirect_url_from_request(head: &RequestHead) -> String {
+fn redirect_url_from_request(head: &RequestHead) -> Result<Url, url::ParseError> {
     let host = head
         .headers
         .get("host")
@@ -42,7 +43,7 @@ fn redirect_url_from_request(head: &RequestHead) -> String {
         .and_then(|v| v.to_str().ok())
         .or_else(|| head.uri.scheme_str())
         .unwrap_or("http");
-    format!("{scheme}://{host}/auth/callback")
+    Url::parse(&format!("{scheme}://{host}/auth/callback"))
 }
 
 pub async fn auth_login(
@@ -55,7 +56,8 @@ pub async fn auth_login(
         cot::Error::internal("OAuth not configured — use --local-admin for local dev")
     })?;
 
-    let redirect_url = redirect_url_from_request(&head);
+    let redirect_url = redirect_url_from_request(&head)
+        .map_err(|e| cot::Error::internal(format!("invalid redirect URL: {e}")))?;
     let client = config.build_client(&redirect_url);
     let (auth_url, csrf_state) = client
         .authorize_url(CsrfToken::new_random)
@@ -104,13 +106,13 @@ pub async fn auth_callback(
         .await
         .map_err(session_err)?;
 
-    let redirect_url: String = session
+    let redirect_url: Url = session
         .get("oauth_redirect_url")
         .await
         .map_err(session_err)?
         .ok_or_else(|| cot::Error::internal("missing oauth_redirect_url in session"))?;
     session
-        .remove::<String>("oauth_redirect_url")
+        .remove::<Url>("oauth_redirect_url")
         .await
         .map_err(session_err)?;
 
@@ -128,7 +130,7 @@ pub async fn auth_callback(
     // Fetch GitHub username
     let http_client = reqwest::Client::new();
     let user_response = http_client
-        .get(format!("{}/user", config.github_api_base_url))
+        .get(config.github_user_url())
         .header(
             reqwest::header::AUTHORIZATION,
             format!("Bearer {access_token}"),

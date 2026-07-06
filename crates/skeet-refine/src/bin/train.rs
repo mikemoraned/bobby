@@ -157,7 +157,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         model: args.model.clone(),
         concurrency: args.concurrency,
         seed: args.seed,
-        purpose: Purpose::new(args.purpose.clone()),
+        purpose: Purpose::new(args.purpose.clone())?,
         run_at,
     };
 

@@ -3,14 +3,32 @@ use std::task::{Context, Poll};
 
 use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::FromRequestHead;
+use shared::{Did, FeedGeneratorUri, ParseDidError};
 use tower::{Layer, Service};
 use tracing::warn;
+use url::Url;
+
+#[derive(Debug, thiserror::Error)]
+pub enum FeedParamsError {
+    #[error("invalid publisher DID: {0}")]
+    PublisherDid(ParseDidError),
+    #[error("invalid did:web for hostname {hostname:?}: {source}")]
+    WebDid {
+        hostname: String,
+        source: ParseDidError,
+    },
+    #[error("invalid service endpoint URL: {0}")]
+    ServiceEndpoint(url::ParseError),
+    #[error("invalid preview image URL: {0}")]
+    PreviewImageUrl(url::ParseError),
+    #[error("invalid feed bsky URL: {0}")]
+    FeedBskyUrl(url::ParseError),
+}
 
 #[derive(Debug, Clone)]
 pub struct FeedParams {
-    pub hostname: String,
-    pub publisher_did: String,
-    pub feed_name: String,
+    publisher_did: Did,
+    feed_name: String,
     pub max_entries: usize,
     /// Site-specific Plausible analytics script URL. `None` disables the
     /// tracking script entirely, so only deployments configured with a URL
@@ -20,12 +38,17 @@ pub struct FeedParams {
     /// it depends only on `hostname`. `None` if encoding failed (the banner
     /// then renders without it).
     pub site_qr_svg: Option<String>,
-}
-
-/// The site's own public URL — the destination the home-page QR code encodes
-/// so a phone scan lands on the feed website.
-fn site_url(hostname: &str) -> String {
-    format!("https://{hostname}/")
+    /// The feed generator's own `did:web:{hostname}` identity, validated once at
+    /// construction and served in the DID document.
+    web_did: Did,
+    /// The service's base URL (`https://{hostname}/`), validated once at
+    /// construction. Doubles as the canonical site URL ([`Self::site_url`]) and,
+    /// in origin form, the DID document's `serviceEndpoint`.
+    service_endpoint: Url,
+    /// Absolute URL of the social-media preview image (`og:image`).
+    preview_image_url: Url,
+    /// The `bsky.app` URL where a user can view and subscribe to this feed.
+    feed_bsky_url: Url,
 }
 
 impl FeedParams {
@@ -35,54 +58,76 @@ impl FeedParams {
         feed_name: String,
         max_entries: usize,
         plausible_script_url: Option<String>,
-    ) -> Self {
-        let site_qr_svg = crate::qr::qr_svg(&site_url(&hostname))
+    ) -> Result<Self, FeedParamsError> {
+        let publisher_did = Did::new(publisher_did).map_err(FeedParamsError::PublisherDid)?;
+        let web_did =
+            Did::new(format!("did:web:{hostname}")).map_err(|source| FeedParamsError::WebDid {
+                hostname: hostname.clone(),
+                source,
+            })?;
+        let service_endpoint =
+            Url::parse(&format!("https://{hostname}")).map_err(FeedParamsError::ServiceEndpoint)?;
+        let preview_image_url = service_endpoint
+            .join(crate::preview::PREVIEW_ROUTE_PATH)
+            .map_err(FeedParamsError::PreviewImageUrl)?;
+        let feed_bsky_url = Url::parse(&format!(
+            "https://bsky.app/profile/{publisher_did}/feed/{feed_name}"
+        ))
+        .map_err(FeedParamsError::FeedBskyUrl)?;
+        let site_qr_svg = crate::qr::qr_svg(service_endpoint.as_str())
             .map_err(|e| warn!(error = %e, "failed to render site QR; banner will omit it"))
             .ok();
-        Self {
-            hostname,
+        Ok(Self {
             publisher_did,
             feed_name,
             max_entries,
             plausible_script_url,
             site_qr_svg,
-        }
+            web_did,
+            service_endpoint,
+            preview_image_url,
+            feed_bsky_url,
+        })
     }
 
-    pub fn did(&self) -> String {
-        format!("did:web:{}", self.hostname)
+    /// Override the Plausible analytics script URL (test/config ergonomics).
+    #[must_use]
+    pub fn with_plausible_script_url(mut self, url: Option<String>) -> Self {
+        self.plausible_script_url = url;
+        self
     }
 
-    pub fn feed_uri(&self) -> String {
-        format!(
-            "at://{}/app.bsky.feed.generator/{}",
-            self.publisher_did, self.feed_name
-        )
+    /// The feed generator's `did:web` identity (DID document `id`).
+    pub const fn did(&self) -> &Did {
+        &self.web_did
     }
 
-    pub fn service_endpoint(&self) -> String {
-        format!("https://{}", self.hostname)
+    pub fn feed_uri(&self) -> FeedGeneratorUri {
+        FeedGeneratorUri::new(&self.publisher_did, &self.feed_name)
+    }
+
+    /// The service's base URL, advertised as the feed generator's
+    /// `serviceEndpoint` in the DID document.
+    pub const fn service_endpoint(&self) -> &Url {
+        &self.service_endpoint
     }
 
     /// The site's own public URL — the canonical page a shared link points at
-    /// (`og:url`).
-    pub fn site_url(&self) -> String {
-        site_url(&self.hostname)
+    /// (`og:url`). This is the service endpoint's base URL.
+    pub const fn site_url(&self) -> &Url {
+        &self.service_endpoint
     }
 
     /// Absolute URL of the social-media preview image, for the `og:image` /
     /// `twitter:image` meta tags. Built from the preview route so the two stay
     /// in step.
-    pub fn preview_image_url(&self) -> String {
-        format!("https://{}{}", self.hostname, crate::preview::PREVIEW_ROUTE_PATH)
+    pub const fn preview_image_url(&self) -> &Url {
+        &self.preview_image_url
     }
 
     /// The `bsky.app` URL where a user can view and subscribe to this feed.
-    pub fn feed_bsky_url(&self) -> String {
-        format!(
-            "https://bsky.app/profile/{}/feed/{}",
-            self.publisher_did, self.feed_name
-        )
+    pub const fn feed_bsky_url(&self) -> &Url {
+        &self.feed_bsky_url
     }
 }
 

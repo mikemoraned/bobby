@@ -1,4 +1,7 @@
+use std::collections::HashSet;
+
 use serde_json::Value;
+use shared::labels::ModerationLabel;
 use shared::skeet_id::SkeetId;
 
 const BSKY_PUBLIC_API: &str = "https://public.api.bsky.app/xrpc";
@@ -48,8 +51,8 @@ pub async fn fetch_post_thread(
 ///
 /// Inspects the post, its author, and a quoted record's author for
 /// [`shared::labels::EXCLUDED_VALUES`]. Empty when nothing excluded is present.
-pub fn blocked_labels(post_thread_json: &Value) -> Vec<String> {
-    let mut found = Vec::new();
+pub fn blocked_labels(post_thread_json: &Value) -> HashSet<ModerationLabel> {
+    let mut found = HashSet::new();
 
     for path in LABEL_PATHS {
         let Some(labels) = post_thread_json.pointer(path).and_then(Value::as_array) else {
@@ -60,10 +63,7 @@ pub fn blocked_labels(post_thread_json: &Value) -> Vec<String> {
             if let Some(val) = label.get("val").and_then(Value::as_str)
                 && shared::labels::EXCLUDED_VALUES.contains(&val)
             {
-                let s = val.to_string();
-                if !found.contains(&s) {
-                    found.push(s);
-                }
+                found.insert(ModerationLabel::new(val));
             }
         }
     }
@@ -101,7 +101,10 @@ mod tests {
                 }
             }
         });
-        assert_eq!(blocked_labels(&json), vec!["porn"]);
+        assert_eq!(
+            blocked_labels(&json),
+            HashSet::from([ModerationLabel::new("porn")])
+        );
     }
 
     #[test]
@@ -118,7 +121,10 @@ mod tests {
                 }
             }
         });
-        assert_eq!(blocked_labels(&json), vec!["!no-unauthenticated"]);
+        assert_eq!(
+            blocked_labels(&json),
+            HashSet::from([ModerationLabel::new("!no-unauthenticated")])
+        );
     }
 
     #[test]
@@ -155,7 +161,10 @@ mod tests {
                 }
             }
         });
-        assert_eq!(blocked_labels(&json), vec!["!no-unauthenticated"]);
+        assert_eq!(
+            blocked_labels(&json),
+            HashSet::from([ModerationLabel::new("!no-unauthenticated")])
+        );
     }
 
     #[test]

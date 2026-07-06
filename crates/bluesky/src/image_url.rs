@@ -1,8 +1,14 @@
 use std::fmt;
 use std::str::FromStr;
+use std::sync::LazyLock;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use shared::{BaseUrl, BlueskyCid, Did};
 use url::Url;
+
+#[allow(clippy::expect_used)] // const literal is a valid https base URL
+static CDN_BASE: LazyLock<BaseUrl> =
+    LazyLock::new(|| BaseUrl::parse("https://cdn.bsky.app").expect("const cdn.bsky.app base is valid"));
 
 /// A resolved, publicly fetchable image URL
 ///
@@ -25,8 +31,16 @@ pub enum InvalidImageUrl {
 /// The Bluesky CDN thumbnail URL for an image blob, from the post author's `did`
 /// and the blob's `cid`:
 /// `https://cdn.bsky.app/img/feed_thumbnail/plain/{did}/{cid}@jpeg`.
-pub fn bsky_cdn_thumbnail_url(did: &str, cid: &str) -> String {
-    format!("https://cdn.bsky.app/img/feed_thumbnail/plain/{did}/{cid}@jpeg")
+///
+/// Infallible: built from a constant `https` base and validated components.
+pub fn bsky_cdn_thumbnail_url(did: &Did, cid: &BlueskyCid) -> ImageUrl {
+    ImageUrl(CDN_BASE.join_path(&[
+        "img",
+        "feed_thumbnail",
+        "plain",
+        did.as_str(),
+        &format!("{cid}@jpeg"),
+    ]))
 }
 
 impl ImageUrl {
@@ -118,5 +132,17 @@ mod tests {
     #[test]
     fn deserialize_rejects_non_https() {
         assert!(serde_json::from_str::<ImageUrl>("\"http://insecure\"").is_err());
+    }
+
+    #[test]
+    fn cdn_thumbnail_url_builds_expected_image_url() {
+        let did = Did::new("did:plc:abc").expect("valid did");
+        let cid = BlueskyCid::new("bafkreibme22gw2h7y2h7tg2fhqotaqjucnbc24deqo72b6mkl2egezxhvy")
+            .expect("valid cid");
+        let url = bsky_cdn_thumbnail_url(&did, &cid);
+        assert_eq!(
+            url.as_str(),
+            "https://cdn.bsky.app/img/feed_thumbnail/plain/did:plc:abc/bafkreibme22gw2h7y2h7tg2fhqotaqjucnbc24deqo72b6mkl2egezxhvy@jpeg"
+        );
     }
 }

@@ -663,6 +663,10 @@ fn other_appraiser() -> Appraiser {
     Appraiser::new_github("otheruser").expect("valid appraiser")
 }
 
+fn appraisal(band: Band, appraiser: Appraiser) -> Appraisal {
+    Appraisal { band, appraiser }
+}
+
 #[tokio::test]
 async fn skeet_band_set_get_roundtrip() {
     let dir = tempfile::tempdir().unwrap();
@@ -676,7 +680,7 @@ async fn skeet_band_set_get_roundtrip() {
 
     store
         .skeet_appraisals()
-        .set(&skeet_id, Band::HighQuality, &test_appraiser())
+        .set(&skeet_id, &appraisal(Band::HighQuality, test_appraiser()))
         .await
         .unwrap();
 
@@ -701,12 +705,12 @@ async fn skeet_band_set_overwrites_previous() {
 
     store
         .skeet_appraisals()
-        .set(&skeet_id, Band::Low, &test_appraiser())
+        .set(&skeet_id, &appraisal(Band::Low, test_appraiser()))
         .await
         .unwrap();
     store
         .skeet_appraisals()
-        .set(&skeet_id, Band::MediumHigh, &other_appraiser())
+        .set(&skeet_id, &appraisal(Band::MediumHigh, other_appraiser()))
         .await
         .unwrap();
 
@@ -731,7 +735,7 @@ async fn skeet_band_clear_removes_appraisal() {
 
     store
         .skeet_appraisals()
-        .set(&skeet_id, Band::Low, &test_appraiser())
+        .set(&skeet_id, &appraisal(Band::Low, test_appraiser()))
         .await
         .unwrap();
     store.skeet_appraisals().clear(&skeet_id).await.unwrap();
@@ -753,12 +757,12 @@ async fn list_all_skeet_appraisals_returns_all() {
 
     store
         .skeet_appraisals()
-        .set(&id1, Band::Low, &test_appraiser())
+        .set(&id1, &appraisal(Band::Low, test_appraiser()))
         .await
         .unwrap();
     store
         .skeet_appraisals()
-        .set(&id2, Band::HighQuality, &other_appraiser())
+        .set(&id2, &appraisal(Band::HighQuality, other_appraiser()))
         .await
         .unwrap();
 
@@ -801,7 +805,7 @@ async fn image_band_set_get_roundtrip() {
 
     store
         .image_appraisals()
-        .set(&record.image_id, Band::MediumLow, &test_appraiser())
+        .set(&record.image_id, &appraisal(Band::MediumLow, test_appraiser()))
         .await
         .unwrap();
 
@@ -825,12 +829,12 @@ async fn image_band_set_overwrites_previous() {
 
     store
         .image_appraisals()
-        .set(&record.image_id, Band::Low, &test_appraiser())
+        .set(&record.image_id, &appraisal(Band::Low, test_appraiser()))
         .await
         .unwrap();
     store
         .image_appraisals()
-        .set(&record.image_id, Band::HighQuality, &other_appraiser())
+        .set(&record.image_id, &appraisal(Band::HighQuality, other_appraiser()))
         .await
         .unwrap();
 
@@ -854,7 +858,7 @@ async fn image_band_clear_removes_appraisal() {
 
     store
         .image_appraisals()
-        .set(&record.image_id, Band::MediumHigh, &test_appraiser())
+        .set(&record.image_id, &appraisal(Band::MediumHigh, test_appraiser()))
         .await
         .unwrap();
     store
@@ -885,12 +889,12 @@ async fn list_all_image_appraisals_returns_all() {
 
     store
         .image_appraisals()
-        .set(&r1.image_id, Band::MediumLow, &test_appraiser())
+        .set(&r1.image_id, &appraisal(Band::MediumLow, test_appraiser()))
         .await
         .unwrap();
     store
         .image_appraisals()
-        .set(&r2.image_id, Band::HighQuality, &other_appraiser())
+        .set(&r2.image_id, &appraisal(Band::HighQuality, other_appraiser()))
         .await
         .unwrap();
 
@@ -1344,12 +1348,12 @@ async fn prune_old_versions_walks_all_tables() {
     store.validate().await.unwrap();
     store
         .skeet_appraisals()
-        .set(&record.skeet_id, Band::HighQuality, &test_appraiser())
+        .set(&record.skeet_id, &appraisal(Band::HighQuality, test_appraiser()))
         .await
         .unwrap();
     store
         .image_appraisals()
-        .set(&record.image_id, Band::MediumLow, &test_appraiser())
+        .set(&record.image_id, &appraisal(Band::MediumLow, test_appraiser()))
         .await
         .unwrap();
     store

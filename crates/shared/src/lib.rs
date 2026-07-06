@@ -7,8 +7,10 @@ use image::DynamicImage;
 mod appraisal;
 pub mod appraiser;
 pub mod band;
+mod base_url;
 mod blocklist;
 mod bluesky_cid;
+mod feed_generator_uri;
 mod image_id;
 pub mod labels;
 pub mod model_version;
@@ -24,19 +26,22 @@ mod zone;
 pub use appraisal::Appraisal;
 pub use appraiser::{Appraiser, ParseAppraiserError};
 pub use band::{Band, ParseBandError};
-pub use blocklist::{BlockedEntry, BlocklistConfig};
+pub use base_url::{BaseUrl, BaseUrlError};
+pub use blocklist::{BlockedEntry, BlocklistConfig, BlocklistError};
 pub use bluesky_cid::{BlueskyCid, InvalidBlueskyCid};
+pub use feed_generator_uri::FeedGeneratorUri;
 pub use image_id::{ImageId, InvalidImageId};
 pub use model_version::{HashScheme, ModelVersion};
 pub use refine_model::{
-    Label, ModelName, ModelProvider, RefineModel, RefineModels, RefineModelsError, RefinePrompt,
+    Label, ModelName, ModelProvider, ParseModelProviderError, RefineModel, RefineModels,
+    RefineModelsError, RefinePrompt,
 };
-pub use rejection::{Rejection, RejectionCategories, RejectionCategory};
+pub use rejection::{ParseRejectionError, Rejection, RejectionCategories, RejectionCategory};
 pub use score::{
     InvalidNormalizedScore, InvalidScore, InvalidThreshold, NormalizedScore, Score, Threshold,
 };
 use serde::Deserialize;
-pub use skeet_id::SkeetId;
+pub use skeet_id::{Did, ParseDidError, ParseRecordKeyError, RecordKey, SkeetId};
 pub use timestamps::{DiscoveredAt, OriginalAt};
 pub use zone::{ParseZoneError, Zone};
 
@@ -115,13 +120,22 @@ pub struct PruneConfig {
     categories: RejectionCategories,
 }
 
+/// Failure loading a [`PruneConfig`] from a TOML file.
+#[derive(Debug, thiserror::Error)]
+pub enum PruneConfigError {
+    #[error("failed to read prune config file: {0}")]
+    Read(#[from] std::io::Error),
+    #[error("failed to parse prune config TOML: {0}")]
+    Parse(#[from] toml::de::Error),
+}
+
 impl PruneConfig {
     /// Load configuration from a TOML file at the given path.
     /// If `categories` is `None`, the default set is used.
     pub fn from_file(
         path: &std::path::Path,
         categories: Option<RejectionCategories>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    ) -> Result<Self, PruneConfigError> {
         let text = std::fs::read_to_string(path)?;
         let mut config: Self = toml::from_str(&text)?;
         config.categories = categories.unwrap_or_default();

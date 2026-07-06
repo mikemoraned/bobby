@@ -7,6 +7,7 @@ use eval::update_prices::{MODELS_DEV_URL, extract_prices};
 use eval::{PricesRegistry, Snapshot, SnapshotId};
 use shared::refine_model::Label;
 use tracing::info;
+use url::Url;
 
 #[derive(Parser)]
 #[command(about = "Fetch OpenAI pricing from models.dev and append a snapshot to eval/prices.toml")]
@@ -48,7 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let label = Label::new(&args.label);
     let snapshot_id = SnapshotId::new(Utc::now());
     let snapshot = Snapshot {
-        source_url: MODELS_DEV_URL.to_string(),
+        source_url: Url::parse(MODELS_DEV_URL)?,
         note: None,
         prices,
     };

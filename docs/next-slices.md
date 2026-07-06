@@ -1,39 +1,5 @@
 # Next Slices
 
-## Slice: 1.0 refactor, review and code minimisation, focussed on remaining crates
-
-#### Focus on longer-term maintainance
-
-Refactor, review and minimisation of code for longer-term maintenance so "I can walk away from this for a while".
-
-* the general expectation is that I want to be able to leave this repo for a while and go work on other stuff, and not need to worry about surprising code or lingering cruft/weirdness.
-* split out code into sub-dirs based on role e.g. crates are at top-level in repo, and so should go into a subdir; follow generally accepted conventions where possible.
-
-The general bias is to refactor towards patterns and structures that are the best practice for what kinds of things each crate is doing.
-
-#### Tasks
-
-* [ ] **Publishing** — `skeet-publish`.** The firehose → classify → score → publish chain.
-    * **From the patterns review:** tighten over-broad `pub mod` → `mod` + selective `pub use` (most modules are `pub mod` today). Low-priority; do while already in the crate.
-* [ ] **Web services — `skeet-feed`, `skeet-appraise`.** The two HTTP-facing crates (banner/feed + auth-gated appraisals).
-    * **From the patterns review:** `skeet-feed/src/feed_config.rs` `did()`/`feed_uri()`/`service_endpoint()` return raw `String` → return domain types (`Did`, etc.). Also tighten over-broad `pub mod` → `mod` + `pub use` in both crates (`skeet-appraise/src/lib.rs` ≈12 `pub mod`; `skeet-feed` most modules `pub mod`) — low-priority, do while touching them.
-* [ ] **ML/detection libs, and related parent crate which uses them — `skeet-refine`, `face-detection`, `skin-detection`, `text-detection`.** Model loading/inference wrappers; confirm each model is still documented in `docs/`.
-    * **Couple every score with its provenance — stop passing bare `Score`.** The store pass introduced `ModelScore { score, model_version }` (a model score carrying the version that produced it) and threaded it through the store ports/read-models. Extend that principle across the scoring pipeline: wherever a `Score` is coupled to *what produced it*, pass the paired type, not a bare `Score` + a sidecar field. A bare `Score` should appear only where code genuinely operates on scores generically (e.g. numeric comparison/sorting).
-        * Audit `skeet-refine` (`tick.rs` `pending_scores: Vec<(ImageId, Score, ModelVersion)>`, `refining.rs`, the train harness) and `shared` (`refine_model.rs`) for `Score` + `ModelVersion` passed separately → `ModelScore`.
-        * Extract the appraiser analog: an **`AppraiserScore`** (working name) pairing a manual rating with the `Appraiser` who gave it — the `(Band, Appraiser)` that `Appraisal` already half-models and that `Appraisals::set(id, band, appraiser)` still passes positionally. Decide whether this *is* `Appraisal` or a sibling, and route band+appraiser through it.
-        * Net effect: `Score` (and `Band`) flow as raw values only inside generic numeric/ordering code; everywhere they cross a boundary they travel with their provenance.
-    * **From the patterns review:** validate the `ModelProvider` constructor (`shared/src/refine_model.rs`) — today it accepts any string (only an `openai()` factory; the open `new` path lets an unknown provider propagate silently). Add a known-set / non-empty check. (Co-located here because this area already touches `refine_model.rs`, though the type lives in `shared`.)
-* [ ] **Shared/support libs — `shared`, `bluesky`, `web-support`, `build-support`, `test-support`, `eval`.** Cross-crate types and helpers; check `shared`'s types stay pure data (no policy methods).
-    * **From the patterns review:**
-        * `shared/src/rejection.rs`: `Rejection::FromStr` and `RejectionCategory::FromStr` are still `type Err = String` → add a `ParseRejectionError` enum (the recipe every other NewType uses; `ParseZoneError` already done in the store pass).
-        * close `&str` gaps where validated NewTypes already exist: `shared/src/skeet_id.rs` `SkeetId::for_post(did, rkey)` → `&Did`/`&RecordKey`; `bluesky/src/image_url.rs` `bsky_cdn_thumbnail_url(did, cid)` → `&Did`/`&BlueskyCid`; `bluesky/src/post_thread.rs` `blocked_labels` `Vec<String>` → `Vec<Label>`.
-        * **Pull the Jetstream transport + record interpretation out of `skeet-prune::firehose` into a `bluesky::firehose` (or `bluesky::jetstream`) module** — `bluesky` is the crate that owns "talking to Bluesky," and this is generic ingress with no pruner domain in it. Move: `connect()` + the endpoint list + compression/timeout consts (returns a raw `JetstreamReceiver`), and the record-interpretation helpers (`extract_images`, `has_excluded_label`, `blob_cid`, `parse_created_at`) — the same family as `post_thread`'s label interpretation. **Leave in the pruner:** `SkeetCandidate`/`ImageCandidate` (pipeline domain, keyed by `SkeetId` — or lift to `shared`), `extract_skeet_candidate` (assembles the pruner's candidate by calling the bluesky helpers), and `download_candidate_images` (operates on the candidate types). Widens `bluesky`'s charter from "AppView client" to "AppView + Jetstream ingress" and pulls in `jetstream-oxide`/`atrium_api`/`fastrand` — update the lib.rs charter doc-comment to match. **Do this only after the firehose-improve slice's Groups 2/3 land** — the cursor param + `backon` wrapping reshape `connect`'s signature, so move it once stable. The reconnect loop, cursor tracking, and backoff stay in the pruner (consumption-robustness wrapped *around* `connect`).
-        * replace `Box<dyn std::error::Error>` with typed `thiserror` variants in `shared/src/lib.rs` `PruneConfig::from_file` and `shared/src/blocklist.rs` `BlocklistConfig::{from_file,save}` — the only library fns not on typed errors.
-        * validate the `Purpose` constructor (`eval/src/results.rs`) — it accepts empty strings today.
-* [ ] **Metrics exporters — `cloudflare-exporter`, `openai-exporter`.** Confirm both are still wired up and used; delete if obsolete.
-
-> **Patterns assessed and not pursued** (from the deleted patterns review, recorded so they aren't re-raised): TypeState for the `skeet-prune` pipeline assembly (ceremony exceeds the payoff for ~50 lines of linear setup); zero-copy borrowing views (clone-based is right for this throughput + async/channel boundaries); combinator-style filter composition (inline iterator chains are simpler — only pays off for filters built dynamically at runtime).
-
 ## Slice: `skeet-store` engine & storage scaling
 
 These were identified in the "1.0 refactor, review and code minimisation, focussed on skeet-store" slice but deliberately deferred as too large for that slice. Each is gated 
@@ -117,6 +83,26 @@ current volume, revisit when the images table is big enough to hurt.
 
 > Iceberg was considered and rejected as a storage backend — that durable decision
 > now lives in `docs/architecture.md` (Constraints / Technology Choices), not here.
+
+## Slice: correct appraisal selection bias (rebalance sampling + low-band backfill)
+
+### Target
+
+Appraisals are drawn from the published feeds (the appraise homepage's feed dropdown — `recency-48h`, `quality-*`), which *are* the refine model's own top-ranked candidates. So the manual appraisal set skews to MediumHigh/High and feeds that skew back into training. The "re-train refine model with a new eval snapshot" slice already caught the symptom: on a fresh split, precision fell sharply at the deployed threshold while ROC-AUC held — discrimination intact, calibration/distribution the problem — because the queue enriches for hard negatives. The half that slice *didn't* name: the region the model **buries** (genuinely-good content it scores Low/MediumLow) is never queued at all, so the one signal that would reveal false negatives is structurally absent.
+
+This slice starts correcting the label distribution *going forward* (steady-state rebalance) and closes the historical gap (a one-off low-band backfill), while recording enough provenance on each appraisal to interpret — and later reweight — the mix. It deliberately does *not* try to statistically salvage the existing high-biased appraisals in place; see the IPS decision below.
+
+### Decisions / groundwork
+
+- **Rebalance mode on the appraise homepage, default on, self-throttling.** Alongside the selected feed, when the feed has N unappraised skeets, also surface N (total) randomly-drawn unappraised skeets from the MediumLow/Low `Band`s. Tying the count to the existing backlog keeps appraisal demand bounded — it corrects the distribution without piling on. This score-independent draw is the load-bearing part: it's the only mechanism here that breaks the feed→appraise→train feedback loop.
+
+- **Rebalance and backfill are one sampler at two tempos.** A single seedable "sample N unappraised skeets in bands {MediumLow, Low}, excluding already-appraised" capability on the store read port (`ScoredView`/`Scores`); the homepage consumes it throttled, and a dedicated `/backfill` endpoint consumes it unthrottled as a standalone queue. Both share the already-appraised exclusion set so they never double-serve. LanceDB has no native random sample; an in-memory shuffle of a band-filtered scan is fine at current volume — revisit if the scored table outgrows it. Seed the draw so it's reproducible in tests (matches the proptest habit).
+
+- **Richer appraisal context than a bare enum.** Record on each appraisal the selection *mechanism* (`FeedRanked` / `Rebalanced` / `Backfilled` / `Unknown`) plus the **band-at-selection** and the **`model_version`** that assigned it. Band is model-version-relative (`NormalizedScore` + `decision_threshold`), so "Low" only means "Low per that version" — without the version the draw can't be reconstructed later. Name by mechanism, not effect, since the bias is derivable from the mechanism but not vice versa. This provenance *is* the propensity information, so it keeps reweighting/IPS on the table as a fallback without committing to it now. New context column(s) on `manual_skeet_appraisal_v1`, read covariantly (existing rows → `Unknown`).
+
+- **Backfill over IPS, and adaptive rather than a blind quota.** Prefer collecting real MediumLow/Low labels to reweighting history: the buried region has ~zero/degenerate selection propensity, so IPS would be reweighting signal that was never collected — it can't recover exactly the region we care about. Don't pre-commit to matching the ~1400 existing appraisals; appraise a few hundred low-band first and read the buried-positive rate, which is itself the finding — low means the skew was mostly a calibration artefact (little to fix), high means a threshold move / retrain is warranted. `/backfill` only enqueues candidates; the labels still come from a human.
+
+- **Balanced ≠ representative — evaluation stays on a separate hold-out (or is reweighted).** The rebalanced/backfilled set is deliberately even across bands, but the true pruned population is Low-dominated. That's right for *training* coverage and for measuring per-band true-positive rate (how we surface buried positives), but precision-at-threshold — the metric that regressed — is base-rate-sensitive. So the eval path (`refine-eval`, the frozen splits) must use a separately-drawn representative/random audit slice, or reweight to true band frequencies, rather than the rebalanced pool. Otherwise we fix the training distribution while still measuring on the wrong one — the same trap one layer up.
 
 ## Slice: try using embeddings for classification/scoring in refine
 

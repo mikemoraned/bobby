@@ -6,19 +6,35 @@ use cot::http::request::Parts as RequestHead;
 use cot::request::extractors::FromRequestHead;
 use oauth2::basic::BasicClient;
 use oauth2::{AuthUrl, ClientId, ClientSecret, EndpointNotSet, EndpointSet, RedirectUrl, TokenUrl};
+use shared::{BaseUrl, BaseUrlError};
 use tower::{Layer, Service};
+use url::Url;
+
+#[derive(Debug, thiserror::Error)]
+pub enum OAuthConfigError {
+    #[error("invalid auth URL: {0}")]
+    AuthUrl(url::ParseError),
+    #[error("invalid token URL: {0}")]
+    TokenUrl(url::ParseError),
+    #[error("invalid GitHub API base URL: {0}")]
+    GithubApiBase(BaseUrlError),
+}
 
 pub struct OAuthConfig {
     pub client_id: String,
     pub client_secret: String,
     pub admin_users: HashSet<String>,
-    pub auth_url: String,
-    pub token_url: String,
-    pub github_api_base_url: String,
+    auth_url: Url,
+    token_url: Url,
+    github_api_base_url: BaseUrl,
 }
 
 impl OAuthConfig {
-    pub fn new(client_id: String, client_secret: String, admin_users: Vec<String>) -> Self {
+    pub fn new(
+        client_id: String,
+        client_secret: String,
+        admin_users: Vec<String>,
+    ) -> Result<Self, OAuthConfigError> {
         Self::with_urls(
             client_id,
             client_secret,
@@ -36,31 +52,32 @@ impl OAuthConfig {
         auth_url: String,
         token_url: String,
         github_api_base_url: String,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, OAuthConfigError> {
+        Ok(Self {
             client_id,
             client_secret,
             admin_users: admin_users.into_iter().collect(),
-            auth_url,
-            token_url,
-            github_api_base_url,
-        }
+            auth_url: Url::parse(&auth_url).map_err(OAuthConfigError::AuthUrl)?,
+            token_url: Url::parse(&token_url).map_err(OAuthConfigError::TokenUrl)?,
+            github_api_base_url: BaseUrl::parse(&github_api_base_url)
+                .map_err(OAuthConfigError::GithubApiBase)?,
+        })
     }
 
-    // The auth/token URLs come from fixed configuration; a malformed value is a startup
-    // configuration error surfaced when the OAuth client is first built.
-    #[allow(clippy::expect_used)]
     pub fn build_client(
         &self,
-        redirect_url: &str,
+        redirect_url: &Url,
     ) -> BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet> {
         BasicClient::new(ClientId::new(self.client_id.clone()))
             .set_client_secret(ClientSecret::new(self.client_secret.clone()))
-            .set_auth_uri(AuthUrl::new(self.auth_url.clone()).expect("valid auth URL"))
-            .set_token_uri(TokenUrl::new(self.token_url.clone()).expect("valid token URL"))
-            .set_redirect_uri(
-                RedirectUrl::new(redirect_url.to_string()).expect("valid redirect URL"),
-            )
+            .set_auth_uri(AuthUrl::from_url(self.auth_url.clone()))
+            .set_token_uri(TokenUrl::from_url(self.token_url.clone()))
+            .set_redirect_uri(RedirectUrl::from_url(redirect_url.clone()))
+    }
+
+    /// The GitHub API endpoint for the authenticated user (`{base}/user`).
+    pub fn github_user_url(&self) -> Url {
+        self.github_api_base_url.join_path(&["user"])
     }
 
     pub fn is_allowed(&self, username: &str) -> bool {
