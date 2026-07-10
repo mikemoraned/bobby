@@ -244,9 +244,9 @@ async fn get_feed_skeleton_rejects_wrong_uri_docker() {
 
 /// The feed-side preferred list. When this is empty/absent, the fallback should
 /// degrade to successively older same-order lists.
-const FEED_PREFERRED: (Order, Limit) = (Order::Quality, Limit::hours(48));
+const FEED_PREFERRED: (Order, Limit) = (Order::QualityRecency, Limit::hours(48));
 /// The website-grid preferred list (wider window than the feed's).
-const GRID_PREFERRED: (Order, Limit) = (Order::Quality, Limit::weeks(4));
+const GRID_PREFERRED: (Order, Limit) = (Order::QualityRecency, Limit::weeks(12));
 
 /// A known-valid base32 CIDv1. The tests assert on rkeys / post links, never on
 /// CIDs, so every seeded image can share one valid CID.
@@ -331,18 +331,18 @@ async fn feed_and_homepage_fall_back_to_older_lists_when_preferred_empty_docker(
     let client = reqwest::Client::new();
 
     // Both preferred lists are advertised but empty; older same-order lists carry
-    // the data: the feed should fall back from 48h to 7d, the grid from 4w to 1y.
+    // the data: the feed should fall back from 48h to 7d, the grid from 12w to 1y.
     seed(
         &redis_url,
         &[
             FEED_PREFERRED,
-            (Order::Quality, Limit::days(7)),
+            (Order::QualityRecency, Limit::days(7)),
             GRID_PREFERRED,
-            (Order::Quality, Limit::years(1)),
+            (Order::QualityRecency, Limit::years(1)),
         ],
         &[
-            ((Order::Quality, Limit::days(7)), "feed7d"),
-            ((Order::Quality, Limit::years(1)), "grid1y"),
+            ((Order::QualityRecency, Limit::days(7)), "feed7d"),
+            ((Order::QualityRecency, Limit::years(1)), "grid1y"),
         ],
     )
     .await;
@@ -351,7 +351,7 @@ async fn feed_and_homepage_fall_back_to_older_lists_when_preferred_empty_docker(
     assert_eq!(
         feed_post_rkeys(&client, base, &feed_uri).await,
         vec!["feed7d".to_string()],
-        "getFeedSkeleton should serve the older quality-7d list when quality-48h is empty"
+        "getFeedSkeleton should serve the older quality,recency-7d list when quality,recency-48h is empty"
     );
 
     let resp = client.get(format!("{base}/")).send().await.expect("GET /");
@@ -359,7 +359,7 @@ async fn feed_and_homepage_fall_back_to_older_lists_when_preferred_empty_docker(
     let home = resp.text().await.expect("home body");
     assert!(
         home.contains("post/grid1y"),
-        "homepage should serve the older quality-1y list when quality-4w is empty"
+        "homepage should serve the older quality,recency-1y list when quality,recency-12w is empty"
     );
     assert!(
         home.contains("123,456 images checked over the past year"),
@@ -506,10 +506,10 @@ async fn feed_serves_preferred_list_when_populated_docker() {
     // Both the preferred 48h and the older 7d are populated; the preferred wins.
     seed(
         &redis_url,
-        &[FEED_PREFERRED, (Order::Quality, Limit::days(7))],
+        &[FEED_PREFERRED, (Order::QualityRecency, Limit::days(7))],
         &[
             (FEED_PREFERRED, "feed48h"),
-            ((Order::Quality, Limit::days(7)), "feed7d"),
+            ((Order::QualityRecency, Limit::days(7)), "feed7d"),
         ],
     )
     .await;
@@ -518,6 +518,6 @@ async fn feed_serves_preferred_list_when_populated_docker() {
     assert_eq!(
         feed_post_rkeys(&client, base, &feed_uri).await,
         vec!["feed48h".to_string()],
-        "getFeedSkeleton should serve the preferred quality-48h list when it is populated"
+        "getFeedSkeleton should serve the preferred quality,recency-48h list when it is populated"
     );
 }
