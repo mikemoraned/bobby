@@ -16,7 +16,7 @@
         * [x] update code / config
         * note: defaults split by consumer — Bluesky feed + appraiser default to `quality,recency-48h`, website image grid to `quality,recency-12w`. Publisher publishes `quality,recency-{48h,7d,4w,12w,1y}` (all current quality windows + 12w) so both fallback chains have coverage. `quality-{limit}` lists still published for now — removed only in the final sub-step after the deploys verify.
         * [x] deploy publisher
-        * [ ] deploy to staging feed (bobby-staging.houseofmoran.io) and appraiser and verify working as expected
+        * [x] deploy to staging feed (bobby-staging.houseofmoran.io) and appraiser and verify working as expected
         * [ ] deploy to bobby.houseofmoran.io and appraiser and similarly verify
         * [ ] stop publishing any `quality-{limit}` lists anymore as nothing should need it, but keep the Order::Quality capability; deploy publisher and manually remove unneeded lists
   * [ ] make the grid display in the feed show the top entries of the list further up the page. as it stands right now, we show the best entries first in a column that goes all the way to the bottom of the page before looping round to the top. We want to show the best content further up the page whilst still showing it as a grid, similar in style to what we have now.
