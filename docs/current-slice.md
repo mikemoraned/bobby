@@ -19,6 +19,7 @@
         * [x] deploy to staging feed (bobby-staging.houseofmoran.io) and appraiser and verify working as expected
         * [x] deploy to bobby.houseofmoran.io and appraiser and similarly verify
         * [ ] stop publishing any `quality-{limit}` lists anymore as nothing should need it, but keep the Order::Quality capability; deploy publisher and manually remove unneeded lists
+          * config done: dropped `quality-{48h,7d,4w,1y}` from the publisher `--publish` set (k8s + justfiles); `recency-*` and `quality,recency-*` kept, `Order::Quality` code capability retained. Remaining (manual): deploy publisher, then delete the now-orphaned redis keys `v3-quality-{48h,7d,4w,1y}` plus their `:statistics` / `:refreshed-at` companions. The catalog auto-drops them on the next publish cycle, so the appraiser dropdown clears itself.
   * [ ] make the grid display in the feed show the top entries of the list further up the page. as it stands right now, we show the best entries first in a column that goes all the way to the bottom of the page before looping round to the top. We want to show the best content further up the page whilst still showing it as a grid, similar in style to what we have now.
 * [ ] checks docs / skills
   * [ ] check CLAUDE.md and similar include links to all relevant docs e.g. anything architectural in docs
