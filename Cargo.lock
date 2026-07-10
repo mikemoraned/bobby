@@ -1563,7 +1563,7 @@ dependencies = [
 
 [[package]]
 name = "bluesky"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "async-trait",
  "atrium-api",
@@ -1727,7 +1727,7 @@ dependencies = [
 
 [[package]]
 name = "build-support"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "built"
@@ -2411,7 +2411,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "cloudflare-exporter"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "build-support",
  "chrono",
@@ -4695,7 +4695,7 @@ dependencies = [
 
 [[package]]
 name = "eval"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "clap",
@@ -4767,7 +4767,7 @@ dependencies = [
 
 [[package]]
 name = "face-detection"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "burn",
  "burn-import",
@@ -8294,7 +8294,7 @@ dependencies = [
 
 [[package]]
 name = "observability"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "build-support",
  "chrono",
@@ -8385,7 +8385,7 @@ dependencies = [
 
 [[package]]
 name = "openai-exporter"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "build-support",
  "chrono",
@@ -10823,7 +10823,7 @@ dependencies = [
 
 [[package]]
 name = "shared"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "cid",
@@ -10943,7 +10943,7 @@ checksum = "b2aa850e253778c88a04c3d7323b043aeda9d3e30d5971937c1855769763678e"
 
 [[package]]
 name = "skeet-appraise"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "bluesky",
  "build-support",
@@ -10979,7 +10979,7 @@ dependencies = [
 
 [[package]]
 name = "skeet-feed"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "async-trait",
  "bluesky",
@@ -11012,7 +11012,7 @@ dependencies = [
 
 [[package]]
 name = "skeet-prune"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "async-channel",
  "async-trait",
@@ -11050,7 +11050,7 @@ dependencies = [
 
 [[package]]
 name = "skeet-publish"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "async-trait",
  "backon",
@@ -11077,7 +11077,7 @@ dependencies = [
 
 [[package]]
 name = "skeet-refine"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "backon",
  "base64 0.22.1",
@@ -11107,7 +11107,7 @@ dependencies = [
 
 [[package]]
 name = "skeet-store"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "arrow-array",
  "arrow-schema",
@@ -11150,7 +11150,7 @@ dependencies = [
 
 [[package]]
 name = "skin-detection"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "image",
  "shared",
@@ -11756,7 +11756,7 @@ dependencies = [
 
 [[package]]
 name = "test-support"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "image",
  "opentelemetry_sdk",
@@ -11805,7 +11805,7 @@ dependencies = [
 
 [[package]]
 name = "text-detection"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "geo 0.32.0",
  "image",
@@ -13102,7 +13102,7 @@ dependencies = [
 
 [[package]]
 name = "web-support"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "cot",
