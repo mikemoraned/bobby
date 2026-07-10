@@ -9,7 +9,7 @@ use skeet_publish::{
 
 /// The preferred default feed: shown when no `?feed=` is requested, if the
 /// publisher advertises it.
-const PREFERRED_DEFAULT: (Order, Limit) = (Order::Quality, Limit::weeks(4));
+const PREFERRED_DEFAULT: (Order, Limit) = (Order::QualityRecency, Limit::hours(48));
 
 /// The published lists the home page can show, discovered from the publisher's
 /// feed catalog. Holds one reader per list, all against the single publish redis
@@ -189,22 +189,26 @@ mod tests {
 
     #[test]
     fn default_falls_back_to_first_when_preferred_absent() {
-        // No quality-4w in this set, so the default is the first in dropdown order.
+        // No quality,recency-48h in this set, so the default is the first in
+        // dropdown order.
         assert_eq!(feeds().default_spec(), (Order::Quality, Limit::hours(48)));
     }
 
     #[test]
-    fn default_prefers_quality_4w_when_present() {
+    fn default_prefers_quality_recency_48h_when_present() {
         let feeds = AvailableFeeds::new(
             URL,
             &[
                 (Order::Quality, Limit::hours(48)),
-                (Order::Quality, Limit::weeks(4)),
+                (Order::QualityRecency, Limit::hours(48)),
                 (Order::Recency, Limit::weeks(4)),
             ],
         )
         .expect("non-empty");
-        assert_eq!(feeds.default_spec(), (Order::Quality, Limit::weeks(4)));
+        assert_eq!(
+            feeds.default_spec(),
+            (Order::QualityRecency, Limit::hours(48))
+        );
     }
 
     #[test]

@@ -33,7 +33,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
 
-    let source = FallbackFeedSource::new(args.redis_publish_url, Order::Quality, Limit::weeks(4));
+    let source =
+        FallbackFeedSource::new(args.redis_publish_url, Order::QualityRecency, Limit::weeks(12));
     let published = source.published_images().await?;
     let selection = select_tiles(&published.images);
     if selection.tile_urls.is_empty() {

@@ -13,7 +13,8 @@
       * [x] confirm `PublishedList` name round-trips for `(QualityRecency, 12w)`; run `just clippy` + `just mutants-on-diff-no-docker`
       * out of scope here (later bullets): adding it to any `--publish` config, making it a default, or deploying
    * [ ] start publishing `quality,recency-12w` and make this the default used on main feed site:
-    * [ ] update code / config
+    * [x] update code / config
+      * note: defaults split by consumer — Bluesky feed + appraiser default to `quality,recency-48h`, website image grid to `quality,recency-12w`. Publisher publishes `quality,recency-{48h,7d,4w,12w,1y}` (all current quality windows + 12w) so both fallback chains have coverage. `quality-{limit}` lists still published for now — removed only in the final sub-step after the deploys verify.
     * [ ] deploy publisher
     * [ ] deploy to staging feed (bobby-staging.houseofmoran.io) and appraiser and verify working as expected
     * [ ] deploy to bobby.houseofmoran.io and appraiser and similarly verify
