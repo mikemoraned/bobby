@@ -35,10 +35,24 @@ When doing TDD, always keep the code compiling at every step:
 
 Read whichever are relevant before starting work:
 
-- `@docs/architecture.md` — background, target architecture, constraints, technology choices
+Slice tracking:
+
 - `@docs/current-slice.md` — currently active slice and remaining tasks
 - `@docs/next-slices.md` — upcoming slices
 - `@docs/completed-slices.md` — summary of completed slices
+
+Architecture:
+
+- `@docs/architecture.md` — background, target architecture, constraints, technology choices
+- `@docs/skeet-prune-pipeline.md` — the staged stream-processing pipeline `skeet-prune` runs
+- `@docs/skeet-store-architecture.md` — `skeet-store`'s ports-and-adapters (hexagonal) layout
+- `@docs/versioning.md` — versioning and the production / staging separation
+- `@docs/remote-setup.md` — the Hetzner k3s cluster the production components run on
+
+Models (see the Models invariant below):
+
+- `@docs/ocrs-text-detection.md` — ocrs text detection & recognition models
+- `@docs/yunet-face-detection.md` — YuNet face detection model
 
 ## Shell Commands
 
