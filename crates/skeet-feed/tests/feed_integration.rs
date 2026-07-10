@@ -362,6 +362,10 @@ async fn feed_and_homepage_fall_back_to_older_lists_when_preferred_empty_docker(
         "homepage should serve the older quality,recency-1y list when quality,recency-12w is empty"
     );
     assert!(
+        home.contains("<!-- source-list: quality,recency-1y -->"),
+        "the source-list debug comment should name the fallback list actually served"
+    );
+    assert!(
         home.contains("123,456 images checked over the past year"),
         "the statistics banner should reflect the older list actually served during degradation"
     );

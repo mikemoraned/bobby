@@ -47,6 +47,11 @@ pub struct PublishedImages {
     pub images: Vec<PublishedImage>,
     pub refreshed_at: Option<DateTime<Utc>>,
     pub statistics: Option<ListStatistics>,
+    /// The `(order, limit)` of the list that actually supplied these images —
+    /// the fallback-resolved window, not necessarily the preferred one. `None`
+    /// when no list backed the read (nothing in the catalog). Surfaced for
+    /// debugging which published list a page ended up serving.
+    pub source_spec: Option<(Order, Limit)>,
 }
 
 /// Source of the full published image list.
@@ -175,6 +180,7 @@ impl PublishedImagesSource for RedisFeedSource {
             images,
             refreshed_at,
             statistics,
+            source_spec: Some(self.list.spec()),
         })
     }
 }

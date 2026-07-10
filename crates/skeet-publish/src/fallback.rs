@@ -155,6 +155,7 @@ impl PublishedImagesSource for FallbackFeedSource {
             images: vec![],
             refreshed_at: None,
             statistics: None,
+            source_spec: None,
         }))
     }
 }

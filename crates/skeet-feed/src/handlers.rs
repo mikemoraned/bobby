@@ -222,6 +222,10 @@ struct HomeTemplate {
     /// Site-specific Plausible analytics script URL; `Some` renders the
     /// tracking script, `None` omits it.
     plausible_script_url: Option<String>,
+    /// The `{order}-{limit}` name of the published list that backed this render
+    /// (e.g. `quality,recency-12w`), or `none`. Emitted as an HTML comment for
+    /// debugging which list a page ended up serving after fallback.
+    source_list: String,
 }
 
 /// The predicted next-match arrival the page shows: the 95% range as human
@@ -386,6 +390,12 @@ pub async fn home(
     let stats_banner = stats.map(statistics_banner);
     let next_arrival = stats.and_then(|stats| build_next_arrival(stats, chrono::Utc::now()));
 
+    // Which published list actually backed this render, for debugging fallbacks —
+    // emitted as an HTML comment (e.g. `quality,recency-12w`).
+    let source_list = published
+        .source_spec
+        .map_or_else(|| "none".to_string(), |(order, limit)| format!("{order}-{limit}"));
+
     let cards: Vec<GridCard> = published
         .images
         .into_iter()
@@ -411,6 +421,7 @@ pub async fn home(
         stats_banner,
         next_arrival,
         plausible_script_url: config.plausible_script_url.clone(),
+        source_list,
     }
     .render()?;
     let mut response = Response::new(Body::fixed(rendered));
@@ -558,6 +569,7 @@ mod tests {
                 upper_text: "5 hours".to_string(),
             }),
             plausible_script_url: None,
+            source_list: "quality,recency-12w".to_string(),
         }
         .render()
         .expect("render");
@@ -567,6 +579,8 @@ mod tests {
         assert!(rendered.contains("in 2 hours")); // countdown's pre-JS content
         // The JS countdown's reload target is embedded for the client to tick to.
         assert!(rendered.contains("1700000000000"));
+        // The source-list debug comment names the list actually served.
+        assert!(rendered.contains("<!-- source-list: quality,recency-12w -->"));
     }
 
     #[test]
@@ -582,6 +596,7 @@ mod tests {
             stats_banner: Some("(stats)".to_string()),
             next_arrival: None,
             plausible_script_url: None,
+            source_list: "none".to_string(),
         }
         .render()
         .expect("render");
@@ -602,6 +617,7 @@ mod tests {
             stats_banner: None,
             next_arrival: None,
             plausible_script_url: None,
+            source_list: "none".to_string(),
         }
         .render()
         .expect("render");

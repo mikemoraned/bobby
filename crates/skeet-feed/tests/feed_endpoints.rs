@@ -22,8 +22,8 @@ use skeet_feed::preview::{PREVIEW_HEIGHT, PREVIEW_WIDTH};
 use skeet_feed::FeedProject;
 use skeet_feed::{FeedSourceLayer, PublishedImagesSourceLayer};
 use skeet_publish::{
-    FeedSkeleton, FeedSource, FeedSourceError, ListStatistics, PublishedImage, PublishedImages,
-    PublishedImagesSource,
+    FeedSkeleton, FeedSource, FeedSourceError, Limit, ListStatistics, Order, PublishedImage,
+    PublishedImages, PublishedImagesSource,
 };
 
 mod common;
@@ -60,6 +60,7 @@ impl PublishedImagesSource for StubPublishedImagesSource {
             images: self.images.clone(),
             refreshed_at: self.refreshed_at,
             statistics: self.statistics.clone(),
+            source_spec: Some((Order::QualityRecency, Limit::weeks(12))),
         })
     }
 }
