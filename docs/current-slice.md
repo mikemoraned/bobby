@@ -12,14 +12,14 @@
       * [x] unit tests mirroring the Quality suite but asserting recency as the intra-band key: band-beats-recency, within-band newest-first, score breaks equal-timestamp ties, manual-band-override reorders, below-threshold hidden, deterministic ties
       * [x] confirm `PublishedList` name round-trips for `(QualityRecency, 12w)`; run `just clippy` + `just mutants-on-diff-no-docker`
       * out of scope here (later bullets): adding it to any `--publish` config, making it a default, or deploying
-    * [ ] start publishing `quality,recency-12w` and make this the default used on main feed site:
+    * [x] start publishing `quality,recency-12w` and make this the default used on main feed site:
         * [x] update code / config
         * note: defaults split by consumer — Bluesky feed + appraiser default to `quality,recency-48h`, website image grid to `quality,recency-12w`. Publisher publishes `quality,recency-{48h,7d,4w,12w,1y}` (all current quality windows + 12w) so both fallback chains have coverage. `quality-{limit}` lists still published for now — removed only in the final sub-step after the deploys verify.
         * [x] deploy publisher
         * [x] deploy to staging feed (bobby-staging.houseofmoran.io) and appraiser and verify working as expected
         * [x] deploy to bobby.houseofmoran.io and appraiser and similarly verify
-        * [ ] stop publishing any `quality-{limit}` lists anymore as nothing should need it, but keep the Order::Quality capability; deploy publisher and manually remove unneeded lists
-          * config done: dropped `quality-{48h,7d,4w,1y}` from the publisher `--publish` set (k8s + justfiles); `recency-*` and `quality,recency-*` kept, `Order::Quality` code capability retained. Remaining (manual): deploy publisher, then delete the now-orphaned redis keys `v3-quality-{48h,7d,4w,1y}` plus their `:statistics` / `:refreshed-at` companions. The catalog auto-drops them on the next publish cycle, so the appraiser dropdown clears itself.
+        * [x] stop publishing any `quality-{limit}` lists anymore as nothing should need it, but keep the Order::Quality capability; deploy publisher and manually remove unneeded lists
+          * dropped `quality-{48h,7d,4w,1y}` from the publisher `--publish` set (k8s + justfiles); `recency-*` and `quality,recency-*` kept, `Order::Quality` code capability retained. Publisher deployed; orphaned `v3-quality-{48h,7d,4w,1y}` redis keys (+ `:statistics` / `:refreshed-at` companions) removed manually.
   * [ ] make the grid display in the feed show the top entries of the list further up the page. as it stands right now, we show the best entries first in a column that goes all the way to the bottom of the page before looping round to the top. We want to show the best content further up the page whilst still showing it as a grid, similar in style to what we have now.
 * [ ] checks docs / skills
   * [ ] check CLAUDE.md and similar include links to all relevant docs e.g. anything architectural in docs
