@@ -277,6 +277,7 @@ mod tests {
             (Order::Recency, Limit::hours(48)),
             (Order::Quality, Limit::weeks(4)),
             (Order::Quality, Limit::years(1)),
+            (Order::QualityRecency, Limit::weeks(12)),
         ] {
             let list = PublishedList::new(spec.0, spec.1);
             let parsed = PublishedList::from_name(&list.name()).expect("roundtrip");

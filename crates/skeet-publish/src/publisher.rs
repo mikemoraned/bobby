@@ -72,6 +72,9 @@ pub fn published_for_spec<F: FeedData>(
     match order {
         Order::Recency => windowed.sort_by_key(recency_rank),
         Order::Quality => windowed.sort_by_key(|entry| quality_rank(feed, entry)),
+        Order::QualityRecency => {
+            windowed.sort_by_key(|entry| quality_recency_rank(feed, entry))
+        }
     }
 
     windowed
@@ -129,6 +132,37 @@ impl PartialOrd for QualityRank {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+struct QualityRecencyRank {
+    band: Option<Band>,
+    original_at: OriginalAt,
+    score: Option<NormalizedScore>,
+    image_id: ImageId,
+    skeet_id: SkeetId,
+}
+
+impl Ord for QualityRecencyRank {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Compare other→self on band, then recency, then score so the higher/newer one
+        // ranks as `Less` and sorts first; band buckets first, recency within a band,
+        // score breaking equal-timestamp ties. Image-id, skeet-id ascending make the
+        // rest deterministic.
+        other
+            .band
+            .cmp(&self.band)
+            .then_with(|| other.original_at.cmp(&self.original_at))
+            .then_with(|| other.score.cmp(&self.score))
+            .then_with(|| self.image_id.cmp(&other.image_id))
+            .then_with(|| self.skeet_id.cmp(&other.skeet_id))
+    }
+}
+
+impl PartialOrd for QualityRecencyRank {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 struct RecencyRank {
     original_at: OriginalAt,
     image_id: ImageId,
@@ -169,6 +203,29 @@ fn quality_rank<F: FeedData>(feed: &F, entry: &ScoredSummary) -> QualityRank {
     );
     QualityRank {
         band: skeet_effective_band(feed.skeet_band(&summary.skeet_id), &[image_band]),
+        score: image_normalized_score(*score, model_version, feed.models()),
+        image_id: summary.image_id.clone(),
+        skeet_id: summary.skeet_id.clone(),
+    }
+}
+
+fn quality_recency_rank<F: FeedData>(feed: &F, entry: &ScoredSummary) -> QualityRecencyRank {
+    let ScoredSummary {
+        summary,
+        scored: ModelScore {
+            score,
+            model_version,
+        },
+    } = entry;
+    let image_band = image_effective_band(
+        *score,
+        model_version,
+        feed.models(),
+        feed.image_band(&summary.image_id),
+    );
+    QualityRecencyRank {
+        band: skeet_effective_band(feed.skeet_band(&summary.skeet_id), &[image_band]),
+        original_at: summary.original_at.clone(),
         score: image_normalized_score(*score, model_version, feed.models()),
         image_id: summary.image_id.clone(),
         skeet_id: summary.skeet_id.clone(),
@@ -565,7 +622,7 @@ mod tests {
     #[test]
     fn quality_band_beats_score() {
         let now = Utc::now();
-        // `lower` (lenient t=0.2) bands High at score 0.6; `higher` (t=0.5) bands
+        // `lower` (lenient threshold 0.2) bands High at score 0.6; `higher` (threshold 0.5) bands
         // only MedHigh at the *higher* score 0.7 — band dominates raw score.
         let feed = quality_feed(
             vec![
@@ -580,7 +637,7 @@ mod tests {
     #[test]
     fn quality_within_band_higher_score_first() {
         let now = Utc::now();
-        // Both MedHigh under t=0.5; the higher score sorts first.
+        // Both MedHigh under threshold 0.5; the higher score sorts first.
         let feed = quality_feed(
             vec![
                 entry_m(now, "lo", 0.6, "t05"),
@@ -621,7 +678,7 @@ mod tests {
     #[test]
     fn quality_drops_below_threshold_score_for_strict_model() {
         let now = Utc::now();
-        // With t=0.6, a 0.55 score normalises below 0.5 → MedLow → hidden; 0.9 stays.
+        // With threshold 0.6, a 0.55 score normalises below 0.5 → MedLow → hidden; 0.9 stays.
         let feed = quality_feed(
             vec![
                 entry_m(now, "kept", 0.9, "t06"),
@@ -729,11 +786,149 @@ mod tests {
         assert_eq!(forward, ["aaa", "bbb"]);
     }
 
+    // ─── Quality,Recency ordering ───────────────────────────────────
+
+    /// An entry `hours_ago` old scored `score` by model `model`.
+    fn entry_at(
+        now: DateTime<Utc>,
+        rkey: &str,
+        hours_ago: i64,
+        score: f32,
+        model: &str,
+    ) -> ScoredSummary {
+        let mut e = entry(rkey, now - chrono::Duration::hours(hours_ago), score);
+        e.scored.model_version = ModelVersion::from(model);
+        e
+    }
+
+    fn quality_recency_rkeys(feed: &WindowedFeed, now: DateTime<Utc>) -> Vec<String> {
+        let pairs = published_for_spec(
+            feed,
+            Order::QualityRecency,
+            Limit::hours(48),
+            &CdnImageUrlResolver,
+            now,
+        );
+        skeet_rkeys(&pairs)
+    }
+
+    #[test]
+    fn quality_recency_band_beats_recency() {
+        let now = Utc::now();
+        // `high` (lenient threshold 0.2) bands High at 0.6 though it's older; `medhigh`
+        // (threshold 0.5) only bands MedHigh at 0.7 despite being newer — band dominates.
+        let feed = quality_feed(
+            vec![
+                entry_at(now, "medhigh", 1, 0.7, "t05"),
+                entry_at(now, "high", 10, 0.6, "t02"),
+            ],
+            models_with(&[("t02", 0.2), ("t05", 0.5)]),
+        );
+        assert_eq!(quality_recency_rkeys(&feed, now), ["high", "medhigh"]);
+    }
+
+    #[test]
+    fn quality_recency_within_band_newest_first() {
+        let now = Utc::now();
+        // Both MedHigh under threshold 0.5; the newer sorts first even though its raw score
+        // is lower — within a band it's recency, not score, that orders.
+        let feed = quality_feed(
+            vec![
+                entry_at(now, "older_higher", 10, 0.7, "t05"),
+                entry_at(now, "newer_lower", 1, 0.6, "t05"),
+            ],
+            models_with(&[("t05", 0.5)]),
+        );
+        assert_eq!(
+            quality_recency_rkeys(&feed, now),
+            ["newer_lower", "older_higher"]
+        );
+    }
+
+    #[test]
+    fn quality_recency_score_breaks_equal_timestamp_tie() {
+        let now = Utc::now();
+        // Same band, same age → the higher score breaks the tie.
+        let feed = quality_feed(
+            vec![
+                entry_at(now, "lo", 1, 0.6, "t05"),
+                entry_at(now, "hi", 1, 0.7, "t05"),
+            ],
+            models_with(&[("t05", 0.5)]),
+        );
+        assert_eq!(quality_recency_rkeys(&feed, now), ["hi", "lo"]);
+    }
+
+    #[test]
+    fn quality_recency_manual_band_override_reorders() {
+        let now = Utc::now();
+        // Score-alone both land in High; `newer` is more recent so leads.
+        let older = entry_at(now, "older", 10, 0.90, "t05");
+        let newer = entry_at(now, "newer", 1, 0.90, "t05");
+        let newer_skeet = newer.summary.skeet_id.clone();
+        let feed = quality_feed(
+            vec![older.clone(), newer.clone()],
+            models_with(&[("t05", 0.5)]),
+        );
+        assert_eq!(quality_recency_rkeys(&feed, now), ["newer", "older"]);
+
+        // A manual MedHigh on `newer` drops it a band below `older` (still High),
+        // flipping the order despite `newer` being more recent.
+        let mut feed = quality_feed(vec![older, newer], models_with(&[("t05", 0.5)]));
+        feed.skeet_appraisals.insert(
+            newer_skeet,
+            Appraisal {
+                band: Band::MediumHigh,
+                appraiser: Appraiser::LocalAdmin,
+            },
+        );
+        assert_eq!(quality_recency_rkeys(&feed, now), ["older", "newer"]);
+    }
+
+    #[test]
+    fn quality_recency_drops_below_threshold_score() {
+        let now = Utc::now();
+        // With threshold 0.6, a 0.55 score normalises below 0.5 → MedLow → hidden.
+        let feed = quality_feed(
+            vec![
+                entry_at(now, "kept", 1, 0.9, "t06"),
+                entry_at(now, "below", 1, 0.55, "t06"),
+            ],
+            models_with(&[("t06", 0.6)]),
+        );
+        assert_eq!(quality_recency_rkeys(&feed, now), ["kept"]);
+    }
+
+    #[test]
+    fn quality_recency_ties_are_deterministic_regardless_of_input_order() {
+        let now = Utc::now();
+        // Same band, same age, same score → a pure tie broken only by id.
+        let forward = quality_feed(
+            vec![
+                entry_at(now, "aaa", 1, 0.9, "t05"),
+                entry_at(now, "bbb", 1, 0.9, "t05"),
+            ],
+            models_with(&[("t05", 0.5)]),
+        );
+        let reversed = quality_feed(
+            vec![
+                entry_at(now, "bbb", 1, 0.9, "t05"),
+                entry_at(now, "aaa", 1, 0.9, "t05"),
+            ],
+            models_with(&[("t05", 0.5)]),
+        );
+        assert_eq!(
+            quality_recency_rkeys(&forward, now),
+            quality_recency_rkeys(&reversed, now)
+        );
+        assert_eq!(quality_recency_rkeys(&forward, now), ["aaa", "bbb"]);
+    }
+
     #[test]
     fn quality_within_band_tiebreak_is_cross_model() {
         let now = Utc::now();
-        // Same band (MedHigh), different thresholds: `a` (t=0.5, score 0.70) is
-        // further past its threshold than `b` (t=0.6, score 0.72 → normalises 0.65),
+        // Same band (MedHigh), different thresholds: `a` (threshold 0.5, score 0.70) is
+        // further past its threshold than `b` (threshold 0.6, score 0.72 → normalises 0.65),
         // so `a` leads even though its raw score is lower. Raw-score sort would
         // invert this — the regression guard for normalisation.
         let feed = quality_feed(

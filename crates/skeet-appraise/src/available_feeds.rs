@@ -21,12 +21,14 @@ pub struct AvailableFeeds {
     readers: HashMap<(Order, Limit), RedisFeedSource>,
 }
 
-/// Dropdown sort key: quality feeds before recency, then ascending window. The
-/// `i64` window is millis from `chrono::Duration` (always ≥ 0 here).
+/// Dropdown sort key: quality,recency first, then quality, then recency, each
+/// ascending window. The `i64` window is millis from `chrono::Duration` (always
+/// ≥ 0 here).
 const fn dropdown_key((order, limit): (Order, Limit)) -> (u8, i64) {
     let order_rank = match order {
-        Order::Quality => 0,
-        Order::Recency => 1,
+        Order::QualityRecency => 0,
+        Order::Quality => 1,
+        Order::Recency => 2,
     };
     (order_rank, limit.window().num_milliseconds())
 }

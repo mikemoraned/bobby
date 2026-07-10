@@ -5,11 +5,13 @@ use std::str::FromStr;
 /// name.
 ///
 /// `Recency` orders by skeet publish time; `Quality` orders by effective band then
-/// normalised score (best first).
+/// normalised score (best first); `QualityRecency` orders by effective band (best
+/// first) then, within a band, by recency.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Order {
     Recency,
     Quality,
+    QualityRecency,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -21,6 +23,7 @@ impl fmt::Display for Order {
         f.write_str(match self {
             Self::Recency => "recency",
             Self::Quality => "quality",
+            Self::QualityRecency => "quality,recency",
         })
     }
 }
@@ -32,6 +35,7 @@ impl FromStr for Order {
         match s {
             "recency" => Ok(Self::Recency),
             "quality" => Ok(Self::Quality),
+            "quality,recency" => Ok(Self::QualityRecency),
             other => Err(InvalidOrder(other.to_string())),
         }
     }
@@ -45,11 +49,12 @@ mod tests {
     fn displays_lowercase() {
         assert_eq!(Order::Recency.to_string(), "recency");
         assert_eq!(Order::Quality.to_string(), "quality");
+        assert_eq!(Order::QualityRecency.to_string(), "quality,recency");
     }
 
     #[test]
     fn roundtrips_through_display() {
-        for order in [Order::Recency, Order::Quality] {
+        for order in [Order::Recency, Order::Quality, Order::QualityRecency] {
             let parsed: Order = order.to_string().parse().expect("roundtrip");
             assert_eq!(parsed, order);
         }
