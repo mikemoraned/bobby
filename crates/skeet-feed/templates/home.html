@@ -101,7 +101,8 @@
 
         /* Masonry via CSS multi-column: each image keeps its own aspect
                ratio (no cropping) and the browser picks the column count from
-               the available width. */
+               the available width. Cards are dealt round-robin across the
+               columns server-side so the best rise to the top row. */
         .grid {
             column-width: 240px;
             column-gap: 12px;
