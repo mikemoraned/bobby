@@ -1,7 +1,7 @@
 # Current Slice: 1.0 final tweaks and improvements
 
 * [x] mark all crates to be at version 1.0
-* [ ] features:
+* [x] features:
   * a new `quality,recency-12w` mode used by default on main feed site (bobby.houseofmoran.io)
     * [x] add a new `quality,recency-{limit}` publishing mode where we can combine sorting by quality and recency such that we first sort by quality into Band buckets and then within those buckets sort by recency. We should think of `quality,recency` as a new standalone Order::QualityRecency as we don't want to support the other way round i.e. we *don't want* `recency,quality`. No need to use this mode in this step i.e. we add it as an ability but don't use it yet
       * [x] add `Order::QualityRecency`; `Display` → `quality,recency`, `FromStr` parses it (round-trip tests). The `{order}-{limit}` split stays unambiguous — the token has a comma, not a dash; the list name is `v3-quality,recency-12w`
