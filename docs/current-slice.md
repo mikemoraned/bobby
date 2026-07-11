@@ -21,7 +21,7 @@
         * [x] stop publishing any `quality-{limit}` lists anymore as nothing should need it, but keep the Order::Quality capability; deploy publisher and manually remove unneeded lists
           * dropped `quality-{48h,7d,4w,1y}` from the publisher `--publish` set (k8s + justfiles); `recency-*` and `quality,recency-*` kept, `Order::Quality` code capability retained. Publisher deployed; orphaned `v3-quality-{48h,7d,4w,1y}` redis keys (+ `:statistics` / `:refreshed-at` companions) removed manually.
   * [ ] make the grid display in the feed show the top entries of the list further up the page. as it stands right now, we show the best entries first in a column that goes all the way to the bottom of the page before looping round to the top. We want to show the best content further up the page whilst still showing it as a grid, similar in style to what we have now.
-* [ ] checks docs / skills
+* [x] checks docs / skills
   * [x] check CLAUDE.md and similar include links to all relevant docs e.g. anything architectural in docs
   * [x] do a pass over all rust code, checking if it follows guidelines of `rust.md`, and fix them
     * pass done: codebase is in strong compliance (binary layout, no dead_code/macros, clippy clean, `expect`/`unwrap` all justified, comment hygiene, `-> bool` all genuine predicates). Two nits to fix:
