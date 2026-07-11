@@ -13,6 +13,7 @@ use crate::spec::{InvalidSpec, parse_spec};
 ///
 /// Writes replace the whole list atomically so a concurrent reader never
 /// observes a half-written list (see [`PublishedList::replace`]).
+#[derive(Debug)]
 pub struct PublishedList {
     order: Order,
     limit: Limit,

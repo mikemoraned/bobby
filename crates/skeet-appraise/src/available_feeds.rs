@@ -34,6 +34,7 @@ const fn dropdown_key((order, limit): (Order, Limit)) -> (u8, i64) {
 }
 
 /// One dropdown option: its `{order}-{limit}` value and whether it is selected.
+#[derive(Debug)]
 pub struct FeedOption {
     pub value: String,
     pub selected: bool,

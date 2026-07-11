@@ -14,7 +14,7 @@ use shared::ImageId;
 use shared::Score;
 use skeet_store::StoredOriginal;
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Batch {
     pub ids: Vec<ImageId>,
     pub images: Vec<DynamicImage>,
@@ -23,6 +23,7 @@ pub struct Batch {
 }
 
 /// Outcome of scoring a batch — successes and failures, paired with their ids.
+#[derive(Debug)]
 pub struct ScoreOutcomes<E> {
     pub successes: Vec<(ImageId, Score)>,
     pub failures: Vec<(ImageId, E)>,

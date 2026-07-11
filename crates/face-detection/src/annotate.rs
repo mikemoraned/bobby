@@ -9,6 +9,7 @@ const BLUE: Rgba<u8> = Rgba([80, 80, 255, 255]);
 const SKIN_OVERLAY: Rgba<u8> = Rgba([0, 200, 100, 128]);
 
 /// A bounding box for a region of detected text.
+#[derive(Debug)]
 pub struct TextRegion {
     pub x: i32,
     pub y: i32,

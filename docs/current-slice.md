@@ -29,7 +29,10 @@
     * [x] `crates/bluesky/src/post_thread.rs:59` — replace the `let Some(..) = .. else { continue }` over `LABEL_PATHS` with `.iter().filter_map(...)` per the "avoid `continue`" rule
   * [x] do a pass over `rust.md` skill to check that is logical, internally consistent, and minimal with no duplication.
     * [x] do a comparison against similar advice on web, or any relevant advice that could be included by reference.
-  * [ ] do another pass over all rust code, checking if it follows guidelines of the new `rust.md` (want to see if any advice becomes contradictory)
+  * [x] do another pass over all rust code, checking if it follows guidelines of the new `rust.md`
+    * pass covered all rules; codebase still in strong compliance (no `lib.rs` >300, no `macro_rules!`, no `#[allow(dead_code)]`, `unwrap`/`expect` all test-only or annotated-and-justified, getters are map-style lookups, remaining library `continue`s are index-loop cases the alternatives would worsen). New rules since last pass:
+    * [x] rule 31 (`C-DEBUG`, "every public type implements `Debug`"): 120 pub types lacked it. Chose the pragmatic scope — add `Debug` to pure data/domain/model + `shared`/observability/detection library types where it derives cleanly; skip tower `Layer`/`Service`/`Extractor` plumbing, guards holding OTel providers, metrics emitters, adapters/clients where derive fails. Added to 48 types; 4 candidates (`TrainingInputs`, `PipelineSnapshot`, `Status`, `AvailableFeeds`) reverted because they hold adapter/wiring/metrics fields that aren't `Debug`. Clippy clean.
+    * rule 30 (arg-by-type): a few two-adjacent-bool params (`ConfusionMatrix::record`, `missing_note`, `FeedSource::skeleton(force_refresh)`) — left as-is; real (non-test) call sites pass named fields/expressions, not the opaque `f(true, false)` form the rule targets.
 * [ ] expand README.md to cover:
   * a short summary of what this is (if possible let's dedupe this from CLAUDE.md and move it to README.md)
   * a short summary what version 1.0 contains in terms of features / approach / capabilities, based on contents of completed-slices.md. This should be high-level and not a lot of detail; think of what you would do if you had 5 mins to explain what this is and how it work to a generally knowledge-able senior engineer co-worker.

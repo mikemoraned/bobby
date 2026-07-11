@@ -16,6 +16,7 @@ use crate::Store;
 use crate::available_feeds::FeedOption;
 use crate::feed_snapshot::FeedSnapshotSource;
 
+#[derive(Debug)]
 pub struct HomeEntry {
     pub image_id: String,
     pub skeet_id_encoded: String,
@@ -41,6 +42,7 @@ fn missing_note(skeet_exists: bool, image_exists: bool) -> Option<String> {
     }
 }
 
+#[derive(Debug)]
 pub struct BandOption {
     pub name: &'static str,
     pub label: &'static str,
@@ -66,7 +68,7 @@ pub fn band_options() -> Vec<BandOption> {
         .collect()
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct HomeQuery {
     feed: Option<String>,
 }

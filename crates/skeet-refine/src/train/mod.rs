@@ -61,6 +61,7 @@ pub struct TrainingInputs<'a> {
     pub run_at: DateTime<Utc>,
 }
 
+#[derive(Debug)]
 pub struct TrainingReport {
     pub run: RunRecord,
     pub outcome: GateOutcome,

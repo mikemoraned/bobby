@@ -28,6 +28,7 @@ use crate::visibility::FeedData;
 ///
 /// Assembled from an uncapped, recency-windowed store query, and implements
 /// [`FeedData`] so the shared visibility policy runs over it.
+#[derive(Debug)]
 pub struct WindowedFeed {
     pub entries: Vec<ScoredSummary>,
     pub skeet_appraisals: HashMap<SkeetId, Appraisal>,

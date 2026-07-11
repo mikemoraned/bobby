@@ -13,6 +13,7 @@ use crate::available_feeds::{
     AvailableFeeds, DiscoverError, FeedOption, PublishedListCatalogReader, UnknownFeed,
 };
 
+#[derive(Debug)]
 pub struct FeedItem {
     pub skeet_id: SkeetId,
     pub image_id: ImageId,
@@ -34,6 +35,7 @@ pub enum FeedSnapshotError {
     UnknownFeed(Order, Limit),
 }
 
+#[derive(Debug)]
 pub struct FeedSnapshot {
     pub items: Vec<FeedItem>,
 }

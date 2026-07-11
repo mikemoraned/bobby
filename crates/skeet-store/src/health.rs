@@ -1,12 +1,14 @@
 use lancedb::index::IndexStatistics;
 use lancedb::table::TableStatistics;
 
+#[derive(Debug)]
 pub struct TableHealth {
     pub name: String,
     pub stats: TableStatistics,
     pub index_health: Vec<IndexHealth>,
 }
 
+#[derive(Debug)]
 pub struct IndexHealth {
     pub name: String,
     pub stats: Option<IndexStatistics>,
@@ -80,6 +82,7 @@ impl TableHealth {
     }
 }
 
+#[derive(Debug)]
 pub struct StoreHealth {
     pub tables: Vec<TableHealth>,
 }

@@ -27,7 +27,7 @@ struct SearchResponse {
     traces: Vec<TraceInfo>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TraceInfo {
     #[serde(rename = "traceID")]
@@ -115,6 +115,7 @@ fn to_attr_map(kvs: Vec<OtlpKeyValue>) -> HashMap<String, AttrValue> {
 
 // ── Public domain types ───────────────────────────────────────────────────────
 
+#[derive(Debug)]
 pub enum AttrValue {
     Str(String),
     Int(i64),
@@ -147,11 +148,13 @@ impl AttrValue {
     }
 }
 
+#[derive(Debug)]
 pub struct SpanEvent {
     pub name: String,
     pub attributes: HashMap<String, AttrValue>,
 }
 
+#[derive(Debug)]
 pub struct Span {
     pub span_id: String,
     pub parent_span_id: Option<String>,
@@ -161,6 +164,7 @@ pub struct Span {
     pub events: Vec<SpanEvent>,
 }
 
+#[derive(Debug)]
 pub struct Trace {
     pub spans: Vec<Span>,
 }

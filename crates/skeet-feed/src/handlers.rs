@@ -108,7 +108,7 @@ pub async fn describe_feed_generator(FeedConfig(config): FeedConfig) -> cot::Res
     json_response(&resp)
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct FeedSkeletonQuery {
     pub feed: String,
     pub limit: Option<usize>,

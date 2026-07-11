@@ -18,6 +18,7 @@ use crate::redis_client::connect;
 /// The feed as seen by the Bluesky feed generator: an ordered, unique,
 /// visibility-filtered list of skeet ids plus when the backing data was
 /// last refreshed (used for the `last-modified` header).
+#[derive(Debug)]
 pub struct FeedSkeleton {
     pub skeet_ids: Vec<SkeetId>,
     pub refreshed_at: Option<DateTime<Utc>>,
@@ -43,6 +44,7 @@ pub trait FeedSource: Send + Sync {
 /// The full per-image published list in published order (not deduped to
 /// skeet-ids, unlike [`FeedSkeleton`]) plus when it was last refreshed. Backs
 /// the public image page.
+#[derive(Debug)]
 pub struct PublishedImages {
     pub images: Vec<PublishedImage>,
     pub refreshed_at: Option<DateTime<Utc>>,

@@ -24,6 +24,7 @@ pub mod statistics_persister;
 
 /// A stage should stop: either the downstream receiver was dropped or shutdown
 /// was requested on the shared [`CancellationToken`].
+#[derive(Debug)]
 pub struct Stopped;
 
 /// Forward `item` to the next stage while observing the shared shutdown token.
@@ -56,7 +57,7 @@ pub async fn recv<T>(rx: &Receiver<T>, token: &CancellationToken) -> Option<T> {
 }
 
 /// Cumulative throughput and current queue depth for one pipeline stage.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct StageStats {
     pub throughput: u64,
     pub depth: usize,
@@ -190,6 +191,7 @@ pub struct PipelineSnapshot {
 /// Metadata-stage outcome for one candidate: either it needs image
 /// classification, or it was rejected (the rejection is already tallied into the
 /// accompanying [`ContentCounts`], so there's nothing left to carry).
+#[derive(Debug)]
 pub enum MetaResult {
     Candidate(SkeetCandidate),
     Rejected,
@@ -214,7 +216,7 @@ pub type ImageMessage = (Vec<ImageRecord>, ContentCounts);
 pub type StatsMessage = ContentCounts;
 
 /// Per-stage item counters for throughput monitoring.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct PipelineCounters {
     pub firehose: AtomicU64,
     pub meta: AtomicU64,

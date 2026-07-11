@@ -21,7 +21,7 @@ pub type ScoresMap = HashMap<ImageId, ModelScore>;
 
 /// A stored image summary joined with its [`ModelScore`] — one row of a
 /// scored read-model ([`crate::ScoredView`]).
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ScoredSummary {
     pub summary: StoredImageSummary,
     pub scored: ModelScore,
