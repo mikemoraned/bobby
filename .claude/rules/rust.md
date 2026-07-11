@@ -25,7 +25,7 @@ paths:
   - Additionally, provide a `pub fn new(s: impl Into<String>) -> Result<Self, YourError>` constructor for ergonomic direct construction, and have your `FromStr` implementation delegate to `new()`.
   - `FromStr + .parse()` is the Rust community standard for "string → validated domain type" conversions.
 - Use typed representations instead of untyped arrays (e.g. `DynamicImage` not `Vec<u8>` for images)
-- Use `Option::None` when missing data is expected/valid; use `Result::Err` when it represents an invalid state (caller should use `?`)
+- Represent missing/not-set/disabled data that is expected and valid with `Option<T>` (`None`) — never with sentinel values like `0`, `-1`, or empty strings to encode absence. Use `Result::Err` when the absence instead represents an invalid state the caller should propagate with `?`
 - Errors: use structured enums with [thiserror](https://docs.rs/thiserror/latest/thiserror/)
   - Functions that can fail must return `Result<T, E>`, never `bool` for success/failure
   - Enums used as return types must only contain success variants; failure cases belong in the `Err` side of a `Result`. For example, a `verify()` function should return `Result<VerifyResult, E>` where `VerifyResult` has `Match`/`NotFound`/`Mismatch` (all valid outcomes) — not a `Failed` variant baked into the enum
@@ -43,7 +43,6 @@ paths:
 - Binary layout:
   - All binaries must be named files in `src/bin/` (e.g. `src/bin/finder.rs`), never `src/main.rs` or subdirectories like `src/bin/finder/main.rs`
   - Modules used by binaries live under `src/` and are exposed through `lib.rs`, not placed alongside binaries in `src/bin/`
-- Use `Option<T>` (with `None`) to represent "not set" / "disabled" — never use sentinel values like `0`, `-1`, or empty strings to encode absence
 - **Identity-keyed maps over positionally-aligned `Vec`s for parallel/async work.** When a function takes `&[Input]` and produces one output per input, return `HashMap<Id, Output>` keyed by something derived from the input — not a `Vec<Output>` that callers zip by index. Positional alignment depends on the implementation preserving order: `futures::Stream::buffered` does today, `buffer_unordered` does not, and a `par_iter` or task-pool scheduler may not either. A future switch silently desyncs each output from its input, the bug is invisible at the call site (`scored[i]` looks correct), and only manifests as wrong downstream results. Look up by id at the call site instead — making mismatched positions structurally impossible.
 - Keep feature enablement flags (e.g. `--use-redis`) separate from their configuration values (e.g. `--redis-url`). A feature's on/off switch should not be derived from whether its config happens to be present — these are independent concerns.
 - CLI apps: all config via named CLI params (`--long-form VALUE`); no env vars except `RUST_LOG`
