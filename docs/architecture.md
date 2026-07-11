@@ -8,10 +8,16 @@ The original project scanned Twitter's firehose, applied face detection (via Ope
 
 ## Target Architecture
 
-- **skeet-prune** — continuously listens to the Bluesky firehose and applies fast, approximate checks to discard candidates that can't possibly match, then stores surviving images in the skeet-store
-- **skeet-refine** — applies more expensive LLM-based scoring to pruned candidates, assigning each a quality score
-- **skeet-store** — stores found skeets in an S3-compatible store, in tables, managed as [LanceDB](https://lancedb.com) tables.
-- **skeet-feed** — Bluesky feed generator (AT Protocol feed skeleton) that serves the top-scored images as a custom feed. Also provides an admin web UI for inspecting found skeets and manually appraising them. Deployed on Fly.io with OpenTelemetry tracing to Grafana Cloud.
+The system is a set of small Rust services split by concern: a pruner and refiner produce the data, a publisher decides what's worth showing, and two web apps serve it. They coordinate through two shared stores — the LanceDB `skeet-store` (durable data) and a Redis instance (the published lists) — rather than talking to each other directly.
+
+- **skeet-prune** — continuously listens to the Bluesky firehose (via Jetstream) and applies fast, approximate checks to discard candidates that can't possibly match, then stores surviving images in the skeet-store. Runs on the Hetzner k3s cluster. see [skeet-prune-pipeline.md](skeet-prune-pipeline.md)
+- **skeet-refine** — applies more expensive LLM-based scoring (currently `gpt-4o` via OpenAI) to pruned candidates, assigning each a quality score, written back to the skeet-store. Runs on the Hetzner k3s cluster.
+- **skeet-store** — stores found skeets and their scores in an S3-compatible store (Cloudflare R2, SSE-C encrypted), in tables managed as [LanceDB](https://lancedb.com) tables. Images are content-addressed by Bluesky blob CID. Structured as ports-and-adapters — see [skeet-store-architecture.md](skeet-store-architecture.md).
+- **skeet-publish** — the single authority on *what* gets published. It computes ranked Redis lists per `(order, limit)` spec, combining automatic quality **Bands** with **manual appraisal overrides** and probing Bluesky to drop deleted posts. Lists are rebuilt on store table-version change and swapped atomically. Runs on the Hetzner k3s cluster.
+- **skeet-feed** — Bluesky feed generator (AT Protocol feed skeleton) that serves the top-scored images as a custom feed, plus a server-rendered public image grid at `/` and a dynamic Open Graph preview image. Storeless and Fly-suspendable: reads the published Redis lists and lets Bluesky's CDN serve the images. Deployed on Fly.io.
+- **skeet-appraise** — the admin/appraisal web UI (GitHub OAuth, allowlisted) for inspecting found skeets and manually banding them; those manual appraisals feed back into what skeet-publish publishes. Deployed on Fly.io.
+
+All services emit OpenTelemetry traces + metrics to Grafana Cloud. See [remote-setup.md](remote-setup.md) for the Hetzner cluster and [versioning.md](versioning.md) for how production and per-worktree dev share the same R2/Redis stores.
 
 ## Constraints, Trade-offs and Technology Choices
 

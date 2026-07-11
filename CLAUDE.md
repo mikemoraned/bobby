@@ -1,6 +1,6 @@
 # Bobby
 
-Find selfies people take of themselves with physical landmarks (famous buildings, monuments, places like the Eiffel Tower) — using Bluesky's firehose and modern ML models in Rust. Recreates [the original Twitter-based project](https://github.com/mikemoraned/selfies).
+See [README.md](README.md) for what Bobby is and what version 1.0 does. This file covers how to work on it.
 
 ## Prerequisites
 
