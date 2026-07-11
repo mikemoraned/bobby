@@ -27,8 +27,8 @@
     * pass done: codebase is in strong compliance (binary layout, no dead_code/macros, clippy clean, `expect`/`unwrap` all justified, comment hygiene, `-> bool` all genuine predicates). Two nits to fix:
     * [x] `crates/text-detection/src/lib.rs` is 419 lines (over the 300 soft limit) — ~185 code + ~233 inline tests. Split `TextDetectionResult`'s metrics (`character_count`/`text_area_pct`/`full_text`) and their tests into a `metrics` module
     * [x] `crates/bluesky/src/post_thread.rs:59` — replace the `let Some(..) = .. else { continue }` over `LABEL_PATHS` with `.iter().filter_map(...)` per the "avoid `continue`" rule
-  * [ ] do a pass over `rust.md` skill to check that is logical, internally consistent, and minimal with no duplication.
-    * [ ] do a comparison against similar advice on web, or any relevant advice that could be included by reference.
+  * [x] do a pass over `rust.md` skill to check that is logical, internally consistent, and minimal with no duplication.
+    * [x] do a comparison against similar advice on web, or any relevant advice that could be included by reference.
   * [ ] do another pass over all rust code, checking if it follows guidelines of the new `rust.md` (want to see if any advice becomes contradictory)
 * [ ] expand README.md to cover:
   * a short summary of what this is (if possible let's dedupe this from CLAUDE.md and move it to README.md)

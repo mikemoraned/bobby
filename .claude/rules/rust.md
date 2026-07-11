@@ -6,6 +6,8 @@ paths:
 
 # Rust Rules
 
+These rules **extend** the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/checklist.html) and the [Microsoft Pragmatic Rust Guidelines](https://microsoft.github.io/rust-guidelines/) — the canonical baselines for naming (`C-CASE`, the `as_`/`to_`/`into_` conversions), trait derivation, and API design. What follows is our **additions, emphases, and deliberate deviations**, not a full restatement; where a rule mirrors a named guideline it cites the `C-*` code.
+
 - Follow [Rust doc guidelines](https://doc.rust-lang.org/stable/rustdoc/write-documentation/what-to-include.html) if comments are needed
 - **Comments describe long-lived properties of the code, not the workflow that produced it.** Apply this test to every candidate comment: *would it still read correctly to a stranger if every caller, every input value, every motivating task, and every surrounding circumstance changed?* Only the function's own contract and invariants survive that test — everything else is leakage and will rot the moment work moves on. The principle is the test, not a list. Things that typically fail it: slice/phase/PR/task references, "previously did X, now does Y" framing, the calling site that motivated the change, and current snapshots of inputs (specific counts, specific file paths a caller happens to use today, the current default of a flag, the current name of a model). Describe the contract in terms of the parameters, not the values they hold this week. If the only honest justification is "the current task needs this," it belongs in the task/slice doc, not the code.
 
@@ -25,8 +27,10 @@ paths:
   - Additionally, provide a `pub fn new(s: impl Into<String>) -> Result<Self, YourError>` constructor for ergonomic direct construction, and have your `FromStr` implementation delegate to `new()`.
   - `FromStr + .parse()` is the Rust community standard for "string → validated domain type" conversions.
 - Use typed representations instead of untyped arrays (e.g. `DynamicImage` not `Vec<u8>` for images)
+- Arguments convey meaning through types (`C-CUSTOM-TYPE`) — don't take a bare `bool` or `Option` parameter whose meaning is opaque at the call site (`f(true, false)`); use a two-variant enum (`Overwrite::Yes`/`No`). This is the argument-side mirror of "never return `bool` for success" below.
+- Eagerly derive common traits (`C-COMMON-TRAITS`, `C-DEBUG`) — `Debug, Clone, PartialEq, Eq, Hash, Default` wherever they apply, and every public type implements `Debug`.
 - Represent missing/not-set/disabled data that is expected and valid with `Option<T>` (`None`) — never with sentinel values like `0`, `-1`, or empty strings to encode absence. Use `Result::Err` when the absence instead represents an invalid state the caller should propagate with `?`
-- Errors: use structured enums with [thiserror](https://docs.rs/thiserror/latest/thiserror/)
+- Errors (`C-GOOD-ERR`): structured [thiserror](https://docs.rs/thiserror/latest/thiserror/) enums for library/domain code, where callers match on outcomes. At a binary's `main`/orchestration layer a type-erased error (`Box<dyn std::error::Error>`) is acceptable — nobody matches on it, a human reads it.
   - Functions that can fail must return `Result<T, E>`, never `bool` for success/failure
   - Enums used as return types must only contain success variants; failure cases belong in the `Err` side of a `Result`. For example, a `verify()` function should return `Result<VerifyResult, E>` where `VerifyResult` has `Match`/`NotFound`/`Mismatch` (all valid outcomes) — not a `Failed` variant baked into the enum
 - Module structure: different kinds of things (schemas, layers) belong in their own module with their own tests
