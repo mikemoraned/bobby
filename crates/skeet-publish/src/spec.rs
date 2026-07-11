@@ -43,6 +43,10 @@ mod tests {
             parse_spec("quality-7d").expect("valid"),
             (Order::Quality, Limit::days(7))
         );
+        assert_eq!(
+            parse_spec("quality,recency-12w").expect("valid"),
+            (Order::QualityRecency, Limit::weeks(12))
+        );
     }
 
     #[test]

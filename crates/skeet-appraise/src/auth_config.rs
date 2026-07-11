@@ -20,6 +20,7 @@ pub enum OAuthConfigError {
     GithubApiBase(BaseUrlError),
 }
 
+#[derive(Debug)]
 pub struct OAuthConfig {
     pub client_id: String,
     pub client_secret: String,

@@ -14,6 +14,7 @@ pub struct ImageRecord {
     pub detected_text: String,
 }
 
+#[derive(Debug)]
 pub struct StoredImage {
     pub summary: StoredImageSummary,
     pub image: DynamicImage,
@@ -22,6 +23,7 @@ pub struct StoredImage {
 
 /// A fetched image without the annotated overlay — used by callers that only
 /// need the original pixels (e.g. live-refine scoring).
+#[derive(Debug)]
 pub struct StoredOriginal {
     pub summary: StoredImageSummary,
     pub image: DynamicImage,
@@ -43,7 +45,7 @@ impl From<StoredImage> for ImageRecord {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct StoredImageSummary {
     pub image_id: ImageId,
     pub skeet_id: SkeetId,

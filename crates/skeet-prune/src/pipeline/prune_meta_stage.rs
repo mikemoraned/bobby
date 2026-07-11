@@ -13,6 +13,7 @@ use tracing::{info, trace, warn};
 use crate::firehose::SkeetCandidate;
 use crate::pipeline::{self, ContentCounts, MetaMessage, MetaResult, PipelineCounters};
 
+#[derive(Debug)]
 pub enum MetaFilterOutcome {
     Pass,
     /// Blocked by moderation labels on the post, its author, or a quoted record.

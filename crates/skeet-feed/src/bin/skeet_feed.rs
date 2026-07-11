@@ -79,23 +79,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "starting skeet-feed server (feed from the redis publish server)"
     );
 
-    // The Bluesky feed prefers the `quality-48h` list written by skeet-publish,
-    // falling back to successively older same-order lists (`quality-7d`, …) when
-    // it is empty or missing, so an outage degrades gracefully to older data.
+    // The Bluesky feed prefers the `quality,recency-48h` list written by
+    // skeet-publish, falling back to successively older same-order lists
+    // (`quality,recency-7d`, …) when it is empty or missing, so an outage degrades
+    // gracefully to older data.
     let feed_source: Arc<dyn FeedSource> = Arc::new(FallbackFeedSource::new(
         args.redis_publish_url.clone(),
-        Order::Quality,
+        Order::QualityRecency,
         Limit::hours(48),
     ));
 
-    // The public image page prefers the wider `quality-4w` list, falling back to
-    // older same-order lists when it is empty or missing. Each published image
-    // already carries its dimensions (measured by the publisher's CDN probe), so
-    // the feed renders aspect ratios without fetching any image.
+    // The public image page prefers the wider `quality,recency-12w` list, falling
+    // back to older same-order lists when it is empty or missing. Each published
+    // image already carries its dimensions (measured by the publisher's CDN probe),
+    // so the feed renders aspect ratios without fetching any image.
     let published_images_source: Arc<dyn PublishedImagesSource> = Arc::new(FallbackFeedSource::new(
         args.redis_publish_url,
-        Order::Quality,
-        Limit::weeks(4),
+        Order::QualityRecency,
+        Limit::weeks(12),
     ));
 
     let preview_state = Arc::new(PreviewState::new(

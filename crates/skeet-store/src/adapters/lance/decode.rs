@@ -35,6 +35,7 @@ pub fn decode_score_row(
     ))
 }
 
+#[derive(Debug)]
 pub struct SummaryColumns<'a> {
     image_ids: &'a StringArray,
     skeet_ids: &'a StringArray,

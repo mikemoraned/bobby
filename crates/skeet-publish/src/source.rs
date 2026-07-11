@@ -18,6 +18,7 @@ use crate::redis_client::connect;
 /// The feed as seen by the Bluesky feed generator: an ordered, unique,
 /// visibility-filtered list of skeet ids plus when the backing data was
 /// last refreshed (used for the `last-modified` header).
+#[derive(Debug)]
 pub struct FeedSkeleton {
     pub skeet_ids: Vec<SkeetId>,
     pub refreshed_at: Option<DateTime<Utc>>,
@@ -43,10 +44,16 @@ pub trait FeedSource: Send + Sync {
 /// The full per-image published list in published order (not deduped to
 /// skeet-ids, unlike [`FeedSkeleton`]) plus when it was last refreshed. Backs
 /// the public image page.
+#[derive(Debug)]
 pub struct PublishedImages {
     pub images: Vec<PublishedImage>,
     pub refreshed_at: Option<DateTime<Utc>>,
     pub statistics: Option<ListStatistics>,
+    /// The `(order, limit)` of the list that actually supplied these images —
+    /// the fallback-resolved window, not necessarily the preferred one. `None`
+    /// when no list backed the read (nothing in the catalog). Surfaced for
+    /// debugging which published list a page ended up serving.
+    pub source_spec: Option<(Order, Limit)>,
 }
 
 /// Source of the full published image list.
@@ -175,6 +182,7 @@ impl PublishedImagesSource for RedisFeedSource {
             images,
             refreshed_at,
             statistics,
+            source_spec: Some(self.list.spec()),
         })
     }
 }

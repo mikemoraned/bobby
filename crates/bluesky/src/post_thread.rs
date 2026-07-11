@@ -54,17 +54,16 @@ pub async fn fetch_post_thread(
 pub fn blocked_labels(post_thread_json: &Value) -> HashSet<ModerationLabel> {
     let mut found = HashSet::new();
 
-    for path in LABEL_PATHS {
-        let Some(labels) = post_thread_json.pointer(path).and_then(Value::as_array) else {
-            continue;
-        };
+    let labels = LABEL_PATHS
+        .iter()
+        .filter_map(|path| post_thread_json.pointer(path).and_then(Value::as_array))
+        .flatten();
 
-        for label in labels {
-            if let Some(val) = label.get("val").and_then(Value::as_str)
-                && shared::labels::EXCLUDED_VALUES.contains(&val)
-            {
-                found.insert(ModerationLabel::new(val));
-            }
+    for label in labels {
+        if let Some(val) = label.get("val").and_then(Value::as_str)
+            && shared::labels::EXCLUDED_VALUES.contains(&val)
+        {
+            found.insert(ModerationLabel::new(val));
         }
     }
 

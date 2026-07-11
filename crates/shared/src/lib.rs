@@ -205,6 +205,7 @@ pub enum Classification {
     Rejected(Vec<Rejection>),
 }
 
+#[derive(Debug)]
 pub struct SkeetImage {
     pub skeet_id: SkeetId,
     pub original_at: DateTime<Utc>,

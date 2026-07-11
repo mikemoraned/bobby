@@ -41,6 +41,7 @@ impl ContentSignature {
 
 /// The tiles selected for the montage: their thumbnail URLs in best-first order,
 /// paired with the signature of that ordered selection.
+#[derive(Debug)]
 pub struct MontageSelection {
     pub tile_urls: Vec<ImageUrl>,
     pub signature: ContentSignature,

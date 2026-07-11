@@ -20,7 +20,7 @@ fn load_text_detector() -> text_detection::TextDetector {
 }
 
 /// Per-worker classification inputs, cloned into each spawned worker.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ClassifyConfig {
     pub http: reqwest::Client,
     pub prune_config: PruneConfig,

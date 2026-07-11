@@ -155,6 +155,7 @@ impl PublishedImagesSource for FallbackFeedSource {
             images: vec![],
             refreshed_at: None,
             statistics: None,
+            source_spec: None,
         }))
     }
 }
@@ -169,7 +170,11 @@ mod tests {
     use shared::{Did, RecordKey, SkeetId};
 
     fn arbitrary_spec() -> impl Strategy<Value = (Order, Limit)> {
-        let order = prop_oneof![Just(Order::Quality), Just(Order::Recency)];
+        let order = prop_oneof![
+            Just(Order::Quality),
+            Just(Order::Recency),
+            Just(Order::QualityRecency)
+        ];
         let limit = (1u64..1000, 0usize..4).prop_map(|(count, unit)| match unit {
             0 => Limit::hours(count),
             1 => Limit::days(count),

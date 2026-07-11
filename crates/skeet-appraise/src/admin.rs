@@ -23,6 +23,7 @@ use crate::handlers::{BandOption, band_options};
 
 const PAGE_SIZE: usize = 10;
 
+#[derive(Debug)]
 pub struct AdminRow {
     pub image_id: String,
     pub row_id: String,
@@ -60,7 +61,7 @@ struct AdminPageTemplate<'a> {
     band_options: Vec<BandOption>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct AdminQuery {
     pub view: Option<String>,
     pub cursor: Option<String>,
@@ -252,7 +253,7 @@ fn build_rows(
         .collect()
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct AppraiseQuery {
     pub band: String,
     pub id: String,

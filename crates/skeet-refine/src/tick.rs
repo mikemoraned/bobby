@@ -32,6 +32,7 @@ impl ScoringFailure {
 }
 
 /// Running totals accumulated across all ticks, used to drive OTel counters.
+#[derive(Debug)]
 pub struct RunningTotals {
     pub unscored: u64,
     pub scored: u64,
@@ -61,6 +62,7 @@ impl Default for RunningTotals {
 }
 
 /// Mutable state accumulated within a single tick.
+#[derive(Debug)]
 pub struct TickAccumulator {
     pub pending_scores: Vec<(ImageId, ModelScore)>,
     pub errors: HashMap<String, u64>,

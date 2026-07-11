@@ -3,6 +3,7 @@ use tracing::{info, instrument, warn};
 
 /// Whether a `save` call persisted a fresh record, or skipped it (the image
 /// already existed, or the write failed and was logged).
+#[derive(Debug)]
 pub enum SaveOutcome {
     Saved,
     Skipped,

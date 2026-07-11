@@ -86,12 +86,14 @@ pub const fn session_was_stable(up_for: Duration) -> bool {
 }
 
 /// One image of a post: its blob CID and the CDN URL to fetch it from.
+#[derive(Debug)]
 pub struct ImageCandidate {
     pub cid: BlueskyCid,
     pub url: ImageUrl,
 }
 
 /// A post that has images but hasn't been downloaded yet.
+#[derive(Debug)]
 pub struct SkeetCandidate {
     pub skeet_id: SkeetId,
     pub original_at: DateTime<Utc>,

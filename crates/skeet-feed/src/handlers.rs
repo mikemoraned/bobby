@@ -18,6 +18,36 @@ use crate::{FeedSourceExtractor, PublishedImagesSourceExtractor};
 /// burst is absorbed, yet a republish is picked up within the window.
 const GRID_CACHE_CONTROL: &str = "public, max-age=60";
 
+/// The number of columns the home grid renders in at full width — the
+/// template's `column-width`/body `max-width` pair resolves to this many. Cards
+/// are dealt round-robin across this many columns (see [`bias_top_by_columns`])
+/// so the best rise to the top row.
+const HOME_GRID_COLUMNS: usize = 4;
+
+/// Reorder items so the best (front of `items`) bias to the top of a CSS
+/// multi-column masonry.
+///
+/// A multi-column layout fills each column top-to-bottom before starting the
+/// next, so a best-first list buries the best items down the first column.
+/// Dealing the items round-robin into `columns` columns and concatenating the
+/// columns instead puts the best item at the top of each column, so the top row
+/// reads best-first. The bias is exact when the page renders in `columns`
+/// columns and approximate otherwise (e.g. a narrow viewport with fewer).
+///
+/// This whole dance exists only because CSS can't lay out a row-major masonry
+/// itself yet. Native masonry (`grid-template-rows: masonry`, or whatever the
+/// CSSWG's `item-flow` work settles on) places items row-major across the
+/// shortest column at any column count — once it ships unflagged cross-browser,
+/// drop this and let the template order cards best-first directly.
+fn bias_top_by_columns<T>(items: Vec<T>, columns: usize) -> Vec<T> {
+    let len = items.len();
+    let mut slots: Vec<Option<T>> = items.into_iter().map(Some).collect();
+    (0..columns)
+        .flat_map(|start| (start..len).step_by(columns))
+        .filter_map(|i| slots[i].take())
+        .collect()
+}
+
 fn wants_no_cache(head: &RequestHead) -> bool {
     head.headers
         .get(CACHE_CONTROL)
@@ -108,7 +138,7 @@ pub async fn describe_feed_generator(FeedConfig(config): FeedConfig) -> cot::Res
     json_response(&resp)
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct FeedSkeletonQuery {
     pub feed: String,
     pub limit: Option<usize>,
@@ -222,6 +252,10 @@ struct HomeTemplate {
     /// Site-specific Plausible analytics script URL; `Some` renders the
     /// tracking script, `None` omits it.
     plausible_script_url: Option<String>,
+    /// The `{order}-{limit}` name of the published list that backed this render
+    /// (e.g. `quality,recency-12w`), or `none`. Emitted as an HTML comment for
+    /// debugging which list a page ended up serving after fallback.
+    source_list: String,
 }
 
 /// The predicted next-match arrival the page shows: the 95% range as human
@@ -386,6 +420,12 @@ pub async fn home(
     let stats_banner = stats.map(statistics_banner);
     let next_arrival = stats.and_then(|stats| build_next_arrival(stats, chrono::Utc::now()));
 
+    // Which published list actually backed this render, for debugging fallbacks —
+    // emitted as an HTML comment (e.g. `quality,recency-12w`).
+    let source_list = published
+        .source_spec
+        .map_or_else(|| "none".to_string(), |(order, limit)| format!("{order}-{limit}"));
+
     let cards: Vec<GridCard> = published
         .images
         .into_iter()
@@ -398,6 +438,7 @@ pub async fn home(
                 .map(|d| format!("{}/{}", d.width, d.height)),
         })
         .collect();
+    let cards = bias_top_by_columns(cards, HOME_GRID_COLUMNS);
 
     info!(count = cards.len(), "serving home grid");
     let rendered = HomeTemplate {
@@ -411,6 +452,7 @@ pub async fn home(
         stats_banner,
         next_arrival,
         plausible_script_url: config.plausible_script_url.clone(),
+        source_list,
     }
     .render()?;
     let mut response = Response::new(Body::fixed(rendered));
@@ -541,6 +583,36 @@ mod tests {
     }
 
     #[test]
+    fn bias_top_by_columns_deals_round_robin_so_columns_read_best_first() {
+        // With 4 columns, a best-first list is dealt across the columns and
+        // concatenated, so a column-major fill lays the top row out best-first.
+        let biased = bias_top_by_columns(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9], 4);
+        assert_eq!(biased, vec![0, 4, 8, 1, 5, 9, 2, 6, 3, 7]);
+    }
+
+    #[test]
+    fn bias_top_by_columns_is_a_permutation_that_keeps_the_best_first() {
+        let biased = bias_top_by_columns((0..37).collect(), HOME_GRID_COLUMNS);
+        assert_eq!(biased.len(), 37, "no item is dropped or duplicated");
+        let mut sorted = biased.clone();
+        sorted.sort_unstable();
+        assert_eq!(sorted, (0..37).collect::<Vec<_>>(), "same set of items");
+        assert_eq!(biased[0], 0, "the best item still leads");
+    }
+
+    #[test]
+    fn bias_top_by_columns_is_identity_for_a_single_column() {
+        let items = vec![0, 1, 2, 3, 4];
+        assert_eq!(bias_top_by_columns(items.clone(), 1), items);
+    }
+
+    #[test]
+    fn bias_top_by_columns_handles_fewer_items_than_columns() {
+        // Each item lands in its own column, so the order is unchanged.
+        assert_eq!(bias_top_by_columns(vec![0, 1, 2], 4), vec![0, 1, 2]);
+    }
+
+    #[test]
     fn home_template_renders_range_and_countdown_when_predicted() {
         let rendered = HomeTemplate {
             cards: vec![one_card()],
@@ -558,6 +630,7 @@ mod tests {
                 upper_text: "5 hours".to_string(),
             }),
             plausible_script_url: None,
+            source_list: "quality,recency-12w".to_string(),
         }
         .render()
         .expect("render");
@@ -567,6 +640,8 @@ mod tests {
         assert!(rendered.contains("in 2 hours")); // countdown's pre-JS content
         // The JS countdown's reload target is embedded for the client to tick to.
         assert!(rendered.contains("1700000000000"));
+        // The source-list debug comment names the list actually served.
+        assert!(rendered.contains("<!-- source-list: quality,recency-12w -->"));
     }
 
     #[test]
@@ -582,6 +657,7 @@ mod tests {
             stats_banner: Some("(stats)".to_string()),
             next_arrival: None,
             plausible_script_url: None,
+            source_list: "none".to_string(),
         }
         .render()
         .expect("render");
@@ -602,6 +678,7 @@ mod tests {
             stats_banner: None,
             next_arrival: None,
             plausible_script_url: None,
+            source_list: "none".to_string(),
         }
         .render()
         .expect("render");

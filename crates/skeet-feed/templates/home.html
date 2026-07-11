@@ -2,6 +2,7 @@
 <html lang="en">
 
 <head>
+    <!-- source-list: {{ source_list }} -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     {% if let Some(plausible_script_url) = plausible_script_url %}
@@ -61,6 +62,11 @@
             margin: 0 0 0.4rem;
         }
 
+        .banner .blurb .about {
+            white-space: nowrap;
+            font-size: 0.85em;
+        }
+
         .banner .subscribe {
             margin: 0;
         }
@@ -100,7 +106,8 @@
 
         /* Masonry via CSS multi-column: each image keeps its own aspect
                ratio (no cropping) and the browser picks the column count from
-               the available width. */
+               the available width. Cards are dealt round-robin across the
+               columns server-side so the best rise to the top row. */
         .grid {
             column-width: 240px;
             column-gap: 12px;
@@ -133,7 +140,7 @@
     <h1>Bobby</h1>
     <header class="banner">
         <div class="banner-text">
-            <p class="blurb">{{ blurb }}</p>
+            <p class="blurb">{{ blurb }} <a class="about" href="https://github.com/mikemoraned/bobby/blob/main/README.md">How it works</a></p>
             <p class="subscribe"><a href="{{ feed_bsky_url }}">Subscribe to this feed on Bluesky</a></p>
             {% if let Some(banner) = stats_banner %}
             <p class="examined">{{ banner }}</p>

@@ -131,7 +131,7 @@ impl FeedParams {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct FeedConfig(pub Arc<FeedParams>);
 
 impl FromRequestHead for FeedConfig {

@@ -11,12 +11,12 @@ use url::Url;
 
 use crate::auth_config::OAuthConfigExtractor;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct LoginQuery {
     pub return_to: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct CallbackQuery {
     pub code: String,
     pub state: String,
