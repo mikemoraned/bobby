@@ -23,10 +23,13 @@
   * [ ] make the grid display in the feed show the top entries of the list further up the page. as it stands right now, we show the best entries first in a column that goes all the way to the bottom of the page before looping round to the top. We want to show the best content further up the page whilst still showing it as a grid, similar in style to what we have now.
 * [ ] checks docs / skills
   * [x] check CLAUDE.md and similar include links to all relevant docs e.g. anything architectural in docs
-  * [ ] do a pass over all rust code, checking if it follows guidelines of `rust.md`
+  * [x] do a pass over all rust code, checking if it follows guidelines of `rust.md`, and fix them
+    * pass done: codebase is in strong compliance (binary layout, no dead_code/macros, clippy clean, `expect`/`unwrap` all justified, comment hygiene, `-> bool` all genuine predicates). Two nits to fix:
+    * [x] `crates/text-detection/src/lib.rs` is 419 lines (over the 300 soft limit) — ~185 code + ~233 inline tests. Split `TextDetectionResult`'s metrics (`character_count`/`text_area_pct`/`full_text`) and their tests into a `metrics` module
+    * [x] `crates/bluesky/src/post_thread.rs:59` — replace the `let Some(..) = .. else { continue }` over `LABEL_PATHS` with `.iter().filter_map(...)` per the "avoid `continue`" rule
   * [ ] do a pass over `rust.md` skill to check that is logical, internally consistent, and minimal with no duplication.
     * [ ] do a comparison against similar advice on web, or any relevant advice that could be included by reference.
-    * [ ] do another pass over all rust code, checking if it follows guidelines of the new `rust.md` (want to see if any advice becomes contradictory)
+  * [ ] do another pass over all rust code, checking if it follows guidelines of the new `rust.md` (want to see if any advice becomes contradictory)
 * [ ] expand README.md to cover:
   * a short summary of what this is (if possible let's dedupe this from CLAUDE.md and move it to README.md)
   * a short summary what version 1.0 contains in terms of features / approach / capabilities, based on contents of completed-slices.md. This should be high-level and not a lot of detail; think of what you would do if you had 5 mins to explain what this is and how it work to a generally knowledge-able senior engineer co-worker.
