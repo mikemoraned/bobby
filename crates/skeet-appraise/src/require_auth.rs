@@ -16,7 +16,7 @@ use crate::appraiser_config::resolve_appraiser;
 /// The guard is expressed as an allowlist of *public* paths rather than by
 /// annotating each protected route, so a newly-added route is behind login by
 /// default and cannot ship unguarded by omission.
-const PUBLIC_PATHS: &[&str] = &["/auth/login", "/auth/callback"];
+const PUBLIC_PATHS: &[&str] = &["/health", "/auth/login", "/auth/callback"];
 
 /// Root-router middleware that redirects any unauthenticated request for a
 /// non-public path to the login flow (preserving the original path as

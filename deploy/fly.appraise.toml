@@ -22,7 +22,7 @@ grace_period = "10s"
 interval = "30s"
 method = "GET"
 timeout = "5s"
-path = "/"
+path = "/health"
 
 [[vm]]
 size = "shared-cpu-1x"

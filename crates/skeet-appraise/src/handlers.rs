@@ -95,6 +95,12 @@ fn bad_request(message: &str) -> Response {
     response
 }
 
+/// Unauthenticated liveness probe for the platform health check. Kept public in
+/// `RequireAuthLayer`.
+pub async fn health() -> Response {
+    Response::new(Body::fixed("ok"))
+}
+
 #[instrument(skip_all)]
 pub async fn home(
     AppraiserExtractor(appraiser): AppraiserExtractor,

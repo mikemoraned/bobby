@@ -890,6 +890,28 @@ async fn assert_redirects_to_login(client: &mut Client, path: &str) {
     );
 }
 
+/// The health endpoint is public: it must return 200 without a session so the
+/// platform health check doesn't follow the login redirect and mark the app down.
+#[tokio::test]
+async fn health_is_public() {
+    let mock_server = MockServer::start().await;
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let mut client = oauth_client(&mock_server, vec!["testuser"], &dir).await;
+
+    let response = client
+        .request(get_with_cookie("/health", None))
+        .await
+        .expect("GET /health");
+    assert_eq!(
+        response.status().as_u16(),
+        200,
+        "health endpoint should be reachable without auth"
+    );
+    let body_bytes = response.into_body().into_bytes().await.expect("read body");
+    let body = String::from_utf8(body_bytes.to_vec()).expect("valid utf8");
+    assert_eq!(body, "ok", "health endpoint should return ok");
+}
+
 /// The whole site is behind login: with no session, the home page redirects to
 /// login rather than rendering.
 #[tokio::test]

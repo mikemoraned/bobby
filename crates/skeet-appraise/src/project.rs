@@ -17,7 +17,7 @@ use crate::StoreLayer;
 use crate::require_auth::RequireAuthLayer;
 use crate::admin::{admin, appraise_image, appraise_skeet};
 use crate::auth::{auth_callback, auth_login, auth_logout};
-use crate::handlers::{annotated_image, home};
+use crate::handlers::{annotated_image, health, home};
 use crate::web_static_files;
 
 pub struct AppraiseApp;
@@ -33,6 +33,7 @@ impl App for AppraiseApp {
 
     fn router(&self) -> Router {
         Router::with_urls([
+            Route::with_handler_and_name("/health", health, "health"),
             Route::with_handler_and_name("/", home, "home"),
             Route::with_handler_and_name(
                 "/skeet/{image_id}/annotated.png",
