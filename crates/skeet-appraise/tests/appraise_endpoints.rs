@@ -793,6 +793,17 @@ async fn oauth_client(
     dir: &tempfile::TempDir,
 ) -> Client {
     let store = Arc::new(open_temp_store(dir).await);
+    oauth_client_with_feed(mock_server, allowed_users, store, DUMMY_REDIS_URL).await
+}
+
+/// An OAuth-mode client (no `--local-admin`; auth is via the session set by the
+/// login flow) reading feeds from `redis_url`.
+async fn oauth_client_with_feed(
+    mock_server: &MockServer,
+    allowed_users: Vec<&str>,
+    store: Arc<SkeetStore>,
+    redis_url: &str,
+) -> Client {
     let oauth_config = OAuthConfig::with_urls(
         "test-client-id".to_string(),
         "test-client-secret".to_string(),
@@ -803,7 +814,7 @@ async fn oauth_client(
     )
     .expect("valid oauth config");
     let project = AppraiseProject {
-        published_feed_layer: PublishedFeedLayer::new(test_feeds(DUMMY_REDIS_URL)),
+        published_feed_layer: PublishedFeedLayer::new(test_feeds(redis_url)),
         store_layer: StoreLayer::from_shared(store),
         models_layer: ModelsLayer::from_shared(test_models()),
         appraiser_layer: AppraiserLayer::new(None),
@@ -851,17 +862,18 @@ async fn do_login(
     (response, final_cookie)
 }
 
-#[tokio::test]
-async fn unauthenticated_admin_redirects_to_login() {
-    let mock_server = MockServer::start().await;
-    let dir = tempfile::tempdir().expect("create temp dir");
-    let mut client = oauth_client(&mock_server, vec!["testuser"], &dir).await;
-
+/// Assert a GET without a session redirects to the login flow, carrying the
+/// original path as `return_to`.
+async fn assert_redirects_to_login(client: &mut Client, path: &str) {
     let response = client
-        .request(get_with_cookie("/admin", None))
+        .request(get_with_cookie(path, None))
         .await
-        .expect("GET /admin");
-    assert_eq!(response.status().as_u16(), 303);
+        .unwrap_or_else(|_| panic!("GET {path}"));
+    assert_eq!(
+        response.status().as_u16(),
+        303,
+        "unauthenticated {path} should redirect"
+    );
     let location = response
         .headers()
         .get("location")
@@ -870,12 +882,119 @@ async fn unauthenticated_admin_redirects_to_login() {
         .expect("valid header");
     assert!(
         location.starts_with("/auth/login"),
-        "should redirect to /auth/login, got: {location}"
+        "{path} should redirect to /auth/login, got: {location}"
     );
     assert!(
         location.contains("return_to"),
-        "should include return_to param"
+        "{path} redirect should include return_to param, got: {location}"
     );
+}
+
+/// The whole site is behind login: with no session, the home page redirects to
+/// login rather than rendering.
+#[tokio::test]
+async fn unauthenticated_home_redirects_to_login() {
+    let mock_server = MockServer::start().await;
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let mut client = oauth_client(&mock_server, vec!["testuser"], &dir).await;
+
+    assert_redirects_to_login(&mut client, "/").await;
+}
+
+/// Image bytes are behind login too: an unauthenticated annotated-image fetch
+/// redirects to login and never reaches the store.
+#[tokio::test]
+async fn unauthenticated_annotated_image_redirects_to_login() {
+    let mock_server = MockServer::start().await;
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let mut client = oauth_client(&mock_server, vec!["testuser"], &dir).await;
+
+    assert_redirects_to_login(&mut client, "/skeet/v2:abc123/annotated.png").await;
+}
+
+/// Static assets are behind login too: an unauthenticated fetch of a bundled
+/// asset redirects rather than serving bytes.
+#[tokio::test]
+async fn unauthenticated_static_asset_redirects_to_login() {
+    let mock_server = MockServer::start().await;
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let mut client = oauth_client(&mock_server, vec!["testuser"], &dir).await;
+
+    assert_redirects_to_login(&mut client, "/static/htmx.min.js").await;
+}
+
+/// The positive counterpart: after logging in via the session flow, the same
+/// static asset is served (the auth layer lets an authenticated session through).
+#[tokio::test]
+async fn authenticated_static_asset_is_served() {
+    let mock_server = MockServer::start().await;
+    mount_github_mocks(&mock_server, "testuser").await;
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let mut client = oauth_client(&mock_server, vec!["testuser"], &dir).await;
+
+    let (_, cookie) = do_login(&mut client, None).await;
+
+    let response = client
+        .request(get_with_cookie("/static/htmx.min.js", Some(&cookie)))
+        .await
+        .expect("GET static asset");
+    assert_eq!(
+        response.status().as_u16(),
+        200,
+        "authenticated static asset should be served"
+    );
+    let body_bytes = response.into_body().into_bytes().await.expect("read body");
+    let body = String::from_utf8(body_bytes.to_vec()).expect("valid utf8");
+    assert!(body.contains("htmx"), "response should contain htmx code");
+}
+
+/// The positive counterpart to `unauthenticated_home_redirects_to_login`: after
+/// logging in via the session flow, the home page renders instead of redirecting.
+#[tokio::test]
+async fn authenticated_home_renders_after_login_docker() {
+    let container = Redis::default().start().await.expect("start redis");
+    let host = container.get_host().await.expect("redis host");
+    let port = container
+        .get_host_port_ipv4(REDIS_PORT)
+        .await
+        .expect("redis port");
+    let redis_url = format!("redis://{host}:{port}");
+    let mut conn = connect_ready(&redis_url).await;
+    seed_test_catalog(&mut conn).await;
+
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let store = Arc::new(open_temp_store(&dir).await);
+    let mock_server = MockServer::start().await;
+    mount_github_mocks(&mock_server, "testuser").await;
+    let mut client =
+        oauth_client_with_feed(&mock_server, vec!["testuser"], store, &redis_url).await;
+
+    let (_, cookie) = do_login(&mut client, None).await;
+
+    let response = client
+        .request(get_with_cookie("/", Some(&cookie)))
+        .await
+        .expect("GET home");
+    assert_eq!(
+        response.status().as_u16(),
+        200,
+        "authenticated home should render"
+    );
+    let body_bytes = response.into_body().into_bytes().await.expect("read body");
+    let body = String::from_utf8(body_bytes.to_vec()).expect("valid utf8");
+    assert!(
+        body.contains("<html"),
+        "home should return an HTML document when logged in"
+    );
+}
+
+#[tokio::test]
+async fn unauthenticated_admin_redirects_to_login() {
+    let mock_server = MockServer::start().await;
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let mut client = oauth_client(&mock_server, vec!["testuser"], &dir).await;
+
+    assert_redirects_to_login(&mut client, "/admin").await;
 }
 
 #[tokio::test]

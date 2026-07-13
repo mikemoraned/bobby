@@ -8,8 +8,8 @@
 //!
 //! These assert only the *unauthenticated* surface so they hold identically
 //! against a locally-spawned server (no `--local-admin`, in-memory sessions) and
-//! the live OAuth-protected staging deployment: `/` renders, the static assets
-//! are served, and `/admin` redirects to login.
+//! the live OAuth-protected staging deployment: the site is default-deny, so
+//! every route — home, static assets, and `/admin` — redirects to login.
 //!
 //! The locally-spawned server is storeless-for-the-feed but still needs a redis
 //! publish url to start, so the local path runs a testcontainers redis and the
@@ -137,57 +137,22 @@ fn pick_free_port() -> u16 {
     listener.local_addr().expect("local addr").port()
 }
 
-#[tokio::test]
-async fn home_page_renders_docker() {
-    let server = spawn_server().await;
-    let base = &server.url;
-    let client = reqwest::Client::new();
-
-    let resp = client.get(base).send().await.expect("request failed");
-    assert_eq!(resp.status(), 200, "home page should render");
-
-    let body = resp.text().await.expect("body text");
-    assert!(
-        body.contains("<html"),
-        "home page should return an HTML document"
-    );
-}
-
-#[tokio::test]
-async fn htmx_static_asset_is_served_docker() {
-    let server = spawn_server().await;
-    let base = &server.url;
-    let client = reqwest::Client::new();
-
-    let resp = client
-        .get(format!("{base}/static/htmx.min.js"))
-        .send()
-        .await
-        .expect("request failed");
-    assert_eq!(resp.status(), 200, "htmx.min.js should be served");
-
-    let body = resp.text().await.expect("body text");
-    assert!(body.contains("htmx"), "response should contain htmx code");
-}
-
-#[tokio::test]
-async fn admin_redirects_to_login_when_unauthenticated_docker() {
-    let server = spawn_server().await;
-    let base = &server.url;
-    // Don't follow redirects — we want to observe the 3xx itself.
+/// Assert an unauthenticated GET of `path` redirects to the login flow, without
+/// following the 3xx (so we observe it directly rather than the login page).
+async fn assert_redirects_to_login(base: &str, path: &str) {
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .expect("build client");
 
     let resp = client
-        .get(format!("{base}/admin"))
+        .get(format!("{base}{path}"))
         .send()
         .await
         .expect("request failed");
     assert!(
         resp.status().is_redirection(),
-        "unauthenticated /admin should redirect, got: {}",
+        "unauthenticated {path} should redirect, got: {}",
         resp.status()
     );
     let location = resp
@@ -198,6 +163,24 @@ async fn admin_redirects_to_login_when_unauthenticated_docker() {
         .expect("valid header");
     assert!(
         location.starts_with("/auth/login"),
-        "should redirect to /auth/login, got: {location}"
+        "{path} should redirect to /auth/login, got: {location}"
     );
+}
+
+#[tokio::test]
+async fn home_redirects_to_login_when_unauthenticated_docker() {
+    let server = spawn_server().await;
+    assert_redirects_to_login(&server.url, "/").await;
+}
+
+#[tokio::test]
+async fn static_asset_redirects_to_login_when_unauthenticated_docker() {
+    let server = spawn_server().await;
+    assert_redirects_to_login(&server.url, "/static/htmx.min.js").await;
+}
+
+#[tokio::test]
+async fn admin_redirects_to_login_when_unauthenticated_docker() {
+    let server = spawn_server().await;
+    assert_redirects_to_login(&server.url, "/admin").await;
 }

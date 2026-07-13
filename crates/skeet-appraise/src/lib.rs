@@ -10,6 +10,7 @@ mod handlers;
 mod models_middleware;
 mod project;
 mod published_feed_middleware;
+mod require_auth;
 mod started_at;
 mod static_assets;
 mod store_middleware;

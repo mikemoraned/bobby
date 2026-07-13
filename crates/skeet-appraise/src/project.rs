@@ -14,6 +14,7 @@ use crate::OAuthConfigLayer;
 use crate::PublishedFeedLayer;
 use crate::StartedAtLayer;
 use crate::StoreLayer;
+use crate::require_auth::RequireAuthLayer;
 use crate::admin::{admin, appraise_image, appraise_skeet};
 use crate::auth::{auth_callback, auth_login, auth_logout};
 use crate::handlers::{annotated_image, home};
@@ -95,8 +96,15 @@ impl Project for AppraiseProject {
                 .same_site(SameSite::Lax)
         };
 
+        // `RequireAuthLayer` sits just outside `StaticFilesMiddleware` (so static
+        // assets are also behind login) but inside the session/appraiser layers,
+        // whose extensions it reads. Middleware added earlier is nested more
+        // deeply, so the order below runs, outer to inner:
+        //   session → RequireAuth → StaticFiles → router.
+        // Everything except the public allowlist is default-deny.
         handler
             .middleware(StaticFilesMiddleware::from_context(context))
+            .middleware(RequireAuthLayer)
             .middleware(session_middleware)
             .middleware(self.published_feed_layer.clone())
             .middleware(self.store_layer.clone())

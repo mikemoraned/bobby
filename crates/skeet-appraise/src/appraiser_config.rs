@@ -6,30 +6,35 @@ use cot::request::extractors::FromRequestHead;
 use shared::Appraiser;
 use tower::{Layer, Service};
 
-/// Extracts the current appraiser (if any) from request extensions.
+/// Resolves the current appraiser (if any) from request extensions.
 ///
 /// Checks two sources in order:
 /// 1. Static `Arc<Appraiser>` in extensions (set by `AppraiserLayer` in `--local-admin` mode)
 /// 2. Session `appraiser` key (set by GitHub OAuth callback)
+pub async fn resolve_appraiser(extensions: &cot::http::Extensions) -> Option<Arc<Appraiser>> {
+    // Local-admin mode: static appraiser in extensions
+    if let Some(appraiser) = extensions.get::<Arc<Appraiser>>() {
+        return Some(appraiser.clone());
+    }
+
+    // OAuth mode: appraiser stored in session
+    if let Some(session) = extensions.get::<cot::session::Session>()
+        && let Ok(Some(appraiser_str)) = session.get::<String>("appraiser").await
+        && let Ok(appraiser) = appraiser_str.parse::<Appraiser>()
+    {
+        return Some(Arc::new(appraiser));
+    }
+
+    None
+}
+
+/// Extracts the current appraiser (if any) from request extensions.
 #[derive(Clone)]
 pub struct AppraiserExtractor(pub Option<Arc<Appraiser>>);
 
 impl FromRequestHead for AppraiserExtractor {
     async fn from_request_head(head: &RequestHead) -> cot::Result<Self> {
-        // Local-admin mode: static appraiser in extensions
-        if let Some(appraiser) = head.extensions.get::<Arc<Appraiser>>() {
-            return Ok(Self(Some(appraiser.clone())));
-        }
-
-        // OAuth mode: appraiser stored in session
-        if let Some(session) = head.extensions.get::<cot::session::Session>()
-            && let Ok(Some(appraiser_str)) = session.get::<String>("appraiser").await
-            && let Ok(appraiser) = appraiser_str.parse::<Appraiser>()
-        {
-            return Ok(Self(Some(Arc::new(appraiser))));
-        }
-
-        Ok(Self(None))
+        Ok(Self(resolve_appraiser(&head.extensions).await))
     }
 }
 
