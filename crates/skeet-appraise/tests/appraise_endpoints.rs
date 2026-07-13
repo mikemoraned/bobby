@@ -934,40 +934,46 @@ async fn unauthenticated_annotated_image_redirects_to_login() {
     assert_redirects_to_login(&mut client, "/skeet/v2:abc123/annotated.png").await;
 }
 
-/// Static assets are behind login too: an unauthenticated fetch of a bundled
-/// asset redirects rather than serving bytes.
+/// Static chrome is public: an unauthenticated fetch of a bundled asset is
+/// served, not redirected — gating it would only add log noise and break the
+/// login page's own assets, with nothing sensitive to protect.
 #[tokio::test]
-async fn unauthenticated_static_asset_redirects_to_login() {
+async fn unauthenticated_static_asset_is_served() {
     let mock_server = MockServer::start().await;
     let dir = tempfile::tempdir().expect("create temp dir");
     let mut client = oauth_client(&mock_server, vec!["testuser"], &dir).await;
-
-    assert_redirects_to_login(&mut client, "/static/htmx.min.js").await;
-}
-
-/// The positive counterpart: after logging in via the session flow, the same
-/// static asset is served (the auth layer lets an authenticated session through).
-#[tokio::test]
-async fn authenticated_static_asset_is_served() {
-    let mock_server = MockServer::start().await;
-    mount_github_mocks(&mock_server, "testuser").await;
-    let dir = tempfile::tempdir().expect("create temp dir");
-    let mut client = oauth_client(&mock_server, vec!["testuser"], &dir).await;
-
-    let (_, cookie) = do_login(&mut client, None).await;
 
     let response = client
-        .request(get_with_cookie("/static/htmx.min.js", Some(&cookie)))
+        .request(get_with_cookie("/static/htmx.min.js", None))
         .await
         .expect("GET static asset");
     assert_eq!(
         response.status().as_u16(),
         200,
-        "authenticated static asset should be served"
+        "static asset should be served without auth"
     );
     let body_bytes = response.into_body().into_bytes().await.expect("read body");
     let body = String::from_utf8(body_bytes.to_vec()).expect("valid utf8");
     assert!(body.contains("htmx"), "response should contain htmx code");
+}
+
+/// A browser's automatic `/favicon.ico` is allowlisted, so it isn't redirected
+/// to login (which would flood the logs). It has no route, so it 404s quietly.
+#[tokio::test]
+async fn unauthenticated_favicon_is_not_redirected() {
+    let mock_server = MockServer::start().await;
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let mut client = oauth_client(&mock_server, vec!["testuser"], &dir).await;
+
+    let response = client
+        .request(get_with_cookie("/favicon.ico", None))
+        .await
+        .expect("GET favicon");
+    assert!(
+        !response.status().is_redirection(),
+        "favicon should not redirect to login, got: {}",
+        response.status()
+    );
 }
 
 /// The positive counterpart to `unauthenticated_home_redirects_to_login`: after

@@ -10,13 +10,19 @@ use tracing::warn;
 
 use crate::appraiser_config::resolve_appraiser;
 
-/// Paths reachable without an authenticated appraiser. Everything else — every
-/// page, image, and admin action — requires a session.
+/// Whether a path is reachable without an authenticated appraiser: the health
+/// probe, the two login-ceremony endpoints, and genuinely-static chrome (the
+/// bundled `/static` assets and a browser's automatic `/favicon.ico`).
 ///
-/// The guard is expressed as an allowlist of *public* paths rather than by
-/// annotating each protected route, so a newly-added route is behind login by
-/// default and cannot ship unguarded by omission.
-const PUBLIC_PATHS: &[&str] = &["/health", "/auth/login", "/auth/callback"];
+/// Everything data-bearing stays gated — the home feed, the admin views,
+/// appraisal actions, and crucially the skeet *image bytes* (`/skeet/…`), which
+/// look like a static asset but serve harvested content. The guard is an
+/// allowlist of *public* paths rather than per-route annotations, so a new
+/// data route is behind login by default and can't ship unguarded by omission.
+fn is_public(path: &str) -> bool {
+    const PUBLIC_EXACT: &[&str] = &["/health", "/favicon.ico", "/auth/login", "/auth/callback"];
+    PUBLIC_EXACT.contains(&path) || path.starts_with("/static/")
+}
 
 /// Root-router middleware that redirects any unauthenticated request for a
 /// non-public path to the login flow (preserving the original path as
@@ -61,9 +67,7 @@ where
 
         Box::pin(async move {
             let path = req.uri().path().to_owned();
-            if PUBLIC_PATHS.contains(&path.as_str())
-                || resolve_appraiser(req.extensions()).await.is_some()
-            {
+            if is_public(&path) || resolve_appraiser(req.extensions()).await.is_some() {
                 return inner.call(req).await;
             }
 

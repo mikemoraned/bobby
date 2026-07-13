@@ -8,8 +8,8 @@
 //!
 //! These assert only the *unauthenticated* surface so they hold identically
 //! against a locally-spawned server (no `--local-admin`, in-memory sessions) and
-//! the live OAuth-protected staging deployment: the site is default-deny, so
-//! every route — home, static assets, and `/admin` — redirects to login.
+//! the live OAuth-protected staging deployment: data routes (`/` and `/admin`)
+//! redirect to login, while public static chrome (`/static/…`) is served.
 //!
 //! The locally-spawned server is storeless-for-the-feed but still needs a redis
 //! publish url to start, so the local path runs a testcontainers redis and the
@@ -174,9 +174,22 @@ async fn home_redirects_to_login_when_unauthenticated_docker() {
 }
 
 #[tokio::test]
-async fn static_asset_redirects_to_login_when_unauthenticated_docker() {
+async fn static_asset_is_served_when_unauthenticated_docker() {
     let server = spawn_server().await;
-    assert_redirects_to_login(&server.url, "/static/htmx.min.js").await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .get(format!("{}/static/htmx.min.js", server.url))
+        .send()
+        .await
+        .expect("request failed");
+    assert_eq!(
+        resp.status(),
+        200,
+        "static asset should be served without auth"
+    );
+    let body = resp.text().await.expect("body text");
+    assert!(body.contains("htmx"), "response should contain htmx code");
 }
 
 #[tokio::test]

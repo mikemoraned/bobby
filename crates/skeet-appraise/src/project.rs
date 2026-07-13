@@ -97,12 +97,12 @@ impl Project for AppraiseProject {
                 .same_site(SameSite::Lax)
         };
 
-        // `RequireAuthLayer` sits just outside `StaticFilesMiddleware` (so static
-        // assets are also behind login) but inside the session/appraiser layers,
-        // whose extensions it reads. Middleware added earlier is nested more
-        // deeply, so the order below runs, outer to inner:
-        //   session → RequireAuth → StaticFiles → router.
-        // Everything except the public allowlist is default-deny.
+        // `RequireAuthLayer` runs inside the session/appraiser layers (whose
+        // extensions it reads) and outside `StaticFilesMiddleware`. Middleware
+        // added earlier is nested more deeply, so the order below runs, outer to
+        // inner: session → RequireAuth → StaticFiles → router. The layer's own
+        // allowlist keeps static chrome + health public; everything data-bearing
+        // is default-deny.
         handler
             .middleware(StaticFilesMiddleware::from_context(context))
             .middleware(RequireAuthLayer)
