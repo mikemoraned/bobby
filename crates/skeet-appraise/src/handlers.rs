@@ -25,6 +25,8 @@ pub struct HomeEntry {
     pub band: String,
     pub manual_skeet_band: String,
     pub manual_image_band: String,
+    /// Whether a manual band has been set on either the skeet or the image.
+    pub appraised: bool,
     pub web_url: Url,
     /// A short note when the skeet or image has gone from Bluesky;
     /// `None` when both are present.
@@ -126,6 +128,7 @@ pub async fn home(
                 image_id,
                 score: format!("{}", item.score),
                 band: item.effective_band.to_string(),
+                appraised: item.manual_skeet_band.is_some() || item.manual_image_band.is_some(),
                 manual_skeet_band: item
                     .manual_skeet_band
                     .map(|b| b.to_string())
