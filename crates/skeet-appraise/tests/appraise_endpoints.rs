@@ -986,6 +986,11 @@ async fn authenticated_home_renders_after_login_docker() {
         body.contains("<html"),
         "home should return an HTML document when logged in"
     );
+    assert!(
+        body.contains(r#"href="/admin?view=skeet""#)
+            && body.contains(r#"href="/admin?view=image""#),
+        "home should show a nav linking to the skeet and image routes"
+    );
 }
 
 #[tokio::test]

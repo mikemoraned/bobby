@@ -1,22 +1,18 @@
-<!DOCTYPE html>
-<html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Bobby Admin</title>
+{% extends "base.html" %}
+
+{% block title %}Bobby Admin{% endblock %}
+{% block heading %}Bobby Admin{% endblock %}
+{% block skeet_active %}{% if view == "skeet" %} class="active"{% endif %}{% endblock %}
+{% block image_active %}{% if view == "image" %} class="active"{% endif %}{% endblock %}
+{% block skeet_count %} ({{ skeet_appraisal_count }}){% endblock %}
+{% block image_count %} ({{ image_appraisal_count }}){% endblock %}
+
+{% block head %}
         <script src="/static/htmx.min.js" defer></script>
-        <style>
-            body {
-                font-family: system-ui, sans-serif;
-                max-width: 1400px;
-                margin: 2rem auto;
-                padding: 0 1rem;
-            }
-            h1 { text-align: center; }
-            nav { text-align: center; margin-bottom: 1.5rem; }
-            nav a { margin: 0 0.75rem; color: #0066cc; text-decoration: none; font-size: 1.1rem; }
-            nav a:hover { text-decoration: underline; }
-            nav a.active { font-weight: bold; text-decoration: underline; }
+{% endblock %}
+
+{% block styles %}
+            body { max-width: 1400px; }
             .empty { color: #666; text-align: center; margin-top: 2rem; }
             table { width: 100%; border-collapse: collapse; }
             th, td { border: 1px solid #ddd; padding: 0.5rem; vertical-align: top; }
@@ -55,14 +51,8 @@
             .band-buttons button[disabled] { opacity: 0.4; cursor: wait; }
             a { color: #0066cc; text-decoration: none; }
             a:hover { text-decoration: underline; }
-        </style>
-    </head>
-    <body>
-        <h1>Bobby Admin</h1>
-        <nav>
-            <a href="/admin?view=skeet" class="{% if view == "skeet" %}active{% endif %}">Skeet Appraisal ({{ skeet_appraisal_count }})</a>
-            <a href="/admin?view=image" class="{% if view == "image" %}active{% endif %}">Image Appraisal ({{ image_appraisal_count }})</a>
-        </nav>
+{% endblock %}
+
+{% block content %}
 {{ content|safe }}
-    </body>
-</html>
+{% endblock %}
