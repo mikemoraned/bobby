@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{% block title %}Bobby{% endblock %}</title>
+{% block head %}{% endblock %}
+        <style>
+            body {
+                font-family: system-ui, sans-serif;
+                margin: 2rem auto;
+                padding: 0 1rem;
+            }
+            h1 { text-align: center; }
+            nav { text-align: center; margin-bottom: 1.5rem; }
+            nav a { margin: 0 0.75rem; color: #0066cc; text-decoration: none; font-size: 1.1rem; }
+            nav a:hover { text-decoration: underline; }
+            nav a.active { font-weight: bold; text-decoration: underline; }
+{% block styles %}{% endblock %}
+        </style>
+    </head>
+    <body>
+        <h1>{% block heading %}Bobby{% endblock %}</h1>
+        <nav>
+            <a href="/"{% block home_active %}{% endblock %}>Home</a>
+            <a href="/admin?view=skeet"{% block skeet_active %}{% endblock %}>Skeet Appraisal{% block skeet_count %}{% endblock %}</a>
+            <a href="/admin?view=image"{% block image_active %}{% endblock %}>Image Appraisal{% block image_count %}{% endblock %}</a>
+        </nav>
+{% block content %}{% endblock %}
+{% block scripts %}{% endblock %}
+    </body>
+</html>

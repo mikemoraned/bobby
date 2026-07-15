@@ -1,25 +1,30 @@
-<!DOCTYPE html>
-<html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Bobby Feed</title>
+{% extends "base.html" %}
+
+{% block title %}Bobby Feed{% endblock %}
+{% block heading %}Bobby Feed{% endblock %}
+{% block home_active %} class="active"{% endblock %}
+
+{% block head %}
 {% if is_admin %}
         <script src="/static/htmx.min.js" defer></script>
 {% endif %}
-        <style>
-            body {
-                font-family: system-ui, sans-serif;
-                max-width: 1200px;
-                margin: 2rem auto;
-                padding: 0 1rem;
-            }
-            h1 { text-align: center; }
+{% endblock %}
+
+{% block styles %}
+            body { max-width: 1200px; }
             .feed-select {
                 text-align: center;
                 margin-bottom: 1.5rem;
             }
             .feed-select select { font-size: 0.95rem; padding: 0.2rem; }
+            .appraise-filter {
+                text-align: center;
+                margin-bottom: 1.5rem;
+                font-size: 0.9rem;
+                color: #555;
+            }
+            .appraise-filter label { cursor: pointer; }
+            body:has(#only-unappraised:checked) .card[data-appraised="true"] { display: none; }
             .empty { color: #666; text-align: center; margin-top: 2rem; }
             .grid {
                 display: grid;
@@ -102,10 +107,9 @@
             }
             .band-buttons button.clear { color: #c00; border-color: #c00; }
             .band-buttons button[disabled] { opacity: 0.4; cursor: wait; }
-        </style>
-    </head>
-    <body>
-        <h1>Bobby Feed</h1>
+{% endblock %}
+
+{% block content %}
         <form method="get" class="feed-select">
             <label for="feed">Feed</label>
             <select id="feed" name="feed" onchange="this.form.submit()">
@@ -115,12 +119,17 @@
             </select>
             <button type="submit">Show</button>
         </form>
+{% if is_admin %}
+        <div class="appraise-filter">
+            <label><input type="checkbox" id="only-unappraised"> Only show unappraised</label>
+        </div>
+{% endif %}
 {% if entries.is_empty() %}
         <p class="empty">No visible items in the feed right now.</p>
 {% else %}
         <div class="grid">
 {% for entry in entries %}
-            <div class="card">
+            <div class="card" data-appraised="{{ entry.appraised }}">
                 <img src="/skeet/{{ entry.image_id }}/annotated.png" alt="Annotated image" loading="lazy">
                 <div class="info">
                     <span class="score">{{ entry.score }}</span>
@@ -155,6 +164,9 @@
 {% endfor %}
         </div>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
         <script>
             document.addEventListener("click", function (event) {
                 const button = event.target.closest(".copy-id");
@@ -166,5 +178,4 @@
                 });
             });
         </script>
-    </body>
-</html>
+{% endblock %}

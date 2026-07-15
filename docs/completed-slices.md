@@ -288,3 +288,10 @@ Final polish for the 1.0 release: marked all crates at version 1.0, added a comb
 - **Grid biased best-to-top**: `bias_top_by_columns` reorders the best-first list round-robin across the assumed home-grid column count so the CSS multi-column masonry lands the best content across the top row rather than filling the first column top-to-bottom. Exact at four columns, gracefully approximate elsewhere; a doc comment records native CSS masonry as the future simplification. Rejected server-computed row spans and JS height-measuring masonry as more complex.
 - **`rust.md` compliance passes**: reviewed the skill for consistency and anchored it to external Rust guidelines by reference, then swept the codebase against it. Codebase found in strong compliance; fixes were minor (split an over-long `lib.rs`, removed a `continue`, derived `Debug` on ~48 pure data/domain types where it derives cleanly, skipping wiring/adapter types).
 - **Docs**: added a top-level `README.md` (project summary deduped out of `CLAUDE.md`, plus a high-level 1.0 overview), fleshed out `docs/architecture.md`'s target-architecture section to cover all services, and linked the public feed homepage to the README.
+
+## Slice: appraise UI niggles
+
+A small UX/hardening pass on the `skeet-appraise` site. No new crates; introduced a `base.html` template.
+
+- **Whole-site login**: a root-router `RequireAuthLayer` gates every data route by default via a public allowlist (`/health`, `/favicon.ico`, auth ceremony, `/static/*`); the skeet image bytes stay gated, static chrome does not.
+- **Smaller touches**: a pure-CSS "only show unappraised" card filter, a shared nav factored into `base.html` (askama inheritance), and a public `/health` endpoint fixing a fly health check that the login redirect had broken.

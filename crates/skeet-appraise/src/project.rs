@@ -14,9 +14,10 @@ use crate::OAuthConfigLayer;
 use crate::PublishedFeedLayer;
 use crate::StartedAtLayer;
 use crate::StoreLayer;
+use crate::require_auth::RequireAuthLayer;
 use crate::admin::{admin, appraise_image, appraise_skeet};
 use crate::auth::{auth_callback, auth_login, auth_logout};
-use crate::handlers::{annotated_image, home};
+use crate::handlers::{annotated_image, health, home};
 use crate::web_static_files;
 
 pub struct AppraiseApp;
@@ -32,6 +33,7 @@ impl App for AppraiseApp {
 
     fn router(&self) -> Router {
         Router::with_urls([
+            Route::with_handler_and_name("/health", health, "health"),
             Route::with_handler_and_name("/", home, "home"),
             Route::with_handler_and_name(
                 "/skeet/{image_id}/annotated.png",
@@ -95,8 +97,15 @@ impl Project for AppraiseProject {
                 .same_site(SameSite::Lax)
         };
 
+        // `RequireAuthLayer` runs inside the session/appraiser layers (whose
+        // extensions it reads) and outside `StaticFilesMiddleware`. Middleware
+        // added earlier is nested more deeply, so the order below runs, outer to
+        // inner: session → RequireAuth → StaticFiles → router. The layer's own
+        // allowlist keeps static chrome + health public; everything data-bearing
+        // is default-deny.
         handler
             .middleware(StaticFilesMiddleware::from_context(context))
+            .middleware(RequireAuthLayer)
             .middleware(session_middleware)
             .middleware(self.published_feed_layer.clone())
             .middleware(self.store_layer.clone())
