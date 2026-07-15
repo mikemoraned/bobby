@@ -10,7 +10,7 @@ A continuously-running pipeline that watches the whole Bluesky firehose, filters
 
 It's Rust throughout: ONNX/OCR models run locally in the pruner, LLM scoring via OpenAI, server-rendered HTML with [htmx](https://htmx.org). The pruner/refiner/publisher run on a single-node k3s cluster on Hetzner; the web apps on Fly.io; data lives in shared LanceDB-on-R2 and Redis stores; everything is observable via OpenTelemetry to Grafana Cloud.
 
-See [docs/architecture.md](docs/architecture.md) for the full service breakdown and [docs/completed-slices.md](docs/completed-slices.md) for the slice-by-slice history.
+See [docs/architecture.md](docs/architecture.md) for the full service breakdown and [docs/completed-slices-v1.md](docs/completed-slices-v1.md) for the slice-by-slice history.
 
 ## Working on it
 
